@@ -56,7 +56,7 @@ export const Headlines = {
     };
     const displayIndex = (name) => (onDisplay.value?.categories || []).indexOf(name);
     const favicon = (d) => `/api/favicon/${encodeURIComponent(d)}`;
-    return { h, feedStatus, open, toggleOpen, test, testing, addCategory, data, favicon, ago, speed, passMinutes, load, onDisplay, showing, jump, jumping, displayIndex };
+    return { h, feedStatus, open, toggleOpen, test, testing, addCategory, data, favicon, ago, speed, passMinutes, load, onDisplay, showing, jump, jumping, displayIndex, store };
   },
   template: `<div class="page">
     <div class="page-head"><div class="grow"><h1>Headlines</h1><p>Each category is one page on the display, mixing headlines from all its outlets (newest first, a few per outlet).</p></div>
