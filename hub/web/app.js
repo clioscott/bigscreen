@@ -52,6 +52,7 @@ function showTab(name) {
   if (name === "ticker") refreshQuotes();
   if (name === "headlines") refreshHeadlines();
   if (name === "display" && typeof enterDisplayTab === "function") enterDisplayTab();
+  if (name === "weather" && typeof enterWeatherTab === "function") enterWeatherTab();
 }
 
 // ---- config save helper -----------------------------------------------------
@@ -431,7 +432,8 @@ $("#ticker-preview").addEventListener("click", () => {
 // ---- display tab ------------------------------------------------------------------
 const PANEL_LABELS = {
   calendar: "Calendar (left only)", client_calls_upcoming: "Client calls: upcoming", client_calls_past: "Client calls: past",
-  headlines: "Headlines", blank: "Blank",
+  headlines: "Headlines", weather: "Weather info", weather_full: "Weather info (full width)",
+  map: "Weather map", map_full: "Weather map (full width)", blank: "Blank",
 };
 const WHEN_LABELS = { always: "always", calendar_has_events: "when calendar has events", no_events: "when calendar is empty",
   weather_has_alert: "when a weather alert is active" };
@@ -480,10 +482,18 @@ function renderCycles() {
     const list = disp.cycle[side] || (disp.cycle[side] = []);
     const names = [...new Set([...displayPanels, ...list.map((e) => e.panel)])];
     $(`#cycle-${side}`).innerHTML = list.map((e, i) => {
-      const extra = Object.entries(e).filter(([k]) => !["panel", "when", "dwell_sec"].includes(k)).map(([k, v]) => `${k}=${v}`).join(" ");
+      const extra = Object.entries(e).filter(([k]) => !["panel", "when", "dwell_sec", "track", "weather_screen"].includes(k)).map(([k, v]) => `${k}=${v}`).join(" ");
       const known = displayPanels.includes(e.panel);
+      const tracks = (CFG.modules.weather_maps || {}).tracks || {};
+      let sub = "";
+      if (e.panel === "map" || e.panel === "map_full") {
+        sub = `<select data-k="track">${Object.entries(tracks).map(([id, t]) => `<option value="${esc(id)}" ${id === e.track ? "selected" : ""}>${esc(t.label || id)}${(t.size === "full") !== (e.panel === "map_full") ? " (size mismatch)" : ""}</option>`).join("")}</select>`;
+      } else if (e.panel === "weather" || e.panel === "weather_full") {
+        sub = `<select data-k="weather_screen">${["current", "hourly", "forecast", "warning"].map((w) => `<option ${w === (e.weather_screen || "current") ? "selected" : ""}>${w}</option>`).join("")}</select>`;
+      }
       return `<div class="cycle-row" data-i="${i}">
         <select data-k="panel">${names.map((n) => `<option value="${esc(n)}" ${n === e.panel ? "selected" : ""}>${esc(PANEL_LABELS[n] || n)}</option>`).join("")}</select>
+        ${sub}
         <select data-k="when">${Object.entries(WHEN_LABELS).map(([k, l]) => `<option value="${k}" ${k === (e.when || "always") ? "selected" : ""}>${l}</option>`).join("")}</select>
         <input class="dwell" type="number" min="3" data-k="dwell_sec" value="${e.dwell_sec ?? ""}" placeholder="sec" title="Seconds on screen">s
         <button class="small" data-up ${i === 0 ? "disabled" : ""}>↑</button><button class="small" data-down ${i === list.length - 1 ? "disabled" : ""}>↓</button>
@@ -497,6 +507,14 @@ function renderCycles() {
         const k = el.dataset.k;
         list[i][k] = k === "dwell_sec" ? (el.value === "" ? undefined : +el.value) : el.value;
         if (list[i][k] === undefined) delete list[i][k];
+        if (k === "panel") {
+          const p = list[i].panel;
+          if ((p === "map" || p === "map_full") && !list[i].track) list[i].track = Object.keys((CFG.modules.weather_maps || {}).tracks || {})[0];
+          if ((p === "weather" || p === "weather_full") && !list[i].weather_screen) list[i].weather_screen = "current";
+          if (!p.startsWith("map")) delete list[i].track;
+          if (!p.startsWith("weather")) delete list[i].weather_screen;
+          renderCycles();
+        }
         markDisp();
       }));
       $("[data-up]", row).addEventListener("click", () => { list.splice(i - 1, 0, list.splice(i, 1)[0]); renderCycles(); markDisp(); });
@@ -581,7 +599,7 @@ function enterDisplayTab() {
 
 // ---- boot -------------------------------------------------------------------------
 window.addEventListener("beforeunload", (e) => {
-  if ((ticker && tickerDirty()) || (news && newsDirty())) { e.preventDefault(); e.returnValue = ""; }
+  if ((ticker && tickerDirty()) || (news && newsDirty()) || (typeof wm !== "undefined" && wm && wmDirty())) { e.preventDefault(); e.returnValue = ""; }
 });
 
 (async function boot() {

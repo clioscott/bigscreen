@@ -260,6 +260,122 @@ def test_feed(payload: dict = Body(...)):
     return st
 
 
+# --- weather maps ------------------------------------------------------------
+WMS_SUGGESTIONS = [
+    ("GOES-West_1km_DayVis-NightIR", "GOES-West day visible / night infrared", "past"),
+    ("GOES-West_1km_NaturalColor", "GOES-West natural colour (daytime)", "past"),
+    ("GOES-West_1km_DayCloudType-NightMicrophysics", "GOES-West cloud type / night microphysics", "past"),
+    ("GOES-West_1km_SnowFog-NightMicrophysics", "GOES-West snow & fog", "past"),
+    ("GOES-West_1km_SmokeABIband1-SWIR", "GOES-West smoke", "past"),
+    ("GOES-East_1km_DayVis-NightIR", "GOES-East day visible / night infrared", "past"),
+    ("Lightning_2.5km_Density", "Lightning density (10 min)", "past"),
+    ("Radar_1km_RainPrecipRate-Extrapolation", "Radar nowcast: rain (+72 min)", "forecast"),
+    ("Radar_1km_SnowPrecipRate-Extrapolation", "Radar nowcast: snow (+72 min)", "forecast"),
+    ("HRDPS.CONTINENTAL_PR", "HRDPS forecast precipitation (+48 h)", "forecast"),
+    ("HRDPS.CONTINENTAL_TT", "HRDPS forecast temperature (+48 h)", "forecast"),
+    ("HRDPS.CONTINENTAL_NT", "HRDPS forecast cloud cover (+48 h)", "forecast"),
+    ("RAQDPS-FW.Sfc_PM2.5-WildfireSmokePlume", "Wildfire smoke forecast PM2.5 (+72 h)", "forecast"),
+]
+
+
+@app.get("/api/maps/catalog")
+def maps_catalog():
+    from hub.weather import carto, geo, radar, tracks
+    cfg = config.load()
+    half_w, full_w, h = tracks.zone_sizes(cfg)
+    return {
+        "basemaps": [{"id": k, "label": v[0]} for k, v in geo.TILE_SOURCES.items()],
+        "carto_layers": [{"key": k, "label": v["label"], "color": v["color"], "opacity": v["opacity"],
+                          "width": v["width"], "min_km_px": v["min_km_px"], "max_km_px": v["max_km_px"]}
+                         for k, v in carto.LAYERS.items()],
+        "carto_order": carto.DEFAULT_LAYER_ORDER,
+        "wms_layers": [{"layer": a, "label": b, "time": c} for a, b, c in WMS_SUGGESTIONS],
+        "palettes": {k: [[t, c] for t, c in v] for k, v in radar.PALETTES.items()},
+        "sizes": {"half": [half_w, h], "full": [full_w, h]},
+    }
+
+
+@app.get("/api/maps/state")
+def maps_state():
+    from hub.weather import tracks
+    state = read_json(paths.CACHE_DIR / "maps_state.json", {}) or {}
+    metas = {}
+    for p in tracks.ANIM_DIR.glob("*.json"):
+        m = read_json(p, {}) or {}
+        metas[p.stem] = {k: m.get(k) for k in ("n", "w", "h", "fps", "hold_last_sec", "loops", "times",
+                                               "generated_at", "kind", "label")}
+    return {"tracks": state, "packs": metas}
+
+
+@app.get("/api/maps/track/{tid}/frame/{i}.png")
+def maps_frame(tid: str, i: int, scale: int = 2):
+    import numpy as np
+    from hub.weather import tracks
+    if not re.fullmatch(r"[\w-]+", tid):
+        raise HTTPException(400)
+    meta = read_json(tracks.ANIM_DIR / f"{tid}.json")
+    if not meta:
+        raise HTTPException(404, "no pack yet")
+    n, h, w = meta["n"], meta["h"], meta["w"]
+    i = max(0, min(n - 1, i))
+    frames = np.memmap(tracks.ANIM_DIR / f"{tid}.bin", dtype=np.uint8, mode="r", shape=(n, h, w, 3))
+    img = Image.fromarray(np.array(frames[i]))
+    scale = max(1, min(4, scale))
+    if scale > 1:
+        img = img.resize((w * scale, h * scale), Image.NEAREST)
+    bio = io.BytesIO()
+    img.save(bio, "PNG", compress_level=1)
+    return Response(bio.getvalue(), media_type="image/png", headers={"Cache-Control": "max-age=60"})
+
+
+@app.post("/api/maps/preview-area")
+def maps_preview_area(payload: dict = Body(...)):
+    """Basemap + cartography for an unsaved area (and optional track basemap), for live editing."""
+    from hub.weather import carto, geo, tracks
+    cfg = config.load()
+    area = dict(payload.get("area") or {}, id=payload.get("area_id") or "preview")
+    try:
+        float(area["km_per_px"]), float(area["center"][0]), float(area["center"][1])
+    except (KeyError, TypeError, ValueError, IndexError):
+        raise HTTPException(400, "area needs center [lat, lon] and km_per_px")
+    view, _, _ = tracks.views_for(area, payload.get("size", "half"), cfg)
+    bm = payload.get("basemap") or {"source": "esri_imagery", "brightness": 0.5}
+    base = geo.render_basemap(view, bm)
+    if bm.get("water") or bm.get("land"):
+        base = carto.tint_water(base, view, bm.get("water"), bm.get("land"), float(bm.get("tint_strength", 1.0)),
+                                float(area.get("min_feature_px", 3)))
+    ov = carto.render_overlay(view, area.get("carto") or {}, float(area.get("min_feature_px", 3)))
+    img = geo.alpha_over(base, ov) if ov is not None else base
+    out = Image.fromarray(img)
+    for m in tracks._markers(view, area):
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                out.putpixel((min(view.w - 1, max(0, m["x"] + dx)), min(view.h - 1, max(0, m["y"] + dy))),
+                             (255, 230, 90) if dx == dy == 0 else (0, 0, 0))
+    out = out.resize((view.w * 2, view.h * 2), Image.NEAREST)
+    bio = io.BytesIO()
+    out.save(bio, "PNG")
+    import base64
+    return {"png": "data:image/png;base64," + base64.b64encode(bio.getvalue()).decode(),
+            "layers": carto.describe_layers(float(area["km_per_px"]), area.get("carto") or {}),
+            "bbox": [round(v, 3) for v in view.lonlat], "width_km": round(float(area["km_per_px"]) * view.w)}
+
+
+@app.post("/api/maps/render/{tid}")
+def maps_render(tid: str):
+    """Force a track to re-render on the next maps job run, and run it now."""
+    from hub.util import atomic_write_json
+    p = paths.CACHE_DIR / "maps_state.json"
+    st = read_json(p, {}) or {}
+    if tid != "all":
+        st.pop(tid, None)
+    else:
+        st = {}
+    atomic_write_json(p, st, indent=1)
+    _sched().run_now("maps")
+    return {"ok": True}
+
+
 @app.get("/api/favicon/{domain}")
 def favicon(domain: str):
     if not DOMAIN.match(domain):

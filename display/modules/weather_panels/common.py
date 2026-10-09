@@ -89,6 +89,8 @@ def _build_screen_dispatch() -> tuple[list[str], list[tuple], dict[str, str]]:
 
     # Add tracks from config
     try:
+        if not os.path.exists(_presets_path):          # v2: map tracks live in the hub config
+            raise StopIteration
         with open(_presets_path) as f:
             cfg = _j.load(f)
         tracks = cfg.get("animation_tracks", {})
@@ -103,6 +105,8 @@ def _build_screen_dispatch() -> tuple[list[str], list[tuple], dict[str, str]]:
             display = tcfg.get("display_name", tname)
             screen_name = f"map_{tname}"
             entries.append((order, screen_name, "screen_radar", tname, display))
+    except StopIteration:
+        pass
     except Exception as exc:
         logger.warning("Failed to load animation_tracks for screen dispatch: %s", exc)
 
@@ -1134,6 +1138,8 @@ def _load_animation_tracks() -> dict:
     _presets_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
         "..", "..", "..", "config", "basemap_presets.json")
+    if not os.path.exists(_presets_path):              # v2: map tracks live in the hub config
+        return {}
     try:
         with open(_presets_path) as f:
             cfg = _j.load(f)

@@ -108,3 +108,22 @@ dialog::backdrop { background: #0009; }
 #toast { position: fixed; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%);
   background: var(--panel2); border: 1px solid var(--line); padding: 8px 14px; border-radius: 8px; max-width: 90vw; z-index: 20; }
 #toast.bad { border-color: var(--bad); color: var(--bad); }
+.tracks { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.track-card.off { opacity: .55; }
+.track-preview { background: #000; border-radius: 6px; overflow: hidden; margin-bottom: 8px; aspect-ratio: 224 / 134; display: grid; place-items: center; }
+.track-preview.full { aspect-ratio: 448 / 134; }
+.track-preview img { width: 100%; height: 100%; image-rendering: pixelated; object-fit: contain; display: block; }
+.pad { padding: 20px; }
+.add-card { display: grid; place-items: center; min-height: 120px; }
+.small-check { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
+.editor { margin: 12px 0; }
+.editor h4, .area-editor h4 { margin: 14px 0 4px; font-size: 13px; }
+.area-card { margin: 8px 0; }
+.area-preview { background: #000; border-radius: 6px; padding: 6px; overflow-x: auto; }
+.area-preview img { display: block; image-rendering: pixelated; max-width: none; }
+.grid tr.off td { opacity: .45; }
+.palette { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
+.bands { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.band { display: inline-flex; flex-direction: column; gap: 2px; align-items: center; }
+.band input[type=color] { width: 44px; height: 24px; padding: 0; border: none; background: none; }
+.band input[type=number] { width: 58px; font-size: 12px; }

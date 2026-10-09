@@ -7,6 +7,7 @@ while the v2 renderer is being built.
 """
 
 import copy
+import re
 import threading
 import time
 from datetime import datetime
@@ -101,6 +102,32 @@ def validate(cfg):
         for f in c.get("feeds", []):
             if not str(f.get("url", "")).startswith(("http://", "https://")):
                 raise ConfigError(f"{name}: feed URL must start with http(s)://")
+
+
+    wm = mods.get("weather_maps")
+    if wm:
+        areas = wm.get("areas") or {}
+        for aid, a in areas.items():
+            try:
+                lat, lon = float(a["center"][0]), float(a["center"][1])
+                kpp = float(a["km_per_px"])
+            except (KeyError, TypeError, ValueError, IndexError):
+                raise ConfigError(f"map area {aid}: needs center [lat, lon] and km_per_px")
+            if not (-80 <= lat <= 80 and -180 <= lon <= 180):
+                raise ConfigError(f"map area {aid}: centre out of range")
+            if not 0.1 <= kpp <= 100:
+                raise ConfigError(f"map area {aid}: km per pixel must be 0.1–100")
+        for tid, t in (wm.get("tracks") or {}).items():
+            if not re.fullmatch(r"[A-Za-z0-9_-]+", tid):
+                raise ConfigError(f"track id {tid!r}: letters, digits, _ and - only")
+            if t.get("area") not in areas:
+                raise ConfigError(f"track {tid}: unknown area {t.get('area')!r}")
+            if t.get("size", "half") not in ("half", "full"):
+                raise ConfigError(f"track {tid}: size must be half or full")
+            if t.get("kind", "loop") == "accumulation" and not 0.5 <= float(t.get("window_hours", 24)) <= 48:
+                raise ConfigError(f"track {tid}: accumulation window must be 0.5–48 h")
+            if not 1 <= float(t.get("fps", 8)) <= 30:
+                raise ConfigError(f"track {tid}: fps must be 1–30")
 
 
 def get_path(cfg, dotted, default=None):
