@@ -226,8 +226,8 @@ class CycleEngine:
         ``duration_sec`` of ``None`` means permanent until ``clear_override``
         is called. A positive float means auto-expire after that many seconds.
         """
-        if panel not in KNOWN_PANELS:
-            raise ValueError(f"unknown panel {panel!r}; must be one of {KNOWN_PANELS}")
+        if not panel:
+            raise ValueError("panel is required")
         with self._lock:
             self._override = {
                 "panel": panel,

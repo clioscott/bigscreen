@@ -33,12 +33,26 @@ happens on a separate server; the Pi only renders. Research and history: `RESEAR
     ssh scott@192.168.1.111 'sudo systemctl restart bigscreen-hub'
     # if requirements changed: ssh ... 'cd ~/bigscreen && .venv/bin/pip install -r requirements-hub.txt'
 
-## Display (Pi) — currently v1 in bridge mode
+## Display (Pi)
 
-The v1 renderer (`~/bigscreen-calendar`, service `bigscreen-client`) still drives the panels. It reads its
-own `config/app-config.json` only at startup, so the panel's **Apply to display** writes that file from the hub
-config (`hub/pi.py:v1_config`), syncs ticker logos, and restarts the service. Headline categories are passed
-as v1's `subreddits` list. The v2 renderer replaces this (see RESEARCH.md roadmap).
+**v2 renderer** (`display/`, service `bigscreen-display`, venv `~/bigscreen/.venv-display` on the Pi):
+- Draws each frame into a numpy buffer (`display/gfx.py` = pixel-exact emulation of rgbmatrix's
+  `graphics`/BDF code) and pushes only changed 64×16 tiles to the panels via `FrameCanvas.SetBuffer`,
+  a method we patch into rgbmatrix (`deploy/rgbmatrix_setbuffer.py`, built by `deploy/pi-setup.sh`).
+- Modules in `display/modules/` are ported from v1; never reintroduce per-frame data reprocessing.
+- Reads `/dev/shm/bigscreen/config.json` (published by the hub) and hot-reloads it; panel timing keys
+  (`gpio_slowdown`, `pwm_*`, `limit_refresh_rate_hz`) make it exit so systemd restarts it.
+- Control server :8765 — `/status`, `/frame.png` (live mirror), `/override`, `/preview` (temporary
+  config overlay with TTL). The hub proxies these under `/api/display/*`.
+- Emulate anywhere: `BIGSCREEN_DATA_DIR=… python -m display.main --emulate --port 8799`.
+- Update the Pi: `ssh scott@192.168.1.100 'cd ~/bigscreen && git pull && sudo systemctl restart bigscreen-display'`.
+
+**v1 renderer** (`~/bigscreen-calendar`, service `bigscreen-client`) still drives the panels until the
+weather/radar rebuild lands. It reads its own `config/app-config.json` only at startup, so the panel's
+**Apply to display** writes that file (`hub/pi.py:v1_config`), syncs logos, and restarts it. The two
+units conflict, so starting one stops the other.
+
+Profiling on the Pi: `sudo /tmp/pyspy/bin/py-spy record --pid <pid> --duration 20 --format raw -o out`.
 
 ## Rules
 
