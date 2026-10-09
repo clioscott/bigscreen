@@ -54,6 +54,8 @@ class HeadlinesRenderer(ModuleRenderer):
         headlines_config = self.config.modules.get("headlines", {})
         animation_config = headlines_config.get("animation", {})
         self.scroll_speed = animation_config.get("speed_pixels_per_frame", 1.0)
+        # px/s; v1's per-frame speed was ~speed * 0.05 px at ~30 fps
+        self.scroll_px_per_sec = float(headlines_config.get("scroll_px_per_sec") or self.scroll_speed * 0.05 * 30.0)
         
         self.current_lines = [] 
         self.total_content_height = 0
@@ -267,7 +269,7 @@ class HeadlinesRenderer(ModuleRenderer):
                 self.state_start_time = now
             else:
                 dt = min(now - self._last_scroll_t, 0.25) if self._last_scroll_t else 0.0
-                self.scroll_y += self.scroll_speed * 0.05 * 30.0 * dt
+                self.scroll_y += self.scroll_px_per_sec * dt
                 max_scroll = self.total_content_height - content_height
                 if self.scroll_y >= max_scroll:
                     self.scroll_y = max_scroll

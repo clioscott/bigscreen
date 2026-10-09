@@ -527,7 +527,7 @@ class FinanceTicker(ModuleRenderer):
         if dt > 1.0: dt = 0.016 
         
         # Pixels per second (slower is smoother typically)
-        speed = 30.0 
+        speed = float(self.config.modules.get("finance", {}).get("scroll_px_per_sec") or 30.0)
         
         self.scroll_x += speed * dt
         self.last_scroll_time = now
