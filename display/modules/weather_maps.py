@@ -78,6 +78,7 @@ class MapPanel:
         self.dim = Color(170, 170, 170)
         self.marker = Color(255, 230, 90)
         self._started = {}
+        self._loops_seen = {}
         self._fonts = {}
 
     def _font(self, name):
@@ -120,6 +121,7 @@ class MapPanel:
         pack = self.store.get(tid)
         if transition or tid not in self._started:
             self._started[tid] = now
+            self._loops_seen[tid] = 0
         if pack is None:
             self._text(c, x + 4, y + 12, f"Map '{tid}' loading...", self.dim)
             return "done" if now - self._started[tid] > 5 else None
@@ -163,7 +165,15 @@ class MapPanel:
 
         if meta.get("legend"):
             self._legend(c, x, y, w, meta["legend"])
-        return "done" if elapsed >= loop * max(1, int(meta.get("loops", 2))) else None
+        done_loops = int(elapsed // loop)
+        if done_loops > self._loops_seen.get(tid, 0):        # report each completed loop once
+            self._loops_seen[tid] = done_loops
+            return "done"
+        return None
+
+    def default_loops(self, tid):
+        pack = self.store.get(tid)
+        return int(pack[0].get("loops", 2)) if pack else 2
 
     def _legend(self, c, x, y, w, legend):
         """Compact swatch strip per scale (Rain / Snow) at the top-left."""

@@ -56,40 +56,17 @@ KNOWN_CONDITIONS = ("always", "calendar_has_events", "no_events", "weather_has_a
 
 
 def _resolve_dwell_sec(raw: dict, default: float) -> float:
-    """Compute the effective dwell in seconds for a cycle entry.
+    """Seconds an entry may stay on screen.
 
-    If the entry has ``dwell_loops`` and ``weather_screen`` maps to a known
-    animation track, the dwell is ``loops × frame_count / fps`` so the panel
-    advances exactly at the end of the last full animation loop.
-
-    Falls back to ``dwell_sec`` (or ``default``) for text-only screens and
-    entries that don't carry ``dwell_loops``.
+    ``advance: "cycles"`` entries are ended by the panel itself after ``cycles`` complete passes
+    (a headlines pass = every category once; a map pass = one animation loop), so their dwell is
+    only a safety cap (``max_sec``, default 30 min). Other entries use ``dwell_sec``.
     """
-    loops = raw.get("dwell_loops")
-    ws = raw.get("weather_screen")
-    if loops and ws:
+    if raw.get("advance") == "cycles":
         try:
-            # Lazy import — avoids a hard dependency on the weather_panels
-            # module during early Pi startup before rgbmatrix is loaded.
-            from src.modules.weather_panels.common import (  # type: ignore
-                SCREEN_DISPATCH, get_animation_track, get_radar_fps, full_frame_count,
-            )
-            # ws is a screen name (e.g. "map_goes_day_night"); resolve the
-            # underlying track name via SCREEN_DISPATCH so the look-up works
-            # regardless of whether the caller passed a screen name or track name.
-            track_name = next(
-                (t for n, _, t in SCREEN_DISPATCH if n == ws and t),
-                None,
-            ) or ws  # fall back to ws itself in case it IS already a track name
-            track_cfg = get_animation_track(track_name)
-            if track_cfg:
-                fps = max(1, get_radar_fps())
-                n_frames = full_frame_count(track_cfg)
-                computed = max(1, int(loops)) * n_frames / float(fps)
-                if computed > 0:
-                    return computed
-        except Exception:
-            pass  # if import fails, fall through to dwell_sec
+            return max(10.0, float(raw.get("max_sec") or 1800))
+        except (TypeError, ValueError):
+            return 1800.0
     try:
         dwell = float(raw.get("dwell_sec") or default)
         return dwell if dwell > 0 else default

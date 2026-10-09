@@ -151,6 +151,8 @@ class Screen:
         if prev is None:
             self.engines = {side: CycleEngine(side, self.cycle_raw[side]) for side in ("left", "right")}
             self.prev = {"left": None, "right": None}
+            self.prev_key = {}
+            self.passes = {}
         else:
             # Keep rotation position + overrides across config changes (saves, previews).
             self.engines = prev.engines
@@ -158,6 +160,8 @@ class Screen:
                 if self.cycle_raw[side] != prev.cycle_raw.get(side):
                     self.engines[side].reload_cycle(self.cycle_raw[side])
             self.prev = dict(prev.prev)
+            self.prev_key = dict(getattr(prev, "prev_key", {}))
+            self.passes = dict(getattr(prev, "passes", {}))
             self.finance.scroll_x = prev.finance.scroll_x
             self.finance.last_scroll_time = prev.finance.last_scroll_time
         # panel name -> draw(canvas, zone, entry, transition) -> "done" | None
@@ -236,7 +240,8 @@ class Screen:
             entry = chosen[full]
             name = entry["panel"]
             zone = (0, self.main_y, self.w, self.main_h)
-            if self.full_panels[name](c, zone, entry, name != self.prev[full]) == "done":
+            transition = self._entry_key(entry) != self.prev_key.get(full)
+            if self._finished(full, entry, self.full_panels[name](c, zone, entry, transition), transition):
                 for s in ("left", "right"):
                     if chosen[s].get("panel") == name:
                         self.engines[s].force_advance()
@@ -245,11 +250,13 @@ class Screen:
                 entry = chosen[side]
                 name = entry.get("panel", "blank")
                 zone = zones[side]
-                if self.panels[name](c, zone, entry, name != self.prev[side]) == "done":
+                transition = self._entry_key(entry) != self.prev_key.get(side)
+                if self._finished(side, entry, self.panels[name](c, zone, entry, transition), transition):
                     self.engines[side].force_advance()
             graphics.DrawLine(c, self.cal_w, self.main_y, self.cal_w, self.status_top, self.border)
         for side in ("left", "right"):
             self.prev[side] = chosen[side].get("panel")
+            self.prev_key[side] = self._entry_key(chosen[side])
 
         # top bar (finance) over a black mask
         graphics.DrawLine(c, 0, self.top_h, self.w, self.top_h, self.border)
@@ -272,6 +279,27 @@ class Screen:
                            getattr(cal, "alert_message", ""), getattr(cal, "status_overrides", []))
         self.date.render(c, self.w - date_w, self.h - 14, date_w, 14)
         graphics.DrawLine(c, 0, self.status_top, self.w, self.status_top, self.border)
+
+    @staticmethod
+    def _entry_key(entry):
+        """Identity of a rotation entry (two map entries with different tracks are different screens)."""
+        return (entry.get("panel"), entry.get("track"), entry.get("weather_screen"))
+
+    def _finished(self, side, entry, result, transition):
+        """True when an ``advance: "cycles"`` entry has completed its passes.
+
+        Panels return "done" each time they finish one pass. Time-based entries ignore that and
+        run for dwell_sec; overrides (no advance key) stay until they expire.
+        """
+        if transition:
+            self.passes[side] = 0
+        if result != "done" or entry.get("advance") != "cycles":
+            return False
+        self.passes[side] = self.passes.get(side, 0) + 1
+        need = entry.get("cycles")
+        if need is None and entry.get("panel", "").startswith("map") and hasattr(self, "map_panel"):
+            need = self.map_panel.default_loops(entry.get("track"))
+        return self.passes[side] >= max(1, int(need or 1))
 
     def describe(self):
         return {side: {"panel": self.prev[side], **(self.engines[side].describe() or {})}

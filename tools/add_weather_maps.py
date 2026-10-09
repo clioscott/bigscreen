@@ -47,7 +47,7 @@ def convert_entry(e):
         return {"panel": "weather_full" if full else "weather", "weather_screen": ws, "when": e.get("when", "always"),
                 "dwell_sec": e.get("dwell_sec", 15)}
     return {"panel": "map_full" if full else "map", "track": ws, "when": e.get("when", "always"),
-            "dwell_sec": 120}       # safety cap; the map panel advances itself after its loops
+            "advance": "cycles", "max_sec": 600}      # advances after the track's loops; 10 min cap
 
 
 def main():
