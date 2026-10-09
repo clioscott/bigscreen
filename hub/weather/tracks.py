@@ -119,12 +119,13 @@ def _markers(view, area):
     return out
 
 
-def _basemap_for(base, view, track, t):
+def _basemap_for(base, view, track, t, under=None):
+    """Basemap for frame time t: day/night shading (basemap only), then the under-data layers (highways)."""
     dn = (track.get("basemap") or {}).get("daynight") or {}
     if dn.get("enabled"):
-        return shade_day_night(base, view, t, float(dn.get("night_brightness", 0.25)),
+        base = shade_day_night(base, view, t, float(dn.get("night_brightness", 0.25)),
                                float(dn.get("twilight_deg", 6)))
-    return base
+    return alpha_over(base, under) if under is not None and under[..., 3].any() else base
 
 
 def _legend_spec(pals):
@@ -143,8 +144,10 @@ def render_track(tid, track, cfg, log=print):
     if bm.get("water") or bm.get("land"):
         base = carto.tint_water(base, view, bm.get("water"), bm.get("land"), float(bm.get("tint_strength", 1.0)),
                                 float(area.get("min_feature_px", 3)))
-    overlay = carto.render_overlay(view, {**(area.get("carto") or {}), **(track.get("carto") or {})},
-                                   float(area.get("min_feature_px", 3)))
+    carto_cfg = {**(area.get("carto") or {}), **(track.get("carto") or {})}
+    mfp = float(area.get("min_feature_px", 3))
+    under = carto.render_overlay(view, carto_cfg, mfp, group="under")      # highways: above basemap, below data
+    overlay = carto.render_overlay(view, carto_cfg, mfp, group="over")
     now = datetime.now(timezone.utc)
     kind = track.get("kind", "loop")
     frames, times = [], []
@@ -160,7 +163,7 @@ def render_track(tid, track, cfg, log=print):
             if t in show:
                 layer = radar.accumulation_layer(rain_mm, snow_cm, wm.get("palettes"),
                                                  float(track.get("snow_on_top_cm", 0.5)))
-                img = alpha_over(_basemap_for(base, view, track, t), layer)
+                img = alpha_over(_basemap_for(base, view, track, t, under), layer)
                 frames.append(alpha_over(img, overlay) if overlay is not None else img)
                 times.append(t)
         coverage = f"{(arch[-1] - arch[0]).total_seconds() / 3600:.1f} of {hours:g} h archived"
@@ -187,7 +190,7 @@ def render_track(tid, track, cfg, log=print):
                        for l in layers}
         kept = []
         for t in times:
-            img = _basemap_for(base, view, track, t)          # day/night shades the basemap only
+            img = _basemap_for(base, view, track, t, under)   # day/night shades the basemap only
             missing = False
             for l in layers:
                 lt = layer_times[id(l)]

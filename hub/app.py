@@ -347,8 +347,9 @@ def maps_preview_area(payload: dict = Body(...)):
     if bm.get("water") or bm.get("land"):
         base = carto.tint_water(base, view, bm.get("water"), bm.get("land"), float(bm.get("tint_strength", 1.0)),
                                 float(area.get("min_feature_px", 3)))
-    ov = carto.render_overlay(view, area.get("carto") or {}, float(area.get("min_feature_px", 3)))
-    img = geo.alpha_over(base, ov) if ov is not None else base
+    mfp = float(area.get("min_feature_px", 3))
+    img = geo.alpha_over(base, carto.render_overlay(view, area.get("carto") or {}, mfp, group="under"))
+    img = geo.alpha_over(img, carto.render_overlay(view, area.get("carto") or {}, mfp, group="over"))
     out = Image.fromarray(img)
     for m in tracks._markers(view, area):
         for dx in (-1, 0, 1):

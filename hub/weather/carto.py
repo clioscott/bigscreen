@@ -48,7 +48,7 @@ OSM_DIR = GEODATA_ROOT / "geodata" / "osm"
 WATER_FULL = GEODATA_ROOT / "osm_water_cache" / "water-polygons-split-3857" / "water_polygons.shp"
 WATER_SIMPLE = GEODATA_ROOT / "osm_water_cache" / "simplified-water-polygons-split-3857" / "simplified_water_polygons.shp"
 GEO_CACHE = BASEMAP_CACHE.parent / "geo"
-MASK_VERSION = "v5"
+MASK_VERSION = "v6"
 
 # OSM `water=*` values that are rivers rather than lakes
 RIVER_WATER = {"river", "canal", "stream", "riverbank", "rapids", "oxbow", "ditch", "tidal_channel"}
@@ -89,22 +89,18 @@ LAYERS = {
     "municipal":   {"label": "City / municipal boundaries", "kind": "line",
                     "color": "#6e6e6e", "opacity": 1.0, "width": 1, "min_km_px": 0.0, "max_km_px": 0.6,
                     "sources": [(0.0, ("osm_admin", "8"))]},
-    "motorways":   {"label": "Motorways", "kind": "line",
-                    "color": "#d29a3a", "opacity": 0.75, "width": 1, "min_km_px": 0.0, "max_km_px": 3.0,
-                    "sources": [(0.0, ("osm_roads", "motorway"))]},
-    "trunk":       {"label": "Trunk roads", "kind": "line",
-                    "color": "#b8873a", "opacity": 0.65, "width": 1, "min_km_px": 0.0, "max_km_px": 1.5,
-                    "sources": [(0.0, ("osm_roads", "trunk"))]},
-    "primary":     {"label": "Primary roads", "kind": "line",
-                    "color": "#9a8a5a", "opacity": 0.6, "width": 1, "min_km_px": 0.0, "max_km_px": 0.6,
-                    "sources": [(0.0, ("osm_roads", "primary"))]},
-    "secondary":   {"label": "Secondary roads", "kind": "line",
-                    "color": "#7a7050", "opacity": 0.55, "width": 1, "min_km_px": 0.0, "max_km_px": 0.3,
-                    "sources": [(0.0, ("osm_roads", "secondary"))]},
+    # Highways sit ABOVE the basemap but BELOW animated data (radar, satellite): "under": True.
+    "major_highways": {"label": "Major highways (motorways, trunk routes)", "kind": "line", "under": True,
+                       "color": "#e39b3a", "opacity": 0.95, "width": 1, "min_km_px": 0.0, "max_km_px": 8.0,
+                       "sources": [(2.0, ("ne_roads", "major")),
+                                   (0.0, ("osm_roads", "motorway,trunk"))]},
+    "minor_highways": {"label": "Minor highways (primary routes)", "kind": "line", "under": True,
+                       "color": "#d9cfa6", "opacity": 0.7, "width": 1, "min_km_px": 0.0, "max_km_px": 1.5,
+                       "sources": [(0.0, ("osm_roads", "primary"))]},
 }
-DEFAULT_LAYER_ORDER = ["rivers", "river_banks", "lakes", "secondary", "primary", "trunk", "motorways",
+DEFAULT_LAYER_ORDER = ["minor_highways", "major_highways", "rivers", "river_banks", "lakes",
                        "municipal", "regional", "province", "country", "coastline"]
-DEFAULT_ON = {"coastline", "lakes", "river_banks", "rivers", "country", "province"}
+DEFAULT_ON = {"coastline", "lakes", "river_banks", "rivers", "country", "province", "major_highways", "minor_highways"}
 
 
 def layer_settings(overrides: dict | None):
@@ -124,8 +120,8 @@ def layer_settings(overrides: dict | None):
     return out
 
 
-SOURCE_LABELS = {"ne": "Natural Earth", "osm_admin": "OSM admin level", "osm_roads": "OSM roads",
-                 "osm_waterway": "OSM waterways"}
+SOURCE_LABELS = {"ne": "Natural Earth", "ne_roads": "Natural Earth roads", "osm_admin": "OSM admin level",
+                 "osm_roads": "OSM roads", "osm_waterway": "OSM waterways"}
 
 
 def describe_layers(view_km_px: float, overrides=None):
@@ -234,7 +230,7 @@ def _osm_line_pack(kind, value):
         pattern = {"osm_admin": "*_boundaries.geojson", "osm_roads": "*_roads.geojson",
                    "osm_waterway": "*_waterways.geojson"}[kind]
         tag = {"osm_admin": "admin_level", "osm_roads": "highway", "osm_waterway": "waterway"}[kind]
-        want = {value} if kind != "osm_roads" else {value, f"{value}_link"}
+        want = {value} if kind != "osm_roads" else {c for v in value.split(",") for c in (v, f"{v}_link")}
         seen, parts, groups, names = set(), [], [], {}
         for feat in _geojson_features(pattern):
             p = feat.get("properties") or {}
@@ -254,6 +250,30 @@ def _osm_line_pack(kind, value):
                 groups.append(gid)
         return _pack(parts, group=groups)
     return _cached_pack(f"osm2_{kind}_{value}", build)
+
+
+NE_ROAD_TYPES = {"major": {"Major Highway"}, "minor": {"Secondary Highway"}}
+
+
+@lru_cache(maxsize=4)
+def _ne_roads_pack(which):
+    def build():
+        import shapefile
+        p = NE_DIR / "ne_10m_roads.shp"
+        if not p.exists():
+            return _pack([])
+        sf = shapefile.Reader(str(p))
+        fields = [f[0] for f in sf.fields[1:]]
+        ti = fields.index("type")
+        parts = []
+        for sr in sf.iterShapeRecords():
+            if sr.record[ti] not in NE_ROAD_TYPES[which]:
+                continue
+            pts = np.asarray(sr.shape.points, dtype=np.float64)
+            idx = list(sr.shape.parts) + [len(pts)]
+            parts += [pts[a:b, :2] for a, b in zip(idx[:-1], idx[1:]) if b - a >= 2]
+        return _pack(parts)
+    return _cached_pack(f"ne_roads_{which}", build)
 
 
 def _group_lengths_km(pack, lonlat=None):
@@ -433,6 +453,8 @@ def edge_of(mask: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------
 def _lines_for(src, km_px, lonlat=None):
     kind, value = src
+    if kind == "ne_roads":
+        return _ne_roads_pack(value)
     if kind == "ne":
         pack = _ne_pack(value)
         if value == "ne_10m_rivers_lake_centerlines":
@@ -479,11 +501,16 @@ def _draw_lines(view, pack, width):
 # ---------------------------------------------------------------------------
 # Compose
 # ---------------------------------------------------------------------------
-def render_overlay(view: View, overrides: dict | None = None, min_feature_px: float = 3.0) -> np.ndarray:
-    """RGBA (h, w, 4) uint8 with every enabled, in-range layer for this view. Cached."""
-    layers = [s for s in layer_settings(overrides) if s["enabled"]]
+def render_overlay(view: View, overrides: dict | None = None, min_feature_px: float = 3.0,
+                   group: str = "over") -> np.ndarray:
+    """RGBA (h, w, 4) uint8 with every enabled, in-range layer of one group for this view. Cached.
+
+    group "under": drawn on the basemap, below animated data (highways).
+    group "over":  drawn on top of everything (coastlines, borders, rivers, boundaries)."""
+    all_layers = [s for s in layer_settings(overrides) if s["enabled"]]
+    layers = [s for s in all_layers if bool(s.get("under")) == (group == "under")]
     km_px = view.km_per_px
-    key = hashlib.sha1(json.dumps([view.key, layers, min_feature_px, MASK_VERSION],
+    key = hashlib.sha1(json.dumps([view.key, layers, min_feature_px, MASK_VERSION, group],
                                   sort_keys=True).encode()).hexdigest()[:16]
     cached = BASEMAP_CACHE / f"carto_{key}.png"
     if cached.exists():
@@ -497,7 +524,7 @@ def render_overlay(view: View, overrides: dict | None = None, min_feature_px: fl
     river_bank = shore & near["rivers"] & ~coast & ~lake_shore
     # Where a river is wide enough to show as water with two 1-px banks, its centre line is redundant;
     # where it's too narrow at this scale, the centre line stands in for it.
-    banks_on = any(s["key"] == "river_banks" and s["min_km_px"] <= km_px <= s["max_km_px"] for s in layers)
+    banks_on = any(s["key"] == "river_banks" and s["min_km_px"] <= km_px <= s["max_km_px"] for s in all_layers)
     resolved_rivers = ndimage.binary_dilation(rivers | river_bank, iterations=2) if banks_on else None
     out = np.zeros((view.h, view.w, 4), dtype=np.uint8)
     for s in layers:
