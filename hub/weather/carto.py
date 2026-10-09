@@ -5,17 +5,24 @@ detail far below a pixel piled up into thick, jagged lines (Vancouver Island's
 coast looked bolder than intended). Here every layer is tailored to the view's
 scale (km per LED pixel):
 
-* **Coastlines come from a land/water mask, not lines.** Water polygons are
-  rasterised at 4x, downsampled to LED pixels, specks smaller than a few pixels
-  are removed, and the coast is the 1-px edge between land and water. It can't
-  be thicker than one pixel, and islands too small to see simply vanish.
+* **Shorelines come from a land/water mask, not lines.** Ocean (OSM coastline
+  water polygons), lakes and river areas (OSM inland water polygons, Natural
+  Earth lakes) are rasterised at 4x and downsampled to LED pixels. Features
+  smaller than a few pixels are removed, and each shoreline — coast, lake
+  shore, river bank — is the 1-px edge between land and that kind of water. It
+  can't be thicker than one pixel, and detail too small to see simply vanishes.
 * **Each layer picks a source resolution for the scale** (OSM simplified vs
-  full water polygons; Natural Earth 1:50M vs 1:10M vs OSM boundaries).
+  full water polygons; Natural Earth 1:50M vs 1:10M vs OSM boundaries; Natural
+  Earth vs OSM rivers).
 * **Lines are clipped and simplified to the pixel grid** before drawing, and
   every layer has a visible scale range (municipal boundaries and minor roads
   only appear when zoomed in far enough to read them).
-* **Admin boundaries are masked to land**, so OSM's maritime boundary segments
-  don't draw lines across the water.
+* **Boundaries, rivers and roads are clipped to land pixels**, so OSM's
+  maritime boundary segments never draw across water.
+
+Big GeoJSON sources (OSM extracts are up to 80 MB) are parsed once into compact
+numpy packs under cache/geo/, so neither the maps job nor the hub holds raw
+GeoJSON in memory.
 """
 
 from __future__ import annotations
@@ -32,62 +39,72 @@ from scipy import ndimage
 from shapely.geometry import LineString, box
 from shapely import simplify as shp_simplify
 
-from hub.weather.geo import BASEMAP_CACHE, GEODATA_ROOT, View, _hex, to_merc
+from hub.weather.geo import BASEMAP_CACHE, GEODATA_ROOT, View, _hex
 
 SS = 4                      # supersampling factor for the land/water mask
 NE_DIR = GEODATA_ROOT / "borders"
 NE_VEC = GEODATA_ROOT / "geodata" / "vectors"
 OSM_DIR = GEODATA_ROOT / "geodata" / "osm"
-BCGW_DIR = GEODATA_ROOT / "geodata" / "bcgw"
 WATER_FULL = GEODATA_ROOT / "osm_water_cache" / "water-polygons-split-3857" / "water_polygons.shp"
 WATER_SIMPLE = GEODATA_ROOT / "osm_water_cache" / "simplified-water-polygons-split-3857" / "simplified_water_polygons.shp"
+GEO_CACHE = BASEMAP_CACHE.parent / "geo"
+MASK_VERSION = "v3"
+
+# OSM `water=*` values that are rivers rather than lakes
+RIVER_WATER = {"river", "canal", "stream", "riverbank", "rapids", "oxbow", "ditch", "tidal_channel"}
 
 
 # ---------------------------------------------------------------------------
 # Layer catalogue. min/max_km_px = the scale range where the layer is drawn
 # (km per LED pixel; smaller = more zoomed in). `sources` lists
-# (finest scale it is used down to, loader) — the first whose threshold the
+# (coarsest scale it's used from, source) — the first whose threshold the
 # view's scale is >= wins, so coarse data is used for wide views.
 # ---------------------------------------------------------------------------
 LAYERS = {
-    "coastline": {"label": "Coastline (from land/water mask)", "kind": "coast",
-                  "color": "#5a8fd6", "opacity": 0.9, "width": 1, "min_km_px": 0.0, "max_km_px": 1e9},
-    "lakes":     {"label": "Lake shores", "kind": "lakes",
-                  "color": "#4f7fc4", "opacity": 0.8, "width": 1, "min_km_px": 0.0, "max_km_px": 8.0},
-    "country":   {"label": "Country borders", "kind": "line",
-                  "color": "#c8c0e8", "opacity": 0.9, "width": 1, "min_km_px": 0.0, "max_km_px": 1e9,
-                  "sources": [(4.0, ("ne", "ne_50m_admin_0_boundary_lines_land")),
-                              (0.4, ("ne", "ne_10m_admin_0_boundary_lines_land")),
-                              (0.0, ("osm_admin", "2"))]},
-    "province":  {"label": "Province / state borders", "kind": "line",
-                  "color": "#8f84b8", "opacity": 0.85, "width": 1, "min_km_px": 0.0, "max_km_px": 40.0,
-                  "sources": [(4.0, ("ne", "ne_50m_admin_1_states_provinces_lines")),
-                              (0.4, ("ne", "ne_10m_admin_1_states_provinces_lines")),
-                              (0.0, ("osm_admin", "4"))]},
-    "regional":  {"label": "Regional districts / counties", "kind": "line",
-                  "color": "#6f6a92", "opacity": 0.7, "width": 1, "min_km_px": 0.0, "max_km_px": 1.5,
-                  "sources": [(0.0, ("osm_admin", "6"))]},
-    "municipal": {"label": "Municipal boundaries", "kind": "line",
-                  "color": "#5c5878", "opacity": 0.65, "width": 1, "min_km_px": 0.0, "max_km_px": 0.5,
-                  "sources": [(0.0, ("osm_admin", "8"))]},
-    "rivers":    {"label": "Major rivers", "kind": "line",
-                  "color": "#3f6fb8", "opacity": 0.7, "width": 1, "min_km_px": 0.4, "max_km_px": 12.0,
-                  "sources": [(0.0, ("ne", "ne_10m_rivers_lake_centerlines"))]},
-    "motorways": {"label": "Motorways", "kind": "line", "land_only": False,
-                  "color": "#d29a3a", "opacity": 0.75, "width": 1, "min_km_px": 0.0, "max_km_px": 3.0,
-                  "sources": [(0.0, ("osm_roads", "motorway"))]},
-    "trunk":     {"label": "Trunk roads", "kind": "line", "land_only": False,
-                  "color": "#b8873a", "opacity": 0.65, "width": 1, "min_km_px": 0.0, "max_km_px": 1.5,
-                  "sources": [(0.0, ("osm_roads", "trunk"))]},
-    "primary":   {"label": "Primary roads", "kind": "line", "land_only": False,
-                  "color": "#9a8a5a", "opacity": 0.6, "width": 1, "min_km_px": 0.0, "max_km_px": 0.6,
-                  "sources": [(0.0, ("osm_roads", "primary"))]},
-    "secondary": {"label": "Secondary roads", "kind": "line", "land_only": False,
-                  "color": "#7a7050", "opacity": 0.55, "width": 1, "min_km_px": 0.0, "max_km_px": 0.3,
-                  "sources": [(0.0, ("osm_roads", "secondary"))]},
+    "coastline":   {"label": "Coastline", "kind": "coast",
+                    "color": "#5a8fd6", "opacity": 0.9, "width": 1, "min_km_px": 0.0, "max_km_px": 1e9},
+    "lakes":       {"label": "Lake shores", "kind": "lake_shore",
+                    "color": "#4f7fc4", "opacity": 0.85, "width": 1, "min_km_px": 0.0, "max_km_px": 8.0},
+    # River shorelines appear wherever the river is wide enough at this scale to show as water with two
+    # 1-px banks; centre lines take over (automatically, per river) where it isn't.
+    "river_banks": {"label": "River shorelines (where wide enough)", "kind": "river_bank",
+                    "color": "#4f7fc4", "opacity": 0.85, "width": 1, "min_km_px": 0.0, "max_km_px": 3.0},
+    "rivers":      {"label": "River centre lines (where too narrow for shorelines)", "kind": "line",
+                    "color": "#3f6fb8", "opacity": 0.8, "width": 1, "min_km_px": 0.0, "max_km_px": 12.0,
+                    "sources": [(2.5, ("ne", "ne_10m_rivers_lake_centerlines")),
+                                (0.0, ("osm_waterway", "river"))]},
+    "country":     {"label": "Country borders", "kind": "line",
+                    "color": "#c8c0e8", "opacity": 0.9, "width": 1, "min_km_px": 0.0, "max_km_px": 1e9,
+                    "sources": [(4.0, ("ne", "ne_50m_admin_0_boundary_lines_land")),
+                                (0.4, ("ne", "ne_10m_admin_0_boundary_lines_land")),
+                                (0.0, ("osm_admin", "2"))]},
+    "province":    {"label": "Province / state borders", "kind": "line",
+                    "color": "#8f84b8", "opacity": 0.85, "width": 1, "min_km_px": 0.0, "max_km_px": 40.0,
+                    "sources": [(4.0, ("ne", "ne_50m_admin_1_states_provinces_lines")),
+                                (0.4, ("ne", "ne_10m_admin_1_states_provinces_lines")),
+                                (0.0, ("osm_admin", "4"))]},
+    "regional":    {"label": "Regional districts / counties", "kind": "line",
+                    "color": "#6f6a92", "opacity": 0.7, "width": 1, "min_km_px": 0.0, "max_km_px": 1.5,
+                    "sources": [(0.0, ("osm_admin", "6"))]},
+    "municipal":   {"label": "City / municipal boundaries", "kind": "line",
+                    "color": "#6e6e6e", "opacity": 1.0, "width": 1, "min_km_px": 0.0, "max_km_px": 0.6,
+                    "sources": [(0.0, ("osm_admin", "8"))]},
+    "motorways":   {"label": "Motorways", "kind": "line",
+                    "color": "#d29a3a", "opacity": 0.75, "width": 1, "min_km_px": 0.0, "max_km_px": 3.0,
+                    "sources": [(0.0, ("osm_roads", "motorway"))]},
+    "trunk":       {"label": "Trunk roads", "kind": "line",
+                    "color": "#b8873a", "opacity": 0.65, "width": 1, "min_km_px": 0.0, "max_km_px": 1.5,
+                    "sources": [(0.0, ("osm_roads", "trunk"))]},
+    "primary":     {"label": "Primary roads", "kind": "line",
+                    "color": "#9a8a5a", "opacity": 0.6, "width": 1, "min_km_px": 0.0, "max_km_px": 0.6,
+                    "sources": [(0.0, ("osm_roads", "primary"))]},
+    "secondary":   {"label": "Secondary roads", "kind": "line",
+                    "color": "#7a7050", "opacity": 0.55, "width": 1, "min_km_px": 0.0, "max_km_px": 0.3,
+                    "sources": [(0.0, ("osm_roads", "secondary"))]},
 }
-DEFAULT_LAYER_ORDER = ["lakes", "rivers", "secondary", "primary", "trunk", "motorways",
+DEFAULT_LAYER_ORDER = ["rivers", "river_banks", "lakes", "secondary", "primary", "trunk", "motorways",
                        "municipal", "regional", "province", "country", "coastline"]
+DEFAULT_ON = {"coastline", "lakes", "river_banks", "rivers", "country", "province"}
 
 
 def layer_settings(overrides: dict | None):
@@ -95,26 +112,36 @@ def layer_settings(overrides: dict | None):
     out = []
     overrides = overrides or {}
     order = overrides.get("_order") or DEFAULT_LAYER_ORDER
+    order = list(order) + [k for k in DEFAULT_LAYER_ORDER if k not in order]
     for key in order:
         if key not in LAYERS:
             continue
         base = {k: v for k, v in LAYERS[key].items() if k not in ("sources", "label", "kind")}
-        base["enabled"] = key in ("coastline", "lakes", "country", "province")
+        base["enabled"] = key in DEFAULT_ON
         base.update(overrides.get(key) or {})
         base["key"] = key
         out.append(base)
     return out
 
 
+SOURCE_LABELS = {"ne": "Natural Earth", "osm_admin": "OSM admin level", "osm_roads": "OSM roads",
+                 "osm_waterway": "OSM waterways"}
+
+
 def describe_layers(view_km_px: float, overrides=None):
-    """For the control panel: each layer, whether it's in range at this scale, and the data source it would use."""
+    """For the control panel: each layer, whether it's in range at this scale, and the data it would use."""
     rows = []
     for s in layer_settings(overrides):
         meta = LAYERS[s["key"]]
         in_range = s["min_km_px"] <= view_km_px <= s["max_km_px"]
         src = _pick_source(meta, view_km_px)
-        rows.append({**s, "label": meta["label"], "in_range": in_range,
-                     "source": src[1] if src else ("OSM water polygons" if meta["kind"] in ("coast", "lakes") else None)})
+        if src:
+            source = f"{SOURCE_LABELS.get(src[0], src[0])}: {src[1]}"
+        elif meta["kind"] == "coast":
+            source = "OSM coastline (simplified)" if view_km_px >= 1.5 else "OSM coastline (full detail)"
+        else:
+            source = "OSM inland water + Natural Earth lakes"
+        rows.append({**s, "label": meta["label"], "in_range": in_range, "source": source})
     return rows
 
 
@@ -126,12 +153,140 @@ def _pick_source(meta, km_px):
 
 
 # ---------------------------------------------------------------------------
-# Land / water mask
+# Compact geometry packs (parsed once from the big GeoJSON/shapefiles)
+# ---------------------------------------------------------------------------
+def _pack(parts, cls=None):
+    """parts: list of (n, 2) float arrays → {coords, offsets, bbox[, cls]} (lon/lat, float64 bbox)."""
+    if not parts:
+        return {"coords": np.zeros((0, 2), np.float64), "offsets": np.zeros(1, np.int64),
+                "bbox": np.zeros((0, 4), np.float64), "cls": np.zeros(0, np.uint8)}
+    lens = np.array([len(p) for p in parts], dtype=np.int64)
+    coords = np.concatenate(parts).astype(np.float64)
+    offsets = np.concatenate([[0], np.cumsum(lens)])
+    bbox = np.array([[p[:, 0].min(), p[:, 1].min(), p[:, 0].max(), p[:, 1].max()] for p in parts])
+    return {"coords": coords, "offsets": offsets, "bbox": bbox,
+            "cls": np.asarray(cls if cls is not None else np.zeros(len(parts)), dtype=np.uint8)}
+
+
+def _cached_pack(name, builder):
+    GEO_CACHE.mkdir(parents=True, exist_ok=True)
+    p = GEO_CACHE / f"{name}.npz"
+    if p.exists():
+        z = np.load(p)
+        return {k: z[k] for k in z.files}
+    data = builder()
+    np.savez(p, **data)
+    return data
+
+
+def _parts_in(pack, lonlat, pad=0.5):
+    lo0, la0, lo1, la1 = lonlat
+    bb = pack["bbox"]
+    if not len(bb):
+        return []
+    hit = np.flatnonzero((bb[:, 2] >= lo0 - pad) & (bb[:, 0] <= lo1 + pad) & (bb[:, 3] >= la0 - pad)
+                         & (bb[:, 1] <= la1 + pad))
+    off, xy = pack["offsets"], pack["coords"]
+    return [(xy[off[i]:off[i + 1]], int(pack["cls"][i])) for i in hit]
+
+
+def _geojson_features(pattern):
+    for f in sorted(OSM_DIR.glob(pattern)):
+        try:
+            yield from json.loads(f.read_text()).get("features", [])
+        except Exception:
+            continue
+
+
+@lru_cache(maxsize=32)
+def _ne_pack(name):
+    def build():
+        import shapefile
+        for d in (NE_DIR, NE_VEC):
+            p = d / f"{name}.shp"
+            if p.exists():
+                break
+        else:
+            return _pack([])
+        sf = shapefile.Reader(str(p))
+        fields = [f[0] for f in sf.fields[1:]]
+        rank_i = fields.index("scalerank") if "scalerank" in fields else None
+        parts, ranks = [], []
+        for sr in sf.iterShapeRecords():
+            s = sr.shape
+            pts = np.asarray(s.points, dtype=np.float64)
+            idx = list(s.parts) + [len(pts)]
+            rank = sr.record[rank_i] if rank_i is not None else 0
+            for a, b in zip(idx[:-1], idx[1:]):
+                if b - a >= 2:
+                    parts.append(pts[a:b, :2])
+                    ranks.append(min(255, int(rank or 0)))
+        return _pack(parts, ranks)
+    return _cached_pack(f"ne_{name}", build)
+
+
+@lru_cache(maxsize=32)
+def _osm_line_pack(kind, value):
+    """OSM lines (admin boundaries by level, roads by class, waterways by type), de-duplicated across region files."""
+    def build():
+        pattern = {"osm_admin": "*_boundaries.geojson", "osm_roads": "*_roads.geojson",
+                   "osm_waterway": "*_waterways.geojson"}[kind]
+        tag = {"osm_admin": "admin_level", "osm_roads": "highway", "osm_waterway": "waterway"}[kind]
+        want = {value} if kind != "osm_roads" else {value, f"{value}_link"}
+        seen, parts = set(), []
+        for feat in _geojson_features(pattern):
+            p = feat.get("properties") or {}
+            if p.get(tag) not in want:
+                continue
+            g = feat.get("geometry") or {}
+            geoms = [g.get("coordinates")] if g.get("type") == "LineString" else (g.get("coordinates") or [])
+            for part in geoms:
+                if not part or len(part) < 2:
+                    continue
+                sig = (round(part[0][0], 5), round(part[0][1], 5), round(part[-1][0], 5), round(part[-1][1], 5), len(part))
+                if sig in seen:
+                    continue
+                seen.add(sig)
+                parts.append(np.asarray([c[:2] for c in part], dtype=np.float64))
+        return _pack(parts)
+    return _cached_pack(f"osm_{kind}_{value}", build)
+
+
+@lru_cache(maxsize=4)
+def _inland_water_pack():
+    """OSM natural=water polygons (outer rings) classed 1 = lake/reservoir/pond, 2 = river/canal."""
+    def build():
+        seen, parts, cls = set(), [], []
+        for feat in _geojson_features("*_water_polygons.geojson"):
+            p = feat.get("properties") or {}
+            g = feat.get("geometry") or {}
+            t, c = g.get("type"), g.get("coordinates") or []
+            rings = []
+            if t == "Polygon" and c:
+                rings = [c[0]]
+            elif t == "MultiPolygon":
+                rings = [poly[0] for poly in c if poly]
+            elif t == "LineString" and len(c) >= 4 and c[0] == c[-1]:
+                rings = [c]
+            for r in rings:
+                if len(r) < 4:
+                    continue
+                sig = (round(r[0][0], 5), round(r[0][1], 5), len(r))
+                if sig in seen:
+                    continue
+                seen.add(sig)
+                parts.append(np.asarray([q[:2] for q in r], dtype=np.float64))
+                cls.append(2 if (p.get("water") in RIVER_WATER or p.get("waterway")) else 1)
+        return _pack(parts, cls)
+    return _cached_pack("osm_inland_water", build)
+
+
+# ---------------------------------------------------------------------------
+# Land / water masks
 # ---------------------------------------------------------------------------
 @lru_cache(maxsize=4)
 def _shp_bbox_index(shp_path: str):
-    """Per-record bounding boxes of a (large) shapefile, read straight from the
-    .shx/.shp headers and cached as .npy so we only ever parse records near the view."""
+    """Per-record bounding boxes of a (large) shapefile, read straight from the .shx/.shp headers."""
     shp = Path(shp_path)
     cache = BASEMAP_CACHE / f"idx_{hashlib.sha1(shp_path.encode()).hexdigest()[:10]}_{int(shp.stat().st_mtime)}.npy"
     if cache.exists():
@@ -140,15 +295,19 @@ def _shp_bbox_index(shp_path: str):
     boxes = np.zeros((len(shx), 4), dtype=np.float64)
     with open(shp, "rb") as f:
         for i, (off, _ln) in enumerate(shx):
-            f.seek(off * 2 + 8 + 4)                              # record header + shape type
+            f.seek(off * 2 + 8 + 4)
             boxes[i] = struct.unpack("<4d", f.read(32))
     BASEMAP_CACHE.mkdir(parents=True, exist_ok=True)
     np.save(cache, boxes)
     return boxes
 
 
-def _water_polys_in(view: View, shp_path: Path):
-    """Yield list-of-rings (pixel coords at SS scale) for water polygons touching the view (EPSG:3857 source)."""
+def _ring_is_outer(r):
+    x, y = r[:, 0], r[:, 1]
+    return (np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))) > 0
+
+
+def _draw_ocean(draw, view, shp_path):
     import shapefile
     idx = _shp_bbox_index(str(shp_path))
     x0, y0, x1, y1 = view.merc
@@ -159,61 +318,69 @@ def _water_polys_in(view: View, shp_path: Path):
         shp = sf.shape(int(i))
         pts = np.asarray(shp.points, dtype=np.float64)
         parts = list(shp.parts) + [len(pts)]
-        rings = []
-        for a, b in zip(parts[:-1], parts[1:]):
-            r = pts[a:b]
-            if len(r) >= 3:
-                rings.append(np.column_stack(((r[:, 0] - x0) * k, (y1 - r[:, 1]) * k)))
-        yield rings
-
-
-def _ring_is_outer(r):
-    # shapefile convention: outer rings clockwise (in y-up coords). We flipped y, so clockwise → positive area.
-    x, y = r[:, 0], r[:, 1]
-    return (np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))) > 0
-
-
-def land_mask(view: View, min_feature_px: float = 3.0) -> np.ndarray:
-    """bool (h, w): True = land."""
-    return water_masks(view, min_feature_px)[0]
-
-
-def water_masks(view: View, min_feature_px: float = 3.0):
-    """(land, ocean, lakes) bool masks at LED resolution. Cached per view."""
-    key = hashlib.sha1(json.dumps([view.key, min_feature_px, "v2"]).encode()).hexdigest()[:16]
-    cached = BASEMAP_CACHE / f"water_{key}.png"
-    if cached.exists():
-        a = np.asarray(Image.open(cached).convert("RGB"))
-        return a[..., 0] > 0, a[..., 1] > 0, a[..., 2] > 0
-    # Simplified OSM water polygons are plenty for wide views; full detail below ~1.5 km/px.
-    km_px = view.km_per_px
-    src = WATER_SIMPLE if km_px >= 1.5 or not WATER_FULL.exists() else WATER_FULL
-    W, H = view.w * SS, view.h * SS
-    img = Image.new("L", (W, H), 0)                       # 255 = ocean
-    draw = ImageDraw.Draw(img)
-    for rings in _water_polys_in(view, src):
+        rings = [np.column_stack(((pts[a:b, 0] - x0) * k, (y1 - pts[a:b, 1]) * k))
+                 for a, b in zip(parts[:-1], parts[1:]) if b - a >= 3]
         for r in rings:
             if _ring_is_outer(r):
                 draw.polygon(r.ravel().tolist(), fill=255)
         for r in rings:
             if not _ring_is_outer(r):
                 draw.polygon(r.ravel().tolist(), fill=0)
-    # Inland lakes aren't in the OSM ocean polygons: Natural Earth lakes, size-filtered below.
-    limg = Image.new("L", (W, H), 0)
-    _draw_lakes(ImageDraw.Draw(limg), view)
-    ocean = np.asarray(img.resize((view.w, view.h), Image.BOX), dtype=np.float32) >= 127.5
-    lakes = (np.asarray(limg.resize((view.w, view.h), Image.BOX), dtype=np.float32) >= 127.5) & ~ocean
-    # Islands / lakes / inlets smaller than min_feature_px LED pixels would only be noise at this scale.
-    land = ~(ocean | lakes)
+
+
+def _draw_lonlat_polys(draw, view, parts, fill=255):
+    for ring in parts:
+        px, py = view.project_many(ring[:, 0], ring[:, 1])
+        if len(px) >= 3 and (px.max() - px.min()) * SS >= 1 and (py.max() - py.min()) * SS >= 1:
+            draw.polygon(np.column_stack((px * SS, py * SS)).ravel().tolist(), fill=fill)
+
+
+def water_masks(view: View, min_feature_px: float = 3.0):
+    """(land, ocean, lakes, rivers) bool masks at LED resolution. Cached per view."""
+    key = hashlib.sha1(json.dumps([view.key, min_feature_px, MASK_VERSION]).encode()).hexdigest()[:16]
+    cached = BASEMAP_CACHE / f"water_{key}.png"
+    if cached.exists():
+        a = np.asarray(Image.open(cached).convert("RGBA"))
+        return a[..., 0] > 0, a[..., 1] > 0, a[..., 2] > 0, a[..., 3] > 0
+    km_px = view.km_per_px
+    W, H = view.w * SS, view.h * SS
+
+    ocean_img = Image.new("L", (W, H), 0)
+    _draw_ocean(ImageDraw.Draw(ocean_img), view,
+                WATER_SIMPLE if km_px >= 1.5 or not WATER_FULL.exists() else WATER_FULL)
+
+    lake_img, river_img = Image.new("L", (W, H), 0), Image.new("L", (W, H), 0)
+    ld, rd = ImageDraw.Draw(lake_img), ImageDraw.Draw(river_img)
+    # Natural Earth lakes everywhere (cover areas outside the OSM extracts) …
+    _draw_lonlat_polys(ld, view, [p for p, _ in _parts_in(_ne_pack("ne_10m_lakes"), view.lonlat)])
+    # … plus OSM inland water where we have it (lakes, reservoirs, river areas)
+    for ring, cls in _parts_in(_inland_water_pack(), view.lonlat, pad=0.05):
+        _draw_lonlat_polys(rd if cls == 2 else ld, view, [ring])
+
+    def down(img):
+        return np.asarray(img.resize((view.w, view.h), Image.BOX), dtype=np.float32) >= 127.5
+
+    ocean, lakes, rivers = down(ocean_img), down(lake_img), down(river_img)
+    lakes &= ~ocean
+    rivers &= ~ocean & ~lakes
+    # Islands, ponds and slivers smaller than min_feature_px LED pixels would be noise at this scale.
+    lakes = _drop_small(lakes, min_feature_px)
+    rivers = _drop_small(rivers, min_feature_px)
+    land = ~(ocean | lakes | rivers)
     land = _drop_small(land, min_feature_px)
-    lakes = _drop_small(lakes & ~land, min_feature_px)
-    land = ~(ocean | lakes)
-    land = ~_drop_small(~land, min_feature_px)
+    water = ~land
+    water_kept = _drop_small(water, min_feature_px)
+    land |= water & ~water_kept
     ocean &= ~land
     lakes &= ~land
+    rivers &= ~land
     BASEMAP_CACHE.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(np.dstack([land, ocean, lakes]).astype(np.uint8) * 255, "RGB").save(cached)
-    return land, ocean, lakes
+    Image.fromarray(np.dstack([land, ocean, lakes, rivers]).astype(np.uint8) * 255, "RGBA").save(cached)
+    return land, ocean, lakes, rivers
+
+
+def land_mask(view: View, min_feature_px: float = 3.0) -> np.ndarray:
+    return water_masks(view, min_feature_px)[0]
 
 
 def _drop_small(mask, min_px):
@@ -226,97 +393,40 @@ def _drop_small(mask, min_px):
     return keep[lab]
 
 
-def _draw_lakes(draw, view):
-    shp = NE_DIR / "ne_10m_lakes.shp"
-    if not shp.exists():
-        return
-    import shapefile
-    sf = shapefile.Reader(str(shp))
-    lo0, la0, lo1, la1 = view.lonlat
-    for s in sf.iterShapes():
-        bx = s.bbox
-        if bx[2] < lo0 or bx[0] > lo1 or bx[3] < la0 or bx[1] > la1:
-            continue
-        pts = np.asarray(s.points, dtype=np.float64)
-        parts = list(s.parts) + [len(pts)]
-        for j, (a, b) in enumerate(zip(parts[:-1], parts[1:])):
-            px, py = view.project_many(pts[a:b, 0], pts[a:b, 1])
-            ring = np.column_stack((px * SS, py * SS))
-            if len(ring) >= 3:
-                draw.polygon(ring.ravel().tolist(), fill=255 if j == 0 else 0)
-
-
 def edge_of(mask: np.ndarray) -> np.ndarray:
     """1-px boundary on the True side of a bool mask (4-neighbour)."""
-    m = mask
-    pad = np.pad(m, 1, mode="edge")
+    pad = np.pad(mask, 1, mode="edge")
     neighbour_false = (~pad[:-2, 1:-1]) | (~pad[2:, 1:-1]) | (~pad[1:-1, :-2]) | (~pad[1:-1, 2:])
-    return m & neighbour_false
+    return mask & neighbour_false
 
 
 # ---------------------------------------------------------------------------
 # Line layers
 # ---------------------------------------------------------------------------
-@lru_cache(maxsize=16)
-def _ne_lines(name):
-    import shapefile
-    for d in (NE_DIR, NE_VEC):
-        p = d / f"{name}.shp"
-        if p.exists():
-            break
-    else:
-        return []
-    sf = shapefile.Reader(str(p))
-    out = []
-    for s in sf.iterShapes():
-        pts = np.asarray(s.points, dtype=np.float64)
-        parts = list(s.parts) + [len(pts)]
-        for a, b in zip(parts[:-1], parts[1:]):
-            if b - a >= 2:
-                out.append((s.bbox, pts[a:b, :2]))
-    return out
-
-
-@lru_cache(maxsize=16)
-def _osm_lines(kind, value):
-    """OSM GeoJSON lines (admin boundaries by level, or roads by class), de-duplicated across region files."""
-    pattern = "*_boundaries.geojson" if kind == "osm_admin" else "*_roads.geojson"
-    want = {value} if kind == "osm_admin" else {value, f"{value}_link"}
-    seen, out = set(), []
-    for f in sorted(OSM_DIR.glob(pattern)):
-        for feat in json.loads(f.read_text()).get("features", []):
-            p = feat.get("properties") or {}
-            if (p.get("admin_level") if kind == "osm_admin" else p.get("highway")) not in want:
-                continue
-            g = feat.get("geometry") or {}
-            parts = [g["coordinates"]] if g.get("type") == "LineString" else (g.get("coordinates") or [])
-            for part in parts:
-                if len(part) < 2:
-                    continue
-                sig = (round(part[0][0], 5), round(part[0][1], 5), round(part[-1][0], 5), round(part[-1][1], 5), len(part))
-                if sig in seen:
-                    continue
-                seen.add(sig)
-                a = np.asarray(part, dtype=np.float64)[:, :2]
-                out.append(((a[:, 0].min(), a[:, 1].min(), a[:, 0].max(), a[:, 1].max()), a))
-    return out
-
-
-def _lines_for(src):
+def _lines_for(src, km_px):
     kind, value = src
-    return _ne_lines(value) if kind == "ne" else _osm_lines(kind, value)
+    if kind == "ne":
+        pack = _ne_pack(value)
+        if value == "ne_10m_rivers_lake_centerlines":
+            # thin out by importance as the view widens (scalerank 0 = most important)
+            max_rank = 3 if km_px >= 8 else 5 if km_px >= 4 else 7
+            keep = pack["cls"] <= max_rank
+            return {"coords": pack["coords"], "offsets": pack["offsets"],
+                    "bbox": np.where(keep[:, None], pack["bbox"], np.array([9e9, 9e9, -9e9, -9e9])),
+                    "cls": pack["cls"]}
+        return pack
+    return _osm_line_pack(kind, value)
 
 
-def _draw_lines(view, lines, width):
-    """Clip + simplify (0.5 px) + draw. Returns bool (h, w) mask."""
+def _draw_lines(view, pack, width):
+    """Clip + simplify (0.5 px) + draw. Returns a writable bool (h, w) mask."""
     img = Image.new("1", (view.w, view.h), 0)
     draw = ImageDraw.Draw(img)
-    lo0, la0, lo1, la1 = view.lonlat
     clip = box(-2, -2, view.w + 2, view.h + 2)
-    for bx, pts in lines:
-        if bx[2] < lo0 or bx[0] > lo1 or bx[3] < la0 or bx[1] > la1:
-            continue
+    for pts, _ in _parts_in(pack, view.lonlat, pad=0.2):
         px, py = view.project_many(pts[:, 0], pts[:, 1])
+        if px.max() < -2 or px.min() > view.w + 2 or py.max() < -2 or py.min() > view.h + 2:
+            continue
         geom = LineString(np.column_stack((px, py))).intersection(clip)
         if geom.is_empty:
             continue
@@ -324,7 +434,7 @@ def _draw_lines(view, lines, width):
         for part in getattr(geom, "geoms", [geom]):
             if part.geom_type == "LineString" and part.length >= 1:
                 draw.line([(round(x), round(y)) for x, y in part.coords], fill=1, width=width)
-    return np.array(img, dtype=bool)      # writable copy (PIL arrays are read-only)
+    return np.array(img, dtype=bool)
 
 
 # ---------------------------------------------------------------------------
@@ -334,33 +444,44 @@ def render_overlay(view: View, overrides: dict | None = None, min_feature_px: fl
     """RGBA (h, w, 4) uint8 with every enabled, in-range layer for this view. Cached."""
     layers = [s for s in layer_settings(overrides) if s["enabled"]]
     km_px = view.km_per_px
-    key = hashlib.sha1(json.dumps([view.key, layers, min_feature_px, "v1"], sort_keys=True).encode()).hexdigest()[:16]
+    key = hashlib.sha1(json.dumps([view.key, layers, min_feature_px, MASK_VERSION],
+                                  sort_keys=True).encode()).hexdigest()[:16]
     cached = BASEMAP_CACHE / f"carto_{key}.png"
     if cached.exists():
         return np.asarray(Image.open(cached).convert("RGBA"))
 
-    land, ocean, lakes = water_masks(view, min_feature_px)
+    land, ocean, lakes, rivers = water_masks(view, min_feature_px)
     shore = edge_of(land)
+    near = {name: ndimage.binary_dilation(m) for name, m in (("ocean", ocean), ("lakes", lakes), ("rivers", rivers))}
+    coast = shore & near["ocean"]
+    lake_shore = shore & near["lakes"] & ~coast
+    river_bank = shore & near["rivers"] & ~coast & ~lake_shore
+    # Where a river is wide enough to show as water with two 1-px banks, its centre line is redundant;
+    # where it's too narrow at this scale, the centre line stands in for it.
+    banks_on = any(s["key"] == "river_banks" and s["min_km_px"] <= km_px <= s["max_km_px"] for s in layers)
+    resolved_rivers = ndimage.binary_dilation(rivers | river_bank, iterations=2) if banks_on else None
     out = np.zeros((view.h, view.w, 4), dtype=np.uint8)
     for s in layers:
         if not (s["min_km_px"] <= km_px <= s["max_km_px"]):
             continue
         meta = LAYERS[s["key"]]
-        if meta["kind"] == "coast":
-            m = shore & ndimage.binary_dilation(ocean)          # land pixels touching the sea
-        elif meta["kind"] == "lakes":
-            m = shore & ndimage.binary_dilation(lakes) & ~ndimage.binary_dilation(ocean)
+        kind = meta["kind"]
+        if kind == "coast":
+            m = coast
+        elif kind == "lake_shore":
+            m = lake_shore
+        elif kind == "river_bank":
+            m = river_bank
         else:
             src = _pick_source(meta, km_px)
             if not src:
                 continue
-            m = _draw_lines(view, _lines_for(src), int(s.get("width", 1)))
-            if meta.get("land_only", True):
-                m &= ndimage.binary_dilation(land, iterations=1)     # no boundary lines across open water
-        rgb = np.array(_hex(s["color"]), dtype=np.uint8)
-        a = int(255 * float(s.get("opacity", 1.0)))
-        out[m, :3] = rgb
-        out[m, 3] = a
+            m = _draw_lines(view, _lines_for(src, km_px), int(s.get("width", 1)))
+            m &= land                          # strictly on land: nothing drawn across water
+            if s["key"] == "rivers" and resolved_rivers is not None:
+                m &= ~resolved_rivers          # centre lines only where the banks can't be resolved
+        out[m, :3] = np.array(_hex(s["color"]), dtype=np.uint8)
+        out[m, 3] = int(255 * float(s.get("opacity", 1.0)))
     BASEMAP_CACHE.mkdir(parents=True, exist_ok=True)
     Image.fromarray(out, "RGBA").save(cached)
     return out
