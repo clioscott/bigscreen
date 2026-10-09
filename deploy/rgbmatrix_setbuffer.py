@@ -38,7 +38,22 @@ METHOD = '''
 '''
 
 
+PILLOW_STUB = """/* bigscreen: Pillow-free stub. Upstream reads Pillow's private Imaging.h struct for
+ * SetImage(unsafe=True); we never use that path (SetBuffer replaces it), and the header
+ * isn't installed with Pillow wheels. Returning NULL keeps the symbol linkable. */
+#include <stddef.h>
+#include "pillow.h"
+
+int** get_image32(void* im) {
+    (void) im;
+    return NULL;
+}
+"""
+
+
 def main(root):
+    shim = Path(root) / "bindings" / "python" / "rgbmatrix" / "shims" / "pillow.c"
+    shim.write_text(PILLOW_STUB)
     core = Path(root) / "bindings" / "python" / "rgbmatrix" / "core.pyx"
     src = core.read_text()
     if MARK in src:
