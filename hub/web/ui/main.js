@@ -93,5 +93,6 @@ const App = {
 };
 
 const app = createApp(App);
+for (const [name, comp] of Object.entries(common)) app.component(name, comp);   // shared widgets everywhere
 app.directive("sortable", vSortable);
 app.mount("#app");
