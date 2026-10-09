@@ -1,0 +1,19 @@
+[Unit]
+Description=BigScreen hub - fetch jobs, config, control panel (port 8800)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=scott
+WorkingDirectory=/home/scott/bigscreen
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/scott/bigscreen/.venv/bin/python -m hub.main
+Restart=always
+RestartSec=5
+# Belt and braces on top of per-job subprocesses: never let the hub eat the server.
+MemoryMax=1G
+SyslogIdentifier=bigscreen-hub
+
+[Install]
+WantedBy=multi-user.target

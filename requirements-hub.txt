@@ -1,0 +1,11 @@
+fastapi==0.115.12
+uvicorn==0.34.2
+requests==2.32.3
+pillow>=11
+numpy>=2
+yfinance>=0.2.54
+pandas>=2.2
+pytz
+google-api-python-client>=2.160
+google-auth>=2.38
+google-auth-oauthlib>=1.2

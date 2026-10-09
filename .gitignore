@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+_snapshot/
+*.log
+# runtime state lives outside the repo (~/bigscreen-state), but guard against strays
+state/
+token.pickle
+credentials.json

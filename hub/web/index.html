@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BigScreen</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">BigScreen <span class="muted">control</span></div>
+  <nav id="tabs">
+    <button data-tab="status" class="active">Status</button>
+    <button data-tab="ticker">Ticker</button>
+    <button data-tab="headlines">Headlines</button>
+  </nav>
+  <div id="display-banner" class="banner" hidden>
+    <span>Display is running older settings.</span>
+    <button id="apply-btn" class="primary">Apply to display</button>
+  </div>
+</header>
+
+<main>
+  <!-- STATUS -->
+  <section id="tab-status" class="tab">
+    <h2>Data feeds</h2>
+    <div id="jobs" class="cards"></div>
+    <h2>Display</h2>
+    <div id="display-info" class="card"></div>
+  </section>
+
+  <!-- TICKER -->
+  <section id="tab-ticker" class="tab" hidden>
+    <div class="toolbar">
+      <h2>Stock ticker</h2>
+      <div class="spacer"></div>
+      <span id="ticker-dirty" class="dirty" hidden>Unsaved changes</span>
+      <button id="ticker-revert" disabled>Revert</button>
+      <button id="ticker-save" class="primary" disabled>Save</button>
+    </div>
+    <p class="muted">Drag rows to reorder. The ticker shows them left to right in this order. Leave width blank to use the automatic width.</p>
+    <div class="add-row">
+      <input id="ticker-search" placeholder="Add a ticker: search by symbol or company name…" autocomplete="off">
+      <div id="ticker-results" class="dropdown" hidden></div>
+    </div>
+    <div class="grid-wrap">
+      <table class="grid" id="ticker-table">
+        <thead><tr><th></th><th>On</th><th>Logo</th><th>Symbol</th><th>Label</th><th>Width px</th><th>Now</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <details class="settings">
+      <summary>Ticker settings</summary>
+      <div class="form">
+        <label>Refresh every (seconds) <input type="number" min="30" id="fin-refresh"></label>
+        <label>Hold each page (seconds) <input type="number" min="1" id="fin-hold"></label>
+      </div>
+    </details>
+  </section>
+
+  <!-- HEADLINES -->
+  <section id="tab-headlines" class="tab" hidden>
+    <div class="toolbar">
+      <h2>Headlines</h2>
+      <div class="spacer"></div>
+      <span id="news-dirty" class="dirty" hidden>Unsaved changes</span>
+      <button id="news-revert" disabled>Revert</button>
+      <button id="news-save" class="primary" disabled>Save</button>
+    </div>
+    <div class="form inline">
+      <label>Items per category <input type="number" min="3" max="40" id="news-items"></label>
+      <label>Max per outlet <input type="number" min="1" max="20" id="news-per-source"></label>
+      <label>Max age (hours) <input type="number" min="1" max="168" id="news-age"></label>
+      <label>Refresh every (minutes) <input type="number" min="5" id="news-refresh"></label>
+    </div>
+    <div id="categories"></div>
+    <button id="add-category">+ Add category</button>
+  </section>
+</main>
+
+<dialog id="icon-dialog">
+  <form method="dialog" class="dialog-body">
+    <h3>Logo for <span id="icon-sym"></span></h3>
+    <div class="icon-current"><img id="icon-preview" alt=""></div>
+    <label>Fetch from website <span class="row"><input id="icon-domain" placeholder="amd.com"><button type="button" id="icon-fetch">Fetch</button></span></label>
+    <label>Upload image <input type="file" id="icon-file" accept="image/*"></label>
+    <label>Or reuse an existing logo <select id="icon-existing"></select></label>
+    <p id="icon-msg" class="muted"></p>
+    <div class="row end"><button value="cancel">Close</button></div>
+  </form>
+</dialog>
+
+<div id="toast" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
