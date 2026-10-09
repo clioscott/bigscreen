@@ -48,7 +48,7 @@ OSM_DIR = GEODATA_ROOT / "geodata" / "osm"
 WATER_FULL = GEODATA_ROOT / "osm_water_cache" / "water-polygons-split-3857" / "water_polygons.shp"
 WATER_SIMPLE = GEODATA_ROOT / "osm_water_cache" / "simplified-water-polygons-split-3857" / "simplified_water_polygons.shp"
 GEO_CACHE = BASEMAP_CACHE.parent / "geo"
-MASK_VERSION = "v6"
+MASK_VERSION = "v7"
 
 # OSM `water=*` values that are rivers rather than lakes
 RIVER_WATER = {"river", "canal", "stream", "riverbank", "rapids", "oxbow", "ditch", "tidal_channel"}
@@ -480,21 +480,34 @@ def _subset(pack, keep):
 
 
 def _draw_lines(view, pack, width):
-    """Clip + simplify (0.5 px) + draw. Returns a writable bool (h, w) mask."""
+    """Clip, join, simplify (0.5 px) and draw. Returns a writable bool (h, w) mask.
+
+    OSM splits roads and rivers into short ways between intersections; joining connected pieces
+    before simplifying keeps lines continuous instead of dropping sub-pixel pieces (dashes)."""
+    from shapely.geometry import MultiLineString
+    from shapely.ops import linemerge
     img = Image.new("1", (view.w, view.h), 0)
     draw = ImageDraw.Draw(img)
     clip = box(-2, -2, view.w + 2, view.h + 2)
+    pieces = []
     for pts, _ in _parts_in(pack, view.lonlat, pad=0.2):
         px, py = view.project_many(pts[:, 0], pts[:, 1])
         if px.max() < -2 or px.min() > view.w + 2 or py.max() < -2 or py.min() > view.h + 2:
             continue
         geom = LineString(np.column_stack((px, py))).intersection(clip)
-        if geom.is_empty:
-            continue
-        geom = shp_simplify(geom, 0.5, preserve_topology=False)
         for part in getattr(geom, "geoms", [geom]):
-            if part.geom_type == "LineString" and part.length >= 1:
-                draw.line([(round(x), round(y)) for x, y in part.coords], fill=1, width=width)
+            if part.geom_type == "LineString" and not part.is_empty:
+                pieces.append(part)
+    if pieces:
+        merged = linemerge(MultiLineString(pieces))
+        merged = shp_simplify(merged, 0.5, preserve_topology=False)
+        for part in getattr(merged, "geoms", [merged]):
+            if part.geom_type == "LineString" and not part.is_empty:
+                coords = [(round(x), round(y)) for x, y in part.coords]
+                if len(coords) == 1 or len(set(coords)) == 1:
+                    draw.point(coords[0], fill=1)
+                else:
+                    draw.line(coords, fill=1, width=width)
     return np.array(img, dtype=bool)
 
 
