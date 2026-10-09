@@ -48,6 +48,7 @@ function showTab(name) {
   $$("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
   $$(".tab").forEach((s) => (s.hidden = s.id !== `tab-${name}`));
   try { localStorage.setItem("tab", name); } catch {}
+  history.replaceState(null, "", `#${name}`);
   if (name === "ticker") refreshQuotes();
   if (name === "headlines") refreshHeadlines();
 }
@@ -397,8 +398,11 @@ window.addEventListener("beforeunload", (e) => {
   CFG = await api("/api/config");
   loadTickerDraft();
   loadNewsDraft();
-  let tab = "status";
-  try { tab = localStorage.getItem("tab") || "status"; } catch {}
+  let tab = location.hash.slice(1);
+  if (!$(`#tab-${tab}`)) {
+    tab = "status";
+    try { tab = localStorage.getItem("tab") || "status"; } catch {}
+  }
   showTab(tab);
   refreshStatus();
   setInterval(refreshStatus, 5000);
