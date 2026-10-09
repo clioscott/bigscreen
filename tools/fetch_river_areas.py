@@ -14,7 +14,8 @@ from shapely.ops import linemerge, polygonize, unary_union
 
 from hub.weather.carto import OSM_DIR
 
-OVERPASS = "https://overpass-api.de/api/interpreter"
+OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter",
+            "https://overpass.kumi.systems/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter"]
 
 
 def main():
@@ -28,9 +29,19 @@ def main():
   relation["waterway"="riverbank"]({s},{w},{n},{e});
 );
 out geom;"""
-    r = requests.post(OVERPASS, data={"data": q}, timeout=240,
-                      headers={"User-Agent": "BigScreen/2.0 (personal LED weather display; one-off extract)"})
-    r.raise_for_status()
+    r = None
+    for url in OVERPASS:                     # public instances; the main one is often overloaded
+        try:
+            r = requests.post(url, data={"data": q}, timeout=240,
+                              headers={"User-Agent": "BigScreen/2.0 (personal LED weather display; one-off extract)"})
+            if r.ok and r.headers.get("content-type", "").startswith("application/json"):
+                break
+            print(f"{url}: HTTP {r.status_code}")
+        except requests.RequestException as e:
+            print(f"{url}: {e}")
+        r = None
+    if r is None:
+        raise SystemExit("all Overpass servers failed; try again later")
     feats = []
     for el in r.json().get("elements", []):
         tags = el.get("tags", {})
