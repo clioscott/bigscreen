@@ -116,7 +116,7 @@ class CycleEngine:
             if not isinstance(raw, dict):
                 continue
             panel = (raw.get("panel") or "").strip()
-            if panel not in KNOWN_PANELS:
+            if not panel:   # any name; the renderer skips panels it does not have
                 continue
             dwell = _resolve_dwell_sec(raw, default_dwell_sec)
             when = (raw.get("when") or "always").strip()
@@ -265,7 +265,7 @@ class CycleEngine:
             if not isinstance(raw, dict):
                 continue
             panel = (raw.get("panel") or "").strip()
-            if panel not in KNOWN_PANELS:
+            if not panel:   # any name; the renderer skips panels it does not have
                 continue
             dwell = _resolve_dwell_sec(raw, default_dwell_sec)
             when = (raw.get("when") or "always").strip()

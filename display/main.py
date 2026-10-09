@@ -114,7 +114,7 @@ class EmulatorOutput:
 class Screen:
     """Owns the modules for one effective config. Rebuilt when the config changes."""
 
-    def __init__(self, cfg, loader):
+    def __init__(self, cfg, loader, prev=None):
         from display.modules.calendar import CalendarRenderer
         from display.modules.client_calls import ClientCallsRenderer
         from display.modules.clock import ClockRenderer
@@ -147,9 +147,19 @@ class Screen:
         self.loader = loader
 
         cyc = cfg.modules.get("layout_cycle", {}) or {}
-        self.engines = {"left": CycleEngine("left", cyc.get("left", [])),
-                        "right": CycleEngine("right", cyc.get("right", []))}
-        self.prev = {"left": None, "right": None}
+        self.cycle_raw = {side: cyc.get(side, []) for side in ("left", "right")}
+        if prev is None:
+            self.engines = {side: CycleEngine(side, self.cycle_raw[side]) for side in ("left", "right")}
+            self.prev = {"left": None, "right": None}
+        else:
+            # Keep rotation position + overrides across config changes (saves, previews).
+            self.engines = prev.engines
+            for side in ("left", "right"):
+                if self.cycle_raw[side] != prev.cycle_raw.get(side):
+                    self.engines[side].reload_cycle(self.cycle_raw[side])
+            self.prev = dict(prev.prev)
+            self.finance.scroll_x = prev.finance.scroll_x
+            self.finance.last_scroll_time = prev.finance.last_scroll_time
         # panel name -> draw(canvas, zone, entry, transition) -> "done" | None
         self.panels = {
             "calendar": self._draw_calendar,
@@ -298,7 +308,7 @@ class App:
                 self.restart_requested = True
                 return
         try:
-            screen = Screen(new, self.loader)
+            screen = Screen(new, self.loader, prev=self.screen)
         except Exception:
             self.errors.append(traceback.format_exc()[-600:])
             print("[display] new config failed to build, keeping previous:\n" + traceback.format_exc())
