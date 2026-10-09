@@ -93,6 +93,7 @@ export const MapEditor = {
     const refreshPreview = () => {
       clearTimeout(pt);
       pt = setTimeout(async () => {
+        if (!t.value) return;
         const a = wm.value.areas[t.value.area];
         if (!a) return;
         try {
@@ -226,5 +227,7 @@ export const MapEditor = {
       </div>
     </div>
   </div>
-  <div class="page" v-else><div class="empty">That map doesn't exist. <a href="#/maps">Back to maps</a></div></div>`,
+  <div class="page" v-else><div class="empty">That map doesn't exist. <a href="#/maps">Back to maps</a></div></div>
+  <div class="page" v-else><div class="empty"><Icon name="MapPinOff" :size="28"/><h3>No map called “{{ tid }}”</h3>
+    <button class="btn" @click="go('maps')"><Icon name="ArrowLeft" :size="14"/>All weather maps</button></div></div>`,
 };
