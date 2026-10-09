@@ -3,12 +3,20 @@
 // Uses helpers from app.js: $, $$, clone, esc, api, toast, CFG, saveSection, ago.
 
 let wm = null;            // draft of modules.weather_maps
+let wmBaseline = "";      // normalised saved copy, for the dirty check
 let wmCatalog = null;
 let wmState = { tracks: {}, packs: {} };
 let wmEditing = null;     // {kind: "track"|"area", id}
 const players = {};
 
-function wmDirty() { return JSON.stringify(wm) !== JSON.stringify(CFG.modules.weather_maps || {}); }
+function wmNormalise(src) {
+  const d = clone(src || {});
+  d.areas = d.areas || {};
+  d.tracks = d.tracks || {};
+  d.palettes = d.palettes || {};
+  return d;
+}
+function wmDirty() { return JSON.stringify(wm) !== wmBaseline; }
 function markWm() {
   const d = wmDirty();
   $("#wm-dirty").hidden = !d;
@@ -25,10 +33,8 @@ async function enterWeatherTab() {
   renderWm();
 }
 function loadWmDraft() {
-  wm = clone(CFG.modules.weather_maps || { areas: {}, tracks: {} });
-  wm.areas = wm.areas || {};
-  wm.tracks = wm.tracks || {};
-  wm.palettes = wm.palettes || {};
+  wm = wmNormalise(CFG.modules.weather_maps);
+  wmBaseline = JSON.stringify(wm);
   markWm();
 }
 async function refreshWmState() {
@@ -38,8 +44,7 @@ async function refreshWmState() {
 $("#wm-save").addEventListener("click", async () => {
   try {
     await saveSection("weather_maps", wm, "weather maps edited");
-    wm = clone(CFG.modules.weather_maps);
-    markWm();
+    loadWmDraft();
     toast("Saved. Re-rendering changed maps (takes up to a minute)");
     setTimeout(async () => { await refreshWmState(); renderWm(); }, 20000);
   } catch (e) { toast(e.message, true); }

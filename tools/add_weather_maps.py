@@ -58,6 +58,9 @@ def main():
     else:
         cfg["modules"]["weather_maps"] = {"job_interval_sec": 180, "areas": AREAS, "tracks": TRACKS}
     cyc = cfg["modules"].get("layout_cycle", {})
+    if any(e.get("panel", "").startswith("weather_panels") for s in cyc.values() for e in s):
+        import copy
+        cfg.setdefault("hub", {})["v1_layout_cycle"] = copy.deepcopy(cyc)     # what the v1 display keeps getting
     for side in ("left", "right"):
         cyc[side] = [convert_entry(e) for e in cyc.get(side, [])]
     config.save(cfg, reason="weather maps v2 config")

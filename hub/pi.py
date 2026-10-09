@@ -41,6 +41,12 @@ def ssh(cfg, command, input_text=None, timeout=30):
 def v1_config(cfg):
     """The hub config reshaped for the v1 display (it pages headlines by `subreddits`)."""
     out = copy.deepcopy(cfg)
+    # v1 only understands its own panel types: keep sending it the rotation it had before the
+    # v2 weather maps replaced weather_panels_* entries (saved at conversion time).
+    v1_cycle = cfg.get("hub", {}).get("v1_layout_cycle")
+    if v1_cycle:
+        out.setdefault("modules", {})["layout_cycle"] = copy.deepcopy(v1_cycle)
+    out.get("modules", {}).pop("weather_maps", None)
     for k in ("hub", "revision", "saved_at", "saved_reason"):
         out.pop(k, None)
     h = out.get("modules", {}).get("headlines", {})
