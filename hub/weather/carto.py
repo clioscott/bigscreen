@@ -324,7 +324,7 @@ def _draw_lines(view, lines, width):
         for part in getattr(geom, "geoms", [geom]):
             if part.geom_type == "LineString" and part.length >= 1:
                 draw.line([(round(x), round(y)) for x, y in part.coords], fill=1, width=width)
-    return np.asarray(img, dtype=bool)
+    return np.array(img, dtype=bool)      # writable copy (PIL arrays are read-only)
 
 
 # ---------------------------------------------------------------------------
