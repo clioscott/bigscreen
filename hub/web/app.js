@@ -545,10 +545,29 @@ $("#disp-preview").addEventListener("click", () => startPreview(
   { modules: { layout_cycle: clone(disp.cycle) }, system: { display: clone(disp.display), night_mode: clone(disp.night) } },
   saveDisp));
 
+function syncOverrideSub() {
+  const p = $("#ov-panel").value;
+  const tracks = (CFG.modules.weather_maps || {}).tracks || {};
+  let opts = null;
+  if (p === "map" || p === "map_full") {
+    opts = Object.entries(tracks).filter(([, t]) => (t.size === "full") === (p === "map_full")).map(([id, t]) => [id, t.label || id]);
+    $("#ov-sub-label").textContent = "Map";
+  } else if (p === "weather" || p === "weather_full") {
+    opts = ["current", "hourly", "forecast", "warning"].map((w) => [w, w]);
+    $("#ov-sub-label").textContent = "Screen";
+  }
+  $("#ov-sub-wrap").hidden = !opts;
+  if (opts) $("#ov-sub").innerHTML = opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
+}
+$("#ov-panel").addEventListener("change", syncOverrideSub);
 $("#ov-show").addEventListener("click", async () => {
   const dur = $("#ov-dur").value;
+  const p = $("#ov-panel").value;
+  const body = { side: $("#ov-side").value, panel: p, duration_sec: dur ? +dur : null };
+  if (p.startsWith("map")) body.track = $("#ov-sub").value;
+  if (p.startsWith("weather")) body.weather_screen = $("#ov-sub").value;
   try {
-    await api("/api/display/override", { json: { side: $("#ov-side").value, panel: $("#ov-panel").value, duration_sec: dur ? +dur : null } });
+    await api("/api/display/override", { json: body });
     toast("Showing now");
   } catch (e) { toast(e.message, true); }
 });
@@ -608,6 +627,7 @@ window.addEventListener("beforeunload", (e) => {
   loadNewsDraft();
   loadDispDraft();
   $("#ov-panel").innerHTML = displayPanels.map((n) => `<option value="${n}">${esc(PANEL_LABELS[n] || n)}</option>`).join("");
+  syncOverrideSub();
   setInterval(refreshDisplayStats, 2000);
   let tab = location.hash.slice(1);
   if (!$(`#tab-${tab}`)) {

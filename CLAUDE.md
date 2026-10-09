@@ -47,12 +47,27 @@ happens on a separate server; the Pi only renders. Research and history: `RESEAR
 - Emulate anywhere: `BIGSCREEN_DATA_DIR=… python -m display.main --emulate --port 8799`.
 - Update the Pi: `ssh scott@192.168.1.100 'cd ~/bigscreen && git pull && sudo systemctl restart bigscreen-display'`.
 
-**v1 renderer** (`~/bigscreen-calendar`, service `bigscreen-client`) still drives the panels until the
-weather/radar rebuild lands. It reads its own `config/app-config.json` only at startup, so the panel's
-**Apply to display** writes that file (`hub/pi.py:v1_config`), syncs logos, and restarts it. The two
-units conflict, so starting one stops the other.
+**Since 2026-10-09 v2 drives the panels** (`bigscreen-display` enabled at boot; hub `hub.display_mode = "v2"`,
+so saves hot-reload — no restart). Pi boot line has `isolcpus=2,3`: render thread pinned to core 2, rgbmatrix
+refresh thread on core 3. Backups: `/boot/firmware/cmdline.txt.pre-v2`.
+
+**Rollback to v1** (kept installed): `sudo systemctl disable --now bigscreen-display && sudo systemctl enable --now bigscreen-client`
+on the Pi, set `hub.display_mode` to `"v1"`, and on the server restore `~/bigscreen-server/server/sync.py.pre-v2`
+and `config/app-config.json.pre-v2` (v1's server was neutralised: fetchers off, sync pointed at an invalid host).
+`hub/pi.py:v1_config` still produces v1's config, using `hub.v1_layout_cycle` (v1's own rotation).
 
 Profiling on the Pi: `sudo /tmp/pyspy/bin/py-spy record --pid <pid> --duration 20 --format raw -o out`.
+
+## Weather maps
+
+- `hub/weather/`: `geo.py` (areas = centre + km/px → mercator view; XYZ tile basemaps), `carto.py`
+  (scale-aware coastlines from a land/water mask, per-scale data sources, pixel-grid simplification,
+  land-clipped boundaries), `wms.py` (GeoMet + legend → number decoders), `radar.py` (6-min archive up to 48 h,
+  TV colours, rolling totals with snow-on-top), `tracks.py` (renders packs). Job: `hub/jobs/maps.py` (every 3 min).
+- Packs: `data/anim/<track>.bin|.json` → Pi `/dev/shm/bigscreen/anim`, played by `display/modules/weather_maps.py`.
+- Geodata lives in v1's `~/bigscreen-server/data` (override with `BIGSCREEN_GEODATA`); caches in `~/bigscreen-state/cache`.
+- Config: `modules.weather_maps.{areas,tracks,palettes}`; edited on the panel's Weather tab.
+- MSC usage policy: ≤ ~86k req/day, no bulk tile scraping, meaningful UA, show "ECCC" attribution (the map panel does).
 
 ## Rules
 
