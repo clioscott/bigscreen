@@ -54,7 +54,7 @@ OSM_DIR = GEODATA_ROOT / "geodata" / "osm"
 WATER_FULL = GEODATA_ROOT / "osm_water_cache" / "water-polygons-split-3857" / "water_polygons.shp"
 WATER_SIMPLE = GEODATA_ROOT / "osm_water_cache" / "simplified-water-polygons-split-3857" / "simplified_water_polygons.shp"
 GEO_CACHE = BASEMAP_CACHE.parent / "geo"
-MASK_VERSION = "v10"
+MASK_VERSION = "v11"
 CHANNEL_FINE_KM = 0.25      # resolution used to find straits/inlets narrower than an LED pixel
 CHANNEL_FINE_MAX_W = 8000   # cap on that raster's width (px)
 CHANNEL_MIN_PX = 6          # a lost channel/inlet/narrow lake is kept if it runs at least this many LED px …
@@ -410,6 +410,53 @@ def _prune_spurs(sk, n, keep):
     return sk
 
 
+_RING = [(-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1)]
+
+
+@lru_cache(maxsize=1)
+def _thin_table():
+    """For each 8-neighbour water pattern: may the centre water pixel become land without changing topology?
+    (water 4-connected, land 8-connected; tips of dead-end channels are kept)."""
+    out = np.zeros(256, dtype=bool)
+    for m in range(256):
+        win = np.zeros((3, 3), dtype=bool)
+        for b, (dy, dx) in enumerate(_RING):
+            win[1 + dy, 1 + dx] = bool(m >> b & 1)
+        if win[0, 1] + win[1, 0] + win[1, 2] + win[2, 1] < 2:
+            continue
+        wl, _ = ndimage.label(win)                                   # 4-connected water, centre excluded
+        touching = {wl[1 + dy, 1 + dx] for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)) if win[1 + dy, 1 + dx]}
+        land = ~win
+        land[1, 1] = False
+        ll, nl = ndimage.label(land, structure=np.ones((3, 3)))
+        out[m] = len(touching) == 1 and nl == 1
+    return out
+
+
+def _thin_channels(coarse, ch):
+    """Thin added channel water to 1-px, 4-connected lines; existing water is never touched."""
+    table = _thin_table()
+    water = np.pad(coarse | ch, 1)
+    ys, xs = np.nonzero(ch)
+    pts = list(zip((ys + 1).tolist(), (xs + 1).tolist()))
+    changed = True
+    while changed:
+        changed = False
+        keep = []
+        for y, x in pts:
+            m = 0
+            for b, (dy, dx) in enumerate(_RING):
+                if water[y + dy, x + dx]:
+                    m |= 1 << b
+            if table[m]:
+                water[y, x] = False
+                changed = True
+            else:
+                keep.append((y, x))
+        pts = keep
+    return water[1:-1, 1:-1] & ~coarse
+
+
 def _lost_channels(fine, f, coarse, min_px, island_px=CHANNEL_ISLAND_PX):
     """LED-res mask of narrow water channels present in ``fine`` (f x f per LED px) but lost in ``coarse``.
 
@@ -459,7 +506,7 @@ def _lost_channels(fine, f, coarse, min_px, island_px=CHANNEL_ISLAND_PX):
         ca, cb, cc, cd = ch[:-1, :-1], ch[1:, 1:], ch[1:, :-1], ch[:-1, 1:]
         ch[1:, :-1] |= a & b & ~c & ~d & (ca | cb)      # "\" step: fill below-left
         ch[:-1, :-1] |= c & d & ~a & ~b & (cc | cd)     # "/" step: fill above-left
-    return ch & ~coarse
+    return _thin_channels(coarse, ch & ~coarse)
 
 
 def water_masks(view: View, min_feature_px: float = 3.0):
