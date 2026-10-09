@@ -54,7 +54,7 @@ OSM_DIR = GEODATA_ROOT / "geodata" / "osm"
 WATER_FULL = GEODATA_ROOT / "osm_water_cache" / "water-polygons-split-3857" / "water_polygons.shp"
 WATER_SIMPLE = GEODATA_ROOT / "osm_water_cache" / "simplified-water-polygons-split-3857" / "simplified_water_polygons.shp"
 GEO_CACHE = BASEMAP_CACHE.parent / "geo"
-MASK_VERSION = "v8"
+MASK_VERSION = "v9"
 CHANNEL_FINE_KM = 0.25      # resolution used to find straits/inlets narrower than an LED pixel
 CHANNEL_FINE_MAX_W = 8000   # cap on that raster's width (px)
 CHANNEL_MIN_PX = 3.0        # a lost channel must run this many LED pixels to be kept, unless it joins two water bodies
@@ -392,13 +392,13 @@ def _draw_lonlat_polys(draw, view, parts, fill=255, factor=SS):
             draw.polygon(np.column_stack((px * factor, py * factor)).ravel().tolist(), fill=fill)
 
 
-def _prune_spurs(sk, n):
-    """Remove skeleton branches shorter than ~n px (peel endpoints n times). Through-channels have no
-    endpoints, so they are untouched; dead-end inlets just lose n px at their head."""
+def _prune_spurs(sk, n, keep):
+    """Remove skeleton branches shorter than ~n px by peeling endpoints n times. Endpoints inside ``keep``
+    (where a channel meets open water) are never peeled, so through-channels keep their full length."""
     k = np.ones((3, 3), dtype=np.uint8)
     for _ in range(n):
         nb = ndimage.convolve(sk.astype(np.uint8), k, mode="constant") - 1
-        ends = sk & (nb <= 1)
+        ends = sk & (nb <= 1) & ~keep
         if not ends.any():
             break
         sk = sk & ~ends
@@ -408,28 +408,31 @@ def _prune_spurs(sk, n):
 def _lost_channels(fine, f, coarse, min_px):
     """LED-res mask of narrow water channels present in ``fine`` (f x f per LED px) but lost in ``coarse``.
 
-    Kept: channels that join two separate coarse water bodies (straits), or that run >= min_px LED px."""
+    Kept: channels that join two separate coarse water bodies (straits), or that run >= min_px LED px.
+    Only the water the coarse mask lost is skeletonised (open sea would take far longer to thin)."""
     from skimage.morphology import skeletonize
-    H, W = coarse.shape
-    sk = _prune_spurs(skeletonize(fine), f)
-    ys, xs = np.nonzero(sk)
-    cy, cx = ys // f, xs // f
-    out = ~coarse[cy, cx]
-    if not out.any():
+    up = np.repeat(np.repeat(coarse, f, axis=0), f, axis=1)
+    lostfine = fine & ~up
+    if not lostfine.any():
         return np.zeros_like(coarse)
-    lost = np.zeros_like(sk)
-    lost[ys[out], xs[out]] = True
-    lab, n = ndimage.label(lost, structure=np.ones((3, 3)))
+    sl = ndimage.find_objects(lostfine.astype(np.uint8))[0]
+    sl = tuple(slice(max(0, q.start - 2), q.stop + 2) for q in sl)     # work in the bounding box only
+    oy, ox = sl[0].start, sl[1].start
+    near_open = ndimage.binary_dilation(up[sl], iterations=2)
+    sk = _prune_spurs(skeletonize(lostfine[sl]), f, near_open)
+    lab, n = ndimage.label(sk, structure=np.ones((3, 3)))
+    if n == 0:
+        return np.zeros_like(coarse)
     # which coarse water bodies each lost piece touches (its 1-px fine neighbourhood, mapped to LED px)
     wlab, _ = ndimage.label(coarse)
-    grown = ndimage.grey_dilation(lab, size=(3, 3))
+    grown = ndimage.grey_dilation(lab, size=(5, 5))
     gy, gx = np.nonzero(grown)
-    gl, wl = grown[gy, gx], wlab[gy // f, gx // f]
+    gl, wl = grown[gy, gx], wlab[(gy + oy) // f, (gx + ox) // f]
     pairs = np.unique(np.column_stack((gl[wl > 0], wl[wl > 0])), axis=0)
     joins = np.bincount(pairs[:, 0], minlength=n + 1) if len(pairs) else np.zeros(n + 1, int)
     # length in LED px, from the LED cells each piece passes through
     ly, lx = np.nonzero(lab)
-    cells = np.unique(np.column_stack((lab[ly, lx], ly // f, lx // f)), axis=0)
+    cells = np.unique(np.column_stack((lab[ly, lx], (ly + oy) // f, (lx + ox) // f)), axis=0)
     length = np.bincount(cells[:, 0], minlength=n + 1)
     keep = (joins >= 2) | (length >= min_px)
     keep[0] = False
@@ -496,6 +499,7 @@ def water_masks(view: View, min_feature_px: float = 3.0):
     rivers = _drop_small(rivers, min_feature_px)
     land = ~(ocean | lakes | rivers)
     land = _drop_small(land, min_feature_px)
+    ocean |= ~land & ~lakes & ~rivers          # islets too small to keep become sea, not "nothing"
     water = ~land
     water_kept = _drop_small(water, min_feature_px)
     land |= water & ~water_kept
