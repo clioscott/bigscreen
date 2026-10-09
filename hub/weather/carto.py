@@ -11,6 +11,12 @@ scale (km per LED pixel):
   smaller than a few pixels are removed, and each shoreline — coast, lake
   shore, river bank — is the 1-px edge between land and that kind of water. It
   can't be thicker than one pixel, and detail too small to see simply vanishes.
+* **Major channels survive the downsample.** A strait narrower than a pixel
+  (Johnstone Strait, the Discovery Passages at 6 km/px) would otherwise vanish
+  and weld islands to the mainland. Sea and lakes are also rasterised at
+  ~250 m, skeletonised, and any channel the LED-res mask lost is kept as a
+  4-connected 1-px line of water if it joins two water bodies or runs at least
+  a few pixels. Short bays and coves stay land.
 * **Each layer picks a source resolution for the scale** (OSM simplified vs
   full water polygons; Natural Earth 1:50M vs 1:10M vs OSM boundaries; Natural
   Earth vs OSM rivers).
@@ -48,7 +54,10 @@ OSM_DIR = GEODATA_ROOT / "geodata" / "osm"
 WATER_FULL = GEODATA_ROOT / "osm_water_cache" / "water-polygons-split-3857" / "water_polygons.shp"
 WATER_SIMPLE = GEODATA_ROOT / "osm_water_cache" / "simplified-water-polygons-split-3857" / "simplified_water_polygons.shp"
 GEO_CACHE = BASEMAP_CACHE.parent / "geo"
-MASK_VERSION = "v7"
+MASK_VERSION = "v8"
+CHANNEL_FINE_KM = 0.25      # resolution used to find straits/inlets narrower than an LED pixel
+CHANNEL_FINE_MAX_W = 8000   # cap on that raster's width (px)
+CHANNEL_MIN_PX = 3.0        # a lost channel must run this many LED pixels to be kept, unless it joins two water bodies
 
 # OSM `water=*` values that are rivers rather than lakes
 RIVER_WATER = {"river", "canal", "stream", "riverbank", "rapids", "oxbow", "ditch", "tidal_channel"}
@@ -355,13 +364,13 @@ def _ring_is_outer(r):
     return (np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))) > 0
 
 
-def _draw_ocean(draw, view, shp_path):
+def _draw_ocean(draw, view, shp_path, factor=SS):
     import shapefile
     idx = _shp_bbox_index(str(shp_path))
     x0, y0, x1, y1 = view.merc
     hit = np.flatnonzero((idx[:, 0] <= x1) & (idx[:, 2] >= x0) & (idx[:, 1] <= y1) & (idx[:, 3] >= y0))
     sf = shapefile.Reader(str(shp_path))
-    k = SS / view.mpp
+    k = factor / view.mpp
     for i in hit:
         shp = sf.shape(int(i))
         pts = np.asarray(shp.points, dtype=np.float64)
@@ -376,11 +385,65 @@ def _draw_ocean(draw, view, shp_path):
                 draw.polygon(r.ravel().tolist(), fill=0)
 
 
-def _draw_lonlat_polys(draw, view, parts, fill=255):
+def _draw_lonlat_polys(draw, view, parts, fill=255, factor=SS):
     for ring in parts:
         px, py = view.project_many(ring[:, 0], ring[:, 1])
-        if len(px) >= 3 and (px.max() - px.min()) * SS >= 1 and (py.max() - py.min()) * SS >= 1:
-            draw.polygon(np.column_stack((px * SS, py * SS)).ravel().tolist(), fill=fill)
+        if len(px) >= 3 and (px.max() - px.min()) * factor >= 1 and (py.max() - py.min()) * factor >= 1:
+            draw.polygon(np.column_stack((px * factor, py * factor)).ravel().tolist(), fill=fill)
+
+
+def _prune_spurs(sk, n):
+    """Remove skeleton branches shorter than ~n px (peel endpoints n times). Through-channels have no
+    endpoints, so they are untouched; dead-end inlets just lose n px at their head."""
+    k = np.ones((3, 3), dtype=np.uint8)
+    for _ in range(n):
+        nb = ndimage.convolve(sk.astype(np.uint8), k, mode="constant") - 1
+        ends = sk & (nb <= 1)
+        if not ends.any():
+            break
+        sk = sk & ~ends
+    return sk
+
+
+def _lost_channels(fine, f, coarse, min_px):
+    """LED-res mask of narrow water channels present in ``fine`` (f x f per LED px) but lost in ``coarse``.
+
+    Kept: channels that join two separate coarse water bodies (straits), or that run >= min_px LED px."""
+    from skimage.morphology import skeletonize
+    H, W = coarse.shape
+    sk = _prune_spurs(skeletonize(fine), f)
+    ys, xs = np.nonzero(sk)
+    cy, cx = ys // f, xs // f
+    out = ~coarse[cy, cx]
+    if not out.any():
+        return np.zeros_like(coarse)
+    lost = np.zeros_like(sk)
+    lost[ys[out], xs[out]] = True
+    lab, n = ndimage.label(lost, structure=np.ones((3, 3)))
+    # which coarse water bodies each lost piece touches (its 1-px fine neighbourhood, mapped to LED px)
+    wlab, _ = ndimage.label(coarse)
+    grown = ndimage.grey_dilation(lab, size=(3, 3))
+    gy, gx = np.nonzero(grown)
+    gl, wl = grown[gy, gx], wlab[gy // f, gx // f]
+    pairs = np.unique(np.column_stack((gl[wl > 0], wl[wl > 0])), axis=0)
+    joins = np.bincount(pairs[:, 0], minlength=n + 1) if len(pairs) else np.zeros(n + 1, int)
+    # length in LED px, from the LED cells each piece passes through
+    ly, lx = np.nonzero(lab)
+    cells = np.unique(np.column_stack((lab[ly, lx], ly // f, lx // f)), axis=0)
+    length = np.bincount(cells[:, 0], minlength=n + 1)
+    keep = (joins >= 2) | (length >= min_px)
+    keep[0] = False
+    sel = keep[cells[:, 0]]
+    ch = np.zeros_like(coarse)
+    ch[cells[sel, 1], cells[sel, 2]] = True
+    # A diagonal-only step in a channel would let the land on either side touch at a corner: fill one side.
+    for _ in range(2):
+        water = coarse | ch
+        a, b, c, d = water[:-1, :-1], water[1:, 1:], water[1:, :-1], water[:-1, 1:]
+        ca, cb, cc, cd = ch[:-1, :-1], ch[1:, 1:], ch[1:, :-1], ch[:-1, 1:]
+        ch[1:, :-1] |= a & b & ~c & ~d & (ca | cb)      # "\" step: fill below-left
+        ch[:-1, :-1] |= c & d & ~a & ~b & (cc | cd)     # "/" step: fill above-left
+    return ch & ~coarse
 
 
 def water_masks(view: View, min_feature_px: float = 3.0):
@@ -409,6 +472,23 @@ def water_masks(view: View, min_feature_px: float = 3.0):
         return np.asarray(img.resize((view.w, view.h), Image.BOX), dtype=np.float32) >= 127.5
 
     ocean, lakes, rivers = down(ocean_img), down(lake_img), down(river_img)
+    if km_px >= CHANNEL_FINE_KM * SS * 2:
+        # Re-find straits/inlets narrower than a pixel at ~250 m and keep the major ones as 1-px water.
+        f = max(SS, min(int(np.ceil(km_px / CHANNEL_FINE_KM)), CHANNEL_FINE_MAX_W // view.w))
+        fo = Image.new("L", (view.w * f, view.h * f), 0)
+        _draw_ocean(ImageDraw.Draw(fo), view, WATER_FULL if WATER_FULL.exists() and km_px < 12 else WATER_SIMPLE, f)
+        fine_ocean = np.asarray(fo) > 127
+        del fo
+        ocean |= _lost_channels(fine_ocean, f, ocean, CHANNEL_MIN_PX)
+        fl = Image.new("L", (view.w * f, view.h * f), 0)
+        fld = ImageDraw.Draw(fl)
+        _draw_lonlat_polys(fld, view, [p for p, _ in _parts_in(_ne_pack("ne_10m_lakes"), view.lonlat)], factor=f)
+        for ring, cls in _parts_in(_inland_water_pack(), view.lonlat, pad=0.05):
+            if cls != 2:
+                _draw_lonlat_polys(fld, view, [ring], factor=f)
+        fine_lakes = (np.asarray(fl) > 127) & ~fine_ocean
+        del fl, fine_ocean
+        lakes |= _lost_channels(fine_lakes, f, lakes | ocean, CHANNEL_MIN_PX) & ~ocean
     lakes &= ~ocean
     rivers &= ~ocean & ~lakes
     # Islands, ponds and slivers smaller than min_feature_px LED pixels would be noise at this scale.
