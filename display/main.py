@@ -114,7 +114,7 @@ class EmulatorOutput:
 class Screen:
     """Owns the modules for one effective config. Rebuilt when the config changes."""
 
-    def __init__(self, cfg, loader, prev=None):
+    def __init__(self, cfg, loader, prev=None, maps=None):
         from display.modules.calendar import CalendarRenderer
         from display.modules.client_calls import ClientCallsRenderer
         from display.modules.clock import ClockRenderer
@@ -170,6 +170,17 @@ class Screen:
         }
         self.full_panels = {}     # name -> draw(canvas, zone, entry, transition); takes both zones
 
+        from display.modules.weather_info import WeatherInfoPanel
+        self.weather_half = WeatherInfoPanel(cfg, loader, full=False)
+        self.weather_full = WeatherInfoPanel(cfg, loader, full=True)
+        self.panels["weather"] = self.weather_half.draw
+        self.full_panels["weather_full"] = self.weather_full.draw
+        if maps is not None:
+            from display.modules.weather_maps import MapPanel
+            self.map_panel = MapPanel(cfg, maps)
+            self.panels["map"] = self.map_panel.draw
+            self.full_panels["map_full"] = self.map_panel.draw
+
     # -- panels ---------------------------------------------------------------
     def _draw_calendar(self, c, zone, entry, transition):
         x, y, w, h = zone
@@ -204,7 +215,7 @@ class Screen:
         c.Clear()
         self.update_data()
         ctx = {"calendar_has_events": bool(getattr(self.calendar, "has_visible_events", True)),
-               "weather_has_alert": False}
+               "weather_has_alert": self.weather_half.has_alert()}
         zones = {"left": (0, self.main_y, self.cal_w, self.main_h),
                  "right": (self.right_x, self.main_y, self.right_w, self.main_h)}
 
@@ -278,10 +289,12 @@ class App:
         self.source.poll(time.time())
         self.cfg = self.source.effective()
         self.loader = DataLoader(DATA_DIR, check_interval=1.0)
+        from display.modules.weather_maps import MapStore
+        self.maps = MapStore(DATA_DIR)
         self.output = EmulatorOutput() if emulate else HardwareOutput(self.cfg)
         L = self.cfg.layout
         self.fb = Canvas(L.get("width", 448), L.get("height", 192))
-        self.screen = Screen(self.cfg, self.loader)
+        self.screen = Screen(self.cfg, self.loader, maps=self.maps)
         self._gen = self.source.generation
         self.frame_lock = threading.Lock()
         self.last_frame = self.fb.buf.copy()
@@ -308,7 +321,7 @@ class App:
                 self.restart_requested = True
                 return
         try:
-            screen = Screen(new, self.loader, prev=self.screen)
+            screen = Screen(new, self.loader, prev=self.screen, maps=self.maps)
         except Exception:
             self.errors.append(traceback.format_exc()[-600:])
             print("[display] new config failed to build, keeping previous:\n" + traceback.format_exc())

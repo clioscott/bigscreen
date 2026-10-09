@@ -94,7 +94,8 @@ def _make_handler(app):
                     return self._json({"error": "need side (left|right) and panel"}, 400)
                 if body["panel"] not in app.screen.panels and body["panel"] not in app.screen.full_panels:
                     return self._json({"error": f"panel {body['panel']!r} isn't available on this display"}, 400)
-                eng.set_override(body["panel"], body.get("duration_sec"))
+                extra = {k: v for k, v in body.items() if k not in ("side", "panel", "duration_sec")}
+                eng.set_override(body["panel"], body.get("duration_sec"), extra)
                 return self._json({"ok": True})
             if u.path == "/override/clear":
                 sides = [body["side"]] if body.get("side") else ["left", "right"]

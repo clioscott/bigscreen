@@ -176,7 +176,7 @@ class CycleEngine:
         # have to special-case overrides.
         ov = self._get_active_override()
         if ov:
-            return {"panel": ov["panel"], "dwell_sec": 0.0, "when": "always"}
+            return {**ov.get("extra", {}), "panel": ov["panel"], "dwell_sec": 0.0, "when": "always"}
 
         if not self._cycle:
             return None
@@ -221,7 +221,7 @@ class CycleEngine:
     # Public API: manual override
     # ------------------------------------------------------------------
 
-    def set_override(self, panel: str, duration_sec: float | None) -> None:
+    def set_override(self, panel: str, duration_sec: float | None, extra: dict | None = None) -> None:
         """Pin a specific panel on this side, overriding the cycle.
 
         ``duration_sec`` of ``None`` means permanent until ``clear_override``
@@ -232,6 +232,7 @@ class CycleEngine:
         with self._lock:
             self._override = {
                 "panel": panel,
+                "extra": dict(extra or {}),      # entry fields such as "track" / "weather_screen"
                 "expires_at": (None if duration_sec is None else time.time() + float(duration_sec)),
             }
 
