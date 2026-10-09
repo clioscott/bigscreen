@@ -54,7 +54,7 @@ OSM_DIR = GEODATA_ROOT / "geodata" / "osm"
 WATER_FULL = GEODATA_ROOT / "osm_water_cache" / "water-polygons-split-3857" / "water_polygons.shp"
 WATER_SIMPLE = GEODATA_ROOT / "osm_water_cache" / "simplified-water-polygons-split-3857" / "simplified_water_polygons.shp"
 GEO_CACHE = BASEMAP_CACHE.parent / "geo"
-MASK_VERSION = "v11b"
+MASK_VERSION = "v12"
 CHANNEL_FINE_KM = 0.25      # resolution used to find straits/inlets narrower than an LED pixel
 CHANNEL_FINE_MAX_W = 8000   # cap on that raster's width (px)
 CHANNEL_MIN_PX = 6          # a lost channel/inlet/narrow lake is kept if it runs at least this many LED px …
@@ -422,7 +422,7 @@ def _thin_table():
         win = np.zeros((3, 3), dtype=bool)
         for b, (dy, dx) in enumerate(_RING):
             win[1 + dy, 1 + dx] = bool(m >> b & 1)
-        if win[0, 1] + win[1, 0] + win[1, 2] + win[2, 1] < 2:
+        if int(win[0, 1]) + int(win[1, 0]) + int(win[1, 2]) + int(win[2, 1]) < 2:
             continue
         wl, _ = ndimage.label(win)                                   # 4-connected water, centre excluded
         touching = {wl[1 + dy, 1 + dx] for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)) if win[1 + dy, 1 + dx]}
