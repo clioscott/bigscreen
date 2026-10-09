@@ -9,6 +9,7 @@ from hub.scheduler import Scheduler, log
 def main():
     paths.ensure_dirs()
     cfg = config.load()
+    config.publish(cfg)
     port = int(cfg.get("hub", {}).get("panel_port", 8800))
     sched = Scheduler()
     web.scheduler = sched

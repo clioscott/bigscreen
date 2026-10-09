@@ -60,6 +60,7 @@ def put_config(payload: dict = Body(...)):
                          ("weather", "weather")):
         if before["modules"].get(section) != saved["modules"].get(section):
             _sched().run_now(job)
+    sync.push_data()          # config.json rides along; the v2 display hot-reloads it
     return {"config": saved, "display_in_sync": pi.display_in_sync(saved)[0]}
 
 

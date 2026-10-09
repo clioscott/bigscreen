@@ -43,8 +43,14 @@ def save(cfg, reason=""):
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         atomic_write_json(paths.BACKUP_DIR / f"config-{stamp}-r{cfg['revision']}.json", cfg, indent=2)
         atomic_write_json(paths.CONFIG_PATH, cfg, indent=2)
+        publish(cfg)
         _prune_backups()
     return cfg
+
+
+def publish(cfg=None):
+    """Copy the config into data/ so it rides the normal rsync to the Pi (the v2 display hot-reloads it)."""
+    atomic_write_json(paths.DATA_DIR / "config.json", cfg if cfg is not None else load())
 
 
 def _prune_backups():
