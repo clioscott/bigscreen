@@ -15,7 +15,7 @@ import traceback
 from datetime import datetime
 
 from hub import config, paths, sync
-from hub.jobs._harness import RESULT_MARKER
+from hub.jobs._harness import PROGRESS_MARKER, RESULT_MARKER
 from hub.util import atomic_write_json, read_json
 
 # name: (config path of interval, default interval s, timeout s, label)
@@ -38,6 +38,7 @@ class Scheduler:
     def __init__(self):
         self._lock = threading.Lock()
         self._running = set()
+        self._progress = {}          # name -> {started, done, total, label} while a job runs
         self._wake = threading.Event()
         self.status = read_json(paths.STATUS_PATH, {}) or {}
         for name in JOBS:
@@ -65,6 +66,7 @@ class Scheduler:
                 interval = _interval(cfg, key, default)
                 last_ok = st.get("last_success") or 0
                 st.update({
+                    "progress": dict(self._progress[name]) if name in self._progress else None,
                     "label": label,
                     "interval": interval,
                     "running": name in self._running,
@@ -96,20 +98,40 @@ class Scheduler:
     def _run(self, name, timeout):
         t0 = time.time()
         result, ok, err = {}, False, ""
+        with self._lock:
+            self._progress[name] = {"started": t0, "done": None, "total": None, "label": ""}
+        tail = []
         try:
             env = dict(os.environ, PYTHONPATH=str(paths.REPO_DIR), BIGSCREEN_STATE=str(paths.STATE_DIR),
                        PYTHONUNBUFFERED="1")
-            proc = subprocess.run([sys.executable, "-m", f"hub.jobs.{name}"], cwd=paths.REPO_DIR, env=env,
-                                  capture_output=True, text=True, timeout=timeout)
-            for line in reversed(proc.stdout.splitlines()):
-                if line.startswith(RESULT_MARKER):
-                    result = json.loads(line[len(RESULT_MARKER):])
-                    break
+            proc = subprocess.Popen([sys.executable, "-m", f"hub.jobs.{name}"], cwd=paths.REPO_DIR, env=env,
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+            timer = threading.Timer(timeout, proc.kill)
+            timer.start()
+            try:
+                # Stream the job's output into the hub log (and the panel's live console) as it happens.
+                for line in proc.stdout:
+                    line = line.rstrip("\n")
+                    if line.startswith(RESULT_MARKER):
+                        result = json.loads(line[len(RESULT_MARKER):])
+                    elif line.startswith(PROGRESS_MARKER):
+                        try:
+                            pr = json.loads(line[len(PROGRESS_MARKER):])
+                            with self._lock:
+                                self._progress[name].update(pr)
+                        except ValueError:
+                            pass
+                    else:
+                        print(f"  {name} | {line}", flush=True)
+                        tail = (tail + [line])[-40:]
+                proc.wait()
+            finally:
+                timer.cancel()
             ok = proc.returncode == 0
-            if not ok:
-                err = (proc.stderr.strip() or proc.stdout.strip())[-1500:]
-        except subprocess.TimeoutExpired:
-            err = f"timed out after {timeout}s"
+            if proc.returncode < 0 and time.time() - t0 >= timeout - 1:
+                err = f"timed out after {timeout}s"
+            elif not ok:
+                err = "\n".join(tail)[-1500:]
         except Exception:
             err = traceback.format_exc()[-1500:]
         dur = time.time() - t0
@@ -129,6 +151,7 @@ class Scheduler:
             else:
                 st["fail_streak"] = st.get("fail_streak", 0) + 1
             self._running.discard(name)
+            self._progress.pop(name, None)
             atomic_write_json(paths.STATUS_PATH, self.status, indent=1)
 
         last_err = err.strip().splitlines()[-1] if err.strip() else ""

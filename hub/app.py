@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 
+from common import logring
 from hub import config, paths, pi, sync
 from hub.jobs import news as news_job
 from hub.util import read_json
@@ -78,6 +79,26 @@ def restore(payload: dict = Body(...)):
     if old is None:
         raise HTTPException(404, "backup not found")
     return {"config": config.save(old, reason=f"restored {name}")}
+
+
+# --- live consoles ------------------------------------------------------------
+@app.get("/api/logs")
+def logs(hub: int = 0, display: int = 0):
+    """New console lines since each cursor, for the server (hub) and the Pi (display), plus running jobs."""
+    try:
+        r = requests.get(pi.display_url(f"/logs?after={max(0, display)}"), timeout=2)
+        disp = r.json() if r.ok else {"error": f"display answered {r.status_code}"}
+    except Exception as e:
+        disp = {"error": f"display unreachable: {str(e)[:120]}"}
+    jobs = _sched().snapshot()
+    running = []
+    for k, v in jobs.items():
+        if v.get("running"):
+            pr = v.get("progress") or {}
+            running.append({"name": k, "label": v["label"], "duration_last": v.get("duration"),
+                            "started": pr.get("started"), "done": pr.get("done"), "total": pr.get("total"),
+                            "step": pr.get("label", "")})
+    return {"now": time.time(), "hub": logring.ring.since(max(0, hub)), "display": disp, "running": running}
 
 
 # --- status ------------------------------------------------------------------

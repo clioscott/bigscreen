@@ -41,7 +41,10 @@ def run(cfg):
                 else float(t.get("window_min", 180)) / 60
             need[t["area"]] = max(need.get(t["area"], 0), min(48.0, hours))
     new_radar = set()
+    steps, step = len(need) + len(enabled), 0
     for aid, hours in need.items():
+        _harness.progress(step, steps, f"radar archive · {areas[aid].get('short_label') or aid}")
+        step += 1
         area = dict(areas[aid], id=aid)
         _, arch_view, _ = tracks.views_for(area, "full", cfg)
         added, errs = radar.update_archive(arch_view, hours)
@@ -51,10 +54,12 @@ def run(cfg):
         times = radar.archive_times(arch_view)
         span = (times[-1] - times[0]).total_seconds() / 3600 if len(times) > 1 else 0
         notes.append(f"{aid}: +{added} radar frames, {span:.1f}/{hours:g} h archived")
+        print(f"archive {aid}: +{added} frames, {span:.1f}/{hours:g} h", flush=True)
 
     # 2. render due tracks
     rendered = []
     for tid, t in enabled.items():
+        step += 1
         st = state.get(tid, {})
         sig = _sig(t, areas[t["area"]], cfg)
         due = (now - st.get("at", 0) >= float(t.get("refresh_min", 10)) * 60 - 20
@@ -62,6 +67,8 @@ def run(cfg):
                or (t["area"] in new_radar and t.get("kind") == "accumulation"))
         if not due:
             continue
+        _harness.progress(step - 1, steps, f"rendering {t.get('label') or tid}")
+        print(f"rendering {tid} ({t.get('label') or tid}) …", flush=True)
         t0 = time.time()
         try:
             res = tracks.render_track(tid, t, cfg)
@@ -71,8 +78,10 @@ def run(cfg):
         state[tid] = {"at": now if res.get("ok") else st.get("at", 0), "sig": sig if res.get("ok") else st.get("sig"),
                       "last": res, "tried": now}
         (rendered if res.get("ok") else errors).append(f"{tid}: {res['message']}")
+        print(f"  {tid}: {'ok' if res.get('ok') else 'FAILED'} in {res['seconds']}s — {res['message']}", flush=True)
         atomic_write_json(STATE, state, indent=1)
 
+    _harness.progress(steps, steps, "cleaning up")
     # drop packs for tracks that no longer exist
     for p in list(tracks.ANIM_DIR.glob("*.json")):
         if p.stem not in enabled:

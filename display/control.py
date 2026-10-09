@@ -2,6 +2,7 @@
 
     GET  /status                 fps, draw time, panels, config revision, preview state
     GET  /frame.png?scale=2      the current frame (nearest-neighbour upscaled)
+    GET  /logs?after=N           console lines after cursor N (in-memory ring, see common/logring.py)
     GET  /panels                 panel names the cycle can use right now
     POST /override               {"side": "left"|"right", "panel": "...", "duration_sec": 60, ...entry fields}
     POST /override/clear         {"side": "left"|"right"} or {} for both
@@ -59,6 +60,10 @@ def _make_handler(app):
             u = urlparse(self.path)
             if u.path in ("/", "/status"):
                 return self._json(app.stats())
+            if u.path == "/logs":
+                from common import logring
+                q = parse_qs(u.query)
+                return self._json(logring.ring.since(int((q.get("after") or ["0"])[0] or 0)))
             if u.path == "/panels":
                 s = app.screen
                 return self._json({"zone": sorted(s.panels), "full": sorted(s.full_panels)})

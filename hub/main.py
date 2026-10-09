@@ -2,11 +2,13 @@
 
 import uvicorn
 
+from common import logring
 from hub import app as web, config, paths
 from hub.scheduler import Scheduler, log
 
 
 def main():
+    logring.install("bigscreen-hub")          # live console for the control panel
     paths.ensure_dirs()
     cfg = config.load()
     config.publish(cfg)

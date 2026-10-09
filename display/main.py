@@ -455,6 +455,8 @@ class App:
 
 
 def main():
+    from common import logring
+    logring.install("bigscreen-display")      # live console for the control panel (in memory only)
     ap = argparse.ArgumentParser()
     ap.add_argument("--emulate", action="store_true", help="no LED hardware; render for the mirror only")
     ap.add_argument("--port", type=int, default=int(os.environ.get("BIGSCREEN_CONTROL_PORT", 8765)))

@@ -15,6 +15,7 @@ import email.utils
 import html
 import io
 import re
+import threading
 import time
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
@@ -181,8 +182,22 @@ def run(cfg):
                             "Accept": "application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.5"})
 
     jobs = [(c["name"], f) for c in cats for f in c.get("feeds", []) if f.get("enabled", True)]
+    done = [0]
+    lock = threading.Lock()
+
+    def fetch(cf):
+        r = (cf[0], *fetch_feed(session, cf[1]))
+        with lock:
+            done[0] += 1
+            _harness.progress(done[0], len(jobs), f"fetched {cf[1].get('name') or cf[1].get('url')}")
+        st = r[2]
+        print(f"{cf[0]} · {st.get('name')}: " + (f"{st.get('items')} items" if st.get("ok") else f"FAILED {st.get('error')}"),
+              flush=True)
+        return r
+
+    _harness.progress(0, len(jobs), "fetching feeds")
     with ThreadPoolExecutor(max_workers=8) as pool:
-        results = list(pool.map(lambda cf: (cf[0], *fetch_feed(session, cf[1])), jobs))
+        results = list(pool.map(fetch, jobs))
 
     payload = {"last_updated_utc": time.time()}
     feed_status = {}
