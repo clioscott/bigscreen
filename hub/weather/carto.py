@@ -48,7 +48,7 @@ OSM_DIR = GEODATA_ROOT / "geodata" / "osm"
 WATER_FULL = GEODATA_ROOT / "osm_water_cache" / "water-polygons-split-3857" / "water_polygons.shp"
 WATER_SIMPLE = GEODATA_ROOT / "osm_water_cache" / "simplified-water-polygons-split-3857" / "simplified_water_polygons.shp"
 GEO_CACHE = BASEMAP_CACHE.parent / "geo"
-MASK_VERSION = "v4"
+MASK_VERSION = "v5"
 
 # OSM `water=*` values that are rivers rather than lakes
 RIVER_WATER = {"river", "canal", "stream", "riverbank", "rapids", "oxbow", "ditch", "tidal_channel"}
@@ -65,12 +65,12 @@ LAYERS = {
                     "color": "#5a8fd6", "opacity": 0.9, "width": 1, "min_km_px": 0.0, "max_km_px": 1e9},
     "lakes":       {"label": "Lake shores", "kind": "lake_shore",
                     "color": "#4f7fc4", "opacity": 0.85, "width": 1, "min_km_px": 0.0, "max_km_px": 8.0},
-    # River shorelines appear wherever the river is wide enough at this scale to show as water with two
-    # 1-px banks; centre lines take over (automatically, per river) where it isn't.
-    "river_banks": {"label": "River shorelines (where wide enough)", "kind": "river_bank",
-                    "color": "#4f7fc4", "opacity": 0.85, "width": 1, "min_km_px": 0.0, "max_km_px": 3.0},
-    "rivers":      {"label": "River centre lines (where too narrow for shorelines)", "kind": "line",
-                    "color": "#3f6fb8", "opacity": 0.8, "width": 1, "min_km_px": 0.0, "max_km_px": 12.0,
+    # Rivers are either/or by zoom: shorelines (from river-area polygons in the water mask) up to
+    # 1.5 km/px, where wide rivers are at least a couple of pixels across; 1-px centre lines beyond that.
+    "river_banks": {"label": "River shorelines (zoomed in)", "kind": "river_bank",
+                    "color": "#4f7fc4", "opacity": 0.85, "width": 1, "min_km_px": 0.0, "max_km_px": 1.5},
+    "rivers":      {"label": "River centre lines (zoomed out)", "kind": "line",
+                    "color": "#3f6fb8", "opacity": 0.8, "width": 1, "min_km_px": 1.5, "max_km_px": 12.0,
                     "sources": [(2.5, ("ne", "ne_10m_rivers_lake_centerlines")),
                                 (0.0, ("osm_waterway", "river"))]},
     "country":     {"label": "Country borders", "kind": "line",
@@ -256,9 +256,16 @@ def _osm_line_pack(kind, value):
     return _cached_pack(f"osm2_{kind}_{value}", build)
 
 
-def _group_lengths_km(pack):
-    """Total length (km) of each named group (e.g. every OSM segment of 'Fraser River')."""
+def _group_lengths_km(pack, lonlat=None):
+    """Total length (km) of each named group (e.g. every OSM segment of 'Fraser River'), counting only
+    segments near `lonlat` — names like 'Cabin Creek' repeat all over the region."""
     off, xy, g = pack["offsets"], pack["coords"], pack["group"]
+    if lonlat is not None:
+        lo0, la0, lo1, la1 = lonlat
+        px, py = (lo1 - lo0) * 0.25, (la1 - la0) * 0.25
+        bb = pack["bbox"]
+        near = (bb[:, 2] >= lo0 - px) & (bb[:, 0] <= lo1 + px) & (bb[:, 3] >= la0 - py) & (bb[:, 1] <= la1 + py)
+        g = np.where(near, g, -1)
     seg = np.diff(xy, axis=0)
     coslat = np.cos(np.radians(xy[:-1, 1]))
     d = np.hypot(seg[:, 0] * coslat, seg[:, 1]) * 111.32
@@ -277,7 +284,8 @@ def _inland_water_pack():
     """OSM natural=water polygons (outer rings) classed 1 = lake/reservoir/pond, 2 = river/canal."""
     def build():
         seen, parts, cls = set(), [], []
-        for feat in _geojson_features("*_water_polygons.geojson"):
+        feats = list(_geojson_features("*_water_polygons.geojson")) + list(_geojson_features("*_river_areas.geojson"))
+        for feat in feats:
             p = feat.get("properties") or {}
             g = feat.get("geometry") or {}
             t, c = g.get("type"), g.get("coordinates") or []
@@ -298,7 +306,7 @@ def _inland_water_pack():
                 parts.append(np.asarray([q[:2] for q in r], dtype=np.float64))
                 cls.append(2 if (p.get("water") in RIVER_WATER or p.get("waterway")) else 1)
         return _pack(parts, cls)
-    return _cached_pack("osm_inland_water", build)
+    return _cached_pack("osm_inland_water_v2", build)
 
 
 # ---------------------------------------------------------------------------
@@ -423,7 +431,7 @@ def edge_of(mask: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------
 # Line layers
 # ---------------------------------------------------------------------------
-def _lines_for(src, km_px):
+def _lines_for(src, km_px, lonlat=None):
     kind, value = src
     if kind == "ne":
         pack = _ne_pack(value)
@@ -436,7 +444,7 @@ def _lines_for(src, km_px):
     if kind == "osm_waterway":
         # OSM tags many mountain creeks as rivers. Keep only named rivers long enough to matter at this
         # scale: total length >= ~60 LED pixels (≈20 km at 0.34 km/px, ≈48 km at 0.8 km/px).
-        totals = _group_lengths_km(pack)
+        totals = _group_lengths_km(pack, lonlat)
         need = 60 * km_px
         keep = np.array([g >= 0 and totals.get(g, 0) >= need for g in pack["group"].tolist()], dtype=bool)
         return _subset(pack, keep)
@@ -507,7 +515,7 @@ def render_overlay(view: View, overrides: dict | None = None, min_feature_px: fl
             src = _pick_source(meta, km_px)
             if not src:
                 continue
-            m = _draw_lines(view, _lines_for(src, km_px), int(s.get("width", 1)))
+            m = _draw_lines(view, _lines_for(src, km_px, view.lonlat), int(s.get("width", 1)))
             m &= land                          # strictly on land: nothing drawn across water
             if s["key"] == "rivers" and resolved_rivers is not None:
                 m &= ~resolved_rivers          # centre lines only where the banks can't be resolved
