@@ -301,7 +301,7 @@ WMS_SUGGESTIONS = [
     ("HRDPS.CONTINENTAL_PR", "HRDPS forecast precipitation (+48 h)", "forecast"),
     ("HRDPS.CONTINENTAL_TT", "HRDPS forecast temperature (+48 h)", "forecast"),
     ("HRDPS.CONTINENTAL_NT", "HRDPS forecast cloud cover (+48 h)", "forecast"),
-    ("RAQDPS-FW.Sfc_PM2.5-WildfireSmokePlume", "Wildfire smoke forecast PM2.5 (+72 h)", "forecast"),
+    ("RAQDPS.Sfc_PM2.5-WildfireSmokePlume", "Wildfire smoke forecast, surface PM2.5 (+72 h)", "forecast"),
 ]
 
 
