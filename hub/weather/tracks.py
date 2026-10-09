@@ -100,9 +100,11 @@ def _basemap_for(base, view, track, t, under=None):
     return alpha_over(base, under) if under is not None and under[..., 3].any() else base
 
 
-def _legend_spec(pals):
-    return [{"label": label, "unit": unit, "bands": [[t, c] for t, c in pals[name]]}
-            for name, label, unit in (("rain_total", "Rain", "mm"), ("snow_total", "Snow", "cm"))]
+def _legend_spec(pals, live=False):
+    """Dual rain/snow legend: rates for live precipitation, totals for accumulated."""
+    scales = ((("rain_rate", "Rain", "mm/h"), ("snow_rate", "Snow", "cm/h")) if live else
+              (("rain_total", "Rain", "mm"), ("snow_total", "Snow", "cm")))
+    return [{"label": label, "unit": unit, "bands": [[t, c] for t, c in pals[name]]} for name, label, unit in scales]
 
 
 def render_track(tid, track, cfg, log=print):
@@ -216,7 +218,9 @@ def render_track(tid, track, cfg, log=print):
         "fps": float(track.get("fps", 8)), "hold_last_sec": float(track.get("hold_last_sec", 1.5)),
         "loops": int(track.get("loops", 2)), "timestamp": track.get("timestamp", True),
         "times": [t.strftime("%Y-%m-%dT%H:%M:%SZ") for t in times],
-        "legend": _legend_spec(pals) if kind == "accumulation" and track.get("legend", True) else None,
+        "legend": (None if track.get("legend") is False else
+                   _legend_spec(pals) if kind == "accumulation" else
+                   _legend_spec(pals, live=True) if any(l.get("type") == "radar" for l in track.get("layers") or []) else None),
         "window_hours": float(track.get("window_hours", 24)) if kind == "accumulation" else None,
         "generated_at": time.time(), "attribution": "ECCC",
     }

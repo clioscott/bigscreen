@@ -2,12 +2,12 @@ import { computed } from "vue";
 import { store, clone } from "../core.js";
 
 const SCALES = [
-  { id: "rain_total", label: "Rain totals", unit: "mm", icon: "CloudRain", note: "Totals maps: rain accumulated over the window" },
-  { id: "snow_total", label: "Snow totals", unit: "cm", icon: "Snowflake", note: "Totals maps: drawn over rain once past the map's snow threshold" },
-  { id: "rain_rate", label: "Radar · rain", unit: "mm/h", icon: "Radar", note: "Live radar loops" },
-  { id: "snow_rate", label: "Radar · snow", unit: "cm/h", icon: "Snowflake" },
-  { id: "mixed_rate", label: "Radar · mixed rain & snow", unit: "mm/h", icon: "CloudRain" },
-  { id: "fzra_rate", label: "Radar · freezing rain", unit: "mm/h", icon: "TriangleAlert" },
+  { id: "rain_total", label: "Accumulated · rain", unit: "mm", icon: "CloudRain", note: "Precipitation (Accumulated): rain over the map's window" },
+  { id: "snow_total", label: "Accumulated · snow", unit: "cm", icon: "Snowflake", note: "Drawn over rain once past the map's snow threshold" },
+  { id: "rain_rate", label: "Live · rain", unit: "mm/h", icon: "Radar", note: "Precipitation (Live): radar rain rate" },
+  { id: "snow_rate", label: "Live · snow", unit: "cm/h", icon: "Snowflake" },
+  { id: "mixed_rate", label: "Live · mixed rain & snow", unit: "mm/h", icon: "CloudRain" },
+  { id: "fzra_rate", label: "Live · freezing rain", unit: "mm/h", icon: "TriangleAlert" },
 ];
 
 export const Colours = {

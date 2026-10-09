@@ -4,9 +4,10 @@ import { store, api, fail, toast, go, ago, dur, areaLabel, refreshMaps, clone, s
 const STEP_OPTIONS = [5, 6, 10, 15, 20, 30, 60, 120];
 
 function trackSummary(t) {
-  if (t.kind === "accumulation") return `${t.window_hours ?? 24} h of rain & snow totals`;
+  if (t.kind === "accumulation") return `Precipitation (Accumulated) · ${t.window_hours ?? 24} h`;
   const h = (t.window_min ?? 180) / 60;
-  return `${h % 1 ? h.toFixed(1) : h} h loop`;
+  const what = (t.layers || []).some((l) => l.type === "radar") ? "Precipitation (Live)" : "Live loop";
+  return `${what} · ${h % 1 ? h.toFixed(1) : h} h`;
 }
 function hasRadar(t) { return t.kind === "accumulation" || (t.layers || []).some((l) => l.type === "radar"); }
 
@@ -48,7 +49,7 @@ export const Maps = {
           </AnimThumb></div>
         <div class="card-body stack" style="gap:8px">
           <div class="row nowrap"><h3 style="flex:1">{{ t.label || tid }}</h3>
-            <span class="pill" :class="t.kind === 'accumulation' ? 'warn' : 'accent'"><Icon :name="t.kind === 'accumulation' ? 'CloudRain' : 'Repeat'" :size="12"/>{{ t.kind === 'accumulation' ? 'Totals' : 'Loop' }}</span></div>
+            <span class="pill" :class="t.kind === 'accumulation' ? 'warn' : 'accent'"><Icon :name="t.kind === 'accumulation' ? 'CloudRain' : 'Repeat'" :size="12"/>{{ t.kind === 'accumulation' ? 'Accum' : 'Live' }}</span></div>
           <div class="muted" style="font-size:13px">{{ trackSummary(t) }} · plays {{ t.loops ?? 2 }}× per visit</div>
           <div style="font-size:12px" v-if="status(tid)">
             <span :class="status(tid).ok ? 'faint' : ''" :style="status(tid).ok ? '' : 'color: var(--bad)'">{{ status(tid).message }}</span>
@@ -160,14 +161,14 @@ export const MapEditor = {
           </div></div></div>
 
         <div class="card"><div class="card-head"><Icon name="Sparkles" :size="15"/><h3>What it shows</h3></div><div class="card-body stack">
-          <Seg v-model="t.kind" :options="[{value:'loop', label:'Animated loop', icon:'Repeat'}, {value:'accumulation', label:'Rain & snow totals', icon:'CloudRain'}]"/>
+          <Seg v-model="t.kind" :options="[{value:'loop', label:'Live loop', icon:'Repeat'}, {value:'accumulation', label:'Precipitation (Accumulated)', icon:'CloudRain'}]"/>
           <template v-if="!isAcc">
             <div class="faint" style="font-size:12.5px">Satellite and forecast layers are drawn under the coastlines and borders. Radar is drawn on top of everything, opaque at full colour.</div>
             <div class="stack" style="gap:8px" v-sortable="{ list: t.layers }">
               <div class="slot" v-for="(l, i) in t.layers" :key="i">
                 <span class="handle"><Icon name="GripVertical" :size="16"/></span>
                 <span class="kind"><Icon :name="l.type === 'radar' ? 'Radar' : 'Satellite'" :size="17"/></span>
-                <div class="meta" v-if="l.type === 'radar'"><b>Radar</b><span>Live rain, snow, mixed & freezing rain in TV colours</span></div>
+                <div class="meta" v-if="l.type === 'radar'"><b>Precipitation (Live)</b><span>Radar: rain, snow, mixed & freezing rain in TV colours</span></div>
                 <div class="meta stack" style="gap:6px" v-else>
                   <select class="input" :value="l.layer" @change="pickWms(l, $event.target.value)">
                     <option v-for="w in catalog.wms_layers" :key="w.layer" :value="w.layer">{{ w.label }}</option></select>
@@ -177,7 +178,7 @@ export const MapEditor = {
                 <button class="btn sm ghost icon-only" @click="t.layers.splice(i, 1)"><Icon name="Trash2" :size="14"/></button>
               </div>
             </div>
-            <div class="row"><button class="btn sm" @click="addLayer('radar')"><Icon name="Plus" :size="14"/>Radar</button>
+            <div class="row"><button class="btn sm" @click="addLayer('radar')"><Icon name="Plus" :size="14"/>Precipitation (Live)</button>
               <button class="btn sm" @click="addLayer('wms')"><Icon name="Plus" :size="14"/>Satellite / forecast layer</button></div>
           </template>
           <template v-else>
@@ -222,7 +223,7 @@ export const MapEditor = {
 
         <div class="card"><div class="card-head"><Icon name="Type" :size="15"/><h3>On screen</h3></div><div class="card-body stack">
           <ToggleRow :modelValue="t.timestamp !== false" @update:modelValue="v => t.timestamp = v" label="Time label" hint="Bottom-left: map name and the frame's time"/>
-          <ToggleRow v-if="isAcc" :modelValue="t.legend !== false" @update:modelValue="v => t.legend = v" label="Colour legend"/>
+          <ToggleRow v-if="usesRadar" :modelValue="t.legend !== false" @update:modelValue="v => t.legend = v" label="Colour legend" hint="Top-left: rain and snow colour bars"/>
         </div></div>
 
         <div class="row end"><ConfirmButton label="Delete this map" @confirm="del"/></div>
