@@ -73,7 +73,9 @@ class ConfigSource:
 
     def __init__(self, path, fallback=None):
         self.path = path
-        self.fallback = fallback
+        # Last good config, kept on disk so the display can start before the hub's first sync
+        # after a reboot (/dev/shm is empty then).
+        self.fallback = fallback or os.path.expanduser("~/.bigscreen-display-config.json")
         self._mtime = None
         self._base = None
         self._preview = None
@@ -97,6 +99,8 @@ class ConfigSource:
                 if self._base is None or (st is not None and st != self._mtime):
                     self._base, self._mtime = self._read()
                     changed = True
+                    if st is not None:
+                        self._remember()
             except (OSError, ValueError) as e:
                 print(f"[config] reload failed, keeping previous: {e}")
             if self._preview is not None and self._preview_until and now > self._preview_until:
@@ -106,6 +110,15 @@ class ConfigSource:
             if changed:
                 self.generation += 1
         return changed
+
+    def _remember(self):
+        try:
+            tmp = self.fallback + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(self._base, f)
+            os.replace(tmp, self.fallback)
+        except OSError:
+            pass
 
     def effective(self):
         with self._lock:

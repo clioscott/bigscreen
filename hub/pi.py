@@ -58,6 +58,12 @@ def v1_config(cfg):
 
 def apply_to_display(restart=True):
     cfg = config.load()
+    if cfg.get("hub", {}).get("display_mode") == "v2":
+        from hub import sync
+        config.publish(cfg)
+        sync.push_data()
+        return {"ok": True, "steps": [{"step": "sync config to display", "ok": True, "error": ""}],
+                "revision": cfg.get("revision")}
     p = _pi(cfg)
     steps = []
 
@@ -99,6 +105,8 @@ def display_fingerprint(cfg):
 
 def display_in_sync(cfg):
     state = read_json(APPLY_STATE, {}) or {}
+    if cfg.get("hub", {}).get("display_mode") == "v2":
+        return True, state
     return state.get("fingerprint") == display_fingerprint(cfg), state
 
 
