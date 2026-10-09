@@ -15,8 +15,8 @@ scale (km per LED pixel):
   (Johnstone Strait, the Discovery Passages at 6 km/px) would otherwise vanish
   and weld islands to the mainland. Sea and lakes are also rasterised at
   ~250 m, skeletonised, and any channel the LED-res mask lost is kept as a
-  4-connected 1-px line of water if it joins two water bodies or runs at least
-  a few pixels. Short bays and coves stay land.
+  4-connected 1-px line of water if it separates a sizeable landmass or runs
+  at least ~6 pixels. Archipelago gaps, short bays and small lakes stay land.
 * **Each layer picks a source resolution for the scale** (OSM simplified vs
   full water polygons; Natural Earth 1:50M vs 1:10M vs OSM boundaries; Natural
   Earth vs OSM rivers).
@@ -54,10 +54,11 @@ OSM_DIR = GEODATA_ROOT / "geodata" / "osm"
 WATER_FULL = GEODATA_ROOT / "osm_water_cache" / "water-polygons-split-3857" / "water_polygons.shp"
 WATER_SIMPLE = GEODATA_ROOT / "osm_water_cache" / "simplified-water-polygons-split-3857" / "simplified_water_polygons.shp"
 GEO_CACHE = BASEMAP_CACHE.parent / "geo"
-MASK_VERSION = "v9"
+MASK_VERSION = "v10"
 CHANNEL_FINE_KM = 0.25      # resolution used to find straits/inlets narrower than an LED pixel
 CHANNEL_FINE_MAX_W = 8000   # cap on that raster's width (px)
-CHANNEL_MIN_PX = 3.0        # a lost channel must run this many LED pixels to be kept, unless it joins two water bodies
+CHANNEL_MIN_PX = 6          # a lost channel/inlet/narrow lake is kept if it runs at least this many LED px …
+CHANNEL_ISLAND_PX = 30      # … or if it cuts off a landmass of at least this many LED px (Vancouver Island)
 
 # OSM `water=*` values that are rivers rather than lakes
 RIVER_WATER = {"river", "canal", "stream", "riverbank", "rapids", "oxbow", "ditch", "tidal_channel"}
@@ -368,21 +369,25 @@ def _draw_ocean(draw, view, shp_path, factor=SS):
     import shapefile
     idx = _shp_bbox_index(str(shp_path))
     x0, y0, x1, y1 = view.merc
-    hit = np.flatnonzero((idx[:, 0] <= x1) & (idx[:, 2] >= x0) & (idx[:, 1] <= y1) & (idx[:, 3] >= y0))
+    world = 2 * 20037508.342789244
+    # views that cross the date line also need the polygons from the other side of the world
+    shifts = [0.0] + ([-world] if x0 < -world / 2 else []) + ([world] if x1 > world / 2 else [])
     sf = shapefile.Reader(str(shp_path))
     k = factor / view.mpp
-    for i in hit:
-        shp = sf.shape(int(i))
-        pts = np.asarray(shp.points, dtype=np.float64)
-        parts = list(shp.parts) + [len(pts)]
-        rings = [np.column_stack(((pts[a:b, 0] - x0) * k, (y1 - pts[a:b, 1]) * k))
-                 for a, b in zip(parts[:-1], parts[1:]) if b - a >= 3]
-        for r in rings:
-            if _ring_is_outer(r):
-                draw.polygon(r.ravel().tolist(), fill=255)
-        for r in rings:
-            if not _ring_is_outer(r):
-                draw.polygon(r.ravel().tolist(), fill=0)
+    for sh in shifts:
+        hit = np.flatnonzero((idx[:, 0] + sh <= x1) & (idx[:, 2] + sh >= x0) & (idx[:, 1] <= y1) & (idx[:, 3] >= y0))
+        for i in hit:
+            shp = sf.shape(int(i))
+            pts = np.asarray(shp.points, dtype=np.float64)
+            parts = list(shp.parts) + [len(pts)]
+            rings = [np.column_stack(((pts[a:b, 0] + sh - x0) * k, (y1 - pts[a:b, 1]) * k))
+                     for a, b in zip(parts[:-1], parts[1:]) if b - a >= 3]
+            for r in rings:
+                if _ring_is_outer(r):
+                    draw.polygon(r.ravel().tolist(), fill=255)
+            for r in rings:
+                if not _ring_is_outer(r):
+                    draw.polygon(r.ravel().tolist(), fill=0)
 
 
 def _draw_lonlat_polys(draw, view, parts, fill=255, factor=SS):
@@ -405,10 +410,10 @@ def _prune_spurs(sk, n, keep):
     return sk
 
 
-def _lost_channels(fine, f, coarse, min_px):
+def _lost_channels(fine, f, coarse, min_px, island_px=CHANNEL_ISLAND_PX):
     """LED-res mask of narrow water channels present in ``fine`` (f x f per LED px) but lost in ``coarse``.
 
-    Kept: channels that join two separate coarse water bodies (straits), or that run >= min_px LED px.
+    Kept: channels that run >= min_px LED px, or that cut off a landmass of >= island_px LED px.
     Only the water the coarse mask lost is skeletonised (open sea would take far longer to thin)."""
     from skimage.morphology import skeletonize
     up = np.repeat(np.repeat(coarse, f, axis=0), f, axis=1)
@@ -423,22 +428,30 @@ def _lost_channels(fine, f, coarse, min_px):
     lab, n = ndimage.label(sk, structure=np.ones((3, 3)))
     if n == 0:
         return np.zeros_like(coarse)
-    # which coarse water bodies each lost piece touches (its 1-px fine neighbourhood, mapped to LED px)
-    wlab, _ = ndimage.label(coarse)
-    grown = ndimage.grey_dilation(lab, size=(5, 5))
-    gy, gx = np.nonzero(grown)
-    gl, wl = grown[gy, gx], wlab[(gy + oy) // f, (gx + ox) // f]
-    pairs = np.unique(np.column_stack((gl[wl > 0], wl[wl > 0])), axis=0)
-    joins = np.bincount(pairs[:, 0], minlength=n + 1) if len(pairs) else np.zeros(n + 1, int)
-    # length in LED px, from the LED cells each piece passes through
+    # LED cells each piece passes through; length = how many
     ly, lx = np.nonzero(lab)
     cells = np.unique(np.column_stack((lab[ly, lx], (ly + oy) // f, (lx + ox) // f)), axis=0)
-    length = np.bincount(cells[:, 0], minlength=n + 1)
-    keep = (joins >= 2) | (length >= min_px)
-    keep[0] = False
-    sel = keep[cells[:, 0]]
+    starts = np.searchsorted(cells[:, 0], np.arange(1, n + 2))
     ch = np.zeros_like(coarse)
-    ch[cells[sel, 1], cells[sel, 2]] = True
+    land = ~coarse
+
+    def big_parts(m):
+        lb, k = ndimage.label(m)
+        return int((np.bincount(lb.ravel())[1:] >= island_px).sum()) if k else 0
+
+    base = big_parts(land)
+    order = sorted(range(1, n + 1), key=lambda i: starts[i - 1] - starts[i])     # longest first
+    for i in order:
+        c = cells[starts[i - 1]:starts[i]]
+        if len(c) >= min_px:
+            ch[c[:, 1], c[:, 2]] = True
+            continue
+        trial = land & ~ch
+        trial[c[:, 1], c[:, 2]] = False
+        parts = big_parts(trial)
+        if parts > base:                     # it separates a landmass worth showing
+            ch[c[:, 1], c[:, 2]] = True
+            base = parts
     # A diagonal-only step in a channel would let the land on either side touch at a corner: fill one side.
     for _ in range(2):
         water = coarse | ch
