@@ -160,6 +160,12 @@ def display_preview_clear():
     return _display_call("/preview/clear")
 
 
+@app.post("/api/display/headlines/jump")
+def display_headlines_jump(payload: dict = Body(default={})):
+    """{"delta": 1|-1} or {"index": n}: show another headline category now (pins headlines if off-screen)."""
+    return _display_call("/headlines/jump", payload)
+
+
 # --- finance -----------------------------------------------------------------
 @app.get("/api/finance/data")
 def finance_data():

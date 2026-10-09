@@ -1,7 +1,9 @@
 import { ref, computed, onMounted } from "vue";
-import { store, api, fail, toast, ago } from "../core.js";
+import { store, api, fail, toast, ago, refreshDisplay } from "../core.js";
+import { LiveView } from "./overview.js";
 
 export const Headlines = {
+  components: { LiveView },
   setup() {
     const h = computed(() => store.draft.modules.headlines);
     const status = ref({});
@@ -40,8 +42,21 @@ export const Headlines = {
       const secs = items.reduce((t, n) => t + Math.max(0, n * 45 - 104) / Math.max(0.2, speed.value) + 8, 0);
       return Math.round(secs / 60);
     });
+    // manual category control on the display
+    const onDisplay = computed(() => store.display?.status?.headlines || null);
+    const showing = computed(() => Object.values(store.display?.status?.panels || {}).some((p) => p?.panel === "headlines"));
+    const jumping = ref(false);
+    const jump = async (body) => {
+      jumping.value = true;
+      try {
+        const r = await api("/api/display/headlines/jump", { json: body });
+        toast(r.pinned_sec ? `Showing “${r.category}” — headlines pinned for ${Math.round(r.pinned_sec / 60)} min` : `Showing “${r.category}”`);
+        setTimeout(refreshDisplay, 400);
+      } catch (e) { fail(e); } finally { jumping.value = false; }
+    };
+    const displayIndex = (name) => (onDisplay.value?.categories || []).indexOf(name);
     const favicon = (d) => `/api/favicon/${encodeURIComponent(d)}`;
-    return { h, feedStatus, open, toggleOpen, test, testing, addCategory, data, favicon, ago, speed, passMinutes, load };
+    return { h, feedStatus, open, toggleOpen, test, testing, addCategory, data, favicon, ago, speed, passMinutes, load, onDisplay, showing, jump, jumping, displayIndex };
   },
   template: `<div class="page">
     <div class="page-head"><div class="grow"><h1>Headlines</h1><p>Each category is one page on the display, mixing headlines from all its outlets (newest first, a few per outlet).</p></div>
@@ -56,6 +71,27 @@ export const Headlines = {
         <Slider v-model="speed" :min="0.5" :max="20" :step="0.5" unit=" px/s"/></Field>
     </div></div>
 
+    <div class="card"><div class="card-head"><span class="live">LIVE</span><h3>On the display</h3>
+        <span class="pill" :class="showing ? 'ok' : ''">{{ showing ? 'headlines showing' : 'headlines not on screen' }}</span></div>
+      <div class="card-body row" style="align-items:flex-start; gap:18px; flex-wrap:wrap">
+        <LiveView :scale="2"/>
+        <div class="stack" style="flex:1; min-width:260px">
+          <div class="row nowrap">
+            <button class="btn" :disabled="jumping || !onDisplay?.categories?.length" @click="jump({delta: -1})"><Icon name="ChevronLeft" :size="16"/>Previous</button>
+            <div style="flex:1; text-align:center"><div class="faint" style="font-size:12px">{{ showing ? 'Now showing' : 'Next up' }}</div>
+              <b>{{ onDisplay?.current || '—' }}</b>
+              <div class="faint mono" style="font-size:12px" v-if="onDisplay?.categories?.length">{{ onDisplay.index + 1 }} / {{ onDisplay.categories.length }}</div></div>
+            <button class="btn" :disabled="jumping || !onDisplay?.categories?.length" @click="jump({delta: 1})">Next<Icon name="ChevronRight" :size="16"/></button>
+          </div>
+          <div class="row" style="flex-wrap:wrap; gap:6px">
+            <button v-for="(name, i) in (onDisplay?.categories || [])" :key="name" class="btn sm" :class="{primary: i === onDisplay.index}"
+              :disabled="jumping" @click="jump({index: i})">{{ name }}</button>
+          </div>
+          <div class="faint" style="font-size:12.5px">Jumps straight to a category. If headlines aren't on screen they're pinned for 5 minutes; the rotation carries on from there as usual.</div>
+          <div class="callout" v-if="store.display && !store.display.status"><Icon name="TriangleAlert" :size="15"/>The display isn't reachable.</div>
+        </div>
+      </div></div>
+
     <div class="stack" v-sortable="{ list: h.categories, handle: '.handle' }">
       <div class="card" v-for="(c, ci) in h.categories" :key="ci">
         <div class="card-head">
@@ -65,6 +101,7 @@ export const Headlines = {
           <span class="pill">{{ (data[c.name] || []).length }} now</span>
           <span class="pill">{{ c.feeds.length }} outlets</span>
           <span class="spacer"></span>
+          <button class="btn sm" v-if="displayIndex(c.name) >= 0" :disabled="jumping" @click="jump({index: displayIndex(c.name)})" title="Show this category on the display now"><Icon name="Play" :size="13"/>Show now</button>
           <button class="btn sm ghost" @click="toggleOpen(c.name)"><Icon :name="open.has(c.name) ? 'ChevronDown' : 'ChevronRight'" :size="15"/>{{ open.has(c.name) ? 'Collapse' : 'Edit' }}</button>
         </div>
         <div v-if="open.has(c.name)">

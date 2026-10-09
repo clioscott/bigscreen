@@ -201,7 +201,7 @@ class Screen:
 
     def _draw_headlines(self, c, zone, entry, transition):
         x, y, w, h = zone
-        if transition:
+        if transition and not self.headlines.has_pending_jump():
             self.headlines.reset_to_first_sub(w)
             self.headlines._cycle_complete = False
         self.headlines.render(c, x, y, w, h)
@@ -300,6 +300,24 @@ class Screen:
         if need is None and entry.get("panel", "").startswith("map") and hasattr(self, "map_panel"):
             need = self.map_panel.default_loops(entry.get("track"))
         return self.passes[side] >= max(1, int(need or 1))
+
+    def headlines_jump(self, index=None, delta=0, hold_sec=300):
+        """Show a headline category now. If headlines aren't on screen, pin them on the side the
+        rotation normally uses (right by default) for ``hold_sec``."""
+        h = self.headlines
+        if not h.subreddits:
+            return {"error": "no headline categories loaded yet"}
+        if index is not None and not (0 <= int(index) < len(h.subreddits)):
+            return {"error": f"category index {index} out of range"}
+        side = next((s for s in ("left", "right") if self.prev.get(s) == "headlines"), None)
+        if side is None:
+            side = next((s for s in ("right", "left")
+                         if any(e.get("panel") == "headlines" for e in getattr(self.engines[s], "_cycle", []))), "right")
+            self.engines[side].set_override("headlines", hold_sec, {})
+        h.request_jump(index=index, delta=delta)
+        target = (int(index) if index is not None else (h.current_sub_index + int(delta))) % len(h.subreddits)
+        return {"ok": True, "side": side, "category": h.subreddits[target], "index": target,
+                "pinned_sec": None if self.prev.get(side) == "headlines" else hold_sec}
 
     def describe(self):
         return {side: {"panel": self.prev[side], **(self.engines[side].describe() or {})}
@@ -429,6 +447,7 @@ class App:
             "preview": self.source.preview_info(time.time()),
             "brightness": self.brightness,
             "panels": self.screen.describe(),
+            "headlines": self.screen.headlines.describe(),
             "data_age_s": {k: round(time.time() - v) for k, v in self.loader.mtimes.items()},
             "recent_errors": len(self.errors),
             "emulated": self.emulate,

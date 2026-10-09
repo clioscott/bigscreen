@@ -7,6 +7,7 @@
     POST /override/clear         {"side": "left"|"right"} or {} for both
     POST /preview                {"overlay": {...partial config...}, "ttl_sec": 120}
     POST /preview/clear
+    POST /headlines/jump         {"delta": 1|-1} or {"index": n}; pins headlines if not showing
     POST /restart                exit; systemd restarts the service
 """
 
@@ -110,6 +111,10 @@ def _make_handler(app):
                 return self._json({"ok": True, "expires_in": body.get("ttl_sec", 120)})
             if u.path == "/preview/clear":
                 return self._json({"ok": True, "cleared": app.source.clear_preview()})
+            if u.path == "/headlines/jump":
+                r = app.screen.headlines_jump(index=body.get("index"), delta=int(body.get("delta") or 0),
+                                              hold_sec=float(body.get("hold_sec", 300)))
+                return self._json(r, 400 if "error" in r else 200)
             if u.path == "/restart":
                 app.restart_requested = True
                 return self._json({"ok": True})

@@ -250,6 +250,10 @@ class HeadlinesRenderer(ModuleRenderer):
             graphics.DrawText(canvas, self.font, x, y + 10, self.color, "Waiting for News Data...")
             return
 
+        jump = self._pending_jump
+        if jump is not None and self.subreddits:
+            self._pending_jump = None
+            self._apply_jump(jump, width)
         if not self.current_lines:
             self._prepare_page(width)
             
@@ -343,6 +347,30 @@ class HeadlinesRenderer(ModuleRenderer):
             
             # Draw header text
             graphics.DrawText(canvas, self.font_small, x + 2, header_text_y, self.color_accent, header_text)
+
+    # -- manual control (called from the control-server thread; applied on the next frame) --
+    _pending_jump = None
+
+    def request_jump(self, index=None, delta=0):
+        """Queue a jump to category ``index`` (or ``delta`` steps from the current one)."""
+        self._pending_jump = ("index", int(index)) if index is not None else ("delta", int(delta))
+
+    def has_pending_jump(self):
+        return self._pending_jump is not None
+
+    def _apply_jump(self, jump, width):
+        n = len(self.subreddits)
+        kind, v = jump
+        self.current_sub_index = (v if kind == "index" else self.current_sub_index + v) % n
+        self._cycle_complete = False
+        self._prepare_page(width)
+        self.state = "HOLD_TOP"
+        self.state_start_time = time.time()
+        self.scroll_y = 0.0
+
+    def describe(self):
+        return {"categories": list(self.subreddits), "index": self.current_sub_index,
+                "current": self.subreddits[self.current_sub_index] if self.subreddits else None}
 
     def advance_to_next_sub(self, width):
         """Advance to next subreddit (wraps to 0 after last). Call when cycle_complete but client_calls panel disabled."""
