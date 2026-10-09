@@ -23,6 +23,9 @@ usermod -aG systemd-journal scott      # read service logs without sudo
 
 systemctl daemon-reload
 systemctl disable --now bigscreen-server.service bigscreen-control.service || true
+# a hub started by hand (before this service existed) would hold port 8800
+pkill -u scott -f "python -m hub.main" || true
+sleep 1
 systemctl enable --now bigscreen-hub.service
 sleep 3
 systemctl --no-pager --lines=5 status bigscreen-hub.service || true
