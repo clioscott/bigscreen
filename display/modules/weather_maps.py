@@ -2,7 +2,7 @@
 
 All compositing (basemap, satellite, radar, totals, coastlines) happens on the
 server; the Pi just blits one pre-rendered frame per draw and adds crisp
-pixel-font text on top: location markers, time label, legend, attribution.
+pixel-font text on top: time label, legend, attribution.
 """
 
 from __future__ import annotations
@@ -133,22 +133,6 @@ class MapPanel:
         idx = min(n - 1, int((elapsed % loop) * fps))
         fr = frames[idx]
         c.Blit(fr[: min(h, fr.shape[0]), : min(w, fr.shape[1])], x, y)
-
-        # city labels: optional dot + name in the area's chosen font/colour (per-city overrides allowed)
-        st = meta.get("label_style") or {}
-        for m in meta.get("markers") or []:
-            mx, my = x + m["x"], y + m["y"]
-            color = self._color(m.get("color") or st.get("color"), self.marker)
-            font = self._font(m.get("font") or st.get("font") or "tom-thumb.bdf")
-            if st.get("dot", True):
-                c.FillRect(mx - 1, my - 1, 3, 3, self.shadow)
-                c.SetPixel(mx, my, *self._color(st.get("dot_color"), color).rgb)
-            if m.get("name"):
-                tw = sum(max(0, font.CharacterWidth(ord(ch))) for ch in m["name"])
-                gap = 3 if st.get("dot", True) else -tw // 2
-                tx = mx + gap if (m.get("anchor") != "left" and mx + gap + tw < x + w - 1) else mx - gap - tw
-                ty = my + (font.height // 2) - 1 if st.get("dot", True) else my + font.height // 2
-                self._label_text(c, font, tx, ty, m["name"], color, st.get("outline", True))
 
         # time label (local)
         times = meta.get("times") or []

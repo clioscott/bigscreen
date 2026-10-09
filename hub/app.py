@@ -351,11 +351,6 @@ def maps_preview_area(payload: dict = Body(...)):
     img = geo.alpha_over(base, carto.render_overlay(view, area.get("carto") or {}, mfp, group="under"))
     img = geo.alpha_over(img, carto.render_overlay(view, area.get("carto") or {}, mfp, group="over"))
     out = Image.fromarray(img)
-    for m in tracks._markers(view, area):
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                out.putpixel((min(view.w - 1, max(0, m["x"] + dx)), min(view.h - 1, max(0, m["y"] + dy))),
-                             (255, 230, 90) if dx == dy == 0 else (0, 0, 0))
     out = out.resize((view.w * 2, view.h * 2), Image.NEAREST)
     bio = io.BytesIO()
     out.save(bio, "PNG")
@@ -365,72 +360,6 @@ def maps_preview_area(payload: dict = Body(...)):
             "bbox": [round(v, 4) for v in view.lonlat], "km_per_px": round(view.km_per_px, 3),
             "center": [round(view.center[0], 4), round(view.center[1], 4)],
             "width_km": round(view.km_per_px * view.w), "height_km": round(view.km_per_px * view.h)}
-
-
-FONT_NAMES = {
-    "tom-thumb.bdf": "Tom Thumb (tiny)", "4x6.bdf": "4×6", "5x7.bdf": "5×7", "5x8.bdf": "5×8",
-    "6x9.bdf": "6×9", "6x10.bdf": "6×10", "6x12.bdf": "6×12", "6x13.bdf": "6×13", "6x13B.bdf": "6×13 bold",
-    "7x13.bdf": "7×13", "7x13B.bdf": "7×13 bold", "nokia-small.bdf": "Nokia small",
-    "nokia-small-bold.bdf": "Nokia small bold", "helvR08.bdf": "Helvetica 8", "helvB08.bdf": "Helvetica 8 bold",
-    "helvR10.bdf": "Helvetica 10", "helvB10.bdf": "Helvetica 10 bold", "clR6x12.bdf": "Clean 6×12",
-    "8x13B.bdf": "8×13 bold",
-}
-
-
-@app.get("/api/fonts")
-def fonts():
-    from display.gfx import Font
-    out = []
-    for name, label in FONT_NAMES.items():
-        p = paths.REPO_DIR / "assets" / "fonts" / name
-        if p.exists():
-            f = Font()
-            f.LoadFont(str(p))
-            out.append({"file": name, "label": label, "height": f.height})
-    return sorted(out, key=lambda x: (x["height"], x["label"]))
-
-
-@app.get("/api/fonts/{name}/sample.png")
-def font_sample(name: str, text: str = "Vancouver", color: str = "ffe65a", scale: int = 3, outline: int = 1):
-    """Render text with the display's own BDF renderer, so the preview is pixel-identical to the panels."""
-    import numpy as np
-    from display.gfx import Canvas, Color, DrawText, Font
-    if name not in FONT_NAMES:
-        raise HTTPException(404)
-    f = Font()
-    f.LoadFont(str(paths.REPO_DIR / "assets" / "fonts" / name))
-    text = text[:40]
-    w = sum(max(0, f.CharacterWidth(ord(ch))) for ch in text) + 4
-    c = Canvas(max(8, w), f.height + 4)
-    col = Color(*(int(color[i:i + 2], 16) for i in (0, 2, 4))) if re.fullmatch(r"[0-9a-fA-F]{6}", color) else Color(255, 230, 90)
-    base = f.baseline + 2
-    if outline:
-        for dx, dy in ((1, 1), (-1, 1), (1, -1), (-1, -1), (1, 0), (-1, 0), (0, 1), (0, -1)):
-            DrawText(c, f, 2 + dx, base + dy, Color(0, 0, 0), text)
-    DrawText(c, f, 2, base, col, text)
-    img = Image.fromarray(c.buf).resize((c.width * scale, c.height * scale), Image.NEAREST)
-    bio = io.BytesIO()
-    img.save(bio, "PNG")
-    return Response(bio.getvalue(), media_type="image/png", headers={"Cache-Control": "max-age=3600"})
-
-
-_CITIES = None
-
-
-@app.get("/api/maps/cities")
-def cities(west: float, south: float, east: float, north: float, min_pop: int = 0, q: str = "", limit: int = 60):
-    """GeoNames places (US + CA, pop ≥ 500) inside a lon/lat box, largest first."""
-    global _CITIES
-    from hub.weather.geo import GEODATA_ROOT
-    if _CITIES is None:
-        _CITIES = read_json(GEODATA_ROOT / "geodata" / "cities" / "cities_us_ca.json", {}).get("cities", [])
-    ql = q.strip().lower()
-    hits = [c for c in _CITIES
-            if west <= c["lon"] <= east and south <= c["lat"] <= north and (c.get("pop") or 0) >= min_pop
-            and (not ql or ql in c["name"].lower() or ql in (c.get("ascii") or "").lower())]
-    hits.sort(key=lambda c: -(c.get("pop") or 0))
-    return [{"name": c["name"], "lat": round(c["lat"], 4), "lon": round(c["lon"], 4), "pop": c.get("pop"),
-             "region": f"{c.get('adm1', '')}, {c.get('cc', '')}"} for c in hits[:max(1, min(300, limit))]]
 
 
 @app.post("/api/maps/render/{tid}")

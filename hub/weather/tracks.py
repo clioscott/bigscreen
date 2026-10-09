@@ -1,7 +1,7 @@
 """Render map animation tracks into packs the display plays back.
 
 Config: modules.weather_maps
-    areas:  {id: {label, center: [lat, lon], km_per_px, markers: [{name, lat, lon}],
+    areas:  {id: {label, short_label, center: [lat, lon] + km_per_px | fit: {nw, se},
                   carto: {<layer>: {enabled, color, opacity, width, min_km_px, max_km_px}},
                   min_feature_px}}
     tracks: {id: {label, enabled, area, size: "half"|"full", kind: "loop"|"accumulation",
@@ -16,7 +16,7 @@ Loop layers (drawn in order over the basemap, under the cartography):
     {"type": "radar", "opacity": 0.9}                     live rate, TV colours, from the archive
 
 Pack output (synced to the Pi): data/anim/<id>.bin  = n frames of (h, w, 3) uint8
-                                data/anim/<id>.json = {w, h, n, fps, times, markers, legend, ...}
+                                data/anim/<id>.json = {w, h, n, fps, times, legend, ...}
 """
 
 from __future__ import annotations
@@ -86,37 +86,6 @@ def prune_wms_cache(max_age_h=50):
     for p in WMS_CACHE.glob("*/*.png"):
         if p.stat().st_mtime < cutoff:
             p.unlink(missing_ok=True)
-
-
-LABEL_DEFAULTS = {"enabled": True, "font": "tom-thumb.bdf", "color": "#ffe65a", "dot": True,
-                  "dot_color": "#ffe65a", "outline": True}
-
-
-def label_style(area):
-    lab = area.get("labels") or {}
-    return {k: lab.get(k, v) for k, v in LABEL_DEFAULTS.items()}
-
-
-def _markers(view, area):
-    """City labels inside the view -> pixel positions. Each city may override font/colour."""
-    lab = area.get("labels") or {}
-    if lab.get("enabled", True) is False:
-        return []
-    cities = lab.get("cities")
-    if cities is None:
-        cities = area.get("markers") or []        # pre-labels configs
-    out = []
-    for m in cities:
-        if m.get("enabled", True) is False:
-            continue
-        x, y = view.project(float(m["lon"]), float(m["lat"]))
-        if 0 <= x < view.w and 0 <= y < view.h:
-            item = {"name": m.get("name", ""), "x": int(round(x)), "y": int(round(y))}
-            for k in ("font", "color", "anchor"):
-                if m.get(k):
-                    item[k] = m[k]
-            out.append(item)
-    return out
 
 
 def _basemap_for(base, view, track, t, under=None):
@@ -236,8 +205,6 @@ def render_track(tid, track, cfg, log=print):
         "fps": float(track.get("fps", 8)), "hold_last_sec": float(track.get("hold_last_sec", 1.5)),
         "loops": int(track.get("loops", 2)), "timestamp": track.get("timestamp", True),
         "times": [t.strftime("%Y-%m-%dT%H:%M:%SZ") for t in times],
-        "markers": _markers(view, area) if track.get("labels", track.get("markers", True)) else [],
-        "label_style": label_style(area),
         "legend": _legend_spec(pals) if kind == "accumulation" and track.get("legend", True) else None,
         "window_hours": float(track.get("window_hours", 24)) if kind == "accumulation" else None,
         "generated_at": time.time(), "attribution": "ECCC",

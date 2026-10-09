@@ -10,7 +10,6 @@ export const store = reactive({
   status: null,          // /api/status
   display: null,         // /api/display/status
   catalog: null,         // /api/maps/catalog
-  fonts: [],             // /api/fonts
   maps: { tracks: {}, packs: {} },
   preview: null,         // { until } while the display shows unsaved changes
   saving: false,
@@ -108,11 +107,10 @@ export async function endPreview(keep) {
 
 // ---- polling ----------------------------------------------------------------
 export async function loadAll() {
-  const [cfg, catalog, fonts] = await Promise.all([api("/api/config"), api("/api/maps/catalog").catch(() => null), api("/api/fonts").catch(() => [])]);
+  const [cfg, catalog] = await Promise.all([api("/api/config"), api("/api/maps/catalog").catch(() => null)]);
   store.saved = cfg;
   store.draft = clone(cfg);
   store.catalog = catalog;
-  store.fonts = fonts;
   refreshStatus();
   refreshDisplay();
   refreshMaps();
