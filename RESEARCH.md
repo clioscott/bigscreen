@@ -94,6 +94,69 @@ Source: MSC GeoMet WMS `https://geo.weather.gc.ca/geomet` (what v1 uses).
   rain total; snow → add RSNO cm/h × 0.1 h to snow total; mixed → split. Render rain ramp (light green → dark green →
   yellow → orange → red → magenta) and snow ramp (white → light blue → deep blue) with configurable thresholds.
 
+## Environment Canada (MSC) data access — full survey (tested from server 2026-10-09)
+
+Three interfaces, all anonymous and free. Docs: https://eccc-msc.github.io/open-data/
+
+### 1. GeoMet OGC API — `https://api.weather.gc.ca/collections/<id>/items` (JSON, the cleanest source)
+Params: `bbox`, `datetime` (RFC3339, `a/..`), `filter` (CQL2), `sortby` (`-field` = desc), `limit`/`offset`
+(≤10 000), `properties`, `lang`, `f=json|csv`. 104 collections; the useful ones:
+
+| Collection | What we get for Vancouver | Notes |
+|---|---|---|
+| `citypageweather-realtime` [experimental] | `bc-74` = Vancouver: currentConditions, forecastGroup (13 periods + normals, UV), **hourlyForecastGroup (24 h)**, warnings, riseSet | one call, 600 ms; replaces v1's XML scraping + URL hunting |
+| `swob-realtime` | all stations in a bbox, 30 days history, ~200 fields | **1-minute** obs from Point Atkinson, West Van, Pitt Meadows, Delta Burns Bog, White Rock; hourly from CYVR (manual), Vancouver Harbour, Sea Island CCG, etc. Fields incl. temps, wind avg/gust/dir (2/10/60 min), pcpn 1/3/6/24 h, mslp, tendency |
+| `weather-alerts` | alert name/type/colour, impact, confidence, text, area, expiry | bbox query also returns ended alerts → filter `status_en != ended` + point-in-area |
+| `aqhi-observations-realtime` / `aqhi-forecasts-realtime` | Metro Vancouver NW/NE/SE/SW… AQHI value | hourly |
+| `prognos-hrdps-realtime` / `prognos-rdps-realtime` | statistically corrected point forecasts (temp etc.) | |
+| `marineweather-realtime` | Strait of Georgia forecasts + warnings | |
+| `hydrometric-realtime` | river level/discharge (e.g. Capilano) | |
+| `weather:rdpa:*` coverages | RDPA 6 h/24 h precip analysis | coverage endpoint returned 400 with plain bbox — needs param work |
+
+### 2. GeoMet WMS/WCS — `https://geo.weather.gc.ca/geomet`
+- **WMS (images)**: radar `RADAR_1KM_RRAI/RSNO`, `Radar_1km_SfcPrecipType` (3 h kept, 6 min);
+  radar nowcast `Radar_1km_*-Extrapolation` (+72 min); `Lightning_2.5km_Density` (3 h, 10 min);
+  GOES-West/East ×9 products each — DayVis-NightIR, NaturalColor, DayCloudType-NightMicrophysics,
+  SnowFog, Smoke, FireTemperature… (**48 h**, 10 min); HRDPS model fields (TT temp, PR precip, NT cloud…,
+  hourly, **+48 h**); RAQDPS-FireWork wildfire smoke PM2.5 (hourly, +72 h).
+- **WCS (numbers)**: works for model layers (HRDPS returns GeoTIFF) but is **disabled for radar**.
+- **GetFeatureInfo**: numeric value at one point, e.g. radar `{'value': 0, 'class': 'Undetected', 'time': …}` —
+  good for a "rain rate at home" readout, not for grids.
+- Use the layer-specific GetCapabilities (`&layer=NAME`) — the full document is 40 MB.
+
+### 3. MSC Datamart — `https://dd.weather.gc.ca/today/…` (files; mirror `hpfx.collab.science.gc.ca/<YYYYMMDD>/WXO-DD/`)
+- 30-day retention, date tree `/<YYYYMMDD>/WXO-DD/…`; `/today/` = current day.
+- **Path change broke v1:** `observations/swob-ml/latest/` moved under `/today/`, and `CYVR-AUTO` no longer
+  exists (only `CYVR-MAN`, hourly). Fixed in hub config 2026-10-09.
+- Numeric products: `lightning/` (GeoTIFF every 10 min, national 2.5 km), `model_hrdpa/2.5km/` (radar+gauge
+  6 h precip analysis, GRIB2), `model_hrdps/` (GRIB2 forecasts). Radar here is only per-station GIFs.
+- **AMQP push (recommended by MSC for real-time):** `amqps://anonymous:anonymous@dd.weather.gc.ca:5671`,
+  exchange `xpublic`, routing key `v02.post.*.WXO-DD.<path with dots>.#` (also `v03.*`). Tested: 883 announcements
+  in 60 s for swob/citypage/radar/alerts; body = `timestamp baseurl relpath`. Queues: name `q_anonymous.*`,
+  set expiry, keep < 10 000 messages.
+
+### Usage policy (must follow)
+- ≤ ~86 400 requests/day (1/s) before contacting MSC; bulk/batch WMS tile retrieval prohibited.
+- Meaningful User-Agent; never send `Cache-Control: no-cache`.
+- "Use Datamart, not GeoMet, for building local archives" — our rolling radar cache is one image per area per
+  6 min (normal map use), but keep it small and documented.
+- **Attribution required** (End-use licence): show "Data: Environment and Climate Change Canada" (panel + radar screens).
+
+### Recommended pull strategy for the hub
+| Data | Source | Cadence | Est. req/day |
+|---|---|---|---|
+| Current + hourly + daily forecast, warnings, sun | OGC `citypageweather-realtime` item `bc-74` | 10 min (citypage updates ≥ hourly) | 144 |
+| Live obs (temp/wind/gust/precip) | OGC `swob-realtime` bbox, `datetime=now-15m/..` | 2 min | 720 |
+| Alerts | OGC `weather-alerts` bbox, filter active | 5 min | 288 |
+| AQHI | OGC `aqhi-observations/forecasts-realtime` | 30 min | 96 |
+| Radar rate + type (per map area) | WMS GetMap ×3 layers | 6 min | ~720 per area |
+| Radar nowcast (optional) | WMS Extrapolation layers ×13 steps | 6 min | ~3 100 per area — only if wanted |
+| GOES loops (per area/product) | WMS GetMap, only new timesteps | 10 min | 144 per area/product |
+| Lightning | Datamart GeoTIFF or WMS | 10 min | 144 |
+| HRDPS forecast maps (temp/precip/cloud) | WMS image or WCS numbers, only when model run changes | hourly check | ~50 |
+Total with 3 map areas ≈ 5–6 k/day — well under the policy line. Polling is adequate; AMQP is an optional
+later optimisation (e.g. trigger radar pulls the moment a new DPQPE frame is announced instead of on a timer).
+
 ## v2 decisions so far (from user, 2026-10-09)
 
 - Headlines: mixed-source list per category ("Canada News", "Local News", "World News", "US News",
@@ -103,6 +166,8 @@ Source: MSC GeoMet WMS `https://geo.weather.gc.ca/geomet` (what v1 uses).
   which animations/layers go on each basemap, and per-animation timeframe, frame interval, refresh cadence.
   Keep both styles: GOES day/night "real" cloud view and TV-style bright precip overlays on a static basemap.
   True rolling accumulation (rain green→red, snow white→deep blue), configurable window up to 48 h.
+  **Mixed rain/snow display rule:** a pixel shows rain colours until its snow total passes a (configurable)
+  threshold, then snow colours draw on top — snow-on-top bias.
 
 ## Pi performance findings
 
