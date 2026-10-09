@@ -78,6 +78,32 @@ class MapPanel:
         self.dim = Color(170, 170, 170)
         self.marker = Color(255, 230, 90)
         self._started = {}
+        self._fonts = {}
+
+    def _font(self, name):
+        """Label fonts by file name (assets/fonts/<name>), cached."""
+        f = self._fonts.get(name)
+        if f is None:
+            f = graphics.Font()
+            try:
+                f.LoadFont(f"fonts/{name}")
+            except Exception:
+                f = self.font
+            self._fonts[name] = f
+        return f
+
+    @staticmethod
+    def _color(hex_or_none, default):
+        if not hex_or_none:
+            return default
+        h = hex_or_none.lstrip("#")
+        return Color(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+
+    def _label_text(self, c, font, x, y, s, color, outline):
+        if outline:
+            for dx, dy in ((1, 1), (-1, 1), (1, -1), (-1, -1), (1, 0), (-1, 0), (0, 1), (0, -1)):
+                graphics.DrawText(c, font, x + dx, y + dy, self.shadow, s)
+        graphics.DrawText(c, font, x, y, color, s)
 
     def _text(self, c, x, y, s, color=None):
         for dx, dy in ((1, 1), (-1, 1), (1, -1), (-1, -1), (1, 0), (-1, 0), (0, 1), (0, -1)):
@@ -106,13 +132,21 @@ class MapPanel:
         fr = frames[idx]
         c.Blit(fr[: min(h, fr.shape[0]), : min(w, fr.shape[1])], x, y)
 
-        # markers: 3x3 dot + name
+        # city labels: optional dot + name in the area's chosen font/colour (per-city overrides allowed)
+        st = meta.get("label_style") or {}
         for m in meta.get("markers") or []:
             mx, my = x + m["x"], y + m["y"]
-            c.FillRect(mx - 1, my - 1, 3, 3, self.shadow)
-            c.SetPixel(mx, my, *self.marker.rgb)
+            color = self._color(m.get("color") or st.get("color"), self.marker)
+            font = self._font(m.get("font") or st.get("font") or "tom-thumb.bdf")
+            if st.get("dot", True):
+                c.FillRect(mx - 1, my - 1, 3, 3, self.shadow)
+                c.SetPixel(mx, my, *self._color(st.get("dot_color"), color).rgb)
             if m.get("name"):
-                self._text(c, mx + 4, my + 3, m["name"], self.marker)
+                tw = sum(max(0, font.CharacterWidth(ord(ch))) for ch in m["name"])
+                gap = 3 if st.get("dot", True) else -tw // 2
+                tx = mx + gap if (m.get("anchor") != "left" and mx + gap + tw < x + w - 1) else mx - gap - tw
+                ty = my + (font.height // 2) - 1 if st.get("dot", True) else my + font.height // 2
+                self._label_text(c, font, tx, ty, m["name"], color, st.get("outline", True))
 
         # time label (local)
         times = meta.get("times") or []

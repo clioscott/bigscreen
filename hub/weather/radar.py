@@ -134,13 +134,14 @@ GROUP = np.array([{"rain": 0, "freezing": 1, "mixed": 2, "snow": 3}[wms.ptype_gr
 GROUP[wms.PT_NONE] = 0          # no type data → treat as rain
 
 
-def rate_layer(rain, snow, ptype, cfg_palettes=None, opacity=0.9):
-    """TV-style live precipitation: colour by type, intensity by rate."""
+def rate_layer(rain, snow, ptype, cfg_palettes=None):
+    """TV-style live precipitation: colour by type, intensity by rate. Always opaque, full colour,
+    so it contrasts with the basemap underneath."""
     g = GROUP[ptype]
     out = np.zeros(rain.shape + (4,), dtype=np.uint8)
     for code, values, pal in ((0, rain, "rain_rate"), (1, rain, "fzra_rate"), (2, rain, "mixed_rate"),
                               (3, snow, "snow_rate")):
-        layer = colorize(np.where(g == code, values, 0), palette(cfg_palettes, pal), opacity)
+        layer = colorize(np.where(g == code, values, 0), palette(cfg_palettes, pal), 1.0, fade_first=1.0)
         m = layer[..., 3] > 0
         out[m] = layer[m]
     return out
@@ -168,11 +169,12 @@ def accumulate(view, times, crop=None, max_gap_min=15):
         yield t, rain_tot, snow_tot
 
 
-def accumulation_layer(rain_mm, snow_cm, cfg_palettes=None, snow_on_top_cm=0.5, opacity=1.0):
-    """Rain colours, with snow colours drawn on top wherever the snow total passes the threshold."""
-    rain_rgba = colorize(rain_mm, palette(cfg_palettes, "rain_total"), opacity, fade_first=0.7)
+def accumulation_layer(rain_mm, snow_cm, cfg_palettes=None, snow_on_top_cm=0.5):
+    """Rain colours, with snow colours drawn on top wherever the snow total passes the threshold.
+    Opaque and full colour (never see-through)."""
+    rain_rgba = colorize(rain_mm, palette(cfg_palettes, "rain_total"), 1.0, fade_first=1.0)
     snow_pal = palette(cfg_palettes, "snow_total")
-    snow_rgba = colorize(np.where(snow_cm >= snow_on_top_cm, snow_cm, 0), snow_pal, opacity, fade_first=0.85)
+    snow_rgba = colorize(np.where(snow_cm >= snow_on_top_cm, snow_cm, 0), snow_pal, 1.0, fade_first=1.0)
     m = snow_rgba[..., 3] > 0
     rain_rgba[m] = snow_rgba[m]
     return rain_rgba

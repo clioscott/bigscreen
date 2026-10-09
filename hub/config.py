@@ -108,6 +108,15 @@ def validate(cfg):
     if wm:
         areas = wm.get("areas") or {}
         for aid, a in areas.items():
+            if a.get("fit"):
+                try:
+                    (n, w) = [float(v) for v in a["fit"]["nw"]]
+                    (s_, e) = [float(v) for v in a["fit"]["se"]]
+                except (KeyError, TypeError, ValueError):
+                    raise ConfigError(f"map area {aid}: fit needs nw and se [lat, lon] corners")
+                if not (n > s_ and e > w):
+                    raise ConfigError(f"map area {aid}: NW corner must be north-west of the SE corner")
+                continue
             try:
                 lat, lon = float(a["center"][0]), float(a["center"][1])
                 kpp = float(a["km_per_px"])

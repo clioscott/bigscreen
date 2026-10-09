@@ -32,7 +32,7 @@ from PIL import Image
 from hub import paths
 from hub.util import atomic_write_json
 from hub.weather import carto, radar, wms
-from hub.weather.geo import View, alpha_over, render_basemap
+from hub.weather.geo import View, alpha_over, render_basemap, shade_day_night
 
 ANIM_DIR = paths.DATA_DIR / "anim"
 WMS_CACHE = paths.CACHE_DIR / "wms"
@@ -51,7 +51,7 @@ def zone_sizes(cfg):
 def views_for(area, size, cfg):
     """(display view, archive view, crop) — archives are full width; half views are their centre crop."""
     half_w, full_w, h = zone_sizes(cfg)
-    full = View(area, full_w, h)
+    full = View(area, full_w, h, fit_width=half_w)      # same scale as the half view (corner-fit areas)
     if size == "full":
         return full, full, None
     x0 = (full_w - half_w) // 2
@@ -88,13 +88,43 @@ def prune_wms_cache(max_age_h=50):
             p.unlink(missing_ok=True)
 
 
+LABEL_DEFAULTS = {"enabled": True, "font": "tom-thumb.bdf", "color": "#ffe65a", "dot": True,
+                  "dot_color": "#ffe65a", "outline": True}
+
+
+def label_style(area):
+    lab = area.get("labels") or {}
+    return {k: lab.get(k, v) for k, v in LABEL_DEFAULTS.items()}
+
+
 def _markers(view, area):
+    """City labels inside the view -> pixel positions. Each city may override font/colour."""
+    lab = area.get("labels") or {}
+    if lab.get("enabled", True) is False:
+        return []
+    cities = lab.get("cities")
+    if cities is None:
+        cities = area.get("markers") or []        # pre-labels configs
     out = []
-    for m in area.get("markers") or []:
+    for m in cities:
+        if m.get("enabled", True) is False:
+            continue
         x, y = view.project(float(m["lon"]), float(m["lat"]))
         if 0 <= x < view.w and 0 <= y < view.h:
-            out.append({"name": m.get("name", ""), "x": int(round(x)), "y": int(round(y))})
+            item = {"name": m.get("name", ""), "x": int(round(x)), "y": int(round(y))}
+            for k in ("font", "color", "anchor"):
+                if m.get(k):
+                    item[k] = m[k]
+            out.append(item)
     return out
+
+
+def _basemap_for(base, view, track, t):
+    dn = (track.get("basemap") or {}).get("daynight") or {}
+    if dn.get("enabled"):
+        return shade_day_night(base, view, t, float(dn.get("night_brightness", 0.25)),
+                               float(dn.get("twilight_deg", 6)))
+    return base
 
 
 def _legend_spec(pals):
@@ -129,10 +159,9 @@ def render_track(tid, track, cfg, log=print):
         for t, rain_mm, snow_cm in radar.accumulate(arch_view, arch, crop):
             if t in show:
                 layer = radar.accumulation_layer(rain_mm, snow_cm, wm.get("palettes"),
-                                                 float(track.get("snow_on_top_cm", 0.5)),
-                                                 float(track.get("opacity", 1.0)))
-                frames.append(alpha_over(alpha_over(base, layer), overlay) if overlay is not None
-                              else alpha_over(base, layer))
+                                                 float(track.get("snow_on_top_cm", 0.5)))
+                img = alpha_over(_basemap_for(base, view, track, t), layer)
+                frames.append(alpha_over(img, overlay) if overlay is not None else img)
                 times.append(t)
         coverage = f"{(arch[-1] - arch[0]).total_seconds() / 3600:.1f} of {hours:g} h archived"
     else:
@@ -158,7 +187,7 @@ def render_track(tid, track, cfg, log=print):
                        for l in layers}
         kept = []
         for t in times:
-            img = base
+            img = _basemap_for(base, view, track, t)          # day/night shades the basemap only
             missing = False
             for l in layers:
                 lt = layer_times[id(l)]
@@ -175,8 +204,7 @@ def render_track(tid, track, cfg, log=print):
                 try:
                     if l.get("type") == "radar":
                         rain, snow, ptype = radar.load_frame(arch_view, src_t, crop)
-                        rgba = radar.rate_layer(rain, snow, ptype, wm.get("palettes"), float(l.get("opacity", 0.9)))
-                        img = alpha_over(img, rgba)
+                        img = alpha_over(img, radar.rate_layer(rain, snow, ptype, wm.get("palettes")))
                     else:
                         rgba = _wms_frame(l["layer"], view, src_t, l.get("style", ""), int(l.get("scale", 2)))
                         img = alpha_over(img, rgba, float(l.get("opacity", 1.0)))
@@ -205,7 +233,8 @@ def render_track(tid, track, cfg, log=print):
         "fps": float(track.get("fps", 8)), "hold_last_sec": float(track.get("hold_last_sec", 1.5)),
         "loops": int(track.get("loops", 2)), "timestamp": track.get("timestamp", True),
         "times": [t.strftime("%Y-%m-%dT%H:%M:%SZ") for t in times],
-        "markers": _markers(view, area) if track.get("markers", True) else [],
+        "markers": _markers(view, area) if track.get("labels", track.get("markers", True)) else [],
+        "label_style": label_style(area),
         "legend": _legend_spec(pals) if kind == "accumulation" and track.get("legend", True) else None,
         "window_hours": float(track.get("window_hours", 24)) if kind == "accumulation" else None,
         "generated_at": time.time(), "attribution": "ECCC",

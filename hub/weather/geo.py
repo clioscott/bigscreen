@@ -46,16 +46,33 @@ def from_merc(x, y):
 
 
 class View:
-    """An area rendered at a pixel size: mercator bbox + lon/lat bbox + pixel projection."""
+    """An area rendered at a pixel size: mercator bbox + lon/lat bbox + pixel projection.
 
-    def __init__(self, area: dict, width: int, height: int):
+    Areas are either a centre + scale (``center: [lat, lon]``, ``km_per_px``) or two corners
+    (``fit: {"nw": [lat, lon], "se": [lat, lon]}``): the view is centred between them and scaled so
+    both fit, the binding dimension touching the edges exactly. ``fit_width`` is the width used for
+    that fit, so a full-width view shares the half-width view's scale (half = its centre crop).
+    """
+
+    def __init__(self, area: dict, width: int, height: int, fit_width: int | None = None):
         self.area = area
         self.w, self.h = int(width), int(height)
-        lat, lon = float(area["center"][0]), float(area["center"][1])
-        km_per_px = float(area["km_per_px"])
-        mpp = km_per_px * 1000.0 / math.cos(math.radians(lat))      # projected metres per pixel
-        cx, cy = to_merc(lon, lat)
+        fit = area.get("fit")
+        if fit:
+            (la_n, lo_w), (la_s, lo_e) = fit["nw"], fit["se"]
+            x0, y1 = to_merc(float(lo_w), float(la_n))
+            x1, y0 = to_merc(float(lo_e), float(la_s))
+            fw = int(fit_width or width)
+            mpp = max(abs(y1 - y0) / self.h, abs(x1 - x0) / fw)
+            cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+            lon, lat = from_merc(cx, cy)
+        else:
+            lat, lon = float(area["center"][0]), float(area["center"][1])
+            mpp = float(area["km_per_px"]) * 1000.0 / math.cos(math.radians(lat))   # projected m per pixel
+            cx, cy = to_merc(lon, lat)
         self.mpp = mpp
+        self.center = (lat, lon)
+        self.km_per_px = mpp * math.cos(math.radians(lat)) / 1000.0
         self.merc = (cx - self.w / 2 * mpp, cy - self.h / 2 * mpp, cx + self.w / 2 * mpp, cy + self.h / 2 * mpp)
         lo0, la0 = from_merc(self.merc[0], self.merc[1])
         lo1, la1 = from_merc(self.merc[2], self.merc[3])
@@ -63,8 +80,16 @@ class View:
 
     @property
     def key(self):
-        a = self.area
-        return f"{a['id']}_{self.w}x{self.h}_{float(a['km_per_px']):g}_{a['center'][0]:.4f}_{a['center'][1]:.4f}"
+        return (f"{self.area.get('id', 'area')}_{self.w}x{self.h}_{self.km_per_px:.5f}"
+                f"_{self.center[0]:.4f}_{self.center[1]:.4f}")
+
+    def lonlat_grid(self):
+        """(lon, lat) arrays (h, w) of pixel centres — for per-pixel day/night shading."""
+        xs = self.merc[0] + (np.arange(self.w) + 0.5) * self.mpp
+        ys = self.merc[3] - (np.arange(self.h) + 0.5) * self.mpp
+        lon = np.degrees(xs / R)
+        lat = np.degrees(2 * np.arctan(np.exp(ys / R)) - np.pi / 2)
+        return np.broadcast_to(lon, (self.h, self.w)), np.broadcast_to(lat[:, None], (self.h, self.w))
 
     def project(self, lon, lat):
         x, y = to_merc(lon, lat)
@@ -158,6 +183,31 @@ def render_basemap(view: View, style: dict) -> np.ndarray:
     BASEMAP_CACHE.mkdir(parents=True, exist_ok=True)
     img.save(cached)
     return np.asarray(img)
+
+
+def solar_elevation(lon, lat, when):
+    """Solar elevation in degrees for arrays of lon/lat at a UTC datetime (NOAA approximation)."""
+    doy = when.timetuple().tm_yday
+    hour = when.hour + when.minute / 60 + when.second / 3600
+    g = 2 * math.pi / 365 * (doy - 1 + (hour - 12) / 24)
+    decl = (0.006918 - 0.399912 * math.cos(g) + 0.070257 * math.sin(g) - 0.006758 * math.cos(2 * g)
+            + 0.000907 * math.sin(2 * g) - 0.002697 * math.cos(3 * g) + 0.00148 * math.sin(3 * g))
+    eqt = 229.18 * (0.000075 + 0.001868 * math.cos(g) - 0.032077 * math.sin(g) - 0.014615 * math.cos(2 * g)
+                    - 0.040849 * math.sin(2 * g))
+    tst = hour * 60 + eqt + 4 * np.asarray(lon)                     # true solar time, minutes
+    ha = np.radians(tst / 4 - 180)
+    la = np.radians(np.asarray(lat))
+    sin_el = np.sin(la) * math.sin(decl) + np.cos(la) * math.cos(decl) * np.cos(ha)
+    return np.degrees(np.arcsin(np.clip(sin_el, -1, 1)))
+
+
+def shade_day_night(base: np.ndarray, view: "View", when, night_brightness=0.25, twilight_deg=6.0):
+    """Darken the night side of a basemap (smooth through civil twilight). Only ever applied to the
+    basemap — data layers (radar, totals) are composited afterwards at full brightness."""
+    lon, lat = view.lonlat_grid()
+    el = solar_elevation(lon, lat, when)
+    f = np.interp(el, [-float(twilight_deg), 0.0], [float(night_brightness), 1.0]).astype(np.float32)
+    return np.clip(base.astype(np.float32) * f[..., None] + 0.5, 0, 255).astype(np.uint8)
 
 
 def _hex(c):

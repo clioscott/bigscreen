@@ -186,7 +186,7 @@ def water_masks(view: View, min_feature_px: float = 3.0):
         a = np.asarray(Image.open(cached).convert("RGB"))
         return a[..., 0] > 0, a[..., 1] > 0, a[..., 2] > 0
     # Simplified OSM water polygons are plenty for wide views; full detail below ~1.5 km/px.
-    km_px = float(view.area["km_per_px"])
+    km_px = view.km_per_px
     src = WATER_SIMPLE if km_px >= 1.5 or not WATER_FULL.exists() else WATER_FULL
     W, H = view.w * SS, view.h * SS
     img = Image.new("L", (W, H), 0)                       # 255 = ocean
@@ -333,7 +333,7 @@ def _draw_lines(view, lines, width):
 def render_overlay(view: View, overrides: dict | None = None, min_feature_px: float = 3.0) -> np.ndarray:
     """RGBA (h, w, 4) uint8 with every enabled, in-range layer for this view. Cached."""
     layers = [s for s in layer_settings(overrides) if s["enabled"]]
-    km_px = float(view.area["km_per_px"])
+    km_px = view.km_per_px
     key = hashlib.sha1(json.dumps([view.key, layers, min_feature_px, "v1"], sort_keys=True).encode()).hexdigest()[:16]
     cached = BASEMAP_CACHE / f"carto_{key}.png"
     if cached.exists():
