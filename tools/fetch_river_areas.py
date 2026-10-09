@@ -10,12 +10,12 @@ import sys
 
 import requests
 from shapely.geometry import LineString, mapping
-from shapely.ops import linemerge, polygonize, unary_union
+from shapely.ops import polygonize, unary_union
 
 from hub.weather.carto import OSM_DIR
 
-OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter",
-            "https://overpass.kumi.systems/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter"]
+OVERPASS = ["https://maps.mail.ru/osm/tools/overpass/api/interpreter", "https://overpass-api.de/api/interpreter",
+            "https://overpass.private.coffee/api/interpreter", "https://overpass.kumi.systems/api/interpreter"]
 
 
 def main():
@@ -55,7 +55,7 @@ out geom;"""
                      for m in el.get("members", []) if m.get("role") == "outer" and m.get("geometry")
                      and len(m["geometry"]) >= 2]
             if outer:
-                polys = list(polygonize(linemerge(unary_union(outer))))
+                polys = list(polygonize(unary_union(outer)))
                 rings = [list(p.exterior.coords) for p in polys]
         for ring in rings:
             feats.append({"type": "Feature", "properties": {"natural": "water", "water": tags.get("water", "river"),
