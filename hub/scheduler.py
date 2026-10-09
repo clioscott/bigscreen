@@ -24,6 +24,7 @@ JOBS = {
     "news":     ("modules.headlines.refresh_interval_sec", 900, 120, "Headlines"),
     "calendar": ("modules.calendar.refresh_interval_sec", 60, 120, "Google Calendar"),
     "weather":  ("modules.weather.swob_refresh_interval_sec", 120, 90, "Weather"),
+    "maps":     ("modules.weather_maps.job_interval_sec", 180, 600, "Weather maps & radar"),
 }
 # A job is "stale" when its last success is older than this many intervals.
 STALE_INTERVALS = 3

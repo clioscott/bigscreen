@@ -51,7 +51,17 @@ def _push_once():
                "--rsync-path", f"mkdir -p {remote_dir} && rsync",
                "-e", SSH, f"{paths.DATA_DIR}/", f"{target}:{remote_dir}/"]
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-        last_result.update(at=datetime.now().isoformat(timespec="seconds"), ok=p.returncode == 0,
-                           error=p.stderr.strip()[-500:])
+        err = p.stderr.strip()[-500:]
+        ok = p.returncode == 0
+        anim = paths.DATA_DIR / "anim"
+        if anim.is_dir():
+            # map animation packs: own pass with --delete so removed tracks disappear from the Pi too
+            q = subprocess.run(["rsync", "-a", "--delete", "--timeout=60", "--include=*.bin", "--include=*.json",
+                                "--exclude=*", "--rsync-path", f"mkdir -p {remote_dir}/anim && rsync",
+                                "-e", SSH, f"{anim}/", f"{target}:{remote_dir}/anim/"],
+                               capture_output=True, text=True, timeout=300)
+            ok = ok and q.returncode == 0
+            err = (err + " " + q.stderr.strip()[-300:]).strip()
+        last_result.update(at=datetime.now().isoformat(timespec="seconds"), ok=ok, error=err)
     except Exception as e:
         last_result.update(at=datetime.now().isoformat(timespec="seconds"), ok=False, error=str(e))

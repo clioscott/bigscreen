@@ -122,7 +122,8 @@ class CycleEngine:
             when = (raw.get("when") or "always").strip()
             if when not in KNOWN_CONDITIONS:
                 when = "always"
-            entry: dict = {"panel": panel, "dwell_sec": dwell, "when": when}
+            entry: dict = {**{k: v for k, v in raw.items() if k not in ("panel", "dwell_sec", "when")},
+                           "panel": panel, "dwell_sec": dwell, "when": when}
             # Optional: pin a specific weather screen for weather_panels_* entries.
             # Value is a screen name (e.g. "current", "hourly", "map_radar_local")
             # or None (free-cycle through all screens as normal).
@@ -271,7 +272,8 @@ class CycleEngine:
             when = (raw.get("when") or "always").strip()
             if when not in KNOWN_CONDITIONS:
                 when = "always"
-            entry: dict = {"panel": panel, "dwell_sec": dwell, "when": when}
+            entry: dict = {**{k: v for k, v in raw.items() if k not in ("panel", "dwell_sec", "when")},
+                           "panel": panel, "dwell_sec": dwell, "when": when}
             ws = raw.get("weather_screen")
             if ws and isinstance(ws, str):
                 entry["weather_screen"] = ws.strip()
