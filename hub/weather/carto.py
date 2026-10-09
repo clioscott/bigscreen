@@ -48,7 +48,7 @@ OSM_DIR = GEODATA_ROOT / "geodata" / "osm"
 WATER_FULL = GEODATA_ROOT / "osm_water_cache" / "water-polygons-split-3857" / "water_polygons.shp"
 WATER_SIMPLE = GEODATA_ROOT / "osm_water_cache" / "simplified-water-polygons-split-3857" / "simplified_water_polygons.shp"
 GEO_CACHE = BASEMAP_CACHE.parent / "geo"
-MASK_VERSION = "v3"
+MASK_VERSION = "v4"
 
 # OSM `water=*` values that are rivers rather than lakes
 RIVER_WATER = {"river", "canal", "stream", "riverbank", "rapids", "oxbow", "ditch", "tidal_channel"}
@@ -155,17 +155,19 @@ def _pick_source(meta, km_px):
 # ---------------------------------------------------------------------------
 # Compact geometry packs (parsed once from the big GeoJSON/shapefiles)
 # ---------------------------------------------------------------------------
-def _pack(parts, cls=None):
-    """parts: list of (n, 2) float arrays → {coords, offsets, bbox[, cls]} (lon/lat, float64 bbox)."""
+def _pack(parts, cls=None, group=None):
+    """parts: list of (n, 2) float arrays → {coords, offsets, bbox, cls, group} (lon/lat, float64 bbox)."""
     if not parts:
         return {"coords": np.zeros((0, 2), np.float64), "offsets": np.zeros(1, np.int64),
-                "bbox": np.zeros((0, 4), np.float64), "cls": np.zeros(0, np.uint8)}
+                "bbox": np.zeros((0, 4), np.float64), "cls": np.zeros(0, np.uint8),
+                "group": np.zeros(0, np.int32)}
     lens = np.array([len(p) for p in parts], dtype=np.int64)
     coords = np.concatenate(parts).astype(np.float64)
     offsets = np.concatenate([[0], np.cumsum(lens)])
     bbox = np.array([[p[:, 0].min(), p[:, 1].min(), p[:, 0].max(), p[:, 1].max()] for p in parts])
     return {"coords": coords, "offsets": offsets, "bbox": bbox,
-            "cls": np.asarray(cls if cls is not None else np.zeros(len(parts)), dtype=np.uint8)}
+            "cls": np.asarray(cls if cls is not None else np.zeros(len(parts)), dtype=np.uint8),
+            "group": np.asarray(group if group is not None else np.full(len(parts), -1), dtype=np.int32)}
 
 
 def _cached_pack(name, builder):
@@ -233,11 +235,12 @@ def _osm_line_pack(kind, value):
                    "osm_waterway": "*_waterways.geojson"}[kind]
         tag = {"osm_admin": "admin_level", "osm_roads": "highway", "osm_waterway": "waterway"}[kind]
         want = {value} if kind != "osm_roads" else {value, f"{value}_link"}
-        seen, parts = set(), []
+        seen, parts, groups, names = set(), [], [], {}
         for feat in _geojson_features(pattern):
             p = feat.get("properties") or {}
             if p.get(tag) not in want:
                 continue
+            gid = names.setdefault(p.get("name") or "", len(names)) if p.get("name") else -1
             g = feat.get("geometry") or {}
             geoms = [g.get("coordinates")] if g.get("type") == "LineString" else (g.get("coordinates") or [])
             for part in geoms:
@@ -248,8 +251,25 @@ def _osm_line_pack(kind, value):
                     continue
                 seen.add(sig)
                 parts.append(np.asarray([c[:2] for c in part], dtype=np.float64))
-        return _pack(parts)
-    return _cached_pack(f"osm_{kind}_{value}", build)
+                groups.append(gid)
+        return _pack(parts, group=groups)
+    return _cached_pack(f"osm2_{kind}_{value}", build)
+
+
+def _group_lengths_km(pack):
+    """Total length (km) of each named group (e.g. every OSM segment of 'Fraser River')."""
+    off, xy, g = pack["offsets"], pack["coords"], pack["group"]
+    seg = np.diff(xy, axis=0)
+    coslat = np.cos(np.radians(xy[:-1, 1]))
+    d = np.hypot(seg[:, 0] * coslat, seg[:, 1]) * 111.32
+    within = np.ones(len(d), dtype=bool)
+    within[off[1:-1] - 1] = False                     # don't join the end of one part to the next
+    part_len = np.add.reduceat(np.where(within, d, 0), off[:-1]) if len(d) else np.zeros(len(g))
+    totals = {}
+    for gid, ln in zip(g.tolist(), part_len.tolist()):
+        if gid >= 0:
+            totals[gid] = totals.get(gid, 0.0) + ln
+    return totals
 
 
 @lru_cache(maxsize=4)
@@ -409,13 +429,24 @@ def _lines_for(src, km_px):
         pack = _ne_pack(value)
         if value == "ne_10m_rivers_lake_centerlines":
             # thin out by importance as the view widens (scalerank 0 = most important)
-            max_rank = 3 if km_px >= 8 else 5 if km_px >= 4 else 7
-            keep = pack["cls"] <= max_rank
-            return {"coords": pack["coords"], "offsets": pack["offsets"],
-                    "bbox": np.where(keep[:, None], pack["bbox"], np.array([9e9, 9e9, -9e9, -9e9])),
-                    "cls": pack["cls"]}
+            max_rank = 1 if km_px >= 12 else 3 if km_px >= 5 else 5
+            return _subset(pack, pack["cls"] <= max_rank)
         return pack
-    return _osm_line_pack(kind, value)
+    pack = _osm_line_pack(kind, value)
+    if kind == "osm_waterway":
+        # OSM tags many mountain creeks as rivers. Keep only named rivers long enough to matter at this
+        # scale: total length >= ~60 LED pixels (≈20 km at 0.34 km/px, ≈48 km at 0.8 km/px).
+        totals = _group_lengths_km(pack)
+        need = 60 * km_px
+        keep = np.array([g >= 0 and totals.get(g, 0) >= need for g in pack["group"].tolist()], dtype=bool)
+        return _subset(pack, keep)
+    return pack
+
+
+def _subset(pack, keep):
+    """Same pack, with parts not in `keep` given an impossible bbox so _parts_in skips them."""
+    bbox = np.where(keep[:, None], pack["bbox"], np.array([9e9, 9e9, -9e9, -9e9]))
+    return {**pack, "bbox": bbox}
 
 
 def _draw_lines(view, pack, width):
