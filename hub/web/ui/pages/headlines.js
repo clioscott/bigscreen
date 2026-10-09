@@ -78,7 +78,7 @@ export const Headlines = {
         <div class="stack" style="flex:1; min-width:260px">
           <div class="row nowrap">
             <button class="btn" :disabled="jumping || !onDisplay?.categories?.length" @click="jump({delta: -1})"><Icon name="ChevronLeft" :size="16"/>Previous</button>
-            <div style="flex:1; text-align:center"><div class="faint" style="font-size:12px">{{ showing ? 'Now showing' : 'Next up' }}</div>
+            <div style="flex:1; text-align:center"><div class="faint" style="font-size:12px">{{ showing ? 'Now showing' : 'Last shown' }}</div>
               <b>{{ onDisplay?.current || '—' }}</b>
               <div class="faint mono" style="font-size:12px" v-if="onDisplay?.categories?.length">{{ onDisplay.index + 1 }} / {{ onDisplay.categories.length }}</div></div>
             <button class="btn" :disabled="jumping || !onDisplay?.categories?.length" @click="jump({delta: 1})">Next<Icon name="ChevronRight" :size="16"/></button>
