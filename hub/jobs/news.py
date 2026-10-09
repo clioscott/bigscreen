@@ -51,9 +51,19 @@ def _parse_date(s):
     return d.timestamp()
 
 
+# The display's BDF fonts are ASCII/Latin-1; typographic punctuation would render as nothing.
+_ASCII_PUNCT = str.maketrans({
+    "‘": "'", "’": "'", "‚": "'", "‛": "'", "′": "'",
+    "“": '"', "”": '"', "„": '"', "″": '"',
+    "–": "-", "—": "-", "―": "-", "−": "-",
+    "…": "...", " ": " ", " ": " ", " ": " ", " ": " ", "​": "",
+})
+
+
 def _clean(text):
     text = re.sub(r"<[^>]+>", "", text or "")
-    return re.sub(r"\s+", " ", html.unescape(text)).strip()
+    text = html.unescape(text).translate(_ASCII_PUNCT)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _domain(url):
