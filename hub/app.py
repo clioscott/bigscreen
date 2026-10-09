@@ -7,7 +7,7 @@ from pathlib import Path
 
 import requests
 from fastapi import Body, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 
@@ -115,6 +115,51 @@ def display_status():
     return pi.display_status()
 
 
+@app.get("/api/display/frame.png")
+def display_frame(scale: int = 2):
+    try:
+        r = requests.get(pi.display_url(f"/frame.png?scale={max(1, min(6, scale))}"), timeout=4)
+    except Exception as e:
+        raise HTTPException(502, f"display unreachable: {e}")
+    if r.status_code != 200 or r.headers.get("content-type") != "image/png":
+        raise HTTPException(404, "live mirror needs the v2 display")
+    return Response(r.content, media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
+def _display_call(path, payload=None):
+    try:
+        code, body = pi.display_post(path, payload)
+    except Exception as e:
+        raise HTTPException(502, f"display unreachable: {e}")
+    if code >= 400:
+        raise HTTPException(code, body.get("error") or str(body))
+    return body
+
+
+@app.post("/api/display/override")
+def display_override(payload: dict = Body(...)):
+    return _display_call("/override", payload)
+
+
+@app.post("/api/display/override/clear")
+def display_override_clear(payload: dict = Body(default={})):
+    return _display_call("/override/clear", payload)
+
+
+@app.post("/api/display/preview")
+def display_preview(payload: dict = Body(...)):
+    """{"overlay": {partial config}, "ttl_sec": 120} — shown on the display until kept, reverted, or expired."""
+    overlay = payload.get("overlay")
+    if not isinstance(overlay, dict):
+        raise HTTPException(400, "overlay must be an object")
+    return _display_call("/preview", {"overlay": overlay, "ttl_sec": int(payload.get("ttl_sec", 120))})
+
+
+@app.post("/api/display/preview/clear")
+def display_preview_clear():
+    return _display_call("/preview/clear")
+
+
 # --- finance -----------------------------------------------------------------
 @app.get("/api/finance/data")
 def finance_data():
@@ -137,12 +182,15 @@ def finance_search(q: str):
 
 @app.get("/api/finance/icons")
 def list_icons():
-    return sorted(p.name for p in paths.STOCK_ICONS_DIR.glob("*.png"))
+    names = {p.name for d in (paths.STOCK_ICONS_DIR, paths.CUSTOM_STOCK_ICONS_DIR) for p in d.glob("*.png")}
+    return sorted(names)
 
 
 @app.get("/api/finance/icons/{name}")
 def get_icon(name: str):
     path = _icon_path(name)
+    if not path.exists():
+        path = paths.STOCK_ICONS_DIR / path.name
     if not path.exists():
         raise HTTPException(404)
     return FileResponse(path, headers={"Cache-Control": "no-cache"})
@@ -152,6 +200,7 @@ def get_icon(name: str):
 async def upload_icon(name: str, request: Request):
     path = _icon_path(name)
     _save_icon(await request.body(), path)
+    sync.push_data()
     return {"ok": True, "icon": path.name}
 
 
@@ -166,13 +215,14 @@ def icon_from_domain(name: str, payload: dict = Body(...)):
         raise HTTPException(502, f"favicon fetch failed (HTTP {r.status_code})")
     path = _icon_path(name)
     _save_icon(r.content, path)
+    sync.push_data()
     return {"ok": True, "icon": path.name}
 
 
 def _icon_path(name):
     if not ICON_NAME.match(name):
         raise HTTPException(400, "icon names are <something>.png")
-    return paths.STOCK_ICONS_DIR / name
+    return paths.CUSTOM_STOCK_ICONS_DIR / name
 
 
 def _save_icon(data, path):

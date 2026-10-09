@@ -25,14 +25,16 @@ BACKUP_DIR = STATE_DIR / "config-backups"
 STATUS_PATH = STATE_DIR / "status.json"
 DATA_DIR = STATE_DIR / "data"
 ICONS_DIR = DATA_DIR / "icons"
+CUSTOM_STOCK_ICONS_DIR = DATA_DIR / "stock-icons"     # logos uploaded from the panel (synced to the Pi)
 SECRETS_DIR = STATE_DIR / "secrets"
 CACHE_DIR = STATE_DIR / "cache"
 
-# Ticker logos are part of the display's assets, kept in the repo so both
-# machines get them from git.
+# Built-in ticker logos ship in the repo; panel uploads go to CUSTOM_STOCK_ICONS_DIR instead,
+# so they reach the Pi via the data sync and never collide with `git pull`.
 STOCK_ICONS_DIR = REPO_DIR / "assets" / "icons" / "stocks"
 
 
 def ensure_dirs():
-    for d in (STATE_DIR, BACKUP_DIR, DATA_DIR, ICONS_DIR, SECRETS_DIR, CACHE_DIR, STOCK_ICONS_DIR):
+    for d in (STATE_DIR, BACKUP_DIR, DATA_DIR, ICONS_DIR, CUSTOM_STOCK_ICONS_DIR, SECRETS_DIR, CACHE_DIR,
+              STOCK_ICONS_DIR):
         d.mkdir(parents=True, exist_ok=True)

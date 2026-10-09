@@ -59,10 +59,14 @@ def apply_to_display(restart=True):
     r = ssh(cfg, f"sudo tee {p['v1_dir']}/config/app-config.json >/dev/null", input_text=body)
     steps.append({"step": "write display config", "ok": r.returncode == 0, "error": r.stderr.strip()[-300:]})
 
-    r = subprocess.run(["rsync", "-a", "--timeout=20", "-e", SSH, f"{paths.STOCK_ICONS_DIR}/",
-                        f"{p['target']}:{p['v1_dir']}/assets/icons/stocks/"],
-                       capture_output=True, text=True, timeout=60)
-    steps.append({"step": "sync ticker logos", "ok": r.returncode == 0, "error": r.stderr.strip()[-300:]})
+    errs = []
+    for src in (paths.STOCK_ICONS_DIR, paths.CUSTOM_STOCK_ICONS_DIR):     # built-ins, then uploads win
+        r = subprocess.run(["rsync", "-a", "--timeout=20", "-e", SSH, f"{src}/",
+                            f"{p['target']}:{p['v1_dir']}/assets/icons/stocks/"],
+                           capture_output=True, text=True, timeout=60)
+        if r.returncode:
+            errs.append(r.stderr.strip()[-300:])
+    steps.append({"step": "sync ticker logos", "ok": not errs, "error": "; ".join(errs)})
 
     if restart and all(s["ok"] for s in steps):
         r = ssh(cfg, f"sudo systemctl restart {p['service']}", timeout=60)
@@ -92,11 +96,26 @@ def display_in_sync(cfg):
     return state.get("fingerprint") == display_fingerprint(cfg), state
 
 
+def display_url(path):
+    p = _pi(config.load())
+    return f"http://{p['host']}:{p['override_port']}{path}"
+
+
 def display_status():
-    cfg = config.load()
-    p = _pi(cfg)
     try:
-        r = requests.get(f"http://{p['host']}:{p['override_port']}/status", timeout=3)
-        return {"reachable": True, "status": r.json() if r.ok else None}
+        r = requests.get(display_url("/status"), timeout=3)
+        st = r.json() if r.ok else None
+        # v2 reports fps/draw times; v1's override server doesn't.
+        version = "v2" if isinstance(st, dict) and "fps" in st else "v1"
+        return {"reachable": True, "version": version, "status": st}
     except Exception as e:
         return {"reachable": False, "error": str(e)[:200]}
+
+
+def display_post(path, payload=None, timeout=5):
+    r = requests.post(display_url(path), json=payload or {}, timeout=timeout)
+    try:
+        body = r.json()
+    except ValueError:
+        body = {"error": r.text[:200]}
+    return r.status_code, body

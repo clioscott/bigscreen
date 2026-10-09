@@ -91,6 +91,20 @@ dialog::backdrop { background: #0009; }
 .icon-current { background: #000; height: 64px; display: grid; place-items: center; border-radius: 6px; }
 .icon-current img { max-height: 48px; image-rendering: pixelated; }
 
+.preview-bar { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 52px); z-index: 4; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  padding: 8px 16px; background: #2a2210; border-bottom: 1px solid var(--warn); color: var(--warn); }
+.warn { color: var(--warn); font-size: 12px; }
+.mirror-card { display: flex; flex-direction: column; gap: 8px; }
+.mirror-wrap { overflow-x: auto; background: #000; border-radius: 6px; padding: 6px; min-height: 60px; }
+.mirror-wrap img { display: block; image-rendering: pixelated; width: 896px; max-width: none; }
+@media (max-width: 960px) { .mirror-wrap img { width: 100%; max-width: 896px; } }
+.cycles { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 14px; }
+.cycles h3 { font-size: 13px; color: var(--muted); margin: 6px 0; }
+.cycle-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.cycle-row select { max-width: 190px; }
+.cycle-row input.dwell { width: 64px; }
+.cycle-row .extra { font: 11px var(--mono); color: var(--muted); }
+.form.inline .row input[type=range] { width: 140px; }
 #toast { position: fixed; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%);
   background: var(--panel2); border: 1px solid var(--line); padding: 8px 14px; border-radius: 8px; max-width: 90vw; z-index: 20; }
 #toast.bad { border-color: var(--bad); color: var(--bad); }

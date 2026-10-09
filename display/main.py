@@ -355,7 +355,12 @@ class App:
 
     def snapshot_frame(self):
         """Latest complete frame for the mirror. Asking keeps the render loop copying frames for 5 s."""
+        was_active = time.time() < self.mirror_until
         self.mirror_until = time.time() + 5.0
+        if not was_active:                       # the stored frame is stale; wait for the loop to copy one
+            seq, t0 = self.frame_seq, time.time()
+            while self.frame_seq == seq and time.time() - t0 < 0.2:
+                time.sleep(0.01)
         with self.frame_lock:
             return self.last_frame, self.frame_seq
 

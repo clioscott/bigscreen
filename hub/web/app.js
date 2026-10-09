@@ -51,6 +51,7 @@ function showTab(name) {
   history.replaceState(null, "", `#${name}`);
   if (name === "ticker") refreshQuotes();
   if (name === "headlines") refreshHeadlines();
+  if (name === "display" && typeof enterDisplayTab === "function") enterDisplayTab();
 }
 
 // ---- config save helper -----------------------------------------------------
@@ -116,6 +117,7 @@ function markTicker() {
   $("#ticker-dirty").hidden = !d;
   $("#ticker-save").disabled = !d;
   $("#ticker-revert").disabled = !d;
+  $("#ticker-preview").disabled = !d;
 }
 
 function fmtPrice(p) {
@@ -389,6 +391,194 @@ async function refreshHeadlines() {
   if (news) renderCategories();
 }
 
+// ---- preview on the display (shared by Ticker + Display tabs) ---------------------
+let previewKeep = null;          // async fn that saves the previewed draft
+let previewUntil = 0;
+async function startPreview(overlay, keepFn) {
+  try {
+    await api("/api/display/preview", { json: { overlay, ttl_sec: 120 } });
+  } catch (e) { toast(`Preview failed: ${e.message}`, true); return; }
+  previewKeep = keepFn;
+  previewUntil = Date.now() + 120000;
+  $("#preview-bar").hidden = false;
+  tickPreview();
+  toast("Showing on the display for 2 minutes");
+}
+function tickPreview() {
+  const left = Math.max(0, Math.round((previewUntil - Date.now()) / 1000));
+  $("#preview-left").textContent = `(reverts in ${left}s)`;
+  if (left <= 0) { endPreviewUI(); return; }
+  clearTimeout(tickPreview._t);
+  tickPreview._t = setTimeout(tickPreview, 1000);
+}
+function endPreviewUI() { $("#preview-bar").hidden = true; previewKeep = null; clearTimeout(tickPreview._t); }
+$("#preview-revert").addEventListener("click", async () => {
+  try { await api("/api/display/preview/clear", { method: "POST" }); } catch (e) { toast(e.message, true); }
+  endPreviewUI(); toast("Display reverted");
+});
+$("#preview-keep").addEventListener("click", async () => {
+  const keep = previewKeep;
+  endPreviewUI();
+  try { if (keep) await keep(); await api("/api/display/preview/clear", { method: "POST" }); }
+  catch (e) { toast(e.message, true); }
+});
+
+$("#ticker-preview").addEventListener("click", () => {
+  ticker.refresh_interval_sec = +$("#fin-refresh").value || 60;
+  startPreview({ modules: { finance: clone(ticker) } }, () => $("#ticker-save").click());
+});
+
+// ---- display tab ------------------------------------------------------------------
+const PANEL_LABELS = {
+  calendar: "Calendar (left only)", client_calls_upcoming: "Client calls: upcoming", client_calls_past: "Client calls: past",
+  headlines: "Headlines", blank: "Blank",
+};
+const WHEN_LABELS = { always: "always", calendar_has_events: "when calendar has events", no_events: "when calendar is empty",
+  weather_has_alert: "when a weather alert is active" };
+let disp = null;
+let displayPanels = Object.keys(PANEL_LABELS);
+
+function loadDispDraft() {
+  disp = { cycle: clone(CFG.modules.layout_cycle || { left: [], right: [] }),
+           display: clone(CFG.system.display || {}), night: clone(CFG.system.night_mode || {}) };
+  $("#d-bright").value = disp.display.brightness ?? 100;
+  $("#d-night").checked = !!disp.night.enabled;
+  $("#d-night-start").value = disp.night.start_time || "22:00";
+  $("#d-night-end").value = disp.night.end_time || "06:00";
+  $("#d-night-bright").value = disp.night.brightness ?? 40;
+  $("#d-fps").value = String(disp.display.fps ?? 60);
+  for (const k of ["gpio_slowdown", "pwm_bits", "pwm_lsb_nanoseconds", "pwm_dither_bits", "limit_refresh_rate_hz"]) $(`#t-${k}`).value = disp.display[k] ?? "";
+  $("#t-show_refresh_rate").checked = !!disp.display.show_refresh_rate;
+  syncRangeLabels();
+  renderCycles();
+  markDisp();
+}
+function syncRangeLabels() { $("#d-bright-v").textContent = $("#d-bright").value; $("#d-night-bright-v").textContent = $("#d-night-bright").value; }
+function dispDirty() {
+  return JSON.stringify(disp.cycle) !== JSON.stringify(CFG.modules.layout_cycle || { left: [], right: [] })
+    || JSON.stringify(disp.display) !== JSON.stringify(CFG.system.display || {})
+    || JSON.stringify(disp.night) !== JSON.stringify(CFG.system.night_mode || {});
+}
+function markDisp() {
+  const d = dispDirty();
+  $("#disp-dirty").hidden = !d;
+  ["#disp-save", "#disp-revert", "#disp-preview"].forEach((s) => ($(s).disabled = !d));
+}
+[["#d-bright", () => (disp.display.brightness = +$("#d-bright").value)],
+ ["#d-night", () => (disp.night.enabled = $("#d-night").checked)],
+ ["#d-night-start", () => (disp.night.start_time = $("#d-night-start").value)],
+ ["#d-night-end", () => (disp.night.end_time = $("#d-night-end").value)],
+ ["#d-night-bright", () => (disp.night.brightness = +$("#d-night-bright").value)],
+ ["#d-fps", () => (disp.display.fps = +$("#d-fps").value)],
+ ["#t-show_refresh_rate", () => (disp.display.show_refresh_rate = $("#t-show_refresh_rate").checked)],
+ ...["gpio_slowdown", "pwm_bits", "pwm_lsb_nanoseconds", "pwm_dither_bits", "limit_refresh_rate_hz"]
+   .map((k) => [`#t-${k}`, () => (disp.display[k] = +$(`#t-${k}`).value)]),
+].forEach(([sel, fn]) => $(sel).addEventListener("input", () => { fn(); syncRangeLabels(); markDisp(); }));
+
+function renderCycles() {
+  for (const side of ["left", "right"]) {
+    const list = disp.cycle[side] || (disp.cycle[side] = []);
+    const names = [...new Set([...displayPanels, ...list.map((e) => e.panel)])];
+    $(`#cycle-${side}`).innerHTML = list.map((e, i) => {
+      const extra = Object.entries(e).filter(([k]) => !["panel", "when", "dwell_sec"].includes(k)).map(([k, v]) => `${k}=${v}`).join(" ");
+      const known = displayPanels.includes(e.panel);
+      return `<div class="cycle-row" data-i="${i}">
+        <select data-k="panel">${names.map((n) => `<option value="${esc(n)}" ${n === e.panel ? "selected" : ""}>${esc(PANEL_LABELS[n] || n)}</option>`).join("")}</select>
+        <select data-k="when">${Object.entries(WHEN_LABELS).map(([k, l]) => `<option value="${k}" ${k === (e.when || "always") ? "selected" : ""}>${l}</option>`).join("")}</select>
+        <input class="dwell" type="number" min="3" data-k="dwell_sec" value="${e.dwell_sec ?? ""}" placeholder="sec" title="Seconds on screen">s
+        <button class="small" data-up ${i === 0 ? "disabled" : ""}>↑</button><button class="small" data-down ${i === list.length - 1 ? "disabled" : ""}>↓</button>
+        <button class="small danger" data-del>✕</button>
+        ${extra ? `<span class="extra">${esc(extra)}</span>` : ""}${known ? "" : '<span class="warn">not available on this display yet: skipped</span>'}
+      </div>`;
+    }).join("") || '<div class="muted">Nothing in rotation</div>';
+    $$(`#cycle-${side} .cycle-row`).forEach((row) => {
+      const i = +row.dataset.i;
+      $$("[data-k]", row).forEach((el) => el.addEventListener("input", () => {
+        const k = el.dataset.k;
+        list[i][k] = k === "dwell_sec" ? (el.value === "" ? undefined : +el.value) : el.value;
+        if (list[i][k] === undefined) delete list[i][k];
+        markDisp();
+      }));
+      $("[data-up]", row).addEventListener("click", () => { list.splice(i - 1, 0, list.splice(i, 1)[0]); renderCycles(); markDisp(); });
+      $("[data-down]", row).addEventListener("click", () => { list.splice(i + 1, 0, list.splice(i, 1)[0]); renderCycles(); markDisp(); });
+      $("[data-del]", row).addEventListener("click", () => { list.splice(i, 1); renderCycles(); markDisp(); });
+    });
+  }
+}
+$$("[data-add-cycle]").forEach((b) => b.addEventListener("click", () => {
+  disp.cycle[b.dataset.addCycle].push({ panel: "headlines", when: "always", dwell_sec: 60 });
+  renderCycles(); markDisp();
+}));
+
+async function saveDisp() {
+  const next = clone(CFG);
+  next.modules.layout_cycle = clone(disp.cycle);
+  next.system.display = clone(disp.display);
+  next.system.night_mode = clone(disp.night);
+  const res = await api("/api/config", { method: "PUT", json: { config: next, reason: "display settings edited" } });
+  CFG = res.config;
+  updateBanner(res.display_in_sync);
+  loadDispDraft();
+  toast("Saved");
+}
+$("#disp-save").addEventListener("click", () => saveDisp().catch((e) => toast(e.message, true)));
+$("#disp-revert").addEventListener("click", loadDispDraft);
+$("#disp-preview").addEventListener("click", () => startPreview(
+  { modules: { layout_cycle: clone(disp.cycle) }, system: { display: clone(disp.display), night_mode: clone(disp.night) } },
+  saveDisp));
+
+$("#ov-show").addEventListener("click", async () => {
+  const dur = $("#ov-dur").value;
+  try {
+    await api("/api/display/override", { json: { side: $("#ov-side").value, panel: $("#ov-panel").value, duration_sec: dur ? +dur : null } });
+    toast("Showing now");
+  } catch (e) { toast(e.message, true); }
+});
+$("#ov-clear").addEventListener("click", async () => {
+  try { await api("/api/display/override/clear", { method: "POST", json: {} }); toast("Back to the normal rotation"); }
+  catch (e) { toast(e.message, true); }
+});
+
+let mirrorTimer = null;
+let lastMirrorUrl = null;
+async function mirrorLoop() {
+  clearTimeout(mirrorTimer);
+  if ($("#tab-display").hidden) return;
+  try {
+    const r = await fetch(`/api/display/frame.png?scale=2&t=${Date.now()}`);
+    if (r.ok) {
+      const url = URL.createObjectURL(await r.blob());
+      $("#mirror").src = url;
+      if (lastMirrorUrl) URL.revokeObjectURL(lastMirrorUrl);
+      lastMirrorUrl = url;
+      $("#mirror").hidden = false;
+      $("#mirror-msg").textContent = "";
+    } else {
+      $("#mirror").hidden = true;
+      $("#mirror-msg").textContent = r.status === 404
+        ? "The live view needs the v2 display. The panels are currently driven by v1."
+        : "Display unreachable.";
+    }
+  } catch { $("#mirror-msg").textContent = "Display unreachable."; }
+  mirrorTimer = setTimeout(mirrorLoop, 500);
+}
+async function refreshDisplayStats() {
+  if ($("#tab-display").hidden) return;
+  try {
+    const d = await api("/api/display/status");
+    if (!d.reachable) { $("#display-stats").textContent = "Display unreachable"; return; }
+    if (d.version !== "v2") { $("#display-stats").textContent = "Running the v1 renderer (no live stats)"; return; }
+    const s = d.status;
+    $("#display-stats").innerHTML = `${s.fps} fps · draw ${s.draw_ms_avg} ms (p95 ${s.draw_ms_p95}) · brightness ${s.brightness} · `
+      + `left: <b>${esc(s.panels.left.panel || "-")}</b> · right: <b>${esc(s.panels.right.panel || "-")}</b>`
+      + (s.preview ? ` · <span class="warn">preview active</span>` : "") + (s.recent_errors ? ` · <span class="down">${s.recent_errors} recent errors</span>` : "");
+  } catch {}
+}
+function enterDisplayTab() {
+  mirrorLoop();
+  refreshDisplayStats();
+}
+
 // ---- boot -------------------------------------------------------------------------
 window.addEventListener("beforeunload", (e) => {
   if ((ticker && tickerDirty()) || (news && newsDirty())) { e.preventDefault(); e.returnValue = ""; }
@@ -398,6 +588,9 @@ window.addEventListener("beforeunload", (e) => {
   CFG = await api("/api/config");
   loadTickerDraft();
   loadNewsDraft();
+  loadDispDraft();
+  $("#ov-panel").innerHTML = displayPanels.map((n) => `<option value="${n}">${esc(PANEL_LABELS[n] || n)}</option>`).join("");
+  setInterval(refreshDisplayStats, 2000);
   let tab = location.hash.slice(1);
   if (!$(`#tab-${tab}`)) {
     tab = "status";

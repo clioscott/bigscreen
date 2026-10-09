@@ -21,7 +21,7 @@ def _normalize_finance_symbols(raw):
             out.append({"symbol": sym, "title": sym, "width": None, "icon": f"{sym}.png"})
         elif isinstance(item, dict):
             sym = (item.get("symbol") or "").strip()
-            if not sym:
+            if not sym or item.get("enabled", True) is False:
                 continue
             title = item.get("title") or sym
             width = item.get("width")
@@ -125,8 +125,8 @@ class FinanceTicker(ModuleRenderer):
                 from PIL import Image
                 for s in self.symbols:
                     icon_filename = self._cfg_meta.get(s, {}).get("icon") or f"{s}.png"
-                    p = os.path.join(icon_dir, icon_filename)
-                    if os.path.exists(p):
+                    p = self._icon_file(icon_filename)
+                    if p:
                         try:
                             img = Image.open(p).convert('RGBA')
                             # Force resize to exactly 14px height to match text baseline
@@ -247,11 +247,6 @@ class FinanceTicker(ModuleRenderer):
             return
         self._last_raw = new_data
         if new_data:
-            # The hub writes tickers in the configured display order and drops disabled ones,
-            # so order/add/remove edits from the control panel apply without a restart.
-            order = [s for s in new_data.keys() if isinstance(new_data.get(s), dict)]
-            if order and order != self.symbols:
-                self.symbols = order
             for s, info in new_data.items():
                 if s not in self.data: self.data[s] = {}
                 # Update logic could be optimized to check for diffs, but updating all is safer
@@ -260,21 +255,16 @@ class FinanceTicker(ModuleRenderer):
                 # If the server has decorated this ticker with display metadata
                 # (title/width/icon), and the icon filename has changed since we
                 # last loaded it, try to load the new icon now.
-                disp = info.get("_display") if isinstance(info, dict) else None
-                if disp and disp.get("icon"):
-                    self._maybe_load_icon(s, disp["icon"])
+                icon = self._cfg_meta.get(s, {}).get("icon")
+                if icon:
+                    self._maybe_load_icon(s, icon)
                 # Update width for this item immediately
                 self.item_widths[s] = self._measure_item(s, self.data[s])
                 
     def _measure_item(self, sym, info):
         # If the server (or local config) specified a per-ticker width, honor it.
         # _display.width wins over self._cfg_meta[sym].width wins over global default.
-        disp = info.get("_display") if isinstance(info, dict) else None
-        per_w = None
-        if disp and disp.get("width"):
-            per_w = disp.get("width")
-        else:
-            per_w = self._cfg_meta.get(sym, {}).get("width")
+        per_w = self._cfg_meta.get(sym, {}).get("width")
         if isinstance(per_w, int) and per_w > 0:
             return per_w + 10
         # Default: global chart width.
@@ -284,21 +274,13 @@ class FinanceTicker(ModuleRenderer):
 
     def _ticker_width(self, sym, info):
         """Per-ticker chart width (no padding). Mirrors _measure_item logic."""
-        disp = info.get("_display") if isinstance(info, dict) else None
-        per_w = None
-        if disp and disp.get("width"):
-            per_w = disp.get("width")
-        else:
-            per_w = self._cfg_meta.get(sym, {}).get("width")
+        per_w = self._cfg_meta.get(sym, {}).get("width")
         if isinstance(per_w, int) and per_w > 0:
             return per_w
         return getattr(self, "global_chart_width", 170)
 
     def _ticker_title(self, sym, info):
         """Display text for this ticker (falls back to symbol)."""
-        disp = info.get("_display") if isinstance(info, dict) else None
-        if disp and disp.get("title"):
-            return disp["title"]
         return self._cfg_meta.get(sym, {}).get("title") or sym
 
     def _maybe_load_icon(self, sym, icon_filename):
@@ -318,10 +300,8 @@ class FinanceTicker(ModuleRenderer):
             from PIL import Image
         except ImportError:
             return
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        icon_dir = os.path.join(base_dir, 'assets', 'icons', 'stocks')
-        p = os.path.join(icon_dir, icon_filename)
-        if not os.path.exists(p):
+        p = self._icon_file(icon_filename)
+        if not p:
             return
         try:
             img = Image.open(p).convert('RGBA')
@@ -334,6 +314,15 @@ class FinanceTicker(ModuleRenderer):
             self.icons[sym]["__icon_filename"] = icon_filename
         except Exception:
             pass
+
+    def _icon_file(self, name):
+        """Logo path: panel uploads (<data dir>/stock-icons) win over the repo's built-in set."""
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        for d in (os.path.join(self.loader.data_dir, "stock-icons"), os.path.join(base_dir, "assets", "icons", "stocks")):
+            p = os.path.join(d, name)
+            if os.path.exists(p):
+                return p
+        return None
 
     def _draw_icon(self, canvas, icon, x_pos, y_pos):
         canvas.Blit(icon["rgb"], x_pos, y_pos, icon["mask"])
