@@ -1,5 +1,5 @@
 import { ref, computed, watch, onBeforeUnmount } from "vue";
-import { store, api, fail, toast, go, ago, dur, areaLabel, refreshMaps, clone } from "../core.js";
+import { store, api, fail, toast, go, ago, dur, areaLabel, refreshMaps, clone, seed } from "../core.js";
 
 const STEP_OPTIONS = [5, 6, 10, 15, 20, 30, 60, 120];
 
@@ -70,8 +70,10 @@ export const MapEditor = {
     const wm = computed(() => store.draft.modules.weather_maps);
     const t = computed(() => wm.value.tracks[tid]);
     const areas = computed(() => Object.entries(wm.value.areas));
-    const bm = computed(() => (t.value.basemap = t.value.basemap || {}));
-    const dn = computed(() => (bm.value.daynight = bm.value.daynight || { enabled: false, night_brightness: 0.25, twilight_deg: 6 }));
+    const tpath = ["modules", "weather_maps", "tracks", tid];
+    if (t.value) { seed([...tpath, "basemap"], {}); seed([...tpath, "basemap", "daynight"], { enabled: false, night_brightness: 0.25, twilight_deg: 6 }); }
+    const bm = computed(() => t.value.basemap);
+    const dn = computed(() => bm.value.daynight);
     const catalog = computed(() => store.catalog || { basemaps: [], wms_layers: [] });
     const isAcc = computed(() => t.value.kind === "accumulation");
     const usesRadar = computed(() => hasRadar(t.value));

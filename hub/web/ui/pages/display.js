@@ -1,12 +1,13 @@
 import { computed } from "vue";
-import { store } from "../core.js";
+import { store, seed } from "../core.js";
 import { LiveView } from "./overview.js";
 
 export const DisplaySettings = {
   components: { LiveView },
   setup() {
     const d = computed(() => store.draft.system.display);
-    const night = computed(() => (store.draft.system.night_mode = store.draft.system.night_mode || { enabled: false }));
+    seed(["system", "night_mode"], { enabled: false });
+    const night = computed(() => store.draft.system.night_mode);
     const live = computed(() => store.display?.status);
     const TIMING = [
       ["gpio_slowdown", "GPIO slowdown", 0, 5, 1], ["pwm_bits", "PWM bits", 1, 11, 1], ["pwm_lsb_nanoseconds", "PWM LSB (ns)", 50, 3000, 10],

@@ -60,6 +60,17 @@ export const dirty = computed(() => {
   return SECTIONS.filter(([, p]) => !same(at(store.draft, p), at(store.saved, p))).map(([label, p]) => ({ label, path: p }));
 });
 
+// Fill in a missing default object in both draft and saved, so just opening an editor isn't an "unsaved change".
+export function seed(path, value) {
+  for (const root of [store.saved, store.draft]) {
+    let o = root;
+    for (const k of path.slice(0, -1)) o = o[k] = o[k] || {};
+    const last = path[path.length - 1];
+    if (o[last] === undefined) o[last] = clone(value);
+  }
+  return at(store.draft, path);
+}
+
 export function discard() {
   store.draft = clone(store.saved);
 }
