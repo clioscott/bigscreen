@@ -37,7 +37,7 @@ def run(cfg):
     for t in enabled.values():
         uses_radar = t.get("kind") == "accumulation" or any(l.get("type") == "radar" for l in t.get("layers", []))
         if uses_radar:
-            hours = float(t.get("window_hours", 0)) if t.get("kind") == "accumulation" \
+            hours = float(t.get("window_hours", 24)) if t.get("kind") == "accumulation" \
                 else float(t.get("window_min", 180)) / 60
             need[t["area"]] = max(need.get(t["area"], 0), min(48.0, hours))
     new_radar = set()

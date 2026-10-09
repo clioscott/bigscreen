@@ -76,6 +76,8 @@ export const MapEditor = {
     const dn = computed(() => bm.value.daynight);
     const catalog = computed(() => store.catalog || { basemaps: [], wms_layers: [] });
     const isAcc = computed(() => t.value.kind === "accumulation");
+    // totals need their own window; give a fresh totals map the same 24 h the renderer assumes
+    watch(() => t.value?.kind, (k) => { if (k === "accumulation" && t.value.window_hours == null) t.value.window_hours = 24; });
     const usesRadar = computed(() => hasRadar(t.value));
 
     const hours = computed({
@@ -160,7 +162,7 @@ export const MapEditor = {
         <div class="card"><div class="card-head"><Icon name="Sparkles" :size="15"/><h3>What it shows</h3></div><div class="card-body stack">
           <Seg v-model="t.kind" :options="[{value:'loop', label:'Animated loop', icon:'Repeat'}, {value:'accumulation', label:'Rain & snow totals', icon:'CloudRain'}]"/>
           <template v-if="!isAcc">
-            <div class="faint" style="font-size:12.5px">Layers are drawn over the basemap and under coastlines/borders. Radar is always drawn opaque at full colour.</div>
+            <div class="faint" style="font-size:12.5px">Satellite and forecast layers are drawn under the coastlines and borders. Radar is drawn on top of everything, opaque at full colour.</div>
             <div class="stack" style="gap:8px" v-sortable="{ list: t.layers }">
               <div class="slot" v-for="(l, i) in t.layers" :key="i">
                 <span class="handle"><Icon name="GripVertical" :size="16"/></span>

@@ -10,7 +10,10 @@ Config: modules.weather_maps
                   fps, hold_last_sec, loops, timestamp, legend}}
     palettes: {name: [[threshold, "#rrggbb"], ...]}   (overrides hub/weather/radar.py PALETTES)
 
-Loop layers (drawn in order over the basemap, under the cartography):
+Frame order: basemap → highways → wms imagery (GOES etc.) → coastlines/boundaries/rivers → radar/totals.
+Imagery sits under the map lines (clouds would hide them otherwise); radar sits on top of everything.
+
+Loop layers (wms layers drawn in order; radar layers always last):
     {"type": "wms", "layer": "GOES-West_1km_DayVis-NightIR", "style": "", "opacity": 1, "scale": 2,
      "time": "past" | "forecast" | "static"}
     {"type": "radar", "opacity": 0.9}                     live rate, TV colours, from the archive
@@ -132,8 +135,10 @@ def render_track(tid, track, cfg, log=print):
             if t in show:
                 layer = radar.accumulation_layer(rain_mm, snow_cm, wm.get("palettes"),
                                                  float(track.get("snow_on_top_cm", 0.5)))
-                img = alpha_over(_basemap_for(base, view, track, t, under), layer)
-                frames.append(alpha_over(img, overlay) if overlay is not None else img)
+                img = _basemap_for(base, view, track, t, under)
+                if overlay is not None:
+                    img = alpha_over(img, overlay)
+                frames.append(alpha_over(img, layer))         # totals sit on top of every map line
                 times.append(t)
         coverage = f"{(arch[-1] - arch[0]).total_seconds() / 3600:.1f} of {hours:g} h archived"
     else:
@@ -160,6 +165,7 @@ def render_track(tid, track, cfg, log=print):
         kept = []
         for t in times:
             img = _basemap_for(base, view, track, t, under)   # day/night shades the basemap only
+            radar_layers = []                                 # radar goes above the map lines; imagery below
             missing = False
             for l in layers:
                 lt = layer_times[id(l)]
@@ -176,7 +182,7 @@ def render_track(tid, track, cfg, log=print):
                 try:
                     if l.get("type") == "radar":
                         rain, snow, ptype = radar.load_frame(arch_view, src_t, crop)
-                        img = alpha_over(img, radar.rate_layer(rain, snow, ptype, wm.get("palettes")))
+                        radar_layers.append(radar.rate_layer(rain, snow, ptype, wm.get("palettes")))
                     else:
                         rgba = _wms_frame(l["layer"], view, src_t, l.get("style", ""), int(l.get("scale", 2)))
                         img = alpha_over(img, rgba, float(l.get("opacity", 1.0)))
@@ -187,7 +193,12 @@ def render_track(tid, track, cfg, log=print):
                     missing = missing or l is driver
             if missing:
                 continue
-            frames.append(alpha_over(img, overlay) if overlay is not None else img)
+            # Order: basemap, highways, satellite/forecast imagery, coastlines & boundaries, radar.
+            if overlay is not None:
+                img = alpha_over(img, overlay)
+            for rl in radar_layers:
+                img = alpha_over(img, rl)
+            frames.append(img)
             kept.append(t)
         times = kept
         coverage = f"{len(times)} frames"
