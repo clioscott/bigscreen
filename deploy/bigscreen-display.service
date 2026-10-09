@@ -1,0 +1,25 @@
+[Unit]
+Description=BigScreen v2 display (LED matrix renderer)
+After=network-online.target
+Wants=network-online.target
+# Only one renderer may own the GPIO.
+Conflicts=bigscreen-client.service
+
+[Service]
+Type=simple
+# rgbmatrix needs root for GPIO and realtime scheduling.
+User=root
+WorkingDirectory=/home/scott/bigscreen
+Environment=PYTHONUNBUFFERED=1
+Environment=BIGSCREEN_DATA_DIR=/dev/shm/bigscreen
+ExecStartPre=/bin/mkdir -p /dev/shm/bigscreen
+ExecStart=/home/scott/bigscreen/.venv-display/bin/python -m display.main
+Restart=always
+RestartSec=2
+Nice=-10
+LimitRTPRIO=99
+LimitMEMLOCK=infinity
+SyslogIdentifier=bigscreen-display
+
+[Install]
+WantedBy=multi-user.target
