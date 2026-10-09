@@ -9,3 +9,4 @@ pytz
 google-api-python-client>=2.160
 google-auth>=2.38
 google-auth-oauthlib>=1.2
+scikit-image>=0.24        # carto.py: finds straits narrower than a pixel
