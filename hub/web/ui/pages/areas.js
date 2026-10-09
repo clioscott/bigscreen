@@ -20,7 +20,7 @@ export const Areas = {
     const create = () => {
       let n = 1;
       while (areas.value[`area${n}`]) n++;
-      areas.value[`area${n}`] = { label: `New area ${n}`, short_label: "", center: [49.25, -123.1], km_per_px: 1, carto: {} };
+      areas.value[`area${n}`] = { label: `New area ${n}`, short_label: "", scale_label: "", center: [49.25, -123.1], km_per_px: 1, carto: {} };
       go(`areas/area${n}`);
     };
     return { areas, previews, usedBy, create, go };
@@ -32,7 +32,7 @@ export const Areas = {
     <div class="grid cols-2">
       <div class="card" v-for="(a, id) in areas" :key="id" style="cursor:pointer" @click="go('areas/' + id)">
         <div style="padding:12px 12px 0"><div class="thumb"><img v-if="previews[id]" :src="previews[id].png" alt="">
-          <div class="overlay-chips"><span class="pill">{{ a.short_label || id }}</span></div></div></div>
+          <div class="overlay-chips"><span class="pill">{{ a.short_label || id }}</span><span class="pill" v-if="a.scale_label">{{ a.scale_label }}</span></div></div></div>
         <div class="card-body stack" style="gap:6px">
           <div class="row"><h3 style="flex:1">{{ a.label }}</h3><span class="pill" v-if="a.fit">fitted to corners</span></div>
           <div class="muted" style="font-size:13px" v-if="previews[id]">{{ previews[id].width_km }} × {{ previews[id].height_km }} km · {{ previews[id].km_per_px }} km per pixel</div>
@@ -99,7 +99,8 @@ export const AreaEditor = {
     <div class="page-head">
       <button class="btn ghost icon-only" @click="go('areas')"><Icon name="ArrowLeft" :size="18"/></button>
       <div class="grow row nowrap"><input class="input" style="font-size:20px; font-weight:650; height:42px; max-width:420px" v-model="a.label">
-        <input class="input" style="max-width:140px" v-model="a.short_label" placeholder="Short label"></div>
+        <input class="input" style="max-width:140px" v-model="a.short_label" placeholder="Short label" title="Short label">
+        <input class="input" style="max-width:140px" v-model="a.scale_label" placeholder="Scale (e.g. City)" title="Scale label"></div>
     </div>
     <div class="two-col">
       <div class="stack sticky">

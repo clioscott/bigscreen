@@ -153,7 +153,7 @@ export const MapEditor = {
       <div class="stack">
         <div class="card"><div class="card-head"><Icon name="MapPin" :size="15"/><h3>Where</h3></div><div class="card-body stack">
           <div class="fields">
-            <Field label="Map area"><select class="input" v-model="t.area"><option v-for="[id, a] in areas" :key="id" :value="id">{{ a.label }}{{ a.short_label ? ' (' + a.short_label + ')' : '' }}</option></select></Field>
+            <Field label="Map area"><select class="input" v-model="t.area"><option v-for="[id, a] in areas" :key="id" :value="id">{{ a.label }}{{ a.short_label ? ' (' + a.short_label + ')' : '' }}{{ a.scale_label ? ' · ' + a.scale_label : '' }}</option></select></Field>
             <Field label="Size on the display"><Seg v-model="t.size" :options="[{value:'half', label:'Half', icon:'PanelRight'}, {value:'full', label:'Full width', icon:'Columns2'}]"/></Field>
           </div></div></div>
 
