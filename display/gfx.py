@@ -24,15 +24,16 @@ REPLACEMENT_CP = 0xFFFD
 
 
 class Color:
-    __slots__ = ("red", "green", "blue", "rgb")
+    __slots__ = ("red", "green", "blue", "rgb", "arr")
 
     def __init__(self, r=0, g=0, b=0):
         self.red, self.green, self.blue = int(r) & 255, int(g) & 255, int(b) & 255
         self.rgb = (self.red, self.green, self.blue)
+        self.arr = np.array(self.rgb, dtype=np.uint8)     # avoids tuple→array conversion per fill
 
 
 def _rgb(c):
-    return c.rgb if isinstance(c, Color) else (int(c[0]), int(c[1]), int(c[2]))
+    return c.arr if isinstance(c, Color) else np.array((int(c[0]), int(c[1]), int(c[2])), dtype=np.uint8)
 
 
 # ---------------------------------------------------------------------------
@@ -275,7 +276,7 @@ def DrawLine(canvas, x0, y0, x1, y1, color):
         a, b = (y0, y1) if y0 <= y1 else (y1, y0)
         canvas.FillRect(x0, a, 1, b - a + 1, color)
         return
-    r, g, b_ = _rgb(color)
+    r, g, b_ = color.rgb if isinstance(color, Color) else color
     dy, dx, shift = y1 - y0, x1 - x0, 16
     if abs(dx) > abs(dy):
         if x1 < x0:
@@ -297,7 +298,7 @@ def DrawLine(canvas, x0, y0, x1, y1, color):
 
 def DrawCircle(canvas, x0, y0, radius, color):
     """Midpoint circle, as rgbmatrix graphics.cc."""
-    r, g, b = _rgb(color)
+    r, g, b = color.rgb if isinstance(color, Color) else color
     x, y, err = radius, 0, 1 - radius
     while y <= x:
         for px, py in ((x, y), (y, x), (-y, x), (-x, y), (-x, -y), (-y, -x), (y, -x), (x, -y)):

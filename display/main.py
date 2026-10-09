@@ -18,6 +18,8 @@ import traceback
 from collections import deque
 from datetime import datetime
 
+import numpy as np
+
 from display.config import ConfigSource
 from display.cycle_engine import CycleEngine
 from display.data_loader import DataLoader
@@ -25,6 +27,7 @@ from display.gfx import Canvas, Color, graphics
 
 DATA_DIR = os.environ.get("BIGSCREEN_DATA_DIR", "/dev/shm/bigscreen")
 BOTTOM_STRIP_PX = 17
+TILE_W, TILE_H = 64, 16      # dirty-tile granularity for pushing frames to the panels
 BLACK = Color(0, 0, 0)
 
 
@@ -55,12 +58,44 @@ class HardwareOutput:
         self.hw_keys = {k: d.get(k) for k in ("gpio_slowdown", "limit_refresh_rate_hz", "pwm_bits",
                                               "pwm_lsb_nanoseconds", "pwm_dither_bits", "show_refresh_rate")}
 
+        self.last = [None, None]     # what each of the two swapped hardware canvases currently holds
+        self.parity = 0
+
     def present(self, fb):
-        self.canvas.SetBuffer(fb.buf)
+        """Push only the 64x16 tiles that differ from what this hardware canvas already holds.
+
+        Converting a pixel into PWM bit-planes costs ~120 ns in the library, so a full 448x192
+        frame is ~10 ms. The panels are double-buffered: the canvas we draw into was last
+        filled two frames ago, so diff against that.
+        """
+        buf = fb.buf
+        last = self.last[self.parity]
+        h, w = buf.shape[:2]
+        if last is None or h % TILE_H or w % TILE_W:
+            self.canvas.SetBuffer(buf)
+            self.last[self.parity] = buf.copy()
+        else:
+            tiles = (buf != last).any(axis=2).reshape(h // TILE_H, TILE_H, w // TILE_W, TILE_W).any(axis=(1, 3))
+            for ty in np.flatnonzero(tiles.any(axis=1)):
+                row = tiles[ty]
+                y0 = int(ty) * TILE_H
+                tx, n = 0, len(row)
+                while tx < n:
+                    if not row[tx]:
+                        tx += 1
+                        continue
+                    start = tx
+                    while tx < n and row[tx]:
+                        tx += 1
+                    x0, x1 = start * TILE_W, tx * TILE_W
+                    self.canvas.SetBuffer(np.ascontiguousarray(buf[y0:y0 + TILE_H, x0:x1]), x0, y0)
+            np.copyto(last, buf)
         self.canvas = self.matrix.SwapOnVSync(self.canvas)
+        self.parity ^= 1
 
     def set_brightness(self, value):
         self.matrix.brightness = max(1, min(100, int(value)))
+        self.last = [None, None]      # brightness is baked into the bit-planes: rewrite everything
 
 
 class EmulatorOutput:
@@ -180,7 +215,6 @@ class Screen:
             entry = chosen[full]
             name = entry["panel"]
             zone = (0, self.main_y, self.w, self.main_h)
-            c.FillRect(*zone, BLACK)
             if self.full_panels[name](c, zone, entry, name != self.prev[full]) == "done":
                 for s in ("left", "right"):
                     if chosen[s].get("panel") == name:
@@ -190,8 +224,6 @@ class Screen:
                 entry = chosen[side]
                 name = entry.get("panel", "blank")
                 zone = zones[side]
-                if name != "calendar":
-                    c.FillRect(*zone, BLACK)
                 if self.panels[name](c, zone, entry, name != self.prev[side]) == "done":
                     self.engines[side].force_advance()
             graphics.DrawLine(c, self.cal_w, self.main_y, self.cal_w, self.status_top, self.border)

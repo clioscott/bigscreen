@@ -5,7 +5,7 @@ from display.renderer import ModuleRenderer
 
 import numpy as np
 
-from display.gfx import graphics
+from display.gfx import Canvas, graphics
 
 
 def _normalize_finance_symbols(raw):
@@ -84,6 +84,8 @@ class FinanceTicker(ModuleRenderer):
         self.symbols = list(self._cfg_meta.keys())
         self.data = {}
         self._last_raw = None
+        self._ver = {}            # per-symbol data version → invalidates the item cache
+        self._item_cache = {}
         self.scroll_x = 0.0 # Float for sub-pixel precision
         self.last_scroll_time = time.time()
 
@@ -254,6 +256,7 @@ class FinanceTicker(ModuleRenderer):
                 if s not in self.data: self.data[s] = {}
                 # Update logic could be optimized to check for diffs, but updating all is safer
                 self.data[s].update(info)
+                self._ver[s] = self._ver.get(s, 0) + 1
                 # If the server has decorated this ticker with display metadata
                 # (title/width/icon), and the icon filename has changed since we
                 # last loaded it, try to load the new icon now.
@@ -510,6 +513,18 @@ class FinanceTicker(ModuleRenderer):
         
         return item_width + 10
 
+    def _blit_item(self, canvas, sym, x, y, height):
+        """Each ticker only changes when its data does; render it once, then blit it as it scrolls."""
+        w = self.item_widths.get(sym, 50)
+        key = (self._ver.get(sym, 0), w, height, self._ticker_title(sym, self.data[sym]))
+        hit = self._item_cache.get(sym)
+        if hit is None or hit[0] != key:
+            tmp = Canvas(w, height)
+            self._draw_item(tmp, sym, self.data[sym], 0, 0, height)
+            hit = (key, tmp.buf)
+            self._item_cache[sym] = hit
+        canvas.Blit(hit[1], x, y)
+
     def render(self, canvas, x, y, width, height):
         if not any(d.get('price') for d in self.data.values()):
              graphics.DrawText(canvas, self.font, x, y + 10, self.color_text, "Loading Finance...")
@@ -557,7 +572,7 @@ class FinanceTicker(ModuleRenderer):
             # Item is visible if [temp_x, temp_x + w] overlaps [0, width]
             if (temp_x + w > 0) and (temp_x < width):
                 try:
-                    self._draw_item(canvas, s, self.data[s], math.floor(temp_x), y, height)
+                    self._blit_item(canvas, s, math.floor(temp_x), y, height)
                 except Exception as e:
                     print(f"Error drawing ticker {s}: {e}")
                     # Draw error placeholder
@@ -575,7 +590,7 @@ class FinanceTicker(ModuleRenderer):
                 # Check overlap (left side check is implicit since temp_x starts > previous)
                 if (temp_x + w > 0):
                     try:
-                        self._draw_item(canvas, s, self.data[s], math.floor(temp_x), y, height)
+                        self._blit_item(canvas, s, math.floor(temp_x), y, height)
                     except Exception as e:
                         print(f"Error drawing ticker {s} (wrap): {e}")
                     
