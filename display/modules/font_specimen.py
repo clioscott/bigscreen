@@ -65,7 +65,9 @@ def to_font(rel, s):
 def has_glyphs(rel, s):
     f = font(rel)
     t = to_font(rel, s)
-    return all(f.f.CharacterWidth(ord(ch)) > 0 for ch in t if not ch.isspace())
+    chars = [ch for ch in t if not ch.isspace()]
+    have = sum(1 for ch in chars if f.f.CharacterWidth(ord(ch)) > 0)
+    return bool(chars) and have >= 0.9 * len(chars)          # a missing ° or — shouldn't hide the whole sample
 
 
 def wrap(rel, text, width):
