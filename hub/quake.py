@@ -114,6 +114,8 @@ def should_show(ev, st):
         return True                                                         # tell the wall it's off
     if ev.get("warn"):
         return True
+    if st.get("forecasts") is False and ev.get("source") == "wolfx":
+        return False                                                        # warnings only
     if ev["lat"] == 0 and ev["lon"] == 0:
         return False
     if qc.class_rank(ev["max"]) >= qc.class_rank(st.get("min_class") or "4"):

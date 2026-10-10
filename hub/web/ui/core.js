@@ -51,6 +51,7 @@ export const SECTIONS = [
   ["Weather maps", ["modules", "weather_maps"]],
   ["Weather data", ["modules", "weather"]],
   ["Weather alerts", ["modules", "weather_alerts"]],
+  ["Japan EEW", ["modules", "japan_eew"]],
   ["Display", ["system", "display"]],
   ["Night mode", ["system", "night_mode"]],
 ];

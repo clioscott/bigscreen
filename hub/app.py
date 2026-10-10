@@ -161,7 +161,7 @@ def quake_state():
     from hub import quake
     return {"settings": quake.settings(), "connected": quake.state["connected"],
             "last_message": quake.state["last_message"], "events": quake.state["events"][:10],
-            "errors": quake.state["errors"], "pushed": quake.state["pushed"],
+            "errors": quake.state["errors"], "pushed": quake.state["pushed"], "obs_at": quake.state.get("obs_at"),
             "scenarios": {k: v["label"] for k, v in quake.SCENARIOS.items()}}
 
 
