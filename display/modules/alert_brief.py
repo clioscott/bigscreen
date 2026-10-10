@@ -153,3 +153,37 @@ def cards(b, level="standard"):
     if level == "full" and len(b["regions"]) > 1:
         out.append(("WHERE", "; ".join(b["regions"])))
     return [(l, t) for l, t in out if t]
+
+
+SEVERITY_LEVEL = {"statement": 1, "advisory": 2, "watch": 3, "warning": 4}
+
+
+def paragraphs(b, level="all"):
+    """The whole message as styled paragraphs, most important first, for single-screen layouts.
+
+    style: lead (summary, bold) · detail · impact (what to expect) · advice (what to do, bold) · regions.
+    level "essentials" leaves out the detail paragraphs and the full region list."""
+    out = [{"style": "lead", "tag": "WHAT", "text": b["summary"]}]
+    if level != "essentials":
+        for d in _group(b["details"]):
+            out.append({"style": "detail", "tag": "DETAILS", "text": d})
+    if b["impacts"]:
+        out.append({"style": "impact", "tag": "EXPECT", "text": " ".join(b["impacts"])})
+    if b["advice"]:
+        out.append({"style": "advice", "tag": "DO", "text": " ".join(b["advice"])})
+    if level != "essentials" and b["regions"]:
+        out.append({"style": "regions", "tag": "AREA", "text": "; ".join(b["regions"])})
+    return [p for p in out if p["text"]]
+
+
+def _group(sentences, max_words=45):
+    """Join detail sentences into a few readable paragraphs."""
+    out, cur = [], []
+    for s in sentences:
+        cur.append(s)
+        if sum(len(x.split()) for x in cur) >= max_words:
+            out.append(" ".join(cur))
+            cur = []
+    if cur:
+        out.append(" ".join(cur))
+    return out

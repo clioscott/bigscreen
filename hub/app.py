@@ -86,15 +86,15 @@ def restore(payload: dict = Body(...)):
 def alerts_now():
     """Current alerts plus the alert screen's design catalogue (themes, palettes, type pairings, fonts)."""
     from display.gfx import ASSETS_DIR
-    from display.modules.alert_themes import FONTSETS, LAYOUTS, PALETTES
+    from display.modules.alert_themes import BORDERS, FAMILIES, PALETTES, REVEALS, STRUCTURES
     from display.modules.weather_alert import THEME_LIST
     data = read_json(paths.DATA_DIR / "alerts.json", {}) or {}
     fonts = sorted(p.name for p in (Path(ASSETS_DIR) / "fonts" / "alert").glob("*.bdf"))
     hexc = lambda c: "#%02x%02x%02x" % c if isinstance(c, tuple) else None
-    return {**data, "themes": THEME_LIST, "layouts": LAYOUTS,
-            "palettes": {k: {"name": v["name"], "swatch": [hexc(v["bg"]), hexc(v["accent"]) or "#d71414", hexc(v["fg"]), hexc(v["hi"])]}
+    return {**data, "themes": THEME_LIST, "structures": STRUCTURES, "borders": BORDERS, "reveals": REVEALS,
+            "palettes": {k: {"name": v["name"], "swatch": [hexc(v["bg"]), hexc(v["strong"]), hexc(v["amount"]), hexc(v["advice"])]}
                          for k, v in PALETTES.items()},
-            "fontsets": {k: v["label"] for k, v in FONTSETS.items()},
+            "families": {k: v["name"] for k, v in FAMILIES.items()},
             "fonts": ["alert/" + f for f in fonts]}
 
 
@@ -115,9 +115,9 @@ def _alert_settings(s: str):
 @app.get("/api/alerts/preview/{theme}.png")
 def alerts_preview(theme: str, at: float = 4.0, scale: int = 2, real: int = 0, s: str = ""):
     """A frame of the full-screen alert at ``at`` seconds, rendered with the display's own code."""
-    from display.modules.alert_themes import LEGACY, THEMES
+    from display.modules.alert_themes import THEMES
     from display.modules.weather_alert import render_preview
-    if theme not in THEMES and theme not in LEGACY:
+    if theme not in THEMES:
         raise HTTPException(404, "unknown theme")
     data = read_json(paths.DATA_DIR / "alerts.json", {}) if real else None
     frame = render_preview(theme, data if data and data.get("alerts") else None, max(0.0, at), _alert_settings(s))

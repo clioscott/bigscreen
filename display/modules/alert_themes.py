@@ -1,168 +1,138 @@
-"""Alert screen themes: palettes x type pairings x layouts, combined into 50 named designs.
+"""Alert screen themes: one dense screen per alert, dark backgrounds, bright animated warning borders.
 
-A theme = a layout (how the screen is organised: sidebar, dashboard tiles,
-poster, hazard-tape frame, terminal, columns, …) + a palette + a font pairing +
-a few options (progress indicator, page transition, icon size, background
-pattern, header text, capitals). Every layout appears several times but never
-with the same palette and fonts, so no two themes are a pure recolour.
+The wall is 4.5 ft wide and viewed from 3-4 ft (one LED ≈ 3 mm), so small pixel
+fonts read fine: designs favour density — the whole ECCC message on one screen —
+and use size, bold and colour to make the important parts jump out.
 
-Palette colours that say "sev" take the alert's severity colour at draw time
-(warning red, watch orange, advisory yellow, statement slate).
+A theme combines
+  * a structure   — how the screen is organised (header band, left rail, two
+                    columns, EAS-style crawl band, boxed sections, terminal,
+                    centred header, fact bar),
+  * a border      — an animated frame in the severity colour (marching dashes,
+                    slow pulse, hazard tape, double rule with blinking corners,
+                    chasing lights, comet, corner brackets, glow, chevron rails),
+  * a reveal      — how the text first appears (typewriter, line by line, wipe,
+                    scan bar, decode/scramble, sections sliding in, blinds, fade),
+  * a palette     — dark background, bright accents,
+  * a type family — retro/pixel BDF fonts with a size ladder; the largest size at
+                    which the whole message fits is used (capped at ~13 px).
+
+Colours that say "sev" take the alert's severity colour at draw time.
 """
 
 from __future__ import annotations
 
-SEVERITY = {"warning": (220, 20, 20), "watch": (255, 125, 0), "advisory": (235, 190, 0), "statement": (110, 120, 150)}
+SEVERITY = {"warning": (255, 30, 30), "watch": (255, 140, 0), "advisory": (255, 210, 0), "statement": (120, 150, 255)}
 
-PALETTES = {
-    "severity":  {"name": "Severity", "bg": (0, 0, 0), "panel": (22, 22, 26), "panel2": (40, 40, 48), "fg": (255, 255, 255),
-                  "dim": (150, 150, 160), "accent": "sev", "accent_fg": (255, 255, 255), "hi": (255, 220, 60),
-                  "label": "sev", "line": (70, 70, 80), "icon": (255, 255, 255)},
-    "red_alert": {"name": "Red alert", "bg": (0, 0, 0), "panel": (60, 0, 0), "panel2": (110, 0, 0), "fg": (255, 255, 255),
-                  "dim": (230, 140, 140), "accent": (225, 15, 15), "accent_fg": (255, 255, 255), "hi": (255, 230, 0),
-                  "label": (255, 90, 80), "line": (150, 20, 20), "icon": (255, 255, 255)},
-    "amber":     {"name": "Amber", "bg": (0, 0, 0), "panel": (40, 24, 0), "panel2": (80, 48, 0), "fg": (255, 196, 70),
-                  "dim": (170, 115, 30), "accent": (255, 160, 0), "accent_fg": (0, 0, 0), "hi": (255, 255, 255),
-                  "label": (255, 160, 0), "line": (120, 75, 0), "icon": (255, 196, 70)},
-    "ice":       {"name": "Ice", "bg": (0, 6, 18), "panel": (0, 30, 60), "panel2": (0, 55, 100), "fg": (225, 245, 255),
-                  "dim": (110, 160, 200), "accent": (0, 190, 255), "accent_fg": (0, 10, 30), "hi": (255, 255, 120),
-                  "label": (90, 210, 255), "line": (0, 90, 140), "icon": (225, 245, 255)},
-    "night":     {"name": "Night (dim red)", "bg": (0, 0, 0), "panel": (25, 0, 0), "panel2": (45, 0, 0), "fg": (200, 40, 30),
-                  "dim": (110, 20, 15), "accent": (170, 20, 10), "accent_fg": (0, 0, 0), "hi": (255, 90, 40),
-                  "label": (160, 30, 20), "line": (70, 10, 5), "icon": (200, 40, 30)},
-    "mono":      {"name": "Monochrome", "bg": (0, 0, 0), "panel": (28, 28, 28), "panel2": (60, 60, 60), "fg": (205, 205, 205),
-                  "dim": (140, 140, 140), "accent": (255, 255, 255), "accent_fg": (0, 0, 0), "hi": (255, 255, 255),
-                  "label": (190, 190, 190), "line": (90, 90, 90), "icon": (255, 255, 255)},
-    "phosphor":  {"name": "Phosphor green", "bg": (0, 4, 0), "panel": (0, 30, 8), "panel2": (0, 60, 18), "fg": (70, 255, 110),
-                  "dim": (30, 150, 60), "accent": (70, 255, 110), "accent_fg": (0, 20, 0), "hi": (210, 255, 210),
-                  "label": (40, 200, 80), "line": (0, 90, 30), "icon": (70, 255, 110)},
-    "bulletin":  {"name": "Bulletin blue", "bg": (0, 14, 90), "panel": (0, 28, 150), "panel2": (210, 215, 230), "fg": (255, 255, 255),
-                  "dim": (150, 175, 240), "accent": (255, 215, 0), "accent_fg": (0, 14, 90), "hi": (255, 215, 0),
-                  "label": (255, 215, 0), "line": (60, 90, 200), "icon": (255, 255, 255)},
-    "violet":    {"name": "Violet", "bg": (6, 0, 14), "panel": (35, 0, 60), "panel2": (70, 10, 110), "fg": (245, 230, 255),
-                  "dim": (170, 130, 210), "accent": (190, 80, 255), "accent_fg": (255, 255, 255), "hi": (255, 200, 80),
-                  "label": (200, 120, 255), "line": (90, 30, 140), "icon": (245, 230, 255)},
-    "sunset":    {"name": "Sunset", "bg": (10, 0, 6), "panel": (70, 10, 30), "panel2": (130, 30, 40), "fg": (255, 235, 210),
-                  "dim": (230, 140, 120), "accent": (255, 90, 40), "accent_fg": (255, 255, 255), "hi": (255, 220, 0),
-                  "label": (255, 120, 70), "line": (140, 40, 50), "icon": (255, 235, 210)},
-    "hivis":     {"name": "High-vis", "bg": (0, 0, 0), "panel": (255, 215, 0), "panel2": (40, 34, 0), "fg": (255, 230, 0),
-                  "dim": (180, 160, 0), "accent": (255, 215, 0), "accent_fg": (0, 0, 0), "hi": (255, 255, 255),
-                  "label": (255, 215, 0), "line": (120, 100, 0), "icon": (255, 230, 0)},
-    "slate":     {"name": "Slate", "bg": (8, 10, 16), "panel": (28, 34, 48), "panel2": (48, 58, 80), "fg": (230, 236, 245),
-                  "dim": (130, 145, 170), "accent": "sev", "accent_fg": (255, 255, 255), "hi": (120, 220, 255),
-                  "label": (150, 175, 210), "line": (60, 72, 95), "icon": (230, 236, 245)},
-    "teal":      {"name": "Teal", "bg": (0, 10, 10), "panel": (0, 50, 50), "panel2": (0, 90, 85), "fg": (220, 255, 250),
-                  "dim": (100, 180, 170), "accent": (0, 220, 190), "accent_fg": (0, 20, 20), "hi": (255, 140, 60),
-                  "label": (0, 220, 190), "line": (0, 100, 95), "icon": (220, 255, 250)},
-    "crimson_gold": {"name": "Crimson & gold", "bg": (14, 0, 0), "panel": (110, 0, 10), "panel2": (160, 10, 20),
-                  "fg": (255, 240, 200), "dim": (220, 170, 120), "accent": (255, 190, 30), "accent_fg": (60, 0, 0),
-                  "hi": (255, 200, 40), "label": (255, 190, 30), "line": (150, 60, 20), "icon": (255, 220, 120)},
+PALETTES = {   # all dark; text roles: strong (summary), text (details), impact, advice, amount, dim, label
+    "black":    {"name": "Black", "bg": (0, 0, 0), "panel": (16, 16, 20), "strong": (255, 255, 255), "text": (200, 200, 205),
+                 "impact": (255, 170, 60), "advice": (90, 230, 255), "amount": (255, 230, 0), "dim": (120, 120, 130),
+                 "label": "sev", "border": "sev", "icon": (255, 255, 255)},
+    "midnight": {"name": "Midnight", "bg": (0, 6, 22), "panel": (0, 16, 44), "strong": (240, 246, 255), "text": (170, 190, 225),
+                 "impact": (255, 190, 90), "advice": (120, 255, 200), "amount": (255, 225, 60), "dim": (90, 110, 160),
+                 "label": "sev", "border": "sev", "icon": (240, 246, 255)},
+    "oxblood":  {"name": "Oxblood", "bg": (14, 0, 0), "panel": (40, 4, 4), "strong": (255, 240, 230), "text": (225, 175, 165),
+                 "impact": (255, 160, 60), "advice": (255, 225, 120), "amount": (255, 255, 255), "dim": (150, 90, 85),
+                 "label": (255, 70, 50), "border": "sev", "icon": (255, 230, 220)},
+    "charcoal": {"name": "Charcoal", "bg": (10, 10, 13), "panel": (26, 26, 32), "strong": (255, 255, 255), "text": (185, 188, 198),
+                 "impact": (255, 150, 90), "advice": (150, 220, 255), "amount": (255, 215, 70), "dim": (110, 112, 125),
+                 "label": "sev", "border": "sev", "icon": (230, 232, 240)},
+    "amber_crt": {"name": "Amber CRT", "bg": (8, 4, 0), "panel": (30, 16, 0), "strong": (255, 200, 80), "text": (210, 140, 40),
+                 "impact": (255, 120, 30), "advice": (255, 230, 150), "amount": (255, 255, 230), "dim": (130, 80, 20),
+                 "label": (255, 170, 30), "border": "sev", "icon": (255, 200, 80)},
+    "green_crt": {"name": "Green CRT", "bg": (0, 6, 0), "panel": (0, 22, 6), "strong": (120, 255, 140), "text": (60, 200, 90),
+                 "impact": (220, 255, 120), "advice": (180, 255, 220), "amount": (255, 255, 255), "dim": (30, 120, 50),
+                 "label": (90, 255, 120), "border": "sev", "icon": (120, 255, 140)},
+    "plum":     {"name": "Plum", "bg": (10, 0, 16), "panel": (30, 6, 44), "strong": (250, 240, 255), "text": (195, 170, 220),
+                 "impact": (255, 160, 120), "advice": (140, 230, 255), "amount": (255, 220, 90), "dim": (120, 95, 150),
+                 "label": "sev", "border": "sev", "icon": (250, 240, 255)},
+    "steel":    {"name": "Steel", "bg": (4, 10, 14), "panel": (14, 28, 36), "strong": (235, 250, 255), "text": (160, 195, 210),
+                 "impact": (255, 175, 95), "advice": (100, 255, 220), "amount": (255, 240, 110), "dim": (85, 120, 135),
+                 "label": "sev", "border": "sev", "icon": (235, 250, 255)},
+    "ink":      {"name": "Ink & yellow", "bg": (0, 0, 0), "panel": (24, 22, 0), "strong": (255, 236, 0), "text": (230, 230, 230),
+                 "impact": (255, 150, 0), "advice": (255, 255, 255), "amount": (255, 236, 0), "dim": (140, 130, 60),
+                 "label": (255, 236, 0), "border": "sev", "icon": (255, 236, 0)},
 }
 
 A = "alert/"
-FONTSETS = {   # title: (font, scale); others: font
-    "fixed":     {"label": "Fixed bold", "title": (A + "10x20.bdf", 1), "big": (A + "9x18B.bdf", 2), "head": A + "7x13B.bdf",
-                  "label_f": A + "6x13B.bdf", "body": A + "7x13B.bdf", "small": A + "5x8.bdf"},
-    "fixed_xl":  {"label": "Fixed extra-large", "title": (A + "9x18B.bdf", 2), "big": (A + "9x18B.bdf", 2), "head": A + "9x15B.bdf",
-                  "label_f": A + "7x13B.bdf", "body": A + "9x15B.bdf", "small": A + "6x10.bdf"},
-    "helv":      {"label": "Helvetica", "title": (A + "helvB24.bdf", 1), "big": (A + "helvB24.bdf", 1), "head": A + "helvB12.bdf",
-                  "label_f": A + "helvB10.bdf", "body": A + "helvB12.bdf", "small": A + "helvR10.bdf"},
-    "helv_light": {"label": "Helvetica light", "title": (A + "helvB18.bdf", 1), "big": (A + "helvB24.bdf", 1), "head": A + "helvB10.bdf",
-                  "label_f": A + "helvB10.bdf", "body": A + "helvR12.bdf", "small": A + "helvR10.bdf"},
-    "lucida":    {"label": "Lucida", "title": (A + "lubB24.bdf", 1), "big": (A + "lubB24.bdf", 1), "head": A + "luBS12.bdf",
-                  "label_f": A + "luBS10.bdf", "body": A + "luBS12.bdf", "small": A + "luRS10.bdf"},
-    "news":      {"label": "Newsroom serif", "title": (A + "lubB18.bdf", 1), "big": (A + "timB18.bdf", 2), "head": A + "timB12.bdf",
-                  "label_f": A + "luBS10.bdf", "body": A + "lubB12.bdf", "small": A + "luRS10.bdf"},
-    "spleen":    {"label": "Spleen", "title": (A + "spleen-12x24.bdf", 1), "big": (A + "spleen-12x24.bdf", 2), "head": A + "spleen-8x16.bdf",
-                  "label_f": A + "spleen-6x12.bdf", "body": A + "spleen-8x16.bdf", "small": A + "spleen-5x8.bdf"},
-    "profont":   {"label": "ProFont", "title": (A + "profont22.bdf", 1), "big": (A + "profont22.bdf", 2), "head": A + "profont17.bdf",
-                  "label_f": A + "profont12.bdf", "body": A + "profont15.bdf", "small": A + "profont11.bdf"},
-    "terminus":  {"label": "Terminus", "title": (A + "t0-22b-uni.bdf", 1), "big": (A + "t0-22b-uni.bdf", 2), "head": A + "t0-16b-uni.bdf",
-                  "label_f": A + "t0-12b-uni.bdf", "body": A + "t0-14b-uni.bdf", "small": A + "t0-12-uni.bdf"},
-    "pixel":     {"label": "Chunky pixel", "title": (A + "VictoriaBold-8.bdf", 3), "big": (A + "VictoriaBold-8.bdf", 4),
-                  "head": A + "TorusSansBold-8.bdf", "label_f": A + "nokia-small-bold.bdf", "body": A + "win_crox2hb.bdf",
-                  "small": A + "4x6.bdf"},
-    "retro":     {"label": "Retro micro", "title": (A + "amstrad_cpc_extended.bdf", 3), "big": (A + "amstrad_cpc_extended.bdf", 4),
-                  "head": A + "amstrad_cpc_extended.bdf", "label_f": A + "amstrad_cpc_extended.bdf", "body": A + "6x13B.bdf",
-                  "small": A + "5x8.bdf"},
-    "courier":   {"label": "Courier", "title": (A + "courB18.bdf", 1), "big": (A + "courB18.bdf", 2), "head": A + "courB12.bdf",
-                  "label_f": A + "courB10.bdf", "body": A + "courB12.bdf", "small": A + "6x10.bdf"},
+# title: candidates for the alert name, largest first. ladder: body (regular, bold or None for faux bold, scale),
+# largest first — the biggest size where everything fits wins. Capped small on purpose (close viewing).
+FAMILIES = {
+    "fixed":    {"name": "X11 fixed", "title": [(A + "10x20.bdf", 1), (A + "9x15B.bdf", 1), (A + "8x13B.bdf", 1)],
+                 "key": A + "8x13B.bdf", "small": A + "5x8.bdf",
+                 "ladder": [(A + "7x13.bdf", A + "7x13B.bdf", 1), (A + "6x13.bdf", A + "6x13B.bdf", 1),
+                            (A + "6x10.bdf", None, 1), (A + "5x8.bdf", None, 1)]},
+    "terminus": {"name": "Terminus", "title": [(A + "t0-18b-uni.bdf", 1), (A + "t0-16b-uni.bdf", 1), (A + "t0-14b-uni.bdf", 1)],
+                 "key": A + "t0-14b-uni.bdf", "small": A + "t0-11-uni.bdf",
+                 "ladder": [(A + "t0-13-uni.bdf", A + "t0-13b-uni.bdf", 1), (A + "t0-12-uni.bdf", A + "t0-12b-uni.bdf", 1),
+                            (A + "t0-11-uni.bdf", A + "t0-11b-uni.bdf", 1)]},
+    "spleen":   {"name": "Spleen", "title": [(A + "spleen-12x24.bdf", 1), (A + "spleen-8x16.bdf", 1)],
+                 "key": A + "spleen-8x16.bdf", "small": A + "spleen-5x8.bdf",
+                 "ladder": [(A + "spleen-6x12.bdf", None, 1), (A + "spleen-5x8.bdf", None, 1)]},
+    "profont":  {"name": "ProFont", "title": [(A + "profont22.bdf", 1), (A + "profont17.bdf", 1)],
+                 "key": A + "profont15.bdf", "small": A + "profont11.bdf",
+                 "ladder": [(A + "profont12.bdf", None, 1), (A + "profont11.bdf", None, 1)]},
+    "crox":     {"name": "Crox pixel sans", "title": [(A + "VictoriaBold-8.bdf", 2), (A + "win_crox2hb.bdf", 1)],
+                 "key": A + "win_crox1hb.bdf", "small": A + "5x7.bdf",
+                 "ladder": [(A + "win_crox1h.bdf", A + "win_crox1hb.bdf", 1), (A + "nokia-small.bdf", A + "nokia-small-bold.bdf", 1)]},
+    "eightbit": {"name": "8-bit micro", "title": [(A + "amstrad_cpc_extended.bdf", 2)],
+                 "key": A + "amstrad_cpc_extended.bdf", "small": A + "4x6.bdf",
+                 "ladder": [(A + "amstrad_cpc_extended.bdf", None, 1), (A + "5x7.bdf", None, 1)]},
+    "victoria": {"name": "Victoria pixel", "title": [(A + "VictoriaBold-8.bdf", 2), (A + "TorusSansBold-8.bdf", 2)],
+                 "key": A + "TorusSansBold-8.bdf", "small": A + "4x6.bdf",
+                 "ladder": [(A + "ArtosSans-8.bdf", A + "TorusSansBold-8.bdf", 1), (A + "5x7.bdf", None, 1)]},
+    "dense":    {"name": "Squeezed dense", "title": [(A + "9x15B.bdf", 1), (A + "7x14B.bdf", 1)],
+                 "key": A + "7x13B.bdf", "small": A + "4x6.bdf",
+                 "ladder": [(A + "6x13.bdf", A + "6x13B.bdf", 1),
+                            (A + "u8g2_squeezed_regular_7.bdf", A + "u8g2_squeezed_bold_7.bdf", 1),
+                            (A + "u8g2_squeezed_regular_6.bdf", A + "u8g2_squeezed_bold_6.bdf", 1)]},
+    "nokia":    {"name": "Nokia handset", "title": [(A + "nokia-small-bold.bdf", 2)],
+                 "key": A + "nokia-small-bold.bdf", "small": A + "4x6.bdf",
+                 "ladder": [(A + "nokia-small.bdf", A + "nokia-small-bold.bdf", 1), (A + "4x6.bdf", None, 1)]},
 }
 
-LAYOUTS = {
-    "banner": "Banner", "sidebar": "Sidebar", "dashboard": "Dashboard tiles", "poster": "Poster", "tape": "Hazard tape",
-    "terminal": "Terminal", "broadcast": "Broadcast", "columns": "Three columns", "minimal": "Minimal", "card": "Card",
-    "split": "Split screen", "marquee": "Marquee lights",
-}
+STRUCTURES = {"band": "Header band", "rail": "Left rail", "columns": "Two columns", "crawl": "Crawl band",
+              "boxes": "Boxed sections", "terminal": "Terminal", "centered": "Centred header", "factbar": "Fact bar"}
+BORDERS = {"chase": "Marching dashes", "pulse": "Slow pulse", "hazard": "Hazard tape", "double": "Double rule",
+           "lights": "Chasing lights", "comet": "Comet", "corners": "Corner brackets", "glow": "Glow", "rails": "Chevron rails"}
+REVEALS = {"type": "Typewriter", "lines": "Line by line", "wipe": "Wipe", "scan": "Scan bar", "decode": "Decode",
+           "sections": "Sections slide in", "blinds": "Blinds", "fade": "Fade in"}
 
-# (name, layout, palette, fonts, options)
-_T = [
-    ("Beacon", "banner", "severity", "fixed", {"progress": "bar", "transition": "slide", "header": "WEATHER ALERT"}),
-    ("Signal", "banner", "bulletin", "helv", {"progress": "dots", "transition": "slide", "header": "WEATHER BULLETIN"}),
-    ("Dispatch", "banner", "slate", "terminus", {"progress": "count", "transition": "wipe", "header": "ALERT IN EFFECT"}),
-    ("Lantern", "banner", "amber", "courier", {"progress": "bar", "transition": "cut", "header": "WEATHER ADVISORY", "pattern": "scan"}),
-    ("Flare", "banner", "crimson_gold", "news", {"progress": "dots", "transition": "fade", "header": "SEVERE WEATHER"}),
-    ("Sentinel", "sidebar", "severity", "helv", {"progress": "bar", "transition": "slide", "icon": "large"}),
-    ("Lookout", "sidebar", "ice", "spleen", {"progress": "dots", "transition": "wipe", "icon": "large"}),
-    ("Watchtower", "sidebar", "sunset", "lucida", {"progress": "count", "transition": "fade", "icon": "large"}),
-    ("Bastion", "sidebar", "mono", "fixed_xl", {"progress": "bar", "transition": "cut", "icon": "large", "upper": True}),
-    ("Control Room", "dashboard", "slate", "helv_light", {"progress": "dots", "transition": "fade"}),
-    ("Ops Desk", "dashboard", "teal", "terminus", {"progress": "bar", "transition": "slide"}),
-    ("Instrument", "dashboard", "amber", "profont", {"progress": "count", "transition": "cut"}),
-    ("Cockpit", "dashboard", "phosphor", "spleen", {"progress": "bar", "transition": "wipe", "pattern": "grid"}),
-    ("Headline", "poster", "severity", "lucida", {"progress": "dots", "transition": "fade", "icon": "large"}),
-    ("Broadsheet", "poster", "mono", "news", {"progress": "bar", "transition": "slide", "icon": "large"}),
-    ("Billboard", "poster", "hivis", "fixed_xl", {"progress": "count", "transition": "cut", "icon": "large", "upper": True}),
-    ("Placard", "poster", "violet", "helv", {"progress": "dots", "transition": "wipe", "icon": "large"}),
-    ("Neon", "poster", "teal", "pixel", {"progress": "bar", "transition": "fade", "icon": "large", "upper": True}),
-    ("Caution Tape", "tape", "hivis", "fixed", {"progress": "bar", "transition": "slide", "pattern": "stripes", "upper": True}),
-    ("Roadwork", "tape", "amber", "helv", {"progress": "dots", "transition": "cut", "pattern": "chevrons"}),
-    ("Hazmat", "tape", "red_alert", "terminus", {"progress": "count", "transition": "wipe", "pattern": "stripes"}),
-    ("Barricade", "tape", "severity", "pixel", {"progress": "bar", "transition": "slide", "pattern": "checker", "upper": True}),
-    ("Mainframe", "terminal", "phosphor", "terminus", {"progress": "count", "transition": "type", "upper": True}),
-    ("Teletype", "terminal", "amber", "courier", {"progress": "bar", "transition": "type", "upper": True}),
-    ("Console", "terminal", "ice", "profont", {"progress": "count", "transition": "type"}),
-    ("Night Shift", "terminal", "night", "fixed", {"progress": "bar", "transition": "type", "upper": True}),
-    ("Newsroom", "broadcast", "bulletin", "helv", {"progress": "bar", "transition": "slide"}),
-    ("Storm Centre", "broadcast", "severity", "lucida", {"progress": "dots", "transition": "fade"}),
-    ("Live Desk", "broadcast", "crimson_gold", "fixed", {"progress": "bar", "transition": "wipe"}),
-    ("Channel 7", "broadcast", "slate", "spleen", {"progress": "count", "transition": "cut"}),
-    ("Ledger", "columns", "mono", "fixed", {"progress": "bar", "transition": "fade"}),
-    ("Triptych", "columns", "severity", "helv_light", {"progress": "dots", "transition": "slide"}),
-    ("Almanac", "columns", "sunset", "news", {"progress": "count", "transition": "wipe"}),
-    ("Field Guide", "columns", "teal", "profont", {"progress": "bar", "transition": "cut"}),
-    ("Quiet", "minimal", "mono", "helv_light", {"progress": "bar", "transition": "fade", "icon": "small"}),
-    ("Ember", "minimal", "night", "lucida", {"progress": "dots", "transition": "fade", "icon": "small"}),
-    ("Frost Line", "minimal", "ice", "helv", {"progress": "bar", "transition": "slide", "icon": "small"}),
-    ("Ink", "minimal", "slate", "courier", {"progress": "count", "transition": "cut", "icon": "none"}),
-    ("Notice", "card", "slate", "helv", {"progress": "dots", "transition": "slide", "pattern": "dots"}),
-    ("Postcard", "card", "sunset", "spleen", {"progress": "bar", "transition": "fade", "pattern": "grid"}),
-    ("Ticket", "card", "violet", "terminus", {"progress": "count", "transition": "wipe", "pattern": "dots"}),
-    ("Memo", "card", "amber", "fixed", {"progress": "dots", "transition": "cut", "pattern": "scan"}),
-    ("Horizon", "split", "severity", "fixed_xl", {"progress": "bar", "transition": "slide", "icon": "large"}),
-    ("Twin Peaks", "split", "ice", "lucida", {"progress": "dots", "transition": "fade", "icon": "large"}),
-    ("Equator", "split", "crimson_gold", "profont", {"progress": "count", "transition": "wipe", "icon": "large"}),
-    ("Overpass", "split", "teal", "retro", {"progress": "bar", "transition": "cut", "icon": "large", "upper": True}),
-    ("Theatre", "marquee", "crimson_gold", "helv", {"progress": "dots", "transition": "fade"}),
-    ("Arcade", "marquee", "violet", "retro", {"progress": "bar", "transition": "cut", "upper": True}),
-    ("Boardwalk", "marquee", "amber", "pixel", {"progress": "count", "transition": "slide", "upper": True}),
-    ("Premiere", "marquee", "severity", "news", {"progress": "bar", "transition": "wipe"}),
-]
+NAMES = ["Beacon", "Sentinel", "Klaxon", "Siren", "Tripwire", "Lighthouse", "Bulletin", "Dispatch", "Watchfire", "Flashpoint",
+         "Lantern", "Bastion", "Outpost", "Radar Room", "Night Desk", "Switchboard", "Teletype", "Telex", "Signal Box", "Control",
+         "Storm Desk", "Front Line", "Squall", "Gale", "Downpour", "Undertow", "Breakwater", "Floodgate", "Ridge", "Summit",
+         "Tundra", "Glacier", "Cinder", "Ember", "Ashfall", "Thunderhead", "Anvil", "Spark", "Voltage", "Circuit",
+         "Mainframe", "Phosphor", "Vector", "Arcade", "Pager", "Handset", "Marquee", "Floodlight", "Afterglow", "Vigil"]
+
+_STRUCT, _BORD, _REV, _PAL, _FAM = list(STRUCTURES), list(BORDERS), list(REVEALS), list(PALETTES), list(FAMILIES)
+_PREFER = {"terminal": ["green_crt", "amber_crt", "black", "midnight", "charcoal", "steel"]}
 
 THEMES = {}
-for i, (name, layout, pal, fonts, opts) in enumerate(_T, 1):
-    tid = f"t{i:02d}"
-    THEMES[tid] = {"id": tid, "name": name, "layout": layout, "palette": pal, "fonts": fonts,
-                   "progress": opts.get("progress", "bar"), "transition": opts.get("transition", "slide"),
-                   "icon": opts.get("icon", "medium"), "pattern": opts.get("pattern"),
-                   "header": opts.get("header", "WEATHER ALERT"), "upper": bool(opts.get("upper", False))}
-    THEMES[tid]["description"] = f"{LAYOUTS[layout]} · {PALETTES[pal]['name']} · {FONTSETS[fonts]['label']}"
+_seen = set()
+for i in range(50):
+    st = _STRUCT[i % len(_STRUCT)]
+    k = i // len(_STRUCT)
+    pal_choices = _PREFER.get(st, _PAL)
+    for j in range(len(pal_choices) * len(_FAM)):
+        pal = pal_choices[(k + j + i) % len(pal_choices)]
+        fam = _FAM[(i * 5 + k * 2 + j) % len(_FAM)]
+        if (st, pal, fam) not in _seen:
+            break
+    _seen.add((st, pal, fam))
+    border = _BORD[(i * 4 + k) % len(_BORD)]
+    reveal = _REV[(i * 3 + k * 5) % len(_REV)]
+    if st == "terminal":
+        reveal = ("type", "decode", "lines")[k % 3]
+    tid = f"t{i + 1:02d}"
+    THEMES[tid] = {
+        "id": tid, "name": NAMES[i], "structure": st, "border": border, "reveal": reveal, "palette": pal, "family": fam,
+        "upper": st in ("crawl", "terminal") or fam in ("eightbit",) or i % 7 == 3,
+        "header": ("WEATHER WARNING", "ALERT IN EFFECT", "WEATHER ALERT", "SEVERE WEATHER", "ENVIRONMENT CANADA")[i % 5],
+        "description": f"{STRUCTURES[st]} · {BORDERS[border]} · {REVEALS[reveal]} · {PALETTES[pal]['name']} · {FAMILIES[fam]['name']}",
+    }
 
 DEFAULT_THEME = "t01"
-# themes from the first version map onto close new ones
-LEGACY = {"ebs": "t01", "eas": "t19", "alert_ready": "t21", "bulletin": "t02", "severity": "t06", "terminal": "t23"}
 
 
 def resolve(theme_id):
-    tid = LEGACY.get(theme_id, theme_id)
-    return THEMES.get(tid) or THEMES[DEFAULT_THEME]
+    return THEMES.get(theme_id) or THEMES[DEFAULT_THEME]

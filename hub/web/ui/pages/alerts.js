@@ -9,19 +9,16 @@ const TYPES = [
 ];
 const ENTRY = { panel: "weather_alert", when: "weather_alert_active", advance: "cycles", cycles: 1, max_sec: 900 };
 const DETAIL = [
-  { value: "brief", label: "Brief", hint: "Headline, what's happening, what to do" },
-  { value: "standard", label: "Standard", hint: "+ short details and what to expect" },
-  { value: "full", label: "Full", hint: "+ every detail and every region" },
+  { value: "all", label: "Everything", hint: "The whole ECCC text (minus boilerplate) and every forecast region" },
+  { value: "essentials", label: "Essentials", hint: "What's happening, what to expect and what to do, in larger text" },
 ];
-const TRANSITIONS = [{ value: "", label: "Theme" }, { value: "slide", label: "Slide" }, { value: "wipe", label: "Wipe" },
-  { value: "fade", label: "Fade" }, { value: "cut", label: "Cut" }, { value: "type", label: "Typewriter" }];
-const LOOK_KEYS = ["header", "palette", "fontset", "title_font", "title_scale", "body_font", "reading_wpm", "min_hold_sec",
-  "transition", "transition_speed", "detail", "upper"];
+const LOOK_KEYS = ["header", "palette", "family", "structure", "border", "reveal", "reveal_speed", "title_font", "title_scale",
+  "body_font", "reading_wpm", "min_hold_sec", "detail", "upper"];
 
 export const Alerts = {
   setup() {
     seed(["modules", "weather_alerts"], { enabled: true, theme: "t01", types: ["warning", "watch", "advisory", "statement"],
-      reading_wpm: 170, min_hold_sec: 2.5, transition_speed: 1, detail: "standard", refresh_interval_sec: 120 });
+      reading_wpm: 200, min_hold_sec: 12, reveal_speed: 1, detail: "all", refresh_interval_sec: 120 });
     const a = computed(() => store.draft.modules.weather_alerts);
     // first-version theme names → their closest new theme (in saved and draft alike, so it isn't an "unsaved change")
     const LEGACY = { ebs: "t01", eas: "t19", alert_ready: "t21", bulletin: "t02", severity: "t06", terminal: "t23" };
@@ -29,7 +26,7 @@ export const Alerts = {
       const wa = root.modules.weather_alerts;
       if (wa && !/^t\d\d$/.test(wa.theme || "")) wa.theme = LEGACY[wa.theme] || "t01";
     }
-    const cat = ref({ themes: [], layouts: {}, palettes: {}, fontsets: {}, fonts: [] });
+    const cat = ref({ themes: [], structures: {}, borders: {}, reveals: {}, palettes: {}, families: {}, fonts: [] });
     const load = async () => { try { cat.value = await api("/api/alerts"); } catch (e) { /* hub restarting */ } };
 
     // unsaved look settings travel to the preview renderer as ?s=
@@ -54,15 +51,15 @@ export const Alerts = {
       tick = setInterval(() => { if (playing.value) t.value = (t.value + 0.25) % Math.max(4, tl.value.total || 30); }, 250);
     });
     onBeforeUnmount(() => { clearInterval(tick); clearTimeout(tlTimer); });
-    const page = computed(() => [...(tl.value.pages || [])].reverse().find((p) => t.value >= p.start - 0.45) || tl.value.pages?.[0]);
+    const page = computed(() => [...(tl.value.pages || [])].reverse().find((p) => t.value >= p.start) || tl.value.pages?.[0]);
     const jump = (p) => { t.value = p.start + 0.05; };
 
     // gallery
     const layoutFilter = ref("");
     const thumbsOn = ref("headline");
-    const themes = computed(() => (cat.value.themes || []).filter((x) => !layoutFilter.value || x.layout === layoutFilter.value));
+    const themes = computed(() => (cat.value.themes || []).filter((x) => !layoutFilter.value || x.structure === layoutFilter.value));
     const thumbQs = computed(() => `s=${encodeURIComponent(JSON.stringify(a.value.header ? { header: a.value.header } : {}))}`);
-    const thumb = (id) => `/api/alerts/preview/${id}.png?at=${thumbsOn.value === "headline" ? 1.5 : 7.5}&scale=1&${thumbQs.value}`;
+    const thumb = (id) => `/api/alerts/preview/${id}.png?at=${thumbsOn.value === "headline" ? 30 : 0.8}&scale=1&${thumbQs.value}`;
     const current = computed(() => (cat.value.themes || []).find((x) => x.id === a.value.theme));
 
     const types = computed(() => a.value.types || TYPES.map((x) => x.id));
@@ -77,7 +74,7 @@ export const Alerts = {
       set: (v) => { a.value.area_id = v; },
     });
     const setOpt = (k, v) => { if (v === "" || v === null || v === undefined) delete a.value[k]; else a.value[k] = v; };
-    const resetLook = () => { for (const k of LOOK_KEYS) delete a.value[k]; a.value.reading_wpm = 170; a.value.min_hold_sec = 2.5; a.value.transition_speed = 1; a.value.detail = "standard"; };
+    const resetLook = () => { for (const k of LOOK_KEYS) delete a.value[k]; a.value.reading_wpm = 200; a.value.min_hold_sec = 12; a.value.reveal_speed = 1; a.value.detail = "all"; };
 
     const entry = computed(() => ["left", "right"].map((s) => (store.draft.modules.layout_cycle[s] || []).find((e) => e.panel === "weather_alert")).find(Boolean));
     const addToRotation = () => {
@@ -96,13 +93,14 @@ export const Alerts = {
     const when = (ts) => (ts ? new Date(ts * 1000).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "");
     const typeColour = (k) => TYPES.find((x) => x.id === k)?.colour || "#6e7896";
     const fontName = (f) => f.replace("alert/", "").replace(".bdf", "");
+    const opts = (dict) => [{ value: "", label: "Theme" }, ...Object.entries(dict || {}).map(([value, label]) => ({ value, label }))];
     return { a, cat, live, shown, onLoaded, tl, t, playing, page, jump, layoutFilter, thumbsOn, themes, thumb, current,
-      TYPES, DETAIL, TRANSITIONS, types, toggleType, areas, areaId, setOpt, resetLook, entry, addToRotation, show, stop,
+      TYPES, DETAIL, opts, types, toggleType, areas, areaId, setOpt, resetLook, entry, addToRotation, show, stop,
       when, typeColour, ago, fontName };
   },
   template: `<div class="page">
     <div class="page-head"><div class="grow"><h1>Weather alerts</h1>
-      <p>When Environment Canada has an alert in effect for your area, the wall switches to a full-screen bulletin at the start of the rotation. Each alert is broken into short pages — headline, what's happening, what to expect, what to do — and every page holds long enough to read before the next one comes in.</p></div>
+      <p>When Environment Canada has an alert in effect for your area, the wall switches to a full-screen bulletin at the start of the rotation. Each alert fills one dense screen with nearly all of Environment Canada's text (amounts, what to expect and what to do highlighted), framed by a bright animated border, and holds long enough to read.</p></div>
       <Toggle v-model="a.enabled"/></div>
 
     <div class="two-col">
@@ -118,7 +116,7 @@ export const Alerts = {
               <button class="btn sm ghost icon-only" @click="playing = !playing" :title="playing ? 'Pause' : 'Play'"><Icon :name="playing ? 'Pause' : 'Play'" :size="14"/></button>
               <div class="scrub-track">
                 <button v-for="(p, i) in tl.pages" :key="i" class="scrub-seg" :class="{on: page === p}"
-                  :style="{flex: p.hold}" @click="jump(p)" :title="p.label + ' · holds ' + p.hold + ' s'">{{ p.label }}</button>
+                  :style="{flex: p.hold + p.reveal}" @click="jump(p)" :title="p.label + ' · reveal ' + p.reveal + ' s, holds ' + p.hold + ' s · text ' + p.font_px + ' px'">{{ p.label }} · {{ p.font_px }}px</button>
               </div>
               <span class="mono faint" style="font-size:12px; width:70px; text-align:right">{{ t.toFixed(0) }} / {{ Math.round(tl.total) }} s</span>
             </div>
@@ -144,11 +142,11 @@ export const Alerts = {
 
       <div class="stack">
         <div class="card"><div class="card-head"><Icon name="LayoutGrid" :size="15"/><h3>Theme</h3><span class="pill">{{ cat.themes?.length }} designs</span>
-          <Seg v-model="thumbsOn" :options="[{value:'headline', label:'Headline'}, {value:'page', label:'Text page'}]"/></div>
+          <Seg v-model="thumbsOn" :options="[{value:'headline', label:'Finished'}, {value:'page', label:'Revealing'}]"/></div>
           <div class="card-body stack">
             <div class="row" style="flex-wrap:wrap; gap:6px">
               <button class="btn sm" :class="{primary: !layoutFilter}" @click="layoutFilter = ''">All</button>
-              <button v-for="(lab, id) in cat.layouts" :key="id" class="btn sm" :class="{primary: layoutFilter === id}" @click="layoutFilter = id">{{ lab }}</button>
+              <button v-for="(lab, id) in cat.structures" :key="id" class="btn sm" :class="{primary: layoutFilter === id}" @click="layoutFilter = id">{{ lab }}</button>
             </div>
             <div class="theme-grid dense">
               <button v-for="th in themes" :key="th.id" class="theme-card" :class="{on: a.theme === th.id}" @click="a.theme = th.id">
@@ -158,14 +156,13 @@ export const Alerts = {
 
         <div class="card"><div class="card-head"><Icon name="BookOpenText" :size="15"/><h3>Reading & timing</h3>
           <button class="btn sm ghost" @click="resetLook"><Icon name="RotateCcw" :size="13"/>Defaults</button></div><div class="card-body stack">
-          <Field label="How much to show"><Seg :modelValue="a.detail || 'standard'" @update:modelValue="v => a.detail = v" :options="DETAIL"/></Field>
-          <div class="faint" style="font-size:12.5px; margin-top:-6px">{{ DETAIL.find(d => d.value === (a.detail || 'standard')).hint }}</div>
-          <Field label="Reading speed" hint="Each page holds for its words at this speed; slower = longer holds">
-            <Slider :modelValue="a.reading_wpm || 170" @update:modelValue="v => a.reading_wpm = v" :min="90" :max="320" :step="10" unit=" wpm"/></Field>
-          <Field label="Shortest page hold"><Slider :modelValue="a.min_hold_sec || 2.5" @update:modelValue="v => a.min_hold_sec = v" :min="1" :max="10" :step="0.5" unit=" s"/></Field>
-          <Field label="Page transition"><Seg :modelValue="a.transition || ''" @update:modelValue="v => setOpt('transition', v)" :options="TRANSITIONS"/></Field>
-          <Field label="Transition speed" hint="How fast pages slide, wipe, fade or type in">
-            <Slider :modelValue="a.transition_speed || 1" @update:modelValue="v => a.transition_speed = v" :min="0.3" :max="3" :step="0.1" :format="v => v.toFixed(1) + '×'"/></Field>
+          <Field label="How much to show"><Seg :modelValue="a.detail || 'all'" @update:modelValue="v => a.detail = v" :options="DETAIL"/></Field>
+          <div class="faint" style="font-size:12.5px; margin-top:-6px">{{ DETAIL.find(d => d.value === (a.detail || 'all')).hint }}. Text uses the largest size of the font family that fits on one screen.</div>
+          <Field label="Reading speed" hint="Each alert holds for its words at this speed">
+            <Slider :modelValue="a.reading_wpm || 200" @update:modelValue="v => a.reading_wpm = v" :min="100" :max="400" :step="10" unit=" wpm"/></Field>
+          <Field label="Shortest hold"><Slider :modelValue="a.min_hold_sec || 12" @update:modelValue="v => a.min_hold_sec = v" :min="4" :max="60" :step="1" unit=" s"/></Field>
+          <Field label="Reveal speed" hint="How fast the text types, wipes, scans or decodes in">
+            <Slider :modelValue="a.reveal_speed || 1" @update:modelValue="v => a.reveal_speed = v" :min="0.3" :max="3" :step="0.1" :format="v => v.toFixed(1) + '×'"/></Field>
           <div class="muted" style="font-size:13px">One pass through {{ cat.alerts?.length ? 'the current alerts' : 'the sample alert' }} takes about <b>{{ Math.round(tl.total) }} s</b> ({{ tl.pages?.length }} pages).</div>
         </div></div>
 
@@ -181,13 +178,19 @@ export const Alerts = {
                 <i v-for="(c, k) in pl.swatch" :key="k" :style="{background: c}"></i><span>{{ pl.name }}</span></button>
             </div></Field>
           <div class="fields">
-            <Field label="Type pairing"><select class="input" :value="a.fontset || ''" @change="setOpt('fontset', $event.target.value)">
-              <option value="">Theme default</option><option v-for="(lab, id) in cat.fontsets" :key="id" :value="id">{{ lab }}</option></select></Field>
+            <Field label="Structure"><select class="input" :value="a.structure || ''" @change="setOpt('structure', $event.target.value)">
+              <option v-for="o in opts(cat.structures)" :key="o.value" :value="o.value">{{ o.label }}</option></select></Field>
+            <Field label="Border"><select class="input" :value="a.border || ''" @change="setOpt('border', $event.target.value)">
+              <option v-for="o in opts(cat.borders)" :key="o.value" :value="o.value">{{ o.label }}</option></select></Field>
+            <Field label="Reveal"><select class="input" :value="a.reveal || ''" @change="setOpt('reveal', $event.target.value)">
+              <option v-for="o in opts(cat.reveals)" :key="o.value" :value="o.value">{{ o.label }}</option></select></Field>
+            <Field label="Font family"><select class="input" :value="a.family || ''" @change="setOpt('family', $event.target.value)">
+              <option v-for="o in opts(cat.families)" :key="o.value" :value="o.value">{{ o.label }}</option></select></Field>
             <Field label="Title font"><div class="row nowrap"><select class="input" :value="a.title_font || ''" @change="setOpt('title_font', $event.target.value)">
-              <option value="">Pairing default</option><option v-for="f in cat.fonts" :key="f" :value="f">{{ fontName(f) }}</option></select>
+              <option value="">Family default</option><option v-for="f in cat.fonts" :key="f" :value="f">{{ fontName(f) }}</option></select>
               <Stepper v-if="a.title_font" :modelValue="a.title_scale || 1" @update:modelValue="v => a.title_scale = v" :min="1" :max="4" unit="×"/></div></Field>
-            <Field label="Body font"><select class="input" :value="a.body_font || ''" @change="setOpt('body_font', $event.target.value)">
-              <option value="">Pairing default</option><option v-for="f in cat.fonts" :key="f" :value="f">{{ fontName(f) }}</option></select></Field>
+            <Field label="Body font" hint="Tried first; the family's sizes are the fallback"><select class="input" :value="a.body_font || ''" @change="setOpt('body_font', $event.target.value)">
+              <option value="">Family default</option><option v-for="f in cat.fonts" :key="f" :value="f">{{ fontName(f) }}</option></select></Field>
           </div>
         </div></div>
 
