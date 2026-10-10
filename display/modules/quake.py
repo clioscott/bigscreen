@@ -153,6 +153,7 @@ class QuakeScreen:
         self._bags = {}
         self._theme_name = self.settings.get("theme") or "monitor"
         self._obs_draw = {}
+        self._pix = {}
         self._cities_at = (None, None)
         self._load_saved()
         if data_dir and self.settings.get("enabled"):          # parse the theme's Japanese fonts (~1 s each on the Pi) now,
@@ -229,7 +230,15 @@ class QuakeScreen:
     def cities(self, ev, now):
         """Affected cities (see quake_calc.city_forecast), strongest first; computed once per frame."""
         if self._cities_at[0] != now:
-            cs = [k for k in qc.city_forecast(ev, now) if k["listed"]]
+            key = (ev.get("id"), ev["lat"], ev["lon"], ev["mag"], ev["depth"], ev.get("source"))
+            if getattr(self, "_city_key", None) != key:                # distances / intensities: once per event
+                self._city_key, self._city_base = key, qc.city_forecast(ev, float(ev["origin"]))
+            el = now - float(ev["origin"])
+            p2p = ev.get("source") == "p2p"
+            cs = []
+            for b in self._city_base:
+                if el >= b["tp"] or p2p or qc.class_rank(b["class"]) >= 4:
+                    cs.append(dict(b, p_in=b["tp"] - el, s_in=b["ts"] - el, listed=True))
             cs.sort(key=lambda k: (-qc.class_rank(k["class"]), k["ts"]))
             self._cities_at = (now, cs)
         return self._cities_at[1]
@@ -271,6 +280,18 @@ class QuakeScreen:
         return THEMES[self._theme_name]
 
     # -- components -----------------------------------------------------------------------------
+    def _blit_cached(self, c, key, x, y, w, h, draw):
+        """Components whose data only change with each reading (1 Hz) are drawn once per reading and
+        pasted from a cache on the other frames."""
+        x0, y0, x1, y1 = max(0, x), max(0, y), min(W, x + w), min(H, y + h)
+        key = (key, x, y, w, h, self.obs_t, len(self.hist), self._theme_name)
+        hit = self._pix.get(key[:5])
+        if hit is not None and hit[0] == key:
+            c.buf[y0:y1, x0:x1] = hit[1]
+            return
+        draw()
+        self._pix[key[:5]] = (key, c.buf[y0:y1, x0:x1].copy())
+
     def comp_map(self, c, ev, now, name="japan", x0=0, y0=0, shake=0.0, ring_cols=None, dot=2, dim=1.0, icons=True):
         mp = self._map(name)
         if not mp:
@@ -459,6 +480,10 @@ class QuakeScreen:
             c.FillRect(nx, y + row - 2, int((rx - nx) * frac), 1, Color(*(255, 60, 40) if k["s_in"] <= 0 else (70, 170, 255)))
 
     def comp_graph(self, c, x, y, w, h, label="最大計測震度"):
+        self._blit_cached(c, ("comp_graph", label), x, y, w, h,
+                          lambda: self._comp_graph(c, x, y, w, h, label))
+
+    def _comp_graph(self, c, x, y, w, h, label="最大計測震度"):
         """Max station intensity over time, with shindo grid lines."""
         f = self.fonts()
         c.FillRect(x, y, w, h, Color(8, 8, 14))
@@ -479,6 +504,10 @@ class QuakeScreen:
             f["small"].draw(c, x + w - 2 - f["small"].width(s), y + 1, kmoni.intensity_colour(pts[-1]), s)
 
     def comp_histogram(self, c, x, y, w, h, label="震度別観測点数"):
+        self._blit_cached(c, ("comp_histogram", label), x, y, w, h,
+                          lambda: self._comp_histogram(c, x, y, w, h, label))
+
+    def _comp_histogram(self, c, x, y, w, h, label="震度別観測点数"):
         """Stations per shindo class in the newest reading."""
         f = self.fonts()
         c.FillRect(x, y, w, h, Color(8, 8, 14))
@@ -513,6 +542,10 @@ class QuakeScreen:
             f["small"].draw(c, x + w - f["small"].width(s), yy, col, s)
 
     def comp_traces(self, c, ev, now, x, y, w, h, n=3):
+        self._blit_cached(c, ("comp_traces", n) + tuple(k["name"] for k in self.cities(ev, now)[:n - 1]),
+                          x, y, w, h, lambda: self._comp_traces(c, ev, now, x, y, w, h, n))
+
+    def _comp_traces(self, c, ev, now, x, y, w, h, n=3):
         """Seismograph-style traces: the epicentre, then the strongest affected cities."""
         f = self.fonts()
         names = [("Epicentre", "震源付近")] + [(k["name"], k["jp"]) for k in self.cities(ev, now)[: n - 1]]
@@ -543,7 +576,12 @@ class QuakeScreen:
         msg = (f"　{self.title(ev)}　{ev.get('hypocenter', '')}で地震　M{ev['mag']:.1f}　最大震度{_jp(ev.get('max') or '0')}　"
                + (f"予想震度　{towns}　" if towns else "") + "強い揺れに警戒してください　")
         c.FillRect(x, y, w, h, Color(*bg))
-        mw = max(1, f.width(msg))
+        tw = self.__dict__.setdefault("_tick_w", {})
+        if (font, msg) not in tw:
+            if len(tw) > 8:
+                tw.clear()
+            tw[(font, msg)] = max(1, f.width(msg))
+        mw = tw[(font, msg)]
         xx = x - int(now * speed) % mw
         sub = c.buf[y:y + h, :x].copy() if x > 0 else None
         while xx < x + w:
