@@ -42,7 +42,8 @@ def _fetch(layer, when, view):
     s, n, w, e = _bbox(view)
     params = {"service": "WCS", "version": "2.0.1", "request": "GetCoverage", "coverageid": layer,
               "subsettingcrs": "EPSG:4326", "outputcrs": "EPSG:4326",
-              "subset": [f"lat({s:.4f},{n:.4f})", f"long({w:.4f},{e:.4f})", f'time("{when:%Y-%m-%dT%H:%M:%SZ}")'],
+              "subset": [f"lat({s:.4f},{n:.4f})", f"long({w:.4f},{e:.4f})"],
+              "time": f"{when:%Y-%m-%dT%H:%M:%SZ}",          # GeoMet rejects time as a WCS subset
               "format": "image/tiff"}
     r = wms._s.get(wms.WMS, params=params, timeout=60)
     if r.content[:2] not in (b"II", b"MM"):
