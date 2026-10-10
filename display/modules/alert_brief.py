@@ -281,3 +281,14 @@ def area_levels(regions):
         lvl2.append(name + (": " + ", ".join(keys) if keys else ""))
         lvl3.append(name)
     return [every, lvl1, lvl2, lvl3]
+
+
+def mentions(alert, place):
+    """Does this alert cover ``place`` (e.g. the wall's home city)? Looks at zone names and the place list."""
+    if not place:
+        return False
+    p = place.lower()
+    for r in alert.get("regions") or []:
+        if p in r.lower():
+            return True
+    return any(p == c.lower() or p in c.lower() for c in cities(alert.get("regions") or []))

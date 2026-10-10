@@ -111,7 +111,7 @@ export const Alerts = {
     };
     const areas = computed(() => Object.entries(store.draft.modules.weather_maps?.areas || {}));
     const areaId = computed({
-      get: () => a.value.area_id || (store.draft.modules.weather_maps?.areas?.core_metro ? "core_metro" : ""),
+      get: () => a.value.area_id || (store.draft.modules.weather_maps?.areas?.metro ? "metro" : "core_metro"),
       set: (v) => { a.value.area_id = v; },
     });
     const setOpt = (k, v) => { if (v === "" || v === null || v === undefined) delete a.value[k]; else a.value[k] = v; };
@@ -232,6 +232,7 @@ export const Alerts = {
             <div class="list-row" v-for="(x, i) in cat.alerts" :key="i" style="align-items:flex-start">
               <span class="pill" :style="{background: typeColour(x.type) + '33', color: typeColour(x.type), borderColor: typeColour(x.type) + '66'}">{{ x.type }}</span>
               <div style="flex:1; min-width:0"><b style="text-transform:capitalize">{{ x.name }}</b>
+                <span class="pill" :class="x.home ? 'bad' : ''" style="margin-left:6px">{{ x.home ? 'includes ' + (a.home_city || 'Richmond') : 'nearby' }}</span>
                 <div class="faint" style="font-size:12px">{{ (x.regions || []).join(' · ') }}</div>
                 <div class="faint" style="font-size:12px">issued {{ when(x.published) }}<template v-if="x.expires"> · until {{ when(x.expires) }}</template></div></div>
             </div></div>
@@ -314,7 +315,9 @@ export const Alerts = {
         </div></div>
 
         <div class="card"><div class="card-head"><Icon name="Filter" :size="15"/><h3>Which alerts</h3></div><div class="card-body stack">
-          <Field label="Area" hint="Alerts for any forecast region touching this map area">
+          <Field label="Home city" hint="Alerts that include it come first and it's highlighted; others are labelled NEARBY with a calmer border">
+            <input class="input" :value="a.home_city || 'Richmond'" @change="a.home_city = $event.target.value.trim() || 'Richmond'"></Field>
+          <Field label="Area" hint="Alerts for any forecast region touching this map area (Lower Mainland catches nearby alerts too)">
             <select class="input" v-model="areaId"><option v-for="[id, ar] in areas" :key="id" :value="id">{{ ar.label }}</option></select></Field>
           <ToggleRow v-for="x in TYPES" :key="x.id" :modelValue="types.includes(x.id)" @update:modelValue="v => toggleType(x.id, v)" :label="x.label" :hint="x.hint"/>
         </div></div>

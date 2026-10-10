@@ -125,21 +125,24 @@ def _ease(q):
 # ---------------------------------------------------------------------------
 # text layout: styled paragraphs → positioned runs in one or more boxes
 # ---------------------------------------------------------------------------
-def _words(text, upper):
-    """[(word pieces)] where a piece is (text, highlighted); punctuation glued to the previous word."""
+def _words(text, upper, home=""):
+    """[(word pieces)] where a piece is (text, highlighted); punctuation glued to the previous word.
+    Words of the home city come out with highlight "home"."""
     words = []
+    home_words = {w.lower() for w in home.split()} if home else set()
     for chunk, hi in alert_brief.spans(text):
         t = chunk.upper() if upper else chunk
         parts = t.split()
         for k, w in enumerate(parts):
+            h = "home" if home_words and w.strip(".,;:()").lower() in home_words else hi
             if k == 0 and words and not t[:1].isspace() and w[0] in PUNCT:
-                words[-1].append((w, hi))
+                words[-1].append((w, h))
             else:
-                words.append([(w, hi)])
+                words.append([(w, h)])
     return words
 
 
-def layout(paras, boxes, fonts, pal, upper, prefix="glyph", gap=3):
+def layout(paras, boxes, fonts, pal, upper, prefix="glyph", gap=3, home=""):
     """Flow paragraphs through ``boxes`` [(x, y, w, h)] in order.
 
     Returns (lines, overflow). A line = {"y", "h", "x0", "w", "runs", "para", "chars"}; a run is
@@ -178,7 +181,10 @@ def layout(paras, boxes, fonts, pal, upper, prefix="glyph", gap=3):
             for pieces in cur:
                 for txt, hi in pieces:
                     f = pick(hi)
-                    runs.append((x, txt, f, pal["amount"] if hi else col))
+                    if hi == "home":
+                        runs.append((x, txt, f, (0, 0, 0), pal["home_bg"]))
+                    else:
+                        runs.append((x, txt, f, pal["amount"] if hi else col))
                     x += f.width(txt)
                     chars += len(txt)
                 x += fnt_par.space
@@ -188,7 +194,7 @@ def layout(paras, boxes, fonts, pal, upper, prefix="glyph", gap=3):
             return True
 
         cur, cw, first = [], 0, True
-        for pieces in _words(p["text"], upper):
+        for pieces in _words(p["text"], upper, home if p["style"] == "regions" else ""):
             ww = sum(pick(hi).width(t) for t, hi in pieces)
             avail = boxes[state["bi"]][2] - indent
             add = ww if not cur else cw + fnt_par.space + ww
@@ -225,7 +231,9 @@ def draw_lines(c, lines, upto=None, colour_k=1.0, flash_last=False, scramble=Non
                 _, x, name, col = run
                 c.BlitMask(art.glyph_mask(name), x + dx, ln["y"] + max(0, (ln["h"] - 7) // 2), Color(*_dim(col, colour_k)))
                 continue
-            x, txt, f, col = run
+            x, txt, f, col = run[:4]
+            if len(run) > 4:                                   # boxed (the home city)
+                c.FillRect(x + dx - 1, ln["y"] - 1, f.width(txt) + 2, f.h + 2, Color(*_dim(run[4], colour_k)))
             col = (255, 255, 255) if flash_last and li == len(lines) - 1 else _dim(col, colour_k)
             if left is not None:
                 if left <= 0:
@@ -399,11 +407,16 @@ class AlertScreen:
             out = []
         else:
             out = [a for a in data.get("alerts") or [] if not a.get("expires") or a["expires"] > now]
+            out.sort(key=lambda a: not alert_brief.mentions(a, self.home))     # stable: the wall's own city first
         self._alerts_cache = (key, out)
         return out
 
     def active(self):
         return bool(self.alerts())
+
+    @property
+    def home(self):
+        return (self.settings.get("home_city") or "Richmond").strip()
 
     def area(self):
         data = (self.loader.get_data("alerts") if self.loader else None) or {}
@@ -462,7 +475,12 @@ class AlertScreen:
             sev = SEVERITY.get(b["kind"], SEVERITY["statement"])
             ctx = St()
             ctx.th, ctx.b, ctx.sev, ctx.upper, ctx.fam = th, b, sev, th["upper"], fam
+            ctx.home_name = self.home
+            ctx.home = alert_brief.mentions(a, self.home)
+            ctx.header = (f"INCLUDES {self.home.upper()}" if ctx.home else f"NEARBY · NOT {self.home.upper()}") \
+                if self.home else th["header"]
             ctx.pal = {k: (sev if v == "sev" else v) for k, v in pal.items() if k != "name"}
+            ctx.pal["home_bg"] = sev
             ctx.area = "Metro Vancouver" if b["test"] else self.area()
             ctx.title_f = struct.title_font(ctx)
             b["_issued_ts"], b["_expires_ts"] = a.get("published"), a.get("expires")
@@ -605,7 +623,7 @@ class AlertScreen:
             if p >= 1.0:
                 self._static = (skey, c.buf.copy())
         struct.dynamic(c, ctx, seg, p)
-        draw_border(c, th["border"], ctx.sev, t)
+        draw_border(c, th["border"], ctx.sev if ctx.home or not ctx.home_name else _dim(ctx.sev, 0.5), t)
         if t >= plan["total"]:
             self._t0 = now
             self._static = None
@@ -638,7 +656,7 @@ def reveal(c, ctx, seg, mode, p, t):
                 for run in ln["runs"]:
                     if run[0] == "glyph":
                         continue
-                    rx, txt, f, _ = run
+                    rx, txt, f = run[0], run[1], run[2]
                     if left <= len(txt):
                         x = rx + f.width(txt[:left])
                         break
@@ -718,7 +736,8 @@ def U(ctx, s):
 
 
 def title_text(ctx):
-    return ("TEST - " if ctx.b["test"] else "") + ctx.b["title"]
+    near = "" if ctx.home or not getattr(ctx, "home_name", "") else "NEARBY · "
+    return ("TEST - " if ctx.b["test"] else "") + near + ctx.b["title"]
 
 
 def chip(c, x, y, text, f, bg, fg, pad=3):
@@ -764,6 +783,29 @@ def _levels(ctx):
         name = ctx.b["where"] or ctx.area
         lv = [[name], [name], [name], [name]]
     return lv
+
+
+def draw_home_text(c, ctx, f, x, y, text, col):
+    """Draw ``text``; every occurrence of the home city gets a bright box (black text on the severity colour)."""
+    name = getattr(ctx, "home_name", "")
+    if not name or name.lower() not in text.lower():
+        return f.draw(c, x, y, col, text)
+    x0 = x
+    low, n = text.lower(), name.lower()
+    i = 0
+    while True:
+        j = low.find(n, i)
+        if j < 0:
+            x += f.draw(c, x, y, col, text[i:])
+            break
+        x += f.draw(c, x, y, col, text[i:j])
+        word = text[j:j + len(n)]
+        w = f.width(word)
+        c.FillRect(x - 1, y - 1, w + 3, f.h + 2, Color(*ctx.sev))
+        f.draw(c, x, y, (0, 0, 0), word)
+        x += w + 1
+        i = j + len(n)
+    return x - x0
 
 
 def area_line(ctx, f, maxw, label_only_ok=True):
@@ -816,9 +858,9 @@ def city_list(c, ctx, x, y, w, y1, f, col=None, glyph_col=None, fonts=None):
             if k == 0 and ": " in ln:
                 zone, _, rest = ln.partition(": ")
                 xx = x + 10 + ff.draw(c, x + 10, y, ctx.pal["dim"], zone + ":")
-                ff.draw(c, xx + ff.space, y, col or ctx.pal["strong"], rest)
+                draw_home_text(c, ctx, ff, xx + ff.space, y, rest, col or ctx.pal["strong"])
             else:
-                ff.draw(c, x + 10, y, col or ctx.pal["strong"], ln)
+                draw_home_text(c, ctx, ff, x + 10, y, ln, col or ctx.pal["strong"])
             y += ff.line
     return y
 
@@ -838,7 +880,7 @@ def fact_line(c, ctx, x, y, f, maxw, centre=False):
         glyph(c, g, x, y + max(0, (f.h - 7) // 2), ctx.pal["label"])
         x += 10
         x += f.draw(c, x, y, ctx.pal["dim"], a)
-        x += f.draw(c, x, y, ctx.pal["strong"], v) + 12
+        x += draw_home_text(c, ctx, f, x, y, v, ctx.pal["strong"]) + 12
     return x
 
 
@@ -870,7 +912,7 @@ class Structure:
         return ctx.fam["key"]
 
     def flow(self, ctx, paras, boxes, fonts, gap=3):
-        return layout(paras, boxes, fonts, ctx.pal, ctx.upper, gap=gap)
+        return layout(paras, boxes, fonts, ctx.pal, ctx.upper, gap=gap, home=ctx.home_name)
 
     lists_cities = False
 
@@ -883,7 +925,7 @@ class Structure:
                 for ln in seg["lines"]:
                     for run in ln["runs"]:
                         if run[0] != "glyph" and tuple(run[3]) == amt:
-                            run[2].draw(c, run[0], ln["y"], col, run[1])
+                            run[2].draw(c, run[0], ln["y"], col, run[1])  # noqa
         if ctx.count > 1:
             s = f"{ctx.index + 1}/{ctx.count}"
             f = ctx.fam["small"]
@@ -919,7 +961,7 @@ class Band(Structure):
         chip(c, x1 - 36 - k.width(status) - 6, y0 + (rowh - k.h - 2) // 2, status, k, ctx.sev, (0, 0, 0))
         y = y0 + rowh + 3
         sf = ctx.fam["small"]
-        xx = chip(c, x0 + 2, y, U(ctx, ctx.th["header"]), sf, _dim(ctx.sev, 0.35), ctx.pal["strong"], 3) + x0 + 8
+        xx = chip(c, x0 + 2, y, U(ctx, ctx.header), sf, _dim(ctx.sev, 0.35), ctx.pal["strong"], 3) + x0 + 8
         fact_line(c, ctx, xx, y + 1, sf, x1 - xx)
         y += sf.line + 2
         c.FillRect(x0, y, x1 - x0, 1, Color(*_dim(ctx.sev, 0.6)))
@@ -1071,7 +1113,7 @@ class Boxes(Structure):
             group = [p for p in paras if p["style"] in styles]
             if not group:
                 continue
-            ln, ov = layout(group, [box], fonts, ctx.pal, ctx.upper, prefix="none", gap=gap)
+            ln, ov = layout(group, [box], fonts, ctx.pal, ctx.upper, prefix="none", gap=gap, home=ctx.home_name)
             for l in ln:
                 l["para"] += base
             base += len(group)
@@ -1105,12 +1147,12 @@ class Terminal(Structure):
         return [(x0 + 2, top, x1 - x0 - 4, y1 - top)]
 
     def flow(self, ctx, paras, boxes, fonts, gap=2):
-        return layout(paras, boxes, fonts, ctx.pal, ctx.upper, prefix="tag", gap=gap)
+        return layout(paras, boxes, fonts, ctx.pal, ctx.upper, prefix="tag", gap=gap, home=ctx.home_name)
 
     def chrome(self, c, ctx):
         x0, y0, x1, y1 = self.inner(ctx)
         k = ctx.fam["key"]
-        k.draw(c, x0 + 2, y0, ctx.pal["label"], U(ctx, f"> {ctx.th['header']} :: ECCC FEED"))
+        k.draw(c, x0 + 2, y0, ctx.pal["label"], U(ctx, f"> {ctx.header} :: ECCC FEED"))
         x, y = x0 + 2, y0 + k.line
         x += k.draw(c, x, y, ctx.sev, f"[{title_text(ctx)}]") + 8
         b = ctx.b
@@ -1121,7 +1163,7 @@ class Terminal(Structure):
             if x + k.width(lab + ":" + val) > x1:
                 break
             x += k.draw(c, x, y, ctx.pal["dim"], lab + ":")
-            x += k.draw(c, x, y, ctx.pal["strong"], val) + 8
+            x += draw_home_text(c, ctx, k, x, y, val, ctx.pal["strong"]) + 8
         c.buf[y + k.line + 1, x0:x1:2] = _dim(ctx.pal["label"], 0.6)
 
     def dynamic(self, c, ctx, seg, p):
@@ -1232,7 +1274,7 @@ class CitiesRail(Structure):
         meter(c, x1 - self.RW - 40, y0 + (rowh - 8) // 2, ctx)
         sf, k = ctx.fam["small"], ctx.fam["key"]
         y = y0 + rowh + 2
-        xx = chip(c, x0 + 2, y, U(ctx, ctx.th["header"]), sf, _dim(ctx.sev, 0.35), ctx.pal["strong"], 3) + x0 + 8
+        xx = chip(c, x0 + 2, y, U(ctx, ctx.header), sf, _dim(ctx.sev, 0.35), ctx.pal["strong"], 3) + x0 + 8
         b = ctx.b
         if b["amount"]:
             xx += sf.draw(c, xx, y + 1, ctx.pal["amount"], U(ctx, b["amount"])) + 10
@@ -1349,7 +1391,9 @@ class KeyFacts(Structure):
                 if k.width(val) > tw - 8:
                     val = area_line(ctx, sf, tw - 8)
             fv = k if k.width(val) <= tw - 8 else sf
-            fv.draw(c, tx + 4, ty + 4 + sf.line, col, val)
+            while fv.width(val) > tw - 8 and len(val) > 4:          # last resort in a narrow tile
+                val = val[:-2].rstrip(" ,;") + "…"
+            draw_home_text(c, ctx, fv, tx + 4, ty + 4 + sf.line, val, col)
             if lab == "LEVEL":
                 meter(c, tx + tw - 32, ty + 4, ctx, 4, 6)
             tx += tw + 5
@@ -1368,7 +1412,7 @@ class Spotlight(Structure):
 
     def flow(self, ctx, paras, boxes, fonts, gap=3):
         # the summary lives in the spotlight; the rest flows on the right
-        return layout([p for p in paras if p["style"] != "lead"], boxes, fonts, ctx.pal, ctx.upper, gap=gap)
+        return layout([p for p in paras if p["style"] != "lead"], boxes, fonts, ctx.pal, ctx.upper, gap=gap, home=ctx.home_name)
 
     def chrome(self, c, ctx):
         x0, y0, x1, y1 = self.inner(ctx)
@@ -1426,7 +1470,7 @@ class Timeline(Structure):
         b = ctx.b
         if b["amount"]:
             x += chip(c, x, y0 + (rowh - sf.h - 2) // 2, U(ctx, b["amount"]), sf, ctx.pal["amount"], (0, 0, 0)) + 8
-        sf.draw(c, x, y0 + (rowh - sf.h) // 2, ctx.pal["strong"], area_line(ctx, sf, x1 - x - 2))
+        draw_home_text(c, ctx, sf, x, y0 + (rowh - sf.h) // 2, area_line(ctx, sf, x1 - x - 2), ctx.pal["strong"])
         y = y0 + rowh + 4
         sf.draw(c, x0 + 2, y, ctx.pal["dim"], U(ctx, f"ISSUED {b['issued']}" if b["issued"] else "ISSUED"))
         lab = U(ctx, f"UNTIL {b['until']}" if b["until"] else "UNTIL FURTHER NOTICE")

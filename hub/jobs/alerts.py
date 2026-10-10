@@ -71,7 +71,8 @@ def area_bbox(cfg, acfg):
     if acfg.get("bbox"):
         return [float(v) for v in acfg["bbox"]], acfg.get("area_label") or "Custom area"
     areas = cfg["modules"].get("weather_maps", {}).get("areas", {})
-    aid = acfg.get("area_id") or ("core_metro" if "core_metro" in areas else None)
+    # default: the Lower Mainland, so nearby alerts (Howe Sound, Fraser Valley…) show too, labelled "nearby"
+    aid = acfg.get("area_id") or next((x for x in ("metro", "core_metro") if x in areas), None)
     if aid in areas:
         from hub.weather.geo import View
         lo0, la0, lo1, la1 = View(dict(areas[aid], id=aid), 224, 134).lonlat
@@ -87,10 +88,15 @@ def run(cfg):
     bbox, label = area_bbox(cfg, acfg)
     types = acfg.get("types") or DEFAULT_TYPES
     alerts = fetch(bbox, types, acfg.get("language", "en"))
+    home = (acfg.get("home_city") or "Richmond").strip()
+    from display.modules.alert_brief import mentions
+    for a in alerts:
+        a["home"] = mentions(a, home)
+    alerts.sort(key=lambda a: not a["home"])                  # the wall's own city first (stable: severity order kept)
     atomic_write_json(paths.DATA_DIR / "alerts.json", {
         "updated_utc": time.time(), "area": label, "bbox": bbox, "alerts": alerts})
     for a in alerts:
-        print(f"{a['type'].upper()}: {a['name']} — {', '.join(a['regions'])[:120]}", flush=True)
+        print(f"{'HOME' if a['home'] else 'nearby'} {a['type'].upper()}: {a['name']} — {', '.join(a['regions'])[:120]}", flush=True)
     return {"ok": True, "message": f"{len(alerts)} alert(s) in effect" if alerts else "no alerts in effect",
             "alerts": [f"{a['name']} ({a['type']})" for a in alerts], "files": ["alerts.json"]}
 
