@@ -55,7 +55,8 @@ PALETTES = {   # all dark; text roles: strong (summary), text (details), impact,
 }
 
 A = "alert/"
-# title: candidates for the alert name, largest first. ladder: body (regular, bold or None for faux bold, scale),
+# title: candidates for the alert name, largest first. ladder: body (regular, real bold face or None, scale) —
+# with None, highlights at that size are colour-only (no fake bolding),
 # largest first — the biggest size where everything fits wins. Capped small on purpose (close viewing).
 FAMILIES = {
     "fixed":    {"name": "X11 fixed", "title": [(A + "10x20.bdf", 1), (A + "9x15B.bdf", 1), (A + "8x13B.bdf", 1)],

@@ -77,7 +77,8 @@ def _font(path):
 
 
 class FI:
-    """A BDF font at an integer scale with measured metrics; ``faux`` draws bold by double-striking."""
+    """A BDF font at an integer scale with measured metrics. (``faux`` double-striking is not used: it smears
+    on the LEDs — bold always means a real bold BDF face.)"""
 
     def __init__(self, path, scale=1, faux=False):
         self.f, self.scale, self.faux = _font(path), scale, faux
@@ -412,7 +413,8 @@ class AlertScreen:
         hit = self._fonts.get(key)
         if hit is None:
             hit = {"titles": [FI(p, s) for p, s in fam["title"]], "key": FI(fam["key"]), "small": FI(fam["small"]),
-                   "ladder": [(FI(r, s), FI(b, s) if b else FI(r, s, faux=True)) for r, b, s in fam["ladder"]]}
+                   # real bold faces only: a size without one highlights by colour, never by double-striking
+                   "ladder": [(FI(r, s), FI(b, s) if b else FI(r, s)) for r, b, s in fam["ladder"]]}
             self._fonts = {key: hit}
         return hit
 
