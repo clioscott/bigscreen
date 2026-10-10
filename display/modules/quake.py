@@ -81,6 +81,7 @@ class QuakeScreen:
         try:
             self.obs = np.frombuffer(base64.b64decode(encoded), dtype=np.uint8).copy()
             self.obs_t = t
+            self._obs_draw = None                 # recomputed on the next frame
         except Exception:
             pass
 
@@ -98,7 +99,7 @@ class QuakeScreen:
             ys = y1 - (np.arange(meta["h"]) + 0.5) * meta["mpp"]
             lon = np.degrees(xs / R)
             lat = np.degrees(2 * np.arctan(np.exp(ys / R)) - np.pi / 2)
-            self._map = {"img": img, "meta": meta, "lon": np.broadcast_to(lon, (meta["h"], meta["w"])),
+            self._map = {"img": img, "img16": img.astype(np.int16), "meta": meta, "lon": np.broadcast_to(lon, (meta["h"], meta["w"])),
                          "lat": np.broadcast_to(lat[:, None], (meta["h"], meta["w"]))}
             pts = kmoni.points()
             sx = np.array([self._project(p[1], p[2])[0] for p in pts])
@@ -135,7 +136,7 @@ class QuakeScreen:
     def _draw_map(self, c, ev, now, elapsed):
         mp = self._map
         mw = mp["meta"]["w"]
-        img = mp["img"].astype(np.int16)
+        img = mp["img16"].copy()
         d = self._dist(ev)
         rs = qc.front_radius_km(elapsed, ev["depth"], qc.VS)
         rp = qc.front_radius_km(elapsed, ev["depth"], qc.VP)
@@ -148,14 +149,15 @@ class QuakeScreen:
         sx, sy = self._st
         obs = self.obs
         if obs is not None and len(obs) == len(sx) and now - self.obs_t < 20:
-            order = np.argsort(obs, kind="stable")
-            for k in order:
-                v = obs[k]
-                if v == 0:
-                    continue
-                x, y = sx[k], sy[k]
-                if 0 <= x < mw - 1 and 0 <= y < H - 1:
-                    c.buf[y:y + 2, x:x + 2] = _COLOUR_LUT[v]
+            if getattr(self, "_obs_draw", None) is None:          # once per reading: sorted, clipped, coloured
+                ok = (obs > 0) & (sx >= 0) & (sx < mw - 1) & (sy >= 0) & (sy < H - 1)
+                idx = np.flatnonzero(ok)
+                idx = idx[np.argsort(obs[idx], kind="stable")]     # weakest first, strongest drawn last
+                self._obs_draw = (sx[idx], sy[idx], _COLOUR_LUT[obs[idx]])
+            xs, ys, cols = self._obs_draw
+            for dy in (0, 1):
+                for dx in (0, 1):
+                    c.buf[ys + dy, xs + dx] = cols
         else:                                        # no readings yet: predicted intensity squares
             for (x, y), cls in self._places:
                 if cls == "0" or not (0 <= x < mw and 0 <= y < H):
