@@ -44,6 +44,16 @@ def index():
 app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
 
 
+@app.middleware("http")
+async def _revalidate_static(request: Request, call_next):
+    """The panel is plain ES modules: make browsers revalidate them (cheap 304s via ETag) so a deploy shows up
+    on the next reload instead of whenever the heuristic cache expires."""
+    resp = await call_next(request)
+    if request.url.path.startswith("/static/ui/"):
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
 # --- config ------------------------------------------------------------------
 @app.get("/api/config")
 def get_config():
