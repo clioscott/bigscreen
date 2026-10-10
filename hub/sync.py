@@ -47,7 +47,8 @@ def _push_once():
         target, remote_dir = pi_target()
         cmd = ["rsync", "-a", "--timeout=20",
                "--include=*.json", "--include=icons/", "--include=icons/*.png",
-               "--include=stock-icons/", "--include=stock-icons/*.png", "--exclude=*",
+               "--include=stock-icons/", "--include=stock-icons/*.png",
+               "--include=alertmaps/", "--include=alertmaps/*.bin", "--include=alertmaps/*.mask", "--exclude=*",
                "--rsync-path", f"mkdir -p {remote_dir} && rsync",
                "-e", SSH, f"{paths.DATA_DIR}/", f"{target}:{remote_dir}/"]
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=60)

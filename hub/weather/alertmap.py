@@ -48,7 +48,10 @@ def pick_area(cfg, rings, home_hit):
     return "metro" if "metro" in areas else next(iter(areas), None)
 
 
-def render(alert, cfg, home_city="Richmond"):
+HOME_DEFAULT = (-123.0918, 49.1442)          # home (approximate)
+
+
+def render(alert, cfg, home_city="Richmond", home_ll=None):
     """Write the alert's map layers; returns meta for alerts.json (or None if it can't be drawn)."""
     rings = [r for g in alert.get("geometries") or [] for r in _rings(g)]
     if not rings:
@@ -63,7 +66,8 @@ def render(alert, cfg, home_city="Richmond"):
     view = View(area, W, H, fit_width=W)
     meta = {"file": f"alertmaps/{key}.bin", "mask": f"alertmaps/{key}.mask", "w": W, "h": H,
             "area": area.get("label") or aid}
-    home = HOME_LONLAT.get((home_city or "").lower())
+    home = tuple(home_ll) if home_ll else (HOME_DEFAULT if (home_city or "").lower() == "richmond"
+                                           else HOME_LONLAT.get((home_city or "").lower()))
     if home:
         hx, hy = view.project(*home)
         if 0 <= hx < W and 0 <= hy < H:
@@ -141,7 +145,7 @@ def _match_city(name, polys):
     return next((k for k in polys if n in k.lower()), None)
 
 
-def render_sample(cfg, cities, home_city="Richmond", home_hit=True):
+def render_sample(cfg, cities, home_city="Richmond", home_hit=True, home_ll=None):
     """Map for a sample alert: its cities' outlines as the 'affected zones'."""
     polys = _city_polygons()
     geoms = []
@@ -149,4 +153,4 @@ def render_sample(cfg, cities, home_city="Richmond", home_hit=True):
         k = _match_city(c, polys)
         if k:
             geoms.append(polys[k])
-    return render({"geometries": geoms, "home": home_hit}, cfg, home_city)
+    return render({"geometries": geoms, "home": home_hit}, cfg, home_city, home_ll)

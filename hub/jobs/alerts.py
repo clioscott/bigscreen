@@ -107,7 +107,7 @@ def run(cfg):
     metas = []
     for a in alerts:
         try:
-            meta = alertmap.render(a, cfg, home)
+            meta = alertmap.render(a, cfg, home, acfg.get("home_lonlat"))
         except Exception as e:
             print(f"map for {a['name']}: {e}", flush=True)
             meta = None
@@ -120,7 +120,8 @@ def run(cfg):
         from display.modules.alert_samples import SAMPLES
         for kind, smp in SAMPLES.items():
             try:
-                m = alertmap.render_sample(cfg, smp["map_cities"], home, home_hit=mentions(smp, home))
+                m = alertmap.render_sample(cfg, smp["map_cities"], home, home_hit=mentions(smp, home),
+                                           home_ll=acfg.get("home_lonlat"))
                 if m:
                     sample_maps[kind] = m
                     metas.append(m)

@@ -639,11 +639,13 @@ class AlertScreen:
             return False
         mc = self._maps
         sev = np.array(ctx.sev, dtype=np.int16)
-        reach = _ease(p) * 520                                  # zones flood outward from the home city
+        fill = np.array(HAZARD_COLOURS.get(ctx.b["hazard"], ctx.sev), dtype=np.int16)
+        reach = _ease(p) * 520                                  # zones flood outward from home
         m = mc.mask & (mc.dist <= reach)
-        k = 0.34 + 0.16 * math.sin(ctx.t * 3.2)
+        strength = FILL_STRENGTH.get(ctx.b["kind"], 0.4)
+        k = strength * (0.85 + 0.15 * math.sin(ctx.t * 3.2))
         out = mc.base.copy()
-        out[m] = (out[m] * (1 - k) + sev * k).astype(np.int16)
+        out[m] = (out[m] * (1 - k) + fill * k).astype(np.int16)
         e = mc.edge & (mc.dist <= reach)
         out[e] = sev
         c.buf[:] = out.clip(0, 255).astype(np.uint8)
@@ -660,29 +662,16 @@ class AlertScreen:
         sf.draw(c, 8, band + 1, ctx.pal["strong"], info)
         meter(c, W - 38, 2 + (band - 8) // 2, ctx)
         # legend + map name, bottom left
-        lg = U(ctx, f"{b['kind']} zone")
+        lg = U(ctx, f"{b['title'].lower()} area")
         yb = H - sf.h - 8
-        c.FillRect(8, yb, 10, sf.h, Color(*ctx.sev))
-        c.buf[yb - 2:yb + sf.h + 2, 22:26 + sf.width(lg) + 6] = (c.buf[yb - 2:yb + sf.h + 2, 22:26 + sf.width(lg) + 6] * 0.3).astype(np.uint8)
-        sf.draw(c, 24, yb, (255, 255, 255), lg)
-        # home marker: pulsing ring + label
+        c.buf[yb - 3:yb + sf.h + 3, 6:30 + sf.width(lg) + 6] = (c.buf[yb - 3:yb + sf.h + 3, 6:30 + sf.width(lg) + 6] * 0.3).astype(np.uint8)
+        c.FillRect(8, yb - 1, 14, sf.h + 2, Color(*ctx.sev))
+        c.FillRect(9, yb, 12, sf.h, Color(*fill.astype(int).tolist()))
+        sf.draw(c, 26, yb, (255, 255, 255), lg)
+        # home: a small house where the wall is
         hp = meta.get("home_px")
         if hp:
-            hx, hy = hp
-            r = 3 + int(4 * (0.5 + 0.5 * math.sin(ctx.t * 4)))
-            for a in np.linspace(0, 2 * math.pi, 40, endpoint=False):
-                px, py = int(hx + r * math.cos(a)), int(hy + r * math.sin(a))
-                if 0 <= px < W and 0 <= py < H:
-                    c.buf[py, px] = (255, 255, 255)
-            c.FillRect(hx - 1, hy - 1, 3, 3, Color(255, 255, 255))
-            name = U(ctx, ctx.home_name or "Home")
-            txt = name if ctx.home else f"{name} · not in this alert"
-            tw = k_f.width(txt)
-            lx = hx + 12 if hx + 12 + tw + 6 < W else hx - 12 - tw - 6
-            ly = max(band + sf.line + 6, min(H - k_f.h - 6, hy - k_f.h // 2))
-            bg = ctx.sev if ctx.home else (20, 90, 40)
-            c.FillRect(lx - 3, ly - 2, tw + 6, k_f.h + 4, Color(*bg))
-            k_f.draw(c, lx, ly, (0, 0, 0) if ctx.home else (230, 255, 230), txt)
+            draw_home(c, hp[0], hp[1], 0.75 + 0.25 * math.sin(ctx.t * 4))
         return True
 
     def _draw_tour(self, c, entry, transition, now):
@@ -761,6 +750,29 @@ class AlertScreen:
             self._static = None
             return "done"
         return None
+
+
+# zone fill on alert maps: the colour says what kind of weather, the strength and outline say how severe
+HAZARD_COLOURS = {"rain": (40, 120, 255), "snow": (215, 235, 255), "freezing": (175, 95, 255), "wind": (0, 215, 195),
+                  "thunder": (255, 215, 0), "tornado": (255, 0, 185), "flood": (0, 80, 255), "heat": (255, 110, 0),
+                  "cold": (120, 200, 255), "frost": (150, 255, 255), "fog": (175, 175, 180), "smoke": (195, 125, 60)}
+FILL_STRENGTH = {"warning": 0.58, "watch": 0.46, "advisory": 0.36, "statement": 0.28}
+HOME_ICON = ["....W....", "...WWW...", "..WWWWW..", ".WWWWWWW.", "WWWWWWWWW", ".WW...WW.", ".WW.W.WW.", ".WW.W.WW.", ".WWWWWWW."]
+
+
+def draw_home(c, x, y, glow):
+    """A small pixel house centred on (x, y), dark outline so it reads on any fill."""
+    m = np.array([[ch == "W" for ch in r] for r in HOME_ICON])
+    h, w = m.shape
+    ox, oy = x - w // 2, y - h // 2
+    pad = np.pad(m, 1)
+    outline = (pad[:-2, 1:-1] | pad[2:, 1:-1] | pad[1:-1, :-2] | pad[1:-1, 2:]) & ~m
+    big = np.zeros((h + 2, w + 2), dtype=bool)
+    big[1:-1, 1:-1] = outline
+    for (dy, dx) in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+        big[1 + dy:h + 1 + dy, 1 + dx:w + 1 + dx] |= outline
+    c.BlitMask(big & ~np.pad(m, 1), ox - 1, oy - 1, Color(0, 0, 0))
+    c.BlitMask(m, ox, oy, Color(*_dim((255, 255, 255), glow)))
 
 
 class _MapCache:

@@ -343,3 +343,4 @@ select.input { appearance: none; padding-right: 30px; background-image: url("dat
 .hz-card:hover { border-color: rgba(124, 140, 255, .4); }
 .hz-card.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .hz-card.off { opacity: .55; }
+.hz-card > span { flex: none; display: inline-flex; }
