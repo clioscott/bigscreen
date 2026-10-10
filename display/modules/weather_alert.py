@@ -361,6 +361,9 @@ class AlertScreen:
         self._static = None          # (key, frame) cached after the reveal
         self._sample = None          # the test alert, frozen per showing (its times must not change per frame)
         self._fast = None            # (source identity, plan) so unchanged data skips re-hashing
+        self._tour = None            # theme id while touring all themes (entry {"tour": true})
+        self._tour_t0 = None
+        self._reveal_cap = None
 
     # -- data ------------------------------------------------------------------
     def alerts(self, entry=None):
@@ -391,6 +394,8 @@ class AlertScreen:
     # -- theme -----------------------------------------------------------------
     def theme(self):
         st = self.settings
+        if self._tour:
+            return dict(resolve(self._tour))
         th = dict(resolve(st.get("theme") or "t01"))
         for key, allowed in (("palette", PALETTES), ("family", FAMILIES), ("border", BORDERS), ("reveal", REVEALS),
                              ("structure", STRUCTURES)):
@@ -474,6 +479,8 @@ class AlertScreen:
                 reveal_t = 2.2 / speed
             else:
                 reveal_t = 1.4 / speed
+            if self._reveal_cap:
+                reveal_t = min(reveal_t, self._reveal_cap)
             hold = max(min_hold, 2.0 + words / wps)
             segs.append({"alert": ai, "ctx": ctx, "lines": lines, "paras": use, "fonts": fonts, "start": t,
                          "reveal": reveal_t, "hold": hold})
@@ -485,6 +492,36 @@ class AlertScreen:
     # -- drawing ---------------------------------------------------------------
     def draw(self, c, zone, entry, transition, now=None):
         now = time.time() if now is None else now
+        if entry and entry.get("tour"):
+            return self._draw_tour(c, entry, transition, now)
+        if self._tour:
+            self._tour, self._reveal_cap, self._fast, self._static = None, None, None, None
+        return self._draw(c, entry, transition, now)
+
+    def _draw_tour(self, c, entry, transition, now):
+        """Every theme in turn with the test alert: its reveal, then a few seconds of border animation."""
+        per = max(4.0, float(entry.get("tour_sec") or 9))
+        ids = sorted(THEMES)
+        if transition or self._tour_t0 is None:
+            self._tour_t0 = now
+            self._sample = None
+        k = int((now - self._tour_t0) // per)
+        tid = ids[(int(entry.get("tour_from") or 0) + k) % len(ids)]
+        if tid != self._tour:
+            self._tour, self._reveal_cap = tid, per * 0.55
+            self._t0, self._static, self._fast = self._tour_t0 + k * per, None, None
+        self._draw(c, {"test": True}, False, now)
+        th = THEMES[tid]
+        f = FI("alert/5x8.bdf")
+        label = f" THEME {tid[1:]}/{len(ids)}  {th['name'].upper()}  ·  {th['description']} "
+        w = min(W - 8, f.width(label))
+        c.FillRect(4, H - 13, w + 2, 10, Color(0, 0, 0))
+        f.draw(c, 5, H - 12, (255, 255, 255), label)
+        left = per - ((now - self._tour_t0) % per)
+        c.FillRect(4, H - 3, int((W - 8) * (1 - left / per)), 1, Color(255, 255, 255))
+        return "done" if k >= len(ids) else None
+
+    def _draw(self, c, entry, transition, now):
         alerts = self.alerts(entry)
         th = self.theme()
         pal = PALETTES.get(th["palette"]) or PALETTES["black"]

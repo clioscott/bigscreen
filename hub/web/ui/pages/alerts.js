@@ -40,7 +40,31 @@ export const Alerts = {
     const loadTl = async () => { try { tl.value = await api(`/api/alerts/timeline?${qs.value}`); } catch (e) { /* ignore */ } };
     let tlTimer;
     watch(qs, () => { clearTimeout(tlTimer); tlTimer = setTimeout(loadTl, 300); });
-    const live = computed(() => `/api/alerts/preview/${a.value.theme || "t01"}.png?at=${t.value.toFixed(2)}&scale=2&${qs.value}`);
+    // "play all": step through every theme in the preview, each for tourSec seconds
+    const tour = ref(null);              // { i, t } while touring
+    const tourSec = ref(9);
+    const ids = computed(() => (cat.value.themes || []).map((x) => x.id));
+    const tourTheme = computed(() => (tour.value ? cat.value.themes[tour.value.i] : null));
+    const startTour = (from) => {
+      const i = Math.max(0, from === undefined ? ids.value.indexOf(a.value.theme) : from);
+      tour.value = { i: i < 0 ? 0 : i, t: 0 };
+      playing.value = true;
+    };
+    const stepTour = (d) => { if (tour.value) tour.value = { i: (tour.value.i + d + ids.value.length) % ids.value.length, t: 0 }; };
+    const stopTour = () => { tour.value = null; };
+    const useTour = () => { if (tourTheme.value) { a.value.theme = tourTheme.value.id; toast(`Theme set to ${tourTheme.value.name} — save to apply`); } };
+    const live = computed(() => tour.value
+      ? `/api/alerts/preview/${tourTheme.value.id}.png?at=${tour.value.t.toFixed(2)}&scale=2&s=${encodeURIComponent(JSON.stringify({ reveal_speed: 2.2 }))}`
+      : `/api/alerts/preview/${a.value.theme || "t01"}.png?at=${t.value.toFixed(2)}&scale=2&${qs.value}`);
+    const tourWall = async () => {
+      const from = Math.max(0, ids.value.indexOf(a.value.theme));
+      const n = ids.value.length - from;
+      try {
+        await api("/api/display/override", { json: { side: "right", panel: "weather_alert", test: true, tour: true,
+          tour_sec: tourSec.value, tour_from: from, duration_sec: Math.round(n * tourSec.value + 3) } });
+        toast(`Touring ${n} themes on the wall, ${tourSec.value} s each (about ${Math.round(n * tourSec.value / 60)} min). "Back to rotation" stops it.`);
+      } catch (e) { fail(e); }
+    };
     const shown = ref("");
     const next = ref("");
     watch(live, (u) => { next.value = u; }, { immediate: true });
@@ -48,7 +72,18 @@ export const Alerts = {
     let tick;
     onMounted(() => {
       load().then(loadTl);
-      tick = setInterval(() => { if (playing.value) t.value = (t.value + 0.25) % Math.max(4, tl.value.total || 30); }, 250);
+      tick = setInterval(() => {
+        if (!playing.value) return;
+        if (tour.value) {
+          const nt = tour.value.t + 0.25;
+          if (nt >= tourSec.value) {
+            if (tour.value.i + 1 >= ids.value.length) tour.value = null;
+            else tour.value = { i: tour.value.i + 1, t: 0 };
+          } else tour.value = { ...tour.value, t: nt };
+          return;
+        }
+        t.value = (t.value + 0.25) % Math.max(4, tl.value.total || 30);
+      }, 250);
     });
     onBeforeUnmount(() => { clearInterval(tick); clearTimeout(tlTimer); });
     const page = computed(() => [...(tl.value.pages || [])].reverse().find((p) => t.value >= p.start) || tl.value.pages?.[0]);
@@ -94,7 +129,7 @@ export const Alerts = {
     const typeColour = (k) => TYPES.find((x) => x.id === k)?.colour || "#6e7896";
     const fontName = (f) => f.replace("alert/", "").replace(".bdf", "");
     const opts = (dict) => [{ value: "", label: "Theme" }, ...Object.entries(dict || {}).map(([value, label]) => ({ value, label }))];
-    return { a, cat, live, shown, onLoaded, tl, t, playing, page, jump, layoutFilter, thumbsOn, themes, thumb, current,
+    return { tour, tourSec, tourTheme, startTour, stepTour, stopTour, useTour, tourWall, ids, a, cat, live, shown, onLoaded, tl, t, playing, page, jump, layoutFilter, thumbsOn, themes, thumb, current,
       TYPES, DETAIL, opts, types, toggleType, areas, areaId, setOpt, resetLook, entry, addToRotation, show, stop,
       when, typeColour, ago, fontName };
   },
@@ -112,13 +147,27 @@ export const Alerts = {
               <img :src="shown || live" style="width:100%; image-rendering:pixelated; display:block" alt="">
               <img :src="live" @load="onLoaded" style="display:none" alt="">
             </div>
-            <div class="scrub">
+            <div class="tourbar" v-if="tour">
+              <span class="pill accent">{{ tour.i + 1 }} / {{ ids.length }}</span>
+              <b>{{ tourTheme?.name }}</b><span class="faint ellipsis" style="flex:1; font-size:12px">{{ tourTheme?.description }}</span>
+              <button class="btn sm ghost icon-only" @click="stepTour(-1)" title="Previous theme"><Icon name="SkipBack" :size="14"/></button>
+              <button class="btn sm ghost icon-only" @click="playing = !playing" :title="playing ? 'Pause' : 'Play'"><Icon :name="playing ? 'Pause' : 'Play'" :size="14"/></button>
+              <button class="btn sm ghost icon-only" @click="stepTour(1)" title="Next theme"><Icon name="SkipForward" :size="14"/></button>
+              <button class="btn sm primary" @click="useTour"><Icon name="Check" :size="14"/>Use this</button>
+              <button class="btn sm ghost" @click="stopTour"><Icon name="X" :size="14"/>Stop</button>
+            </div>
+            <div class="scrub" v-else>
               <button class="btn sm ghost icon-only" @click="playing = !playing" :title="playing ? 'Pause' : 'Play'"><Icon :name="playing ? 'Pause' : 'Play'" :size="14"/></button>
               <div class="scrub-track">
                 <button v-for="(p, i) in tl.pages" :key="i" class="scrub-seg" :class="{on: page === p}"
                   :style="{flex: p.hold + p.reveal}" @click="jump(p)" :title="p.label + ' · reveal ' + p.reveal + ' s, holds ' + p.hold + ' s · text ' + p.font_px + ' px'">{{ p.label }} · {{ p.font_px }}px</button>
               </div>
               <span class="mono faint" style="font-size:12px; width:70px; text-align:right">{{ t.toFixed(0) }} / {{ Math.round(tl.total) }} s</span>
+            </div>
+            <div class="row">
+              <button class="btn primary" @click="startTour(0)" v-if="!tour"><Icon name="Clapperboard" :size="15"/>Play all themes here</button>
+              <button class="btn" @click="tourWall"><Icon name="MonitorPlay" :size="15"/>Tour all on the wall</button>
+              <span class="row nowrap faint" style="font-size:12px">each<Stepper v-model="tourSec" :min="4" :max="30" unit="s"/></span>
             </div>
             <div class="row">
               <button class="btn" @click="show(true)"><Icon name="FlaskConical" :size="15"/>Test on the wall</button>
@@ -149,7 +198,7 @@ export const Alerts = {
               <button v-for="(lab, id) in cat.structures" :key="id" class="btn sm" :class="{primary: layoutFilter === id}" @click="layoutFilter = id">{{ lab }}</button>
             </div>
             <div class="theme-grid dense">
-              <button v-for="th in themes" :key="th.id" class="theme-card" :class="{on: a.theme === th.id}" @click="a.theme = th.id">
+              <button v-for="th in themes" :key="th.id" class="theme-card" :class="{on: a.theme === th.id, touring: tourTheme && tourTheme.id === th.id}" @click="tour ? startTour(ids.indexOf(th.id)) : (a.theme = th.id)">
                 <img :src="thumb(th.id)" loading="lazy" alt="">
                 <span>{{ th.name }}</span><small class="faint">{{ th.description }}</small>
               </button></div></div></div>
