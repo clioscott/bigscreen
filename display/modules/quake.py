@@ -46,6 +46,7 @@ BASE_FONTS = {"jp": ("alert/jp-mplus12b.bdf", 1), "jp_r": ("alert/jp-k8x12.bdf",
               "tiny": ("alert/4x6.bdf", 1), "arcade": ("alert/unscii-8-mcr.bdf", 2), "arcade1": ("alert/unscii-8-mcr.bdf", 1),
               "term": ("alert/t0-12b-uni.bdf", 1)}
 _FONT_CACHE = {}
+_MAP_CACHE = {}
 
 
 def _jpf(name, scale=1):
@@ -246,7 +247,11 @@ class QuakeScreen:
             try:
                 mt = os.path.getmtime(os.path.join(base, f"{name}.bin"))
                 if name not in self._maps or self._maps[name][0] != mt:
-                    self._maps[name] = (mt, _Map(base, name))
+                    key = (base, name, mt)                     # parsed maps are shared (previews make many screens)
+                    if key not in _MAP_CACHE:
+                        _MAP_CACHE.clear() if len(_MAP_CACHE) > 4 else None
+                        _MAP_CACHE[key] = _Map(base, name)
+                    self._maps[name] = (mt, _MAP_CACHE[key])
             except (OSError, ValueError, KeyError):
                 if name not in self._maps:
                     return self._map("japan") if name != "japan" else None

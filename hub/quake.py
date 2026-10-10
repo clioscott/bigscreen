@@ -51,6 +51,14 @@ AREA = {"id": "japan", "label": "Japan", "fit": {"nw": [45.9, 127.6], "se": [30.
 def ensure_map():
     """data/quake/japan.bin (270 px, beside the bulletin) and japan_wide.bin (the whole wall), each with a
     .json holding the projection — dark basemap, coast, prefecture lines. Same scale, so they line up."""
+    with _map_lock:                  # one render at a time: concurrent previews used to pile up on a missing map
+        return _ensure_map()
+
+
+_map_lock = threading.Lock()
+
+
+def _ensure_map():
     meta = {}
     for name, w in (("japan", MAP_W), ("japan_wide", 448)):
         meta_p = OUT / f"{name}.json"
