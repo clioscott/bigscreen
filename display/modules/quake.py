@@ -259,7 +259,7 @@ class QuakeScreen:
             y += 12
         if not areas:
             f["jp_r"].draw(c, x, y + 1, (160, 160, 170), "予想震度は推計です")
-            f["tiny"].draw(c, x, y + 14, (130, 130, 140), "Tokyo/Yokohama: estimate from M, depth, distance")
+            f["tiny"].draw(c, x, y + 14, (130, 130, 140), "Tokyo & Yokohama: estimates")
         f["jp_s"].draw(c, x, H - 9, (140, 140, 150), f"+{elapsed:.0f}秒  強震モニタ(防災科研)・気象庁")
         draw_border(c, "pulse" if warn else "chase", accent, now)
         return "done" if elapsed > 240 else None
