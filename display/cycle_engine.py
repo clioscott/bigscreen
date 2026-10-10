@@ -52,7 +52,7 @@ KNOWN_PANELS = (
 )
 
 # Conditions the engine evaluates against the per-frame context.
-KNOWN_CONDITIONS = ("always", "calendar_has_events", "no_events", "weather_has_alert")
+KNOWN_CONDITIONS = ("always", "calendar_has_events", "no_events", "weather_has_alert", "weather_alert_active")
 
 
 def _resolve_dwell_sec(raw: dict, default: float) -> float:
@@ -339,4 +339,6 @@ class CycleEngine:
             return not bool(ctx.get("calendar_has_events", False))
         if cond == "weather_has_alert":
             return bool(ctx.get("weather_has_alert", False))
+        if cond == "weather_alert_active":
+            return bool(ctx.get("weather_alert_active", False))
         return True

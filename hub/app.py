@@ -81,6 +81,40 @@ def restore(payload: dict = Body(...)):
     return {"config": config.save(old, reason=f"restored {name}")}
 
 
+# --- weather alerts --------------------------------------------------------------
+@app.get("/api/alerts")
+def alerts_now():
+    from display.modules.weather_alert import THEMES
+    data = read_json(paths.DATA_DIR / "alerts.json", {}) or {}
+    return {**data, "themes": {k: {"label": v["label"], "title": v["title"], "mode": v["mode"], "flash": v["flash"]}
+                               for k, v in THEMES.items()}}
+
+
+@app.get("/api/alerts/preview/{theme}.png")
+def alerts_preview(theme: str, at: float = 4.0, scale: int = 2, real: int = 0, flash: str = "", title: str = "",
+                   speed: float = 0):
+    """A frame of the full-screen alert in one theme, rendered with the display's own code."""
+    from display.modules.weather_alert import THEMES, render_preview
+    if theme not in THEMES:
+        raise HTTPException(404, "unknown theme")
+    settings = {**(config.load()["modules"].get("weather_alerts") or {})}
+    if flash in ("on", "off"):
+        settings["flash"] = flash == "on"
+    elif flash == "default":
+        settings.pop("flash", None)
+    if title:
+        settings["title"] = title
+    if speed:
+        settings["scroll_px_per_sec"] = speed
+    data = read_json(paths.DATA_DIR / "alerts.json", {}) if real else None
+    frame = render_preview(theme, data if data and data.get("alerts") else None, max(0.0, at), settings)
+    s = max(1, min(4, scale))
+    img = Image.fromarray(frame).resize((frame.shape[1] * s, frame.shape[0] * s), Image.NEAREST)
+    bio = io.BytesIO()
+    img.save(bio, "PNG", compress_level=1)
+    return Response(bio.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
 # --- live consoles ------------------------------------------------------------
 @app.get("/api/logs")
 def logs(hub: int = 0, display: int = 0):

@@ -173,6 +173,10 @@ class Screen:
             "blank": lambda c, z, e, t: None,
         }
         self.full_panels = {}     # name -> draw(canvas, zone, entry, transition); takes both zones
+        self.takeover_panels = {}  # like full_panels, but the whole wall (ticker and clock too)
+        from display.modules.weather_alert import AlertScreen
+        self.alert_screen = AlertScreen(cfg.modules.get("weather_alerts", {}) or {}, loader)
+        self.takeover_panels["weather_alert"] = self.alert_screen.draw
 
         from display.modules.weather_info import WeatherInfoPanel
         self.weather_half = WeatherInfoPanel(cfg, loader, full=False)
@@ -219,7 +223,8 @@ class Screen:
         c.Clear()
         self.update_data()
         ctx = {"calendar_has_events": bool(getattr(self.calendar, "has_visible_events", True)),
-               "weather_has_alert": self.weather_half.has_alert()}
+               "weather_has_alert": self.weather_half.has_alert(),
+               "weather_alert_active": self.alert_screen.active()}
         zones = {"left": (0, self.main_y, self.cal_w, self.main_h),
                  "right": (self.right_x, self.main_y, self.right_w, self.main_h)}
 
@@ -230,11 +235,25 @@ class Screen:
             for _ in range(12):       # skip entries whose panel isn't available (yet)
                 entry = eng.current_entry(now, ctx) or {}
                 name = entry.get("panel", "blank")
-                if name in self.panels or name in self.full_panels:
+                if name in self.panels or name in self.full_panels or name in self.takeover_panels:
                     break
                 eng.force_advance()
             chosen[side] = entry or {"panel": "blank"}
 
+        takeover = next((s for s in ("right", "left") if chosen[s].get("panel") in self.takeover_panels), None)
+        if takeover:
+            entry = chosen[takeover]
+            name = entry["panel"]
+            transition = self._entry_key(entry) != self.prev_key.get(takeover)
+            result = self.takeover_panels[name](c, (0, 0, self.w, self.h), entry, transition)
+            if self._finished(takeover, entry, result, transition):
+                for s in ("left", "right"):
+                    if chosen[s].get("panel") == name:
+                        self.engines[s].force_advance()
+            for side in ("left", "right"):
+                self.prev[side] = chosen[side].get("panel")
+                self.prev_key[side] = self._entry_key(chosen[side])
+            return                                  # no ticker / clock while an alert has the wall
         full = next((s for s in ("left", "right") if chosen[s].get("panel") in self.full_panels), None)
         if full:
             entry = chosen[full]

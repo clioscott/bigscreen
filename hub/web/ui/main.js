@@ -11,6 +11,7 @@ import { Colours } from "./pages/colours.js";
 import { DisplaySettings } from "./pages/display.js";
 import { System } from "./pages/system.js";
 import { Consoles } from "./pages/consoles.js";
+import { Alerts } from "./pages/alerts.js";
 
 const NAV = [
   { id: "overview", label: "Overview", icon: "LayoutDashboard" },
@@ -19,6 +20,7 @@ const NAV = [
   { id: "ticker", label: "Stock ticker", icon: "TrendingUp" },
   { id: "headlines", label: "Headlines", icon: "Newspaper" },
   { id: "maps", label: "Weather maps", icon: "Radar" },
+  { id: "alerts", label: "Weather alerts", icon: "Siren" },
   { id: "areas", label: "Map areas", icon: "MapPinned" },
   { id: "colours", label: "Colour scales", icon: "Palette" },
   { sep: true },
@@ -28,7 +30,7 @@ const NAV = [
 ];
 
 const App = {
-  components: { ...common, Overview, Rotation, Ticker, Headlines, Maps, MapEditor, Areas, AreaEditor, Colours, DisplaySettings, System, Consoles },
+  components: { ...common, Overview, Rotation, Ticker, Headlines, Maps, MapEditor, Areas, AreaEditor, Colours, DisplaySettings, System, Consoles, Alerts },
   setup() {
     const ready = ref(false);
     const err = ref("");
@@ -46,7 +48,7 @@ const App = {
       if (r === "maps" && store.route.params[0]) return "MapEditor";
       if (r === "areas" && store.route.params[0]) return "AreaEditor";
       return { overview: "Overview", rotation: "Rotation", ticker: "Ticker", headlines: "Headlines", maps: "Maps", areas: "Areas",
-        colours: "Colours", display: "DisplaySettings", system: "System", consoles: "Consoles" }[r] || "Overview";
+        colours: "Colours", display: "DisplaySettings", system: "System", consoles: "Consoles", alerts: "Alerts" }[r] || "Overview";
     });
     const feedsBad = computed(() => Object.values(store.status?.jobs || {}).filter((j) => ["stale", "failing"].includes(j.health)).length);
     const disp = computed(() => store.display?.status);

@@ -50,6 +50,7 @@ export const SECTIONS = [
   ["Headlines", ["modules", "headlines"]],
   ["Weather maps", ["modules", "weather_maps"]],
   ["Weather data", ["modules", "weather"]],
+  ["Weather alerts", ["modules", "weather_alerts"]],
   ["Display", ["system", "display"]],
   ["Night mode", ["system", "night_mode"]],
 ];
@@ -170,10 +171,12 @@ export const PANEL_TYPES = {
   weather_full: { label: "Weather info (full width)", icon: "CloudSun", sub: "weather_screen", full: true, passes: false },
   map: { label: "Weather map", icon: "Radar", sub: "track", passes: true, passWord: "animation loop" },
   map_full: { label: "Weather map (full width)", icon: "Radar", sub: "track", full: true, passes: true, passWord: "animation loop" },
+  weather_alert: { label: "Weather alert (full screen)", icon: "Siren", full: true, passes: true, passWord: "pass through every alert",
+    note: "Takes over the whole wall, ticker and clock included" },
   blank: { label: "Blank", icon: "Square", passes: false },
 };
 export const WEATHER_SCREENS = { current: "Current conditions", hourly: "Hourly forecast", forecast: "7-day forecast", warning: "Warnings" };
-export const CONDITIONS = { always: "Always", calendar_has_events: "When the calendar has events", no_events: "When the calendar is empty", weather_has_alert: "When a weather alert is active" };
+export const CONDITIONS = { always: "Always", calendar_has_events: "When the calendar has events", no_events: "When the calendar is empty", weather_has_alert: "When the city forecast lists a warning", weather_alert_active: "When an ECCC alert is in effect" };
 
 export function areaLabel(id, short = false) {
   const a = store.draft?.modules?.weather_maps?.areas?.[id];

@@ -66,7 +66,7 @@ def _make_handler(app):
                 return self._json(logring.ring.since(int((q.get("after") or ["0"])[0] or 0)))
             if u.path == "/panels":
                 s = app.screen
-                return self._json({"zone": sorted(s.panels), "full": sorted(s.full_panels)})
+                return self._json({"zone": sorted(s.panels), "full": sorted(s.full_panels), "takeover": sorted(s.takeover_panels)})
             if u.path == "/frame.png":
                 q = parse_qs(u.query)
                 scale = max(1, min(8, int((q.get("scale") or ["1"])[0])))
@@ -98,7 +98,8 @@ def _make_handler(app):
                 eng = app.screen.engines.get(side)
                 if not eng or not body.get("panel"):
                     return self._json({"error": "need side (left|right) and panel"}, 400)
-                if body["panel"] not in app.screen.panels and body["panel"] not in app.screen.full_panels:
+                s = app.screen
+                if body["panel"] not in s.panels and body["panel"] not in s.full_panels and body["panel"] not in s.takeover_panels:
                     return self._json({"error": f"panel {body['panel']!r} isn't available on this display"}, 400)
                 extra = {k: v for k, v in body.items() if k not in ("side", "panel", "duration_sec")}
                 eng.set_override(body["panel"], body.get("duration_sec"), extra)
