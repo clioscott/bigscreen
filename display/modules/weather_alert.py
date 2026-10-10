@@ -548,6 +548,12 @@ class AlertScreen:
             segs.append({"alert": ai, "ctx": ctx, "lines": lines, "paras": use, "fonts": fonts, "start": t,
                          "reveal": reveal_t, "hold": hold})
             t += reveal_t + hold
+            amap = a.get("map") or (self._sample_map() if b["test"] else None)
+            if amap and st.get("show_map", True) is not False and self._reveal_cap is None:
+                msec = max(4.0, float(st.get("map_sec") or 9))
+                segs.append({"alert": ai, "ctx": ctx, "kind": "map", "map": amap, "lines": [], "paras": [],
+                             "fonts": fonts, "start": t, "reveal": 1.4, "hold": msec - 1.4})
+                t += msec
         self._plan_key, self._plan = key, {"segs": segs, "total": t}
         self._static = None
         return self._plan
@@ -560,6 +566,66 @@ class AlertScreen:
         if self._tour:
             self._tour, self._reveal_cap, self._fast, self._static = None, None, None, None
         return self._draw(c, entry, transition, now)
+
+    def _sample_map(self):
+        data = (self.loader.get_data("alerts") if self.loader else None) or {}
+        return data.get("sample_map")
+
+    def _draw_map(self, c, seg, ctx, local, p):
+        """The affected zones pulsing in the severity colour over the map; the home city marked."""
+        if not hasattr(self, "_maps"):
+            self._maps = _MapCache()
+        data_dir = getattr(self.loader, "data_dir", None) or self.settings.get("_data_dir")
+        meta = seg["map"]
+        if not data_dir or not self._maps.get(data_dir, meta):
+            return False
+        mc = self._maps
+        sev = np.array(ctx.sev, dtype=np.int16)
+        reach = _ease(p) * 520                                  # zones flood outward from the home city
+        m = mc.mask & (mc.dist <= reach)
+        k = 0.34 + 0.16 * math.sin(ctx.t * 3.2)
+        out = mc.base.copy()
+        out[m] = (out[m] * (1 - k) + sev * k).astype(np.int16)
+        e = mc.edge & (mc.dist <= reach)
+        out[e] = sev
+        c.buf[:] = out.clip(0, 255).astype(np.uint8)
+        f, sf, k_f = ctx.title_f, ctx.fam["small"], ctx.fam["key"]
+        # top band: what and how bad
+        band = max(16, f.h) + 4
+        c.buf[0:band + sf.line + 3] = (c.buf[0:band + sf.line + 3] * 0.25).astype(np.uint8)
+        x = 8 + icon(c, ctx, 8, 2 + (band - 16) // 2, 1, (0, 0, 0)) + 6
+        x += f.draw(c, x, 2 + (band - f.h) // 2, ctx.sev, title_text(ctx)) + 10
+        lab = U(ctx, "AFFECTED AREA")
+        chip(c, x, 2 + (band - k_f.h - 2) // 2, lab, k_f, ctx.sev, (0, 0, 0))
+        b = ctx.b
+        info = U(ctx, " · ".join(v for v in (f"until {b['until']}" if b["until"] else "", b["amount"]) if v))
+        sf.draw(c, 8, band + 1, ctx.pal["strong"], info)
+        meter(c, W - 38, 2 + (band - 8) // 2, ctx)
+        # legend + map name, bottom left
+        lg = U(ctx, f"{b['kind']} zone")
+        yb = H - sf.h - 8
+        c.FillRect(8, yb, 10, sf.h, Color(*ctx.sev))
+        c.buf[yb - 2:yb + sf.h + 2, 22:26 + sf.width(lg) + 6] = (c.buf[yb - 2:yb + sf.h + 2, 22:26 + sf.width(lg) + 6] * 0.3).astype(np.uint8)
+        sf.draw(c, 24, yb, (255, 255, 255), lg)
+        # home marker: pulsing ring + label
+        hp = meta.get("home_px")
+        if hp:
+            hx, hy = hp
+            r = 3 + int(4 * (0.5 + 0.5 * math.sin(ctx.t * 4)))
+            for a in np.linspace(0, 2 * math.pi, 40, endpoint=False):
+                px, py = int(hx + r * math.cos(a)), int(hy + r * math.sin(a))
+                if 0 <= px < W and 0 <= py < H:
+                    c.buf[py, px] = (255, 255, 255)
+            c.FillRect(hx - 1, hy - 1, 3, 3, Color(255, 255, 255))
+            name = U(ctx, ctx.home_name or "Home")
+            txt = name if ctx.home else f"{name} · not in this alert"
+            tw = k_f.width(txt)
+            lx = hx + 12 if hx + 12 + tw + 6 < W else hx - 12 - tw - 6
+            ly = max(band + sf.line + 6, min(H - k_f.h - 6, hy - k_f.h // 2))
+            bg = ctx.sev if ctx.home else (20, 90, 40)
+            c.FillRect(lx - 3, ly - 2, tw + 6, k_f.h + 4, Color(*bg))
+            k_f.draw(c, lx, ly, (0, 0, 0) if ctx.home else (230, 255, 230), txt)
+        return True
 
     def _draw_tour(self, c, entry, transition, now):
         """Every theme in turn with the test alert: its reveal, then a few seconds of border animation."""
@@ -609,9 +675,17 @@ class AlertScreen:
             i += 1
         seg = segs[i]
         ctx = seg["ctx"]
-        ctx.t, ctx.now, ctx.index, ctx.count = t, now, i, len(segs)
+        ctx.t, ctx.now = t, now
+        ctx.index, ctx.count = seg["alert"], len({x["alert"] for x in segs})
         local = t - seg["start"]
         p = min(1.0, local / seg["reveal"]) if seg["reveal"] > 0 else 1.0
+        if seg.get("kind") == "map" and self._draw_map(c, seg, ctx, local, p):
+            draw_border(c, th["border"], ctx.sev if ctx.home or not ctx.home_name else _dim(ctx.sev, 0.5), t)
+            if t >= plan["total"]:
+                self._t0 = now
+                self._static = None
+                return "done"
+            return None
         struct = STRUCT_IMPL.get(th["structure"]) or STRUCT_IMPL["band"]
         skey = (self._plan_key, i)
         if p >= 1.0 and self._static is not None and self._static[0] == skey:
@@ -629,6 +703,35 @@ class AlertScreen:
             self._static = None
             return "done"
         return None
+
+
+class _MapCache:
+    """Map layers for the alert screen, loaded once per file (mtime-checked)."""
+
+    def __init__(self):
+        self.key = None
+        self.base = self.mask = self.edge = self.dist = None
+
+    def get(self, data_dir, meta):
+        import os
+        fb = os.path.join(data_dir, meta["file"])
+        fm = os.path.join(data_dir, meta["mask"])
+        try:
+            key = (fb, os.path.getmtime(fb), os.path.getmtime(fm))
+        except OSError:
+            return False
+        if key != self.key:
+            w, h = meta["w"], meta["h"]
+            self.base = np.fromfile(fb, dtype=np.uint8).reshape(h, w, 3).astype(np.int16)
+            m = np.fromfile(fm, dtype=np.uint8).reshape(h, w) > 127
+            self.mask = m
+            pad = np.pad(m, 1)
+            self.edge = m & ~(pad[:-2, 1:-1] & pad[2:, 1:-1] & pad[1:-1, :-2] & pad[1:-1, 2:])
+            hx, hy = meta.get("home_px") or (w // 2, h // 2)
+            yy, xx = np.mgrid[0:h, 0:w]
+            self.dist = np.hypot(xx - hx, yy - hy)
+            self.key = key
+        return True
 
 
 def _bbox(lines):
@@ -1512,9 +1615,15 @@ def render_preview(theme, alerts_data=None, at=4.0, settings=None):
             return alerts_data if name == "alerts" else None
 
     s = dict(settings or {}, theme=theme)
-    scr = AlertScreen(s, _Loader() if alerts_data else None)
+
+    class _DataLoader(_Loader):
+        data_dir = (settings or {}).get("_data_dir")
+
+        def get_data(self, name):
+            return alerts_data if name == "alerts" else None
+    scr = AlertScreen(s, _DataLoader())
     c = Canvas(W, H)
-    entry = {} if alerts_data and scr.alerts() else {"test": True}
+    entry = {} if alerts_data and alerts_data.get("alerts") and scr.alerts() else {"test": True}
     t0 = 1_000_000.0
     scr.draw(c, (0, 0, W, H), entry, True, now=t0)
     scr.draw(c, (0, 0, W, H), entry, False, now=t0 + at)
@@ -1523,13 +1632,19 @@ def render_preview(theme, alerts_data=None, at=4.0, settings=None):
 
 def timeline(settings=None, alerts_data=None):
     """When each alert's screen starts, how long its reveal and hold last (for the preview scrubber)."""
-    scr = AlertScreen(dict(settings or {}), None)
+    class _L:
+        data_dir = (settings or {}).get("_data_dir")
+
+        def get_data(self, name):
+            return alerts_data if name == "alerts" else None
+    scr = AlertScreen(dict(settings or {}), _L())
     th = scr.theme()
     alerts = (alerts_data or {}).get("alerts") or scr.alerts({"test": True})
     plan = scr._plan_for(alerts, th, scr.family(th))
     return {"total": round(plan["total"], 2),
             "pages": [{"start": round(x["start"], 2), "reveal": round(x["reveal"], 2), "hold": round(x["hold"], 2),
-                       "label": x["ctx"].b["title"], "alert": x["alert"], "font_px": x["fonts"]["reg"].h}
+                       "label": ("MAP · " if x.get("kind") == "map" else "") + x["ctx"].b["title"], "alert": x["alert"],
+                       "font_px": x["fonts"]["reg"].h}
                       for x in plan["segs"]]}
 
 

@@ -120,8 +120,11 @@ def alerts_preview(theme: str, at: float = 4.0, scale: int = 2, real: int = 0, s
     from display.modules.weather_alert import render_preview
     if theme not in THEMES:
         raise HTTPException(404, "unknown theme")
-    data = read_json(paths.DATA_DIR / "alerts.json", {}) if real else None
-    frame = render_preview(theme, data if data and data.get("alerts") else None, max(0.0, at), _alert_settings(s))
+    data = dict(read_json(paths.DATA_DIR / "alerts.json", {}) or {})
+    if not real:
+        data["alerts"] = []                      # the test alert (its map comes from sample_map)
+    settings = dict(_alert_settings(s), _data_dir=str(paths.DATA_DIR))
+    frame = render_preview(theme, data, max(0.0, at), settings)
     k = max(1, min(4, scale))
     img = Image.fromarray(frame).resize((frame.shape[1] * k, frame.shape[0] * k), Image.NEAREST)
     bio = io.BytesIO()
@@ -133,8 +136,10 @@ def alerts_preview(theme: str, at: float = 4.0, scale: int = 2, real: int = 0, s
 def alerts_timeline(real: int = 0, s: str = ""):
     """When each page of the alert screen starts and how long it holds (for the preview scrubber)."""
     from display.modules.weather_alert import timeline
-    data = read_json(paths.DATA_DIR / "alerts.json", {}) if real else None
-    return timeline(_alert_settings(s), data if data and data.get("alerts") else None)
+    data = dict(read_json(paths.DATA_DIR / "alerts.json", {}) or {})
+    if not real:
+        data["alerts"] = []
+    return timeline(dict(_alert_settings(s), _data_dir=str(paths.DATA_DIR)), data)
 
 
 # --- live consoles ------------------------------------------------------------
