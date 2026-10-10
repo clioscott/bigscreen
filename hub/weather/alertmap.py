@@ -70,7 +70,7 @@ def render(alert, cfg, home_city="Richmond"):
             meta["home_px"] = [int(hx), int(hy)]
     if (OUT / f"{key}.bin").exists() and (OUT / f"{key}.mask").exists():
         return meta
-    base = render_basemap(view, {"source": "carto_dark", "brightness": 1.15, "contrast": 1.1})
+    base = render_basemap(view, {"source": "esri_dark", "brightness": 1.0, "contrast": 1.15})
     carto_cfg = area.get("carto") or {}
     mfp = float(area.get("min_feature_px", 3))
     img = alpha_over(base, carto.render_overlay(view, carto_cfg, mfp, group="under"))
@@ -82,7 +82,8 @@ def render(alert, cfg, home_city="Richmond"):
         px, py = view.project_many(lon, lat)
         if len(px) >= 3:
             d.polygon(list(zip(px.tolist(), py.tolist())), fill=255)
-    mask = np.asarray(mask_img, dtype=np.uint8)
+    mask = np.asarray(mask_img, dtype=np.uint8).copy()
+    mask[~carto.land_mask(view, mfp)] = 0                 # zones and city limits run out over the water: land only
     img = alpha_over(img, carto.render_overlay(view, carto_cfg, mfp, group="over"))
     np.ascontiguousarray(img, dtype=np.uint8).tofile(OUT / f"{key}.bin")
     np.ascontiguousarray(mask).tofile(OUT / f"{key}.mask")
