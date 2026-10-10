@@ -820,9 +820,9 @@ def area_line(ctx, f, maxw, label_only_ok=True):
     return U(ctx, tries[-1])
 
 
-def city_fits(ctx, f, w, h):
-    """Would some level (0-2) of the area list fit in w x h with font f?"""
-    for items in _levels(ctx)[:3]:
+def city_fits(ctx, f, w, h, levels=(0, 1, 2)):
+    """Would one of these levels of the area list fit in w x h with font f?"""
+    for items in [_levels(ctx)[i] for i in levels]:
         if sum(len(_wrap_plain(f, U(ctx, it), w - 10) or [""]) for it in items) * f.line <= h:
             return True
     return False
@@ -833,12 +833,10 @@ def city_list(c, ctx, x, y, w, y1, f, col=None, glyph_col=None, fonts=None):
     Uses the most detailed level that fits the space, trying smaller fonts before less detail."""
     lv = _levels(ctx)
     cands = []
-    for ff in [f] + [g for g in (fonts or []) if g is not f]:
-        for items in (lv[0], lv[1], lv[2]):
-            rows = []
-            for it in items:
-                wrapped = _wrap_plain(ff, U(ctx, it), w - 10)
-                rows.append(wrapped or [""])
+    # detail first: every city in a smaller font beats zone names in a bigger one
+    for items in (lv[0], lv[1], lv[2]):
+        for ff in [f] + [g for g in (fonts or []) if g is not f]:
+            rows = [(_wrap_plain(ff, U(ctx, it), w - 10) or [""]) for it in items]
             if sum(len(r) for r in rows) * ff.line <= y1 - y:
                 cands.append((ff, rows))
                 break
@@ -1006,11 +1004,15 @@ class Rail(Structure):
         # make room for the whole area list: smaller icon, then no meter, then a smaller font
         tiny = FI("alert/4x6.bdf")
         plan = None
-        for scale, show_meter, lf in ((3, True, sf), (2, True, sf), (2, False, sf), (2, False, tiny), (1, False, tiny)):
-            top_h = 16 * scale + 6 + k.line + 1 + (12 if show_meter else 2)
-            avail = (y1 - 2) - (y0 + top_h + rows_h + 5)
-            if city_fits(ctx, lf, rw - 10, avail):
-                plan = (scale, show_meter, lf)
+        # every city if at all possible (shrinking the icon and font), then zones with key cities, then merged
+        for level in (0, 1, 2):
+            for scale, show_meter, lf in ((3, True, sf), (2, True, sf), (2, False, sf), (2, False, tiny), (1, False, tiny)):
+                top_h = 16 * scale + 6 + k.line + 1 + (12 if show_meter else 2)
+                avail = (y1 - 2) - (y0 + top_h + rows_h + 5)
+                if city_fits(ctx, lf, rw - 10, avail, (level,)):
+                    plan = (scale, show_meter, lf)
+                    break
+            if plan:
                 break
         scale, show_meter, lf = plan or (1, False, tiny)
         iw = 16 * scale
@@ -1392,7 +1394,7 @@ class KeyFacts(Structure):
                     val = area_line(ctx, sf, tw - 8)
             fv = k if k.width(val) <= tw - 8 else sf
             while fv.width(val) > tw - 8 and len(val) > 4:          # last resort in a narrow tile
-                val = val[:-2].rstrip(" ,;") + "…"
+                val = val[:-4].rstrip(" ,;") + "..."
             draw_home_text(c, ctx, fv, tx + 4, ty + 4 + sf.line, val, col)
             if lab == "LEVEL":
                 meter(c, tx + tw - 32, ty + 4, ctx, 4, 6)
