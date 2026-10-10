@@ -51,7 +51,7 @@ def _stats(rel):
         kanji = sum(1 for c in codes if 0x4E00 <= c <= 0x9FFF)
         ascii_n = sum(1 for c in codes if 33 <= c <= 126)
     name = os.path.basename(rel)[:-4]
-    bold = bool(re.search(r"bold|demi|black|heavy", weight, re.I)) or bool(re.search(r"(?i)(bold|[-_]b$|\db$|B\d*$|[a-z]B\d|^clB)", name))
+    bold = bool(re.search(r"bold|demi|black|heavy", weight, re.I)) or bool(re.search(r"(?i)bold", name)) or bool(re.search(r"([-_]b$|\db$|\db-uni$|[a-z0-9]B\d*$|[a-z]B\d|^clB|B[IO]?\d+$)", name))
     return {"glyphs": len(codes), "height": int(px.group(1)) if px else (int(bbx.group(2)) if bbx else 0),
             "cell_w": int(bbx.group(1)) if bbx else 0, "ascii": ascii_n, "kana": kana, "kanji": kanji,
             "jis": jis, "bold": bold, "bytes": len(t)}

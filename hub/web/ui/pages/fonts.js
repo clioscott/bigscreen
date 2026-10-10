@@ -162,7 +162,7 @@ export const Fonts = {
         <div class="card-head" style="flex-wrap:wrap">
           <span class="dot" :class="statusClass(f)"></span>
           <h3 style="margin-right:6px">{{ f.family }}</h3>
-          <span class="faint mono" style="font-size:11.5px">{{ f.name }}</span>
+          <span class="faint mono" style="font-size:11.5px">{{ f.path }}</span>
           <span class="pill">{{ f.height }} px</span>
           <span class="pill" v-if="f.bold">bold</span>
           <span class="pill" v-if="f.kanji">{{ f.kanji }} kanji</span>
