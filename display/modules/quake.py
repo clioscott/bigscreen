@@ -55,7 +55,8 @@ class QuakeScreen:
 
     def fonts(self):
         if self._fonts is None:                       # Japanese fonts are big: load on first use only
-            self._fonts = {"jp": FI("alert/jp-mplus12b.bdf"), "jp_r": FI("alert/jp-mplus10r.bdf"),
+            self._fonts = {"jp": FI("alert/jp-mplus12b.bdf"), "jp_r": FI("alert/jp-k8x12.bdf"),
+                           "jp_s": FI("alert/jp-misaki_gothic_2nd.bdf"),
                            "big": FI("alert/10x20.bdf", 2), "key": FI("alert/7x14B.bdf"),
                            "small": FI("alert/5x8.bdf"), "tiny": FI("alert/4x6.bdf")}
         return self._fonts
@@ -259,6 +260,6 @@ class QuakeScreen:
         if not areas:
             f["jp_r"].draw(c, x, y + 1, (160, 160, 170), "予想震度は推計です")
             f["tiny"].draw(c, x, y + 14, (130, 130, 140), "Tokyo/Yokohama: estimate from M, depth, distance")
-        f["tiny"].draw(c, x, H - 8, (140, 140, 150), f"+{elapsed:.0f}s  NIED Kyoshin Monitor / JMA via Wolfx"[:60])
+        f["jp_s"].draw(c, x, H - 9, (140, 140, 150), f"+{elapsed:.0f}秒  強震モニタ(防災科研)・気象庁")
         draw_border(c, "pulse" if warn else "chase", accent, now)
         return "done" if elapsed > 240 else None
