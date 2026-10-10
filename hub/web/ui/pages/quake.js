@@ -47,7 +47,7 @@ export const Quake = {
   },
   template: `<div class="page">
     <div class="page-head"><div class="grow"><h1>Japan earthquake early warning</h1>
-      <p>Optional. Listens live to the Japan Meteorological Agency's earthquake early warnings (via Wolfx) and intensity reports (via P2PQuake). When a quake passes your thresholds — with extra attention to Tokyo and Yokohama — the whole wall switches to an EEW screen styled after NIED's Kyoshin Monitor: every strong-motion sensor as a live dot, the P and S waves spreading out, and a countdown to the S wave in Tokyo and Yokohama.</p></div>
+      <p>Optional. Listens live to the Japan Meteorological Agency's earthquake early warnings (via Wolfx) and intensity reports (via P2PQuake). When a quake passes your thresholds — with extra attention to Tokyo and Yokohama — the whole wall switches to an EEW screen in the theme you pick below: every strong-motion sensor (NIED Kyoshin Monitor) as a live dot, the P and S waves spreading out, and every major city as it is reached, with a shindo icon on the map, its predicted intensity, live reading and S-wave countdown.</p></div>
       <Toggle v-model="q.enabled"/></div>
 
     <div class="two-col">
