@@ -150,7 +150,7 @@ export const Alerts = {
               <button class="btn sm" :class="{primary: !layoutFilter}" @click="layoutFilter = ''">All</button>
               <button v-for="(lab, id) in cat.layouts" :key="id" class="btn sm" :class="{primary: layoutFilter === id}" @click="layoutFilter = id">{{ lab }}</button>
             </div>
-            <div class="theme-grid">
+            <div class="theme-grid dense">
               <button v-for="th in themes" :key="th.id" class="theme-card" :class="{on: a.theme === th.id}" @click="a.theme = th.id">
                 <img :src="thumb(th.id)" loading="lazy" alt="">
                 <span>{{ th.name }}</span><small class="faint">{{ th.description }}</small>
