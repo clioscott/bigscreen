@@ -55,13 +55,15 @@ def fetch(bbox, types, lang="en"):
                 "short_name": p.get(f"alert_short_name_{lang}") or p.get("alert_short_name_en"),
                 "status": p.get("status_en"), "colour": p.get("risk_colour_en"),
                 "impact": p.get("impact_en"), "confidence": p.get("confidence_en"),
-                "text": text, "regions": [],
+                "text": text, "regions": [], "geometries": [],
                 "published": _t(p.get("publication_datetime")), "expires": expires,
                 "valid": _t(p.get("validity_datetime")), "event_end": _t(p.get("event_end_datetime")),
             }
         region = (p.get(f"feature_name_{lang}") or p.get("feature_name_en") or "").strip()
         if region and region not in a["regions"]:
             a["regions"].append(region)
+            if feat.get("geometry"):
+                a["geometries"].append(feat["geometry"])
     alerts = sorted(merged.values(), key=lambda a: (SEVERITY.get(a["type"], 9), -(a["published"] or 0)))
     return alerts
 
@@ -89,16 +91,47 @@ def run(cfg):
     types = acfg.get("types") or DEFAULT_TYPES
     alerts = fetch(bbox, types, acfg.get("language", "en"))
     home = (acfg.get("home_city") or "Richmond").strip()
-    from display.modules.alert_brief import mentions
+    from display.modules.alert_brief import HAZARD_INFO, hazard_of, mentions
+    allowed = set(acfg.get("hazards") or [h for h, _, _ in HAZARD_INFO])
+    for a in alerts:
+        a["hazard"] = hazard_of(a)
+    skipped = [a for a in alerts if a["hazard"] not in allowed]
+    alerts = [a for a in alerts if a["hazard"] in allowed]
+    for a in skipped:
+        print(f"skipped ({a['hazard']} off): {a['name']}", flush=True)
     for a in alerts:
         a["home"] = mentions(a, home)
     alerts.sort(key=lambda a: not a["home"])                  # the wall's own city first (stable: severity order kept)
+    # maps: each alert's zones over Core Metro / Lower Mainland, plus one for the built-in test alert
+    from hub.weather import alertmap
+    metas = []
+    for a in alerts:
+        try:
+            meta = alertmap.render(a, cfg, home)
+        except Exception as e:
+            print(f"map for {a['name']}: {e}", flush=True)
+            meta = None
+        a.pop("geometries", None)
+        if meta:
+            a["map"] = meta
+            metas.append(meta)
+    sample_map = None
+    if acfg.get("show_map", True) is not False:
+        try:
+            from display.modules.weather_alert import SAMPLE
+            from display.modules.alert_brief import cities as _cities
+            sample_map = alertmap.render_sample(cfg, _cities(SAMPLE["regions"]), home)
+            if sample_map:
+                metas.append(sample_map)
+        except Exception as e:
+            print(f"sample map: {e}", flush=True)
+    alertmap.prune(metas)
     atomic_write_json(paths.DATA_DIR / "alerts.json", {
-        "updated_utc": time.time(), "area": label, "bbox": bbox, "alerts": alerts})
+        "updated_utc": time.time(), "area": label, "bbox": bbox, "alerts": alerts, "sample_map": sample_map})
     for a in alerts:
         print(f"{'HOME' if a['home'] else 'nearby'} {a['type'].upper()}: {a['name']} — {', '.join(a['regions'])[:120]}", flush=True)
     return {"ok": True, "message": f"{len(alerts)} alert(s) in effect" if alerts else "no alerts in effect",
-            "alerts": [f"{a['name']} ({a['type']})" for a in alerts], "files": ["alerts.json"]}
+            "alerts": [f"{a['name']} ({a['type']})" for a in alerts], "files": ["alerts.json", "alertmaps/"]}
 
 
 if __name__ == "__main__":

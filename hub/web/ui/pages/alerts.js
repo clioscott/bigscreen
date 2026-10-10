@@ -109,6 +109,13 @@ export const Alerts = {
       on ? s.add(id) : s.delete(id);
       a.value.types = TYPES.map((x) => x.id).filter((x) => s.has(x));
     };
+    const hazards = computed(() => a.value.hazards || (cat.value.hazards || []).map((x) => x.id));
+    const toggleHazard = (id, on) => {
+      const all = (cat.value.hazards || []).map((x) => x.id);
+      const cur = new Set(hazards.value);
+      on ? cur.add(id) : cur.delete(id);
+      a.value.hazards = all.filter((x) => cur.has(x));
+    };
     const areas = computed(() => Object.entries(store.draft.modules.weather_maps?.areas || {}));
     const areaId = computed({
       get: () => a.value.area_id || (store.draft.modules.weather_maps?.areas?.metro ? "metro" : "core_metro"),
@@ -169,7 +176,7 @@ export const Alerts = {
     const revealAt = computed(() => (tileT.value % 12) * 0.3);               // replays the reveal every few seconds
     const themeOf = computed(() => (cat.value.themes || []).find((x) => x.id === a.value.theme) || {});
     const opts = (dict) => [{ value: "", label: "Theme" }, ...Object.entries(dict || {}).map(([value, label]) => ({ value, label }))];
-    return { onWall, pushLive, DENSITY, optImg, borderAt, revealAt, themeOf, tour, tourSec, tourTheme, startTour, stepTour, stopTour, useTour, tourWall, ids, a, cat, live, shown, onLoaded, tl, t, playing, page, jump, layoutFilter, thumbsOn, themes, thumb, current,
+    return { hazards, toggleHazard, onWall, pushLive, DENSITY, optImg, borderAt, revealAt, themeOf, tour, tourSec, tourTheme, startTour, stepTour, stopTour, useTour, tourWall, ids, a, cat, live, shown, onLoaded, tl, t, playing, page, jump, layoutFilter, thumbsOn, themes, thumb, current,
       TYPES, DETAIL, opts, types, toggleType, areas, areaId, setOpt, resetLook, entry, addToRotation, show, stop,
       when, typeColour, ago, fontName };
   },
@@ -320,6 +327,8 @@ export const Alerts = {
           <Field label="Area" hint="Alerts for any forecast region touching this map area (Lower Mainland catches nearby alerts too)">
             <select class="input" v-model="areaId"><option v-for="[id, ar] in areas" :key="id" :value="id">{{ ar.label }}</option></select></Field>
           <ToggleRow v-for="x in TYPES" :key="x.id" :modelValue="types.includes(x.id)" @update:modelValue="v => toggleType(x.id, v)" :label="x.label" :hint="x.hint"/>
+          <div class="section-title" style="margin-top:6px">Kinds of weather</div>
+          <ToggleRow v-for="hz in cat.hazards" :key="hz.id" :modelValue="hazards.includes(hz.id)" @update:modelValue="v => toggleHazard(hz.id, v)" :label="hz.label" :hint="hz.hint"/>
         </div></div>
 
         <div class="card"><div class="card-head"><Icon name="Repeat" :size="15"/><h3>In the rotation</h3></div><div class="card-body stack">

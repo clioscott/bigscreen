@@ -292,3 +292,21 @@ def mentions(alert, place):
         if p in r.lower():
             return True
     return any(p == c.lower() or p in c.lower() for c in cities(alert.get("regions") or []))
+
+
+# Hazard groups for the control panel's toggles, with the ECCC alerts each one covers.
+HAZARD_INFO = [
+    ("rain", "Rain", "rainfall warning, atmospheric river"),
+    ("snow", "Snow & winter storms", "snowfall, snow squall, blowing snow, winter storm, blizzard warnings"),
+    ("freezing", "Freezing rain & ice", "freezing rain, freezing drizzle, flash freeze, ice pellets"),
+    ("wind", "Wind", "wind, arctic outflow, hurricane, tropical storm warnings"),
+    ("thunder", "Thunderstorms & hail", "severe thunderstorm watches and warnings, hail"),
+    ("tornado", "Tornadoes", "tornado watches and warnings"),
+    ("flood", "Coastal flooding & storm surge", "storm surge, coastal flooding, high water"),
+    ("heat", "Heat", "heat warnings, humidex"),
+    ("cold", "Extreme cold", "extreme cold, wind chill"),
+    ("frost", "Frost", "frost advisories"),
+    ("fog", "Fog", "fog advisories, freezing fog"),
+    ("smoke", "Air quality & smoke", "special air quality statements, smoke, dust"),
+    ("general", "Other special weather statements", "special weather statements that don't fit a group above"),
+]

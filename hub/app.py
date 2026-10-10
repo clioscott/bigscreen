@@ -95,6 +95,7 @@ def alerts_now():
             "palettes": {k: {"name": v["name"], "swatch": [hexc(v["bg"]), hexc(v["strong"]), hexc(v["amount"]), hexc(v["advice"])]}
                          for k, v in PALETTES.items()},
             "families": {k: v["name"] for k, v in FAMILIES.items()},
+            "hazards": [{"id": h, "label": l, "hint": e} for h, l, e in __import__("display.modules.alert_brief", fromlist=["x"]).HAZARD_INFO],
             "fonts": ["alert/" + f for f in fonts]}
 
 
