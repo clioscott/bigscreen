@@ -32,6 +32,10 @@ def font(rel):
             mask, top, _ = f.f.text_mask(to_font(rel, "漢字あア"))
             f.asc, f.h = -top, mask.shape[0]
             f.line = f.h + 1
+        mask, top, _ = f.f.text_mask("0123456789")
+        if mask.shape[0] > f.h:                     # digit-only fonts (seven-segment): measure the digits
+            f.asc, f.h = -top, mask.shape[0]
+            f.line = f.h + 1
         _FI[rel] = f
     return _FI[rel]
 
