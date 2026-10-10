@@ -6,6 +6,9 @@ const STATUSES = [{ value: "all", label: "All" }, { value: "unreviewed", label: 
   { value: "dropped", label: "Dropped" }, { value: "candidate", label: "New candidates" }];
 const COLOURS = [{ value: "ffffff", label: "White" }, { value: "ffc040", label: "Amber" }, { value: "50ff80", label: "Green" },
   { value: "ff5050", label: "Red" }, { value: "60c0ff", label: "Blue" }];
+const SIZES = [{ value: "text", label: "All text (≤ 24 px)" }, { value: "s", label: "≤ 8" }, { value: "m", label: "9–12" },
+  { value: "l", label: "13–16" }, { value: "xl", label: "17–24" }, { value: "num", label: "Big numerals / oversize" }, { value: "all", label: "Everything" }];
+const SIZE_RANGE = { text: [0, 24], s: [0, 8], m: [9, 12], l: [13, 16], xl: [17, 24], num: [25, 999], all: [0, 999] };
 const SORTS = [{ value: "size", label: "Size" }, { value: "family", label: "Family" }, { value: "name", label: "Name" }];
 
 export const Fonts = {
@@ -19,7 +22,7 @@ export const Fonts = {
     const fg = ref("ffffff");
     const zoom = ref(2);
     const script = ref("all"), status = ref("unreviewed"), sort = ref("size"), q = ref(""), usedOnly = ref(false);
-    const minH = ref(0), maxH = ref(40);
+    const size = ref("text");
     const compare = ref([]);
     const review = ref(-1);              // index into `shown` while reviewing one by one
     const mirror = ref(true);
@@ -41,7 +44,7 @@ export const Fonts = {
         (script.value === "all" || f.script === script.value) &&
         (status.value === "all" || verdict(f) === status.value) &&
         (!usedOnly.value || f.used_by.length) &&
-        f.height >= minH.value && f.height <= maxH.value &&
+        (size.value === "num" ? (f.height > 24 || f.tags.includes("big numerals")) : f.height >= SIZE_RANGE[size.value][0] && f.height <= SIZE_RANGE[size.value][1]) &&
         (!needle || (f.path + " " + f.family + " " + f.origin + " " + f.tags.join(" ")).toLowerCase().includes(needle)));
       const key = { size: (f) => [f.height, f.family, f.name], family: (f) => [f.family, f.height, f.name], name: (f) => [f.name] }[sort.value];
       return out.sort((a, b) => { const ka = key(a), kb = key(b); for (let i = 0; i < ka.length; i++) { if (ka[i] < kb[i]) return -1; if (ka[i] > kb[i]) return 1; } return 0; });
@@ -100,12 +103,13 @@ export const Fonts = {
     onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
 
     const statusClass = (f) => ({ approved: "ok", dropped: "bad", candidate: "warn" }[verdict(f)] || "");
-    return { all, shown, counts, latin, jp, fg, zoom, script, status, sort, q, usedOnly, minH, maxH, compare, review, mirror, current,
+    return { all, shown, counts, latin, jp, fg, zoom, script, status, sort, q, usedOnly, size, SIZES, compare, review, mirror, current,
       SCRIPTS, STATUSES, COLOURS, SORTS, verdict, img, set, wall, back, toggleCompare, startReview, step, judge, statusClass, samples };
   },
   template: `<div class="page">
     <div class="page-head"><div class="grow"><h1>Fonts</h1>
-      <p>Every bitmap font on the wall, plus new candidates nothing uses yet. Preview them with your own text, show any of them on the wall, and mark each one <b>approved</b> or <b>dropped</b>. Save keeps the verdicts; the weather-alert and Japan EEW themes get redone with approved fonts only.</p></div>
+      <p>Every bitmap font on the wall, plus new candidates nothing uses yet. Preview them with your own text, show any of them on the wall, and mark each one <b>approved</b> or <b>dropped</b>. Save keeps the verdicts; the weather-alert and Japan EEW themes get redone with approved fonts only.
+      Every preview is the font at its native size, one font pixel per LED — never scaled; "Zoom" only magnifies the picture in your browser.</p></div>
       <div class="row" style="gap:6px; flex-wrap:wrap">
         <span class="pill" style="color:var(--ok, #4ade80)">{{ counts.approved }} approved</span>
         <span class="pill" style="color:var(--bad, #f87171)">{{ counts.dropped }} dropped</span>
@@ -121,10 +125,10 @@ export const Fonts = {
         <Field label="Verdict"><Seg v-model="status" :options="STATUSES"/></Field>
         <Field label="Sort by"><Seg v-model="sort" :options="SORTS"/></Field>
       </div>
+      <Field label="Size (glyph height in LED pixels)"><Seg v-model="size" :options="SIZES"/></Field>
       <div class="row" style="flex-wrap:wrap; gap:14px; align-items:flex-end">
         <Field label="Colour"><Seg v-model="fg" :options="COLOURS"/></Field>
         <Field label="Zoom"><Seg v-model="zoom" :options="[{value:1,label:'1×'},{value:2,label:'2×'},{value:3,label:'3×'}]"/></Field>
-        <Field label="Height (px)"><div class="row" style="gap:6px"><input class="input" type="number" v-model.number="minH" style="width:70px"> – <input class="input" type="number" v-model.number="maxH" style="width:70px"></div></Field>
         <Field label="Search"><input class="input" v-model="q" placeholder="name, family, tag…" style="width:200px"></Field>
         <ToggleRow v-model="usedOnly" label="Only fonts in use"/>
       </div>

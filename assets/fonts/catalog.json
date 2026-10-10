@@ -1585,8 +1585,7 @@
   "origin": "X.Org JIS misc",
   "licence": "public domain",
   "tags": [
-   "japanese",
-   "big"
+   "japanese"
   ]
  },
  "candidates/jp-k12.bdf": {
@@ -2152,38 +2151,6 @@
    "terminal"
   ]
  },
- "candidates/ter-u28b.bdf": {
-  "family": "Terminus",
-  "origin": "Tecate/bitmap-fonts collection",
-  "licence": "OFL",
-  "tags": [
-   "terminal"
-  ]
- },
- "candidates/ter-u28n.bdf": {
-  "family": "Terminus",
-  "origin": "Tecate/bitmap-fonts collection",
-  "licence": "OFL",
-  "tags": [
-   "terminal"
-  ]
- },
- "candidates/ter-u32b.bdf": {
-  "family": "Terminus",
-  "origin": "Tecate/bitmap-fonts collection",
-  "licence": "OFL",
-  "tags": [
-   "terminal"
-  ]
- },
- "candidates/ter-u32n.bdf": {
-  "family": "Terminus",
-  "origin": "Tecate/bitmap-fonts collection",
-  "licence": "OFL",
-  "tags": [
-   "terminal"
-  ]
- },
  "candidates/tewi-bold-11.bdf": {
   "family": "Tewi",
   "origin": "Tecate/bitmap-fonts collection",
@@ -2238,14 +2205,6 @@
    "classic"
   ]
  },
- "candidates/x11-charB24.bdf": {
-  "family": "Charter Bold",
-  "origin": "X.Org Bitstream 75 dpi",
-  "licence": "X11/MIT",
-  "tags": [
-   "classic"
-  ]
- },
  "candidates/x11-charR12.bdf": {
   "family": "Charter",
   "origin": "X.Org Bitstream 75 dpi",
@@ -2263,14 +2222,6 @@
   ]
  },
  "candidates/x11-charR18.bdf": {
-  "family": "Charter",
-  "origin": "X.Org Bitstream 75 dpi",
-  "licence": "X11/MIT",
-  "tags": [
-   "classic"
-  ]
- },
- "candidates/x11-charR24.bdf": {
   "family": "Charter",
   "origin": "X.Org Bitstream 75 dpi",
   "licence": "X11/MIT",
@@ -2908,14 +2859,6 @@
    "classic"
   ]
  },
- "candidates/x11-utopiaB24.bdf": {
-  "family": "Utopia Bold",
-  "origin": "X.Org Adobe Utopia 75 dpi",
-  "licence": "Adobe free",
-  "tags": [
-   "classic"
-  ]
- },
  "candidates/x11-utopiaR12.bdf": {
   "family": "Utopia",
   "origin": "X.Org Adobe Utopia 75 dpi",
@@ -2933,14 +2876,6 @@
   ]
  },
  "candidates/x11-utopiaR18.bdf": {
-  "family": "Utopia",
-  "origin": "X.Org Adobe Utopia 75 dpi",
-  "licence": "Adobe free",
-  "tags": [
-   "classic"
-  ]
- },
- "candidates/x11-utopiaR24.bdf": {
   "family": "Utopia",
   "origin": "X.Org Adobe Utopia 75 dpi",
   "licence": "Adobe free",
@@ -3049,6 +2984,526 @@
   "licence": "CC0/MIT",
   "tags": [
    "tiny"
+  ]
+ },
+ "candidates/u8-win-crox1c.bdf": {
+  "family": "Crox mono",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-win-crox1cb.bdf": {
+  "family": "Crox mono bold",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-win-crox1h.bdf": {
+  "family": "Crox sans",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-win-crox1hb.bdf": {
+  "family": "Crox sans bold",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-win-crox1t.bdf": {
+  "family": "Crox serif",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-win-crox1tb.bdf": {
+  "family": "Crox serif bold",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-win-crox2c.bdf": {
+  "family": "Crox mono",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-win-crox2cb.bdf": {
+  "family": "Crox mono bold",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-win-crox2h.bdf": {
+  "family": "Crox sans",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-win-crox2hb.bdf": {
+  "family": "Crox sans bold",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-win-crox2t.bdf": {
+  "family": "Crox serif",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-win-crox2tb.bdf": {
+  "family": "Crox serif bold",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-win-crox3c.bdf": {
+  "family": "Crox mono",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-win-crox3cb.bdf": {
+  "family": "Crox mono bold",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-win-crox3h.bdf": {
+  "family": "Crox sans",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-win-crox3hb.bdf": {
+  "family": "Crox sans bold",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-win-crox3t.bdf": {
+  "family": "Crox serif",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-win-crox3tb.bdf": {
+  "family": "Crox serif bold",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-win-crox4h.bdf": {
+  "family": "Crox sans",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-win-crox4hb.bdf": {
+  "family": "Crox sans bold",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-win-crox4t.bdf": {
+  "family": "Crox serif",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-win-crox4tb.bdf": {
+  "family": "Crox serif bold",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-win-crox5h.bdf": {
+  "family": "Crox sans",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-win-crox5hb.bdf": {
+  "family": "Crox sans bold",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-win-crox5t.bdf": {
+  "family": "Crox serif",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-win-crox5tb.bdf": {
+  "family": "Crox serif bold",
+  "origin": "u8g2 (Crox, Windows-style bitmaps)",
+  "licence": "see u8g2",
+  "tags": [
+   "classic",
+   "commercial"
+  ]
+ },
+ "candidates/u8-t0-15-uni.bdf": {
+  "family": "UW ttyp0",
+  "origin": "u8g2 (Uwe Waldmann ttyp0)",
+  "licence": "MIT-like",
+  "tags": [
+   "terminal",
+   "terminal"
+  ]
+ },
+ "candidates/u8-t0-15b-uni.bdf": {
+  "family": "UW ttyp0 bold",
+  "origin": "u8g2 (Uwe Waldmann ttyp0)",
+  "licence": "MIT-like",
+  "tags": [
+   "terminal",
+   "terminal"
+  ]
+ },
+ "candidates/u8-t0-17-uni.bdf": {
+  "family": "UW ttyp0",
+  "origin": "u8g2 (Uwe Waldmann ttyp0)",
+  "licence": "MIT-like",
+  "tags": [
+   "terminal",
+   "terminal"
+  ]
+ },
+ "candidates/u8-t0-17b-uni.bdf": {
+  "family": "UW ttyp0 bold",
+  "origin": "u8g2 (Uwe Waldmann ttyp0)",
+  "licence": "MIT-like",
+  "tags": [
+   "terminal",
+   "terminal"
+  ]
+ },
+ "candidates/u8-7segments-26x42.bdf": {
+  "family": "Seven-segment 26×42",
+  "origin": "u8g2",
+  "licence": "see u8g2",
+  "tags": [
+   "big numerals",
+   "commercial",
+   "digits only"
+  ]
+ },
+ "candidates/u8-7-seg-33x19.bdf": {
+  "family": "Seven-segment 19×33",
+  "origin": "u8g2",
+  "licence": "see u8g2",
+  "tags": [
+   "big numerals",
+   "commercial",
+   "digits only"
+  ]
+ },
+ "candidates/u8-7-seg-41x21.bdf": {
+  "family": "Seven-segment 21×41",
+  "origin": "u8g2",
+  "licence": "see u8g2",
+  "tags": [
+   "big numerals",
+   "commercial",
+   "digits only"
+  ]
+ },
+ "candidates/u8-profont10.bdf": {
+  "family": "ProFont",
+  "origin": "u8g2",
+  "licence": "MIT-style",
+  "tags": [
+   "terminal"
+  ]
+ },
+ "candidates/u8-freedoomr10r.bdf": {
+  "family": "Freedoom",
+  "origin": "u8g2 (Freedoom game font)",
+  "licence": "BSD",
+  "tags": [
+   "video game"
+  ]
+ },
+ "candidates/u8-freedoomr25n.bdf": {
+  "family": "Freedoom digits",
+  "origin": "u8g2 (Freedoom game font)",
+  "licence": "BSD",
+  "tags": [
+   "big numerals",
+   "digits only",
+   "video game"
+  ]
+ },
+ "candidates/u8-victoriamedium-8.bdf": {
+  "family": "Victoria",
+  "origin": "u8g2",
+  "licence": "see u8g2",
+  "tags": []
+ },
+ "candidates/u8-artosserif-8.bdf": {
+  "family": "Artos serif",
+  "origin": "u8g2",
+  "licence": "see u8g2",
+  "tags": []
+ },
+ "candidates/u8-saikyosansbold-8.bdf": {
+  "family": "Saikyo sans",
+  "origin": "u8g2",
+  "licence": "see u8g2",
+  "tags": []
+ },
+ "candidates/u8-tiny5duo.bdf": {
+  "family": "Tiny5 duo",
+  "origin": "u8g2",
+  "licence": "OFL",
+  "tags": [
+   "tiny"
+  ]
+ },
+ "candidates/u8-micro-original.bdf": {
+  "family": "Micro (original)",
+  "origin": "u8g2",
+  "licence": "X11",
+  "tags": [
+   "tiny"
+  ]
+ },
+ "candidates/u8-helvb08-gps.bdf": {
+  "family": "Helvetica GPS",
+  "origin": "u8g2",
+  "licence": "X11",
+  "tags": [
+   "classic"
+  ]
+ },
+ "candidates/jp-u8-b10.bdf": {
+  "family": "efont biwidth",
+  "origin": "u8g2 (/efont/ Unicode)",
+  "licence": "BSD",
+  "tags": [
+   "japanese",
+   "unicode"
+  ]
+ },
+ "candidates/jp-u8-f10.bdf": {
+  "family": "efont fixed",
+  "origin": "u8g2 (/efont/ Unicode)",
+  "licence": "BSD",
+  "tags": [
+   "japanese",
+   "unicode"
+  ]
+ },
+ "candidates/jp-u8-b10-b.bdf": {
+  "family": "efont biwidth bold",
+  "origin": "u8g2 (/efont/ Unicode)",
+  "licence": "BSD",
+  "tags": [
+   "japanese",
+   "unicode"
+  ]
+ },
+ "candidates/jp-u8-f10-b.bdf": {
+  "family": "efont fixed bold",
+  "origin": "u8g2 (/efont/ Unicode)",
+  "licence": "BSD",
+  "tags": [
+   "japanese",
+   "unicode"
+  ]
+ },
+ "candidates/jp-u8-b12.bdf": {
+  "family": "efont biwidth",
+  "origin": "u8g2 (/efont/ Unicode)",
+  "licence": "BSD",
+  "tags": [
+   "japanese",
+   "unicode"
+  ]
+ },
+ "candidates/jp-u8-f12.bdf": {
+  "family": "efont fixed",
+  "origin": "u8g2 (/efont/ Unicode)",
+  "licence": "BSD",
+  "tags": [
+   "japanese",
+   "unicode"
+  ]
+ },
+ "candidates/jp-u8-b12-b.bdf": {
+  "family": "efont biwidth bold",
+  "origin": "u8g2 (/efont/ Unicode)",
+  "licence": "BSD",
+  "tags": [
+   "japanese",
+   "unicode"
+  ]
+ },
+ "candidates/jp-u8-f12-b.bdf": {
+  "family": "efont fixed bold",
+  "origin": "u8g2 (/efont/ Unicode)",
+  "licence": "BSD",
+  "tags": [
+   "japanese",
+   "unicode"
+  ]
+ },
+ "candidates/jp-u8-b14.bdf": {
+  "family": "efont biwidth",
+  "origin": "u8g2 (/efont/ Unicode)",
+  "licence": "BSD",
+  "tags": [
+   "japanese",
+   "unicode"
+  ]
+ },
+ "candidates/jp-u8-f14.bdf": {
+  "family": "efont fixed",
+  "origin": "u8g2 (/efont/ Unicode)",
+  "licence": "BSD",
+  "tags": [
+   "japanese",
+   "unicode"
+  ]
+ },
+ "candidates/jp-u8-b14-b.bdf": {
+  "family": "efont biwidth bold",
+  "origin": "u8g2 (/efont/ Unicode)",
+  "licence": "BSD",
+  "tags": [
+   "japanese",
+   "unicode"
+  ]
+ },
+ "candidates/jp-u8-f14-b.bdf": {
+  "family": "efont fixed bold",
+  "origin": "u8g2 (/efont/ Unicode)",
+  "licence": "BSD",
+  "tags": [
+   "japanese",
+   "unicode"
+  ]
+ },
+ "candidates/jp-u8-b16.bdf": {
+  "family": "efont biwidth",
+  "origin": "u8g2 (/efont/ Unicode)",
+  "licence": "BSD",
+  "tags": [
+   "japanese",
+   "unicode"
+  ]
+ },
+ "candidates/jp-u8-f16.bdf": {
+  "family": "efont fixed",
+  "origin": "u8g2 (/efont/ Unicode)",
+  "licence": "BSD",
+  "tags": [
+   "japanese",
+   "unicode"
+  ]
+ },
+ "candidates/jp-u8-b16-b.bdf": {
+  "family": "efont biwidth bold",
+  "origin": "u8g2 (/efont/ Unicode)",
+  "licence": "BSD",
+  "tags": [
+   "japanese",
+   "unicode"
+  ]
+ },
+ "candidates/jp-u8-f16-b.bdf": {
+  "family": "efont fixed bold",
+  "origin": "u8g2 (/efont/ Unicode)",
+  "licence": "BSD",
+  "tags": [
+   "japanese",
+   "unicode"
+  ]
+ },
+ "candidates/jp-u8-unifont-jp.bdf": {
+  "family": "GNU Unifont (Japanese forms)",
+  "origin": "u8g2 (unifoundry)",
+  "licence": "GPLv2+ / OFL",
+  "tags": [
+   "japanese"
   ]
  }
 }
