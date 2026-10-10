@@ -84,35 +84,56 @@ def restore(payload: dict = Body(...)):
 # --- weather alerts --------------------------------------------------------------
 @app.get("/api/alerts")
 def alerts_now():
-    from display.modules.weather_alert import THEMES
+    """Current alerts plus the alert screen's design catalogue (themes, palettes, type pairings, fonts)."""
+    from display.gfx import ASSETS_DIR
+    from display.modules.alert_themes import FONTSETS, LAYOUTS, PALETTES
+    from display.modules.weather_alert import THEME_LIST
     data = read_json(paths.DATA_DIR / "alerts.json", {}) or {}
-    return {**data, "themes": {k: {"label": v["label"], "title": v["title"], "mode": v["mode"], "flash": v["flash"]}
-                               for k, v in THEMES.items()}}
+    fonts = sorted(p.name for p in (Path(ASSETS_DIR) / "fonts" / "alert").glob("*.bdf"))
+    hexc = lambda c: "#%02x%02x%02x" % c if isinstance(c, tuple) else None
+    return {**data, "themes": THEME_LIST, "layouts": LAYOUTS,
+            "palettes": {k: {"name": v["name"], "swatch": [hexc(v["bg"]), hexc(v["accent"]) or "#d71414", hexc(v["fg"]), hexc(v["hi"])]}
+                         for k, v in PALETTES.items()},
+            "fontsets": {k: v["label"] for k, v in FONTSETS.items()},
+            "fonts": ["alert/" + f for f in fonts]}
+
+
+def _alert_settings(s: str):
+    """Saved alert settings with the editor's unsaved overrides (JSON in ?s=) on top."""
+    import json as _json
+    settings = {**(config.load()["modules"].get("weather_alerts") or {})}
+    if s:
+        try:
+            over = _json.loads(s)
+            if isinstance(over, dict):
+                settings.update(over)
+        except ValueError:
+            raise HTTPException(400, "s must be JSON")
+    return settings
 
 
 @app.get("/api/alerts/preview/{theme}.png")
-def alerts_preview(theme: str, at: float = 4.0, scale: int = 2, real: int = 0, flash: str = "", title: str = "",
-                   speed: float = 0):
-    """A frame of the full-screen alert in one theme, rendered with the display's own code."""
-    from display.modules.weather_alert import THEMES, render_preview
-    if theme not in THEMES:
+def alerts_preview(theme: str, at: float = 4.0, scale: int = 2, real: int = 0, s: str = ""):
+    """A frame of the full-screen alert at ``at`` seconds, rendered with the display's own code."""
+    from display.modules.alert_themes import LEGACY, THEMES
+    from display.modules.weather_alert import render_preview
+    if theme not in THEMES and theme not in LEGACY:
         raise HTTPException(404, "unknown theme")
-    settings = {**(config.load()["modules"].get("weather_alerts") or {})}
-    if flash in ("on", "off"):
-        settings["flash"] = flash == "on"
-    elif flash == "default":
-        settings.pop("flash", None)
-    if title:
-        settings["title"] = title
-    if speed:
-        settings["scroll_px_per_sec"] = speed
     data = read_json(paths.DATA_DIR / "alerts.json", {}) if real else None
-    frame = render_preview(theme, data if data and data.get("alerts") else None, max(0.0, at), settings)
-    s = max(1, min(4, scale))
-    img = Image.fromarray(frame).resize((frame.shape[1] * s, frame.shape[0] * s), Image.NEAREST)
+    frame = render_preview(theme, data if data and data.get("alerts") else None, max(0.0, at), _alert_settings(s))
+    k = max(1, min(4, scale))
+    img = Image.fromarray(frame).resize((frame.shape[1] * k, frame.shape[0] * k), Image.NEAREST)
     bio = io.BytesIO()
     img.save(bio, "PNG", compress_level=1)
-    return Response(bio.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})
+    return Response(bio.getvalue(), media_type="image/png", headers={"Cache-Control": "max-age=60"})
+
+
+@app.get("/api/alerts/timeline")
+def alerts_timeline(real: int = 0, s: str = ""):
+    """When each page of the alert screen starts and how long it holds (for the preview scrubber)."""
+    from display.modules.weather_alert import timeline
+    data = read_json(paths.DATA_DIR / "alerts.json", {}) if real else None
+    return timeline(_alert_settings(s), data if data and data.get("alerts") else None)
 
 
 # --- live consoles ------------------------------------------------------------
