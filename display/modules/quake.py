@@ -87,6 +87,15 @@ def _nearest_station(la, lo):
     return _NEAR[key]
 
 
+def _shade(region, shift=None):
+    """Darken a canvas region in place: ≈ 0.31× (or 1/2**shift) with integer shifts, no float maths."""
+    if shift:
+        region >>= shift
+    else:
+        np.right_shift(region, 2, out=region)
+        region += region >> 2
+
+
 def _rainbow(t, speed=120):
     return tuple(int(v * 255) for v in colorsys.hsv_to_rgb((t * speed % 360) / 360.0, 1, 1))
 
@@ -127,6 +136,24 @@ class _Map:
         y = math.log(math.tan(math.pi / 4 + math.radians(lat) / 2)) * R
         return (x - m["merc"][0]) / m["mpp"], (m["merc"][3] - y) / m["mpp"]
 
+    def dimmed(self, k):
+        """(map, S-tinted map) at brightness k, cached."""
+        k = round(float(k), 2)
+        if k >= 1:
+            return self.img, self.tint
+        hit = self.__dict__.setdefault("_dim", {}).get(k)
+        if hit is None:
+            hit = self._dim[k] = ((self.img * k).astype(np.uint8), (self.tint * k).astype(np.uint8))
+        return hit
+
+    def dmin_row(self, ev):
+        self.dist(ev)
+        return self._dmin[0]
+
+    def dmin_col(self, ev):
+        self.dist(ev)
+        return self._dmin[1]
+
     def dist(self, ev):
         """Epicentral distance (km) of every pixel, cached per event."""
         key = (ev.get("id"), ev["lat"], ev["lon"])
@@ -135,6 +162,7 @@ class _Map:
             p1, l1 = math.radians(ev["lat"]), math.radians(ev["lon"])
             a = np.sin((la - p1) / 2) ** 2 + np.cos(la) * math.cos(p1) * np.sin((lo - l1) / 2) ** 2
             self.d = (6371.0 * 2 * np.arcsin(np.sqrt(np.clip(a, 0, 1)))).astype(np.float32)
+            self._dmin = (self.d.min(axis=1), self.d.min(axis=0))
             self.dist_key = key
         return self.d
 
@@ -308,9 +336,28 @@ class QuakeScreen:
         ww, hh = min(W - x0c, mp.w - (x0c - x0)), min(H - y0c, mp.h - (y0c - y0))
         sub = c.buf[y0c:y0c + hh, x0c:x0c + ww]
         sy_, sx_ = slice(y0c - y0, y0c - y0 + hh), slice(x0c - x0, x0c - x0 + ww)
-        img, tint = mp.img[sy_, sx_], mp.tint[sy_, sx_]
-        base = np.where((d[sy_, sx_] < rs)[..., None], tint, img) if rs > 0 else img     # S-crossed area tinted red
-        sub[:] = base if dim >= 1 else (base * dim).astype(np.uint8)
+        img, tint = mp.dimmed(dim)
+        sub[:] = img[sy_, sx_]
+        rmax = max(rp, rs) + ring_w
+        if rs > 0 or rp > 0:                         # tint (S-crossed area) and rings: only in the fronts' bounding box
+            rows = np.flatnonzero(mp.dmin_row(ev) < rmax)
+            cols = np.flatnonzero(mp.dmin_col(ev) < rmax)
+            if len(rows) and len(cols):
+                r0, r1 = max(rows[0], sy_.start), min(rows[-1] + 1, sy_.stop)
+                c0, c1 = max(cols[0], sx_.start), min(cols[-1] + 1, sx_.stop)
+                if r1 > r0 and c1 > c0:
+                    db = d[r0:r1, c0:c1]
+                    tgt = c.buf[r0 + y0:r1 + y0, c0 + x0:c1 + x0]
+                    if rs > 0:
+                        m = db < rs
+                        tgt[m] = tint[r0:r1, c0:c1][m]
+                    self._ring_box = (db, tgt)
+                else:
+                    self._ring_box = None
+            else:
+                self._ring_box = None
+        else:
+            self._ring_box = None
         # stations: weakest first so strong shaking draws on top
         if self.obs is not None and len(self.obs) == len(mp.sx) and now - self.obs_t < 20:
             key = (name, x0, y0, dot)
@@ -326,9 +373,11 @@ class QuakeScreen:
                 for dx in range(dot):
                     c.buf[ys + dy, xs + dx] = cols
         ring_cols = ring_cols or ((70, 170, 255), (255, 50, 40))
-        for r, col in ((rp, ring_cols[0]), (rs, ring_cols[1])):
-            if r > 0:
-                sub[((d > r - ring_w) & (d < r + ring_w))[sy_, sx_]] = col
+        if self._ring_box is not None:
+            db, tgt = self._ring_box
+            for r, col in ((rp, ring_cols[0]), (rs, ring_cols[1])):
+                if r > 0:
+                    tgt[np.abs(db - r) < ring_w] = col
         ex, ey = mp.project(ev["lat"], ev["lon"])
         on = int(now * 3) % 2 == 0
         for k in range(-4, 5):
@@ -388,7 +437,7 @@ class QuakeScreen:
         c.FillRect(x, y, w, h, Color(*col))
         dark = (0, 0, 0) if cls in _DARK_TEXT else (255, 255, 255)
         f["jp_r" if h >= 40 else "jp_s"].draw(c, x + 3, y + 2, dark, "最大震度")
-        if f[big].h + 12 > h:                                         # short tile: a smaller numeral
+        if h - f[big].h < 8:                                          # short tile: a smaller numeral
             big = "mid"
         s = _jp(cls)
         f[big].draw(c, x + 5, y + h - f[big].h - 3, dark, s[0])
@@ -426,9 +475,38 @@ class QuakeScreen:
                     return st, cols, True
         return self.CITY_STYLES[-1], 2 if w >= 150 else 1, False
 
+    def _layer_cached(self, c, key, x, y, w, h, draw):
+        """Like _blit_cached for components drawn *over* something that moves (the map): the component is
+        rendered once per key onto a sentinel colour and kept as (mask, pixels), then composited."""
+        x0, y0, x1, y1 = max(0, x), max(0, y), min(W, x + w), min(H, y + h)
+        slot = (x, y, w, h)
+        hit = self._pix.get(slot)
+        if hit is None or hit[0] != key:
+            region = c.buf[y0:y1, x0:x1]
+            keep = region.copy()
+            region[:] = (1, 2, 3)
+            draw()
+            px = region.copy()
+            mask = np.any(px != (1, 2, 3), axis=2)
+            region[:] = keep
+            hit = self._pix[slot] = (key, mask, px)
+        _, mask, px = hit
+        c.buf[y0:y1, x0:x1][mask] = px[mask]
+
     def comp_cities(self, c, ev, now, x, y, w, h, level=0, timebar=False, eng=False):
         """The affected-city list: shindo icon, name, live reading, S countdown. As cities join it shrinks
         its rows, then splits into two columns, then scrolls smoothly through the rest."""
+        cs = self.cities(ev, now)
+        if not timebar and len(cs) <= 2 * (h // 9):                  # static enough to cache: no scrolling, no bars
+            key = (self._theme_name, eng, level, int(now * 2) % 2, self.obs_t,
+                   tuple((k["name"], k["class"], round(k["s_in"]) if k["s_in"] > 0 else None) for k in cs))
+            fits = self.city_style(len(cs), w, h, level)[2]
+            if fits:
+                return self._layer_cached(c, key, x, y, w, h,
+                                          lambda: self._comp_cities(c, ev, now, x, y, w, h, level, timebar, eng))
+        self._comp_cities(c, ev, now, x, y, w, h, level, timebar, eng)
+
+    def _comp_cities(self, c, ev, now, x, y, w, h, level=0, timebar=False, eng=False):
         f = self.fonts()
         cs = self.cities(ev, now)
         if not cs:
@@ -667,14 +745,14 @@ def _fever(s, c, ev, now, el, accent):
     s.comp_map(c, ev, now, "japan_wide", shake=shake, ring_cols=(_rainbow(now, 300), (255, 0, 160)))
     s.comp_ticker(c, ev, now, 0, 0, W, 13, _rainbow(now, 90), (0, 0, 0), "jp", 110)
     # left: big flashing max shindo, ranking, graph
-    c.buf[14:H - 14, 0:132] = (c.buf[14:H - 14, 0:132] * 0.3).astype(np.uint8)
+    _shade(c.buf[14:H - 14, 0:132])
     s.comp_max(c, ev, 3, 16, 56, 44, spin=el < 5, now=now)
     s.comp_histogram(c, 62, 16, 68, 44, label="")
     s.comp_ranking(c, 3, 63, 126, 8)
     s.comp_graph(c, 3, H - 46, 126, 31, label="")
     # right: countdown + cities
     rx = W - 128
-    c.buf[14:H - 14, rx:W] = (c.buf[14:H - 14, rx:W] * 0.3).astype(np.uint8)
+    _shade(c.buf[14:H - 14, rx:W])
     s.comp_next(c, ev, now, rx + 2, 16, 124, 44, "arcade")
     s.comp_cities(c, ev, now, rx + 2, 63, 124, H - 79, level=1)
     # centre: flashing banner
@@ -701,7 +779,7 @@ def _broadcast(s, c, ev, now, el, accent):
     f["jp_r"].draw(c, 6, 4 + f["jp_big"].line, (255, 255, 255), "強い揺れに警戒" if ev.get("warn") else "揺れに注意")
     f["jp_s"].draw(c, bw - 6 - f["jp_s"].width("気象庁"), bh - 10, (255, 220, 220), "気象庁")
     px = W - 128
-    c.buf[0:H - 18, px:W] = (c.buf[0:H - 18, px:W] * 0.25).astype(np.uint8)
+    _shade(c.buf[0:H - 18, px:W], 2)
     y = s.comp_hypo(c, ev, px + 4, 3, "jp", "jp_s")
     s.comp_max(c, ev, px + 4, y + 1, 50, 36)
     s.comp_next(c, ev, now, px + 57, y + 1, 68, 36, "key")
@@ -747,7 +825,7 @@ def _terminal(s, c, ev, now, el, accent):
         yy += sf.line
     if int(now * 2) % 2:
         c.FillRect(x, min(yy, H - 10), 5, 7, Color(*green))
-    c.buf[1::2, :] = (c.buf[1::2, :] * 0.75).astype(np.uint8)
+    c.buf[1::2, :] -= c.buf[1::2, :] >> 2
     draw_border(c, "scanbars", green, now)
 
 

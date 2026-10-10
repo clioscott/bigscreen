@@ -306,13 +306,16 @@ def draw_border(c, kind, sev, t):
             c.FillRect(x if dx > 0 else x - L, y if dy > 0 else y - 3, L, 3, col)
             c.FillRect(x if dx > 0 else x - 3, y if dy > 0 else y - L, 3, L, col)
     elif kind == "lights":
-        ys, xs = _perimeter(1)
-        sel = np.arange(0, len(xs), 6)
-        lit = ((np.arange(len(sel)) + int(t * 10)) % 3) == 0
-        dimc = tuple(int(v) for v in sev * 0.4)
-        for j, s in enumerate(sel):
-            y, x = ys[s], xs[s]
-            c.buf[max(0, y - 1):y + 1, max(0, x - 1):x + 1] = (255, 240, 180) if lit[j] else dimc
+        if "lights" not in _PERIM:                    # each bulb's 2×2 pixels, as flat index arrays
+            ys, xs = _perimeter(1)
+            sel = np.arange(0, len(xs), 6)
+            by = np.stack([np.maximum(0, ys[sel] - 1), ys[sel], np.maximum(0, ys[sel] - 1), ys[sel]], 1)
+            bx = np.stack([np.maximum(0, xs[sel] - 1), np.maximum(0, xs[sel] - 1), xs[sel], xs[sel]], 1)
+            _PERIM["lights"] = (by, bx, np.arange(len(sel)))
+        by, bx, idx = _PERIM["lights"]
+        lit = ((idx + int(t * 10)) % 3) == 0
+        c.buf[by[~lit], bx[~lit]] = (sev * 0.4).astype(np.uint8)
+        c.buf[by[lit], bx[lit]] = (255, 240, 180)
     elif kind == "comet":
         ys, xs = _perimeter(0)
         ys1, xs1 = _perimeter(1)
