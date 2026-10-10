@@ -16,6 +16,8 @@ def main():
     sched = Scheduler()
     web.scheduler = sched
     sched.start()
+    from hub import quake
+    quake.start()                              # Japan EEW listener (does nothing visible unless enabled)
     log(f"hub up — config r{cfg.get('revision')}, state {paths.STATE_DIR}, panel :{port}")
     uvicorn.run(web.app, host="0.0.0.0", port=port, log_level="warning")
 

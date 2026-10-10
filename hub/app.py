@@ -155,6 +155,46 @@ def alerts_timeline(real: int = 0, s: str = ""):
     return timeline(dict(_alert_settings(s), _data_dir=str(paths.DATA_DIR)), data)
 
 
+# --- Japan earthquake early warning ----------------------------------------------
+@app.get("/api/quake")
+def quake_state():
+    from hub import quake
+    return {"settings": quake.settings(), "connected": quake.state["connected"],
+            "last_message": quake.state["last_message"], "events": quake.state["events"][:10],
+            "errors": quake.state["errors"], "pushed": quake.state["pushed"],
+            "scenarios": {k: v["label"] for k, v in quake.SCENARIOS.items()}}
+
+
+@app.post("/api/quake/test/{name}")
+def quake_test(name: str):
+    from hub import quake
+    ev = quake.test(name)
+    return {"ok": True, "event": ev, "pushed": quake.state["pushed"]}
+
+
+@app.get("/api/quake/preview.png")
+def quake_preview(name: str = "tokyo_bay", at: float = 20, scale: int = 2):
+    """A frame of the EEW screen for a test scenario ``at`` seconds after origin."""
+    import time as _t
+    from hub import quake
+    from display.gfx import Canvas
+    from display.modules.quake import QuakeScreen
+    quake.ensure_map()
+    sc = quake.SCENARIOS.get(name) or quake.SCENARIOS["tokyo_bay"]
+    now = _t.time()
+    ev = {"id": "preview", "origin": now - at, "lat": sc["lat"], "lon": sc["lon"], "depth": sc["depth"], "mag": sc["mag"],
+          "hypocenter": sc["hypocenter"], "max": sc["max"], "warn": True, "serial": 1, "test": True}
+    scr = QuakeScreen(str(paths.DATA_DIR))
+    scr.set_event(ev)
+    c = Canvas(448, 192)
+    scr.draw(c, (0, 0, 448, 192), {}, True, now=now)
+    k = max(1, min(4, scale))
+    img = Image.fromarray(c.buf).resize((448 * k, 192 * k), Image.NEAREST)
+    bio = io.BytesIO()
+    img.save(bio, "PNG")
+    return Response(bio.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
 # --- live consoles ------------------------------------------------------------
 @app.get("/api/logs")
 def logs(hub: int = 0, display: int = 0):
