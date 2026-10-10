@@ -656,7 +656,8 @@ class AlertScreen:
         x = 8 + icon(c, ctx, 8, 2 + (band - 16) // 2, 1, (0, 0, 0)) + 6
         x += f.draw(c, x, 2 + (band - f.h) // 2, ctx.sev, title_text(ctx)) + 10
         lab = U(ctx, "AFFECTED AREA")
-        chip(c, x, 2 + (band - k_f.h - 2) // 2, lab, k_f, ctx.sev, (0, 0, 0))
+        if x + k_f.width(lab) + 6 < W - 44:                     # only when the title leaves room
+            chip(c, x, 2 + (band - k_f.h - 2) // 2, lab, k_f, ctx.sev, (0, 0, 0))
         b = ctx.b
         info = U(ctx, " · ".join(v for v in (f"until {b['until']}" if b["until"] else "", b["amount"]) if v))
         sf.draw(c, 8, band + 1, ctx.pal["strong"], info)
