@@ -203,7 +203,7 @@ export const MapEditor = {
           <Field :label="isFc ? 'Forecast the next' : isAcc ? 'Accumulate the last' : 'Show the last'"
             :hint="isFc ? 'HRDPS forecasts run 48 h ahead on a 2.5 km grid.' : usesRadar ? 'Radar history builds up on the server (Environment Canada keeps only 3 h).' : ''">
             <Slider v-model="hours" :min="0.5" :max="48" :step="0.5" :format="v => (v % 1 ? v.toFixed(1) : v) + ' h'"/></Field>
-          <div class="callout info" v-if="archiveNote" style="font-size:12.5px"><Icon name="Info" :size="15"/>{{ archiveNote }}</div>
+          <div class="callout info" v-if="archiveNote && usesRadar" style="font-size:12.5px"><Icon name="Info" :size="15"/>{{ archiveNote }}</div>
           <div class="fields">
             <Field label="One frame every"><select class="input" v-model.number="t.step_min"><option v-for="m in STEP_OPTIONS" :key="m" :value="m">{{ dur(m * 60) }}</option></select></Field>
             <Field label="Playback speed"><Stepper v-model="t.fps" :min="1" :max="30" unit="fps"/></Field>
