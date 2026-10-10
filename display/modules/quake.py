@@ -44,7 +44,8 @@ BASE_FONTS = {"jp": ("alert/jp-mplus12b.bdf", 1), "jp_r": ("alert/jp-k8x12.bdf",
               "jp_big": ("alert/jp-k8x12.bdf", 2), "big": ("alert/10x20.bdf", 2), "huge": ("alert/10x20.bdf", 4),
               "key": ("alert/7x14B.bdf", 1), "num": ("alert/6x13B.bdf", 1), "small": ("alert/5x8.bdf", 1),
               "tiny": ("alert/4x6.bdf", 1), "arcade": ("alert/unscii-8-mcr.bdf", 2), "arcade1": ("alert/unscii-8-mcr.bdf", 1),
-              "term": ("alert/t0-12b-uni.bdf", 1)}
+              "term": ("alert/t0-12b-uni.bdf", 1),
+              "mid": ("alert/spleen-12x24.bdf", 1)}
 _FONT_CACHE = {}
 _MAP_CACHE = {}
 
@@ -366,6 +367,8 @@ class QuakeScreen:
         c.FillRect(x, y, w, h, Color(*col))
         dark = (0, 0, 0) if cls in _DARK_TEXT else (255, 255, 255)
         f["jp_r" if h >= 40 else "jp_s"].draw(c, x + 3, y + 2, dark, "最大震度")
+        if f[big].h + 12 > h:                                         # short tile: a smaller numeral
+            big = "mid"
         s = _jp(cls)
         f[big].draw(c, x + 5, y + h - f[big].h - 3, dark, s[0])
         if len(s) > 1:
