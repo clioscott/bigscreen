@@ -132,6 +132,9 @@ def _make_handler(app):
                 else:
                     app.screen.engines["right"].set_override("quake", float(body.get("duration_sec") or 150), {})
                 return self._json({"ok": True})
+            if u.path == "/quake_obs":
+                app.screen.quake.set_obs(body.get("v") or "", float(body.get("t") or 0))
+                return self._json({"ok": True})
             if u.path == "/restart":
                 app.restart_requested = True
                 return self._json({"ok": True})

@@ -186,6 +186,8 @@ def quake_preview(name: str = "tokyo_bay", at: float = 20, scale: int = 2):
           "hypocenter": sc["hypocenter"], "max": sc["max"], "warn": True, "serial": 1, "test": True}
     scr = QuakeScreen(str(paths.DATA_DIR))
     scr.set_event(ev)
+    from common import kmoni
+    scr.set_obs(kmoni.encode(kmoni.synthetic(ev, now)), now)
     c = Canvas(448, 192)
     scr.draw(c, (0, 0, 448, 192), {}, True, now=now)
     k = max(1, min(4, scale))

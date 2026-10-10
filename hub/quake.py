@@ -133,6 +133,7 @@ def handle(ev, force=False):
     OUT.mkdir(parents=True, exist_ok=True)
     atomic_write_json(OUT / "event.json", ev)
     dur = float(st.get("duration_sec") or 150)
+    _activate(ev, dur)
     try:
         code, body = pi.display_post("/quake", {"event": ev, "duration_sec": dur}, timeout=3)
         state["pushed"] = {"at": time.time(), "id": ev.get("id"), "ok": code < 400, "reply": body}
@@ -213,3 +214,69 @@ def test(name):
           "final": False, "cancel": False, "training": False, "assumption": False, "test": True, "areas": []}
     handle(ev, force=True)
     return ev
+
+
+# ---------------------------------------------------------------------------- live station readings (NIED)
+KMONI = "http://www.kmoni.bosai.go.jp"
+_active = {"event": None, "until": 0.0}
+_kmoni_offset = {"at": 0.0, "delta": 3.0}          # NIED image time = now - delta (their clock/latency)
+
+
+def _kmoni_time(session):
+    """The newest Kyoshin Monitor image time (JST), re-synced once a minute."""
+    now = time.time()
+    if now - _kmoni_offset["at"] > 60:
+        try:
+            r = session.get(f"{KMONI}/webservice/server/pros/latest.json", timeout=5)
+            latest = datetime.strptime(r.json()["latest_time"], "%Y/%m/%d %H:%M:%S").replace(tzinfo=JST).timestamp()
+            _kmoni_offset.update(at=now, delta=max(1.0, now - latest))
+        except Exception:
+            _kmoni_offset["at"] = now
+    return datetime.fromtimestamp(now - _kmoni_offset["delta"], JST)
+
+
+def _kmoni_values(session):
+    import io as _io
+    import numpy as np
+    from PIL import Image
+    from common import kmoni
+    t = _kmoni_time(session)
+    url = f"{KMONI}/data/map_img/RealTimeImg/jma_s/{t:%Y%m%d}/{t:%Y%m%d%H%M%S}.jma_s.gif"
+    r = session.get(url, timeout=4)
+    if r.status_code != 200:
+        return None, t
+    rgba = np.asarray(Image.open(_io.BytesIO(r.content)).convert("RGBA"))
+    return kmoni.decode_image(rgba), t
+
+
+def _monitor():
+    """Once a second while an event is on the wall: station readings → display (real or simulated)."""
+    import requests
+    from common import kmoni
+    session = requests.Session()
+    session.headers["User-Agent"] = "BigScreen/2.0 (personal display; 1 req/s during an earthquake only)"
+    while True:
+        t0 = time.time()
+        ev = _active["event"]
+        if ev and t0 < _active["until"]:
+            try:
+                if ev.get("test"):
+                    vals, when = kmoni.synthetic(ev, t0), datetime.fromtimestamp(t0, JST)
+                else:
+                    vals, when = _kmoni_values(session)
+                if vals:
+                    pi.display_post("/quake_obs", {"t": when.timestamp(), "v": kmoni.encode(vals)}, timeout=2)
+                    state["obs_at"] = t0
+            except Exception as e:
+                state["obs_error"] = str(e)[:160]
+        time.sleep(max(0.2, 1.0 - (time.time() - t0)))
+
+
+_monitor_started = []
+
+
+def _activate(ev, dur):
+    _active.update(event=ev, until=time.time() + dur)
+    if not _monitor_started:
+        threading.Thread(target=_monitor, name="quake-monitor", daemon=True).start()
+        _monitor_started.append(True)

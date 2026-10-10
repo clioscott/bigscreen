@@ -1,13 +1,14 @@
-"""Japan EEW screen: a full-wall takeover in the style of Japanese EEW viewer apps.
+"""Japan EEW screen: a full-wall takeover in the style of Japanese EEW viewer apps (NIED Kyoshin Monitor).
 
-Left: a dark map of Japan (rendered by the hub, data/quake/japan.bin) with the epicentre, the
-P-wave (blue) and S-wave (red) fronts expanding at their real speeds, the area the S wave has
-already crossed tinted red, and an estimated intensity square per prefecture (JMA colours).
+Left: a dark map of Japan (rendered by the hub, data/quake/japan.bin) with ~1,600 strong-motion
+stations as dots coloured by their live intensity (NIED Kyoshin Monitor, pushed every second by the
+hub — or simulated for tests), the P-wave (blue) and S-wave (red) fronts expanding at their real
+speeds, the area the S wave has crossed tinted red, the epicentre, Tokyo and Yokohama.
 Right: the bulletin — warning/forecast, hypocentre, magnitude, depth, maximum intensity — and
 Tokyo / Yokohama with their predicted intensity and a countdown to the S wave.
 
-The hub pushes events (POST /quake on the control server); the last one is also on disk
-(data/quake/event.json) so a restart mid-event picks it up.
+The hub pushes events (POST /quake) and station readings (POST /quake_obs); the last event is
+also on disk (data/quake/event.json) so a restart mid-event picks it up.
 """
 
 from __future__ import annotations
@@ -20,53 +21,44 @@ from datetime import datetime, timedelta, timezone
 
 import numpy as np
 
+from common import kmoni
 from common import quake_calc as qc
-from display.gfx import Canvas, Color
+from display.gfx import Color
 from display.modules.weather_alert import FI, draw_border, _dim
 
 W, H = 448, 192
 JST = timezone(timedelta(hours=9))
 R = 6378137.0
-# prefecture capitals and a few more cities: the estimated-intensity squares on the map
-PLACES = [(43.06, 141.35), (41.77, 140.73), (43.77, 142.36), (42.98, 144.38), (42.92, 143.20), (44.02, 144.27),
-          (40.82, 140.74), (40.51, 141.49), (39.70, 141.15), (39.64, 141.95), (39.08, 141.71), (38.27, 140.87),
-          (38.43, 141.30), (39.72, 140.10), (38.24, 140.36), (37.75, 140.47), (37.05, 140.89), (36.34, 140.45),
-          (36.08, 140.11), (36.57, 139.88), (36.39, 139.06), (35.86, 139.65), (35.61, 140.12), (35.73, 140.83),
-          (34.99, 139.87), (35.69, 139.69), (35.66, 139.32), (35.45, 139.64), (35.28, 139.67), (35.26, 139.15),
-          (37.90, 139.02), (37.45, 138.85), (37.15, 138.24), (36.70, 137.21), (36.59, 136.63), (37.39, 136.90),
-          (36.07, 136.22), (35.66, 138.57), (36.65, 138.18), (36.24, 137.97), (35.39, 136.72), (36.14, 137.25),
-          (34.98, 138.38), (35.10, 138.86), (34.71, 137.73), (35.18, 136.91), (34.73, 136.51), (35.00, 135.87),
-          (35.02, 135.76), (34.69, 135.52), (34.69, 135.18), (34.69, 135.83), (34.23, 135.17), (35.50, 134.24),
-          (35.47, 133.05), (34.66, 133.93), (34.40, 132.46), (34.19, 131.47), (34.07, 134.56), (34.34, 134.04),
-          (33.84, 132.77), (33.56, 133.53), (33.61, 130.42), (33.25, 130.30), (32.74, 129.87), (32.79, 130.74),
-          (33.24, 131.61), (31.91, 131.42), (31.56, 130.56)]
-PREFS = {"北海道": (43.06, 141.35), "青森県": (40.82, 140.74), "岩手県": (39.70, 141.15), "宮城県": (38.27, 140.87),
-         "秋田県": (39.72, 140.10), "山形県": (38.24, 140.36), "福島県": (37.75, 140.47), "茨城県": (36.34, 140.45),
-         "栃木県": (36.57, 139.88), "群馬県": (36.39, 139.06), "埼玉県": (35.86, 139.65), "千葉県": (35.61, 140.12),
-         "東京都": (35.69, 139.69), "神奈川県": (35.45, 139.64), "新潟県": (37.90, 139.02), "富山県": (36.70, 137.21),
-         "石川県": (36.59, 136.63), "福井県": (36.07, 136.22), "山梨県": (35.66, 138.57), "長野県": (36.65, 138.18),
-         "岐阜県": (35.39, 136.72), "静岡県": (34.98, 138.38), "愛知県": (35.18, 136.91), "三重県": (34.73, 136.51),
-         "滋賀県": (35.00, 135.87), "京都府": (35.02, 135.76), "大阪府": (34.69, 135.52), "兵庫県": (34.69, 135.18),
-         "奈良県": (34.69, 135.83), "和歌山県": (34.23, 135.17), "鳥取県": (35.50, 134.24), "島根県": (35.47, 133.05),
-         "岡山県": (34.66, 133.93), "広島県": (34.40, 132.46), "山口県": (34.19, 131.47), "徳島県": (34.07, 134.56),
-         "香川県": (34.34, 134.04), "愛媛県": (33.84, 132.77), "高知県": (33.56, 133.53), "福岡県": (33.61, 130.42),
-         "佐賀県": (33.25, 130.30), "長崎県": (32.74, 129.87), "熊本県": (32.79, 130.74), "大分県": (33.24, 131.61),
-         "宮崎県": (31.91, 131.42), "鹿児島県": (31.56, 130.56)}
+# fallback (no station data): predicted intensity at prefecture capitals and a few cities
+PLACES = [(43.06, 141.35), (41.77, 140.73), (43.77, 142.36), (42.98, 144.38), (42.92, 143.20), (40.82, 140.74),
+          (40.51, 141.49), (39.70, 141.15), (39.64, 141.95), (38.27, 140.87), (38.43, 141.30), (39.72, 140.10),
+          (38.24, 140.36), (37.75, 140.47), (37.05, 140.89), (36.34, 140.45), (36.57, 139.88), (36.39, 139.06),
+          (35.86, 139.65), (35.61, 140.12), (35.73, 140.83), (35.69, 139.69), (35.45, 139.64), (37.90, 139.02),
+          (37.45, 138.85), (36.70, 137.21), (36.59, 136.63), (37.39, 136.90), (36.07, 136.22), (35.66, 138.57),
+          (36.65, 138.18), (35.39, 136.72), (34.98, 138.38), (34.71, 137.73), (35.18, 136.91), (34.73, 136.51),
+          (35.02, 135.76), (34.69, 135.52), (34.69, 135.18), (34.23, 135.17), (35.50, 134.24), (35.47, 133.05),
+          (34.66, 133.93), (34.40, 132.46), (34.19, 131.47), (34.07, 134.56), (33.84, 132.77), (33.56, 133.53),
+          (33.61, 130.42), (32.74, 129.87), (32.79, 130.74), (33.24, 131.61), (31.91, 131.42), (31.56, 130.56)]
+_COLOUR_LUT = np.array([(0, 0, 0)] + [kmoni.intensity_colour((c - 1) / 20.0 - 3) for c in range(1, 256)], dtype=np.uint8)
 
 
 class QuakeScreen:
     def __init__(self, data_dir):
         self.data_dir = data_dir
         self.event = None
+        self.obs = None                 # uint8 codes per station (0 = no data), see common.kmoni.encode
+        self.obs_t = 0.0
         self._map = None
         self._map_key = None
-        self.f_jp = FI("mplus_j12b.bdf")
-        self.f_jp_r = FI("mplus_j10r.bdf")
-        self.f_big = FI("alert/10x20.bdf", 2)
-        self.f_key = FI("alert/7x14B.bdf")
-        self.f_small = FI("alert/5x8.bdf")
-        self.f_tiny = FI("alert/4x6.bdf")
+        self._fonts = None
         self._load_saved()
+
+    def fonts(self):
+        if self._fonts is None:                       # Japanese fonts are big: load on first use only
+            self._fonts = {"jp": FI("alert/jp-mplus12b.bdf"), "jp_r": FI("alert/jp-mplus10r.bdf"),
+                           "big": FI("alert/10x20.bdf", 2), "key": FI("alert/7x14B.bdf"),
+                           "small": FI("alert/5x8.bdf"), "tiny": FI("alert/4x6.bdf")}
+        return self._fonts
 
     # -- data ---------------------------------------------------------------------------------
     def _load_saved(self):
@@ -79,7 +71,17 @@ class QuakeScreen:
             pass
 
     def set_event(self, ev):
+        if not self.event or ev.get("id") != self.event.get("id"):
+            self.obs = None
         self.event = ev
+
+    def set_obs(self, encoded, t):
+        import base64
+        try:
+            self.obs = np.frombuffer(base64.b64decode(encoded), dtype=np.uint8).copy()
+            self.obs_t = t
+        except Exception:
+            pass
 
     def _load_map(self):
         base = os.path.join(self.data_dir or "", "quake")
@@ -97,6 +99,10 @@ class QuakeScreen:
             lat = np.degrees(2 * np.arctan(np.exp(ys / R)) - np.pi / 2)
             self._map = {"img": img, "meta": meta, "lon": np.broadcast_to(lon, (meta["h"], meta["w"])),
                          "lat": np.broadcast_to(lat[:, None], (meta["h"], meta["w"]))}
+            pts = kmoni.points()
+            sx = np.array([self._project(p[1], p[2])[0] for p in pts])
+            sy = np.array([self._project(p[1], p[2])[1] for p in pts])
+            self._st = (sx.astype(int), sy.astype(int))
             self._map_key = key
             self._dist_key = None
         return self._map
@@ -125,63 +131,75 @@ class QuakeScreen:
         return bool(ev) and time.time() - float(ev.get("origin") or 0) < 600
 
     # -- drawing ------------------------------------------------------------------------------
+    def _draw_map(self, c, ev, now, elapsed):
+        mp = self._map
+        mw = mp["meta"]["w"]
+        img = mp["img"].astype(np.int16)
+        d = self._dist(ev)
+        rs = qc.front_radius_km(elapsed, ev["depth"], qc.VS)
+        rp = qc.front_radius_km(elapsed, ev["depth"], qc.VP)
+        ring_w = mp["meta"]["mpp"] / 1000.0 * math.cos(math.radians(ev["lat"])) * 1.1
+        if rs > 0:
+            inside = d < rs
+            img[inside] = (img[inside] * 0.65 + np.array([120, 0, 0]) * 0.35).astype(np.int16)
+        c.buf[:, :mw] = img.clip(0, 255).astype(np.uint8)
+        # stations: live (or simulated) intensity, weakest first so strong shaking draws on top
+        sx, sy = self._st
+        obs = self.obs
+        if obs is not None and len(obs) == len(sx) and now - self.obs_t < 20:
+            order = np.argsort(obs, kind="stable")
+            for k in order:
+                v = obs[k]
+                if v == 0:
+                    continue
+                x, y = sx[k], sy[k]
+                if 0 <= x < mw - 1 and 0 <= y < H - 1:
+                    c.buf[y:y + 2, x:x + 2] = _COLOUR_LUT[v]
+        else:                                        # no readings yet: predicted intensity squares
+            for (x, y), cls in self._places:
+                if cls == "0" or not (0 <= x < mw and 0 <= y < H):
+                    continue
+                c.FillRect(int(x) - 2, int(y) - 2, 5, 5, Color(0, 0, 0))
+                c.FillRect(int(x) - 1, int(y) - 1, 3, 3, Color(*qc.SHINDO_COLOURS[cls]))
+        for r, col in ((rp, (70, 170, 255)), (rs, (255, 50, 40))):
+            if r > 0:
+                ring = np.abs(d - r) < ring_w
+                c.buf[:, :mw][ring] = col
+        ex, ey = self._project(ev["lat"], ev["lon"])
+        on = int(now * 3) % 2 == 0
+        for k in range(-4, 5):
+            for (xx, yy) in ((ex + k, ey + k), (ex + k, ey - k)):
+                if 0 <= xx < mw and 0 <= yy < H:
+                    c.buf[int(yy), int(xx)] = (255, 255, 255) if on else (255, 40, 30)
+        f = self.fonts()
+        for name, (la, lo), dx, dy in (("TOKYO", qc.SITES["Tokyo"], 5, -9), ("YOKOHAMA", qc.SITES["Yokohama"], -34, 3)):
+            x, y = self._project(la, lo)
+            c.FillRect(int(x) - 1, int(y) - 1, 3, 3, Color(255, 255, 255))
+            f["tiny"].draw(c, int(x) + dx, int(y) + dy, (255, 255, 255), name)
+        # Kyoshin Monitor colour scale, bottom left
+        for i in range(60):
+            c.buf[H - 9:H - 5, 6 + i] = kmoni.intensity_colour(-3 + i / 6.0)
+        f["tiny"].draw(c, 6, H - 16, (190, 190, 200), "-3")
+        f["tiny"].draw(c, 58, H - 16, (190, 190, 200), "7")
+        live = "LIVE NIED" if (obs is not None and not ev.get("test")) else ("SIMULATED" if obs is not None else "PREDICTED")
+        f["tiny"].draw(c, 70, H - 10, (190, 190, 200), live)
+        return mw
+
     def draw(self, c, zone, entry, transition, now=None):
         now = time.time() if now is None else now
         ev = self.event
         c.FillRect(0, 0, W, H, Color(0, 0, 0))
+        f = self.fonts()
         if not ev:
-            self.f_key.draw(c, 8, 8, (200, 200, 200), "No earthquake early warning.")
+            f["key"].draw(c, 8, 8, (200, 200, 200), "No earthquake early warning.")
             return None
-        mp = self._load_map()
         elapsed = now - float(ev["origin"])
         warn = ev.get("warn")
         accent = (255, 30, 30) if warn else (255, 200, 0)
         if ev.get("cancel"):
             accent = (150, 150, 160)
-        mw = 0
-        if mp:
-            img = mp["img"].astype(np.int16)
-            d = self._dist(ev)
-            rs = qc.front_radius_km(elapsed, ev["depth"], qc.VS)
-            rp = qc.front_radius_km(elapsed, ev["depth"], qc.VP)
-            kmpp = mp["meta"]["mpp"] / 1000.0 * math.cos(math.radians(ev["lat"])) * 1.1   # ~1 px wide fronts
-            if rs > 0:
-                inside = d < rs
-                img[inside] = (img[inside] * 0.6 + np.array([110, 0, 0]) * 0.4).astype(np.int16)
-            for r, col in ((rp, (60, 170, 255)), (rs, (255, 40, 30))):
-                if r > 0:
-                    ring = np.abs(d - r) < kmpp
-                    img[ring] = col
-            mw = mp["meta"]["w"]
-            c.buf[:, :mw] = img.clip(0, 255).astype(np.uint8)
-            # estimated intensity per place (colour squares, like the apps)
-            for (x, y), cls in self._places:
-                if cls in ("0",) or not (0 <= x < mw and 0 <= y < H):
-                    continue
-                col = qc.SHINDO_COLOURS[cls]
-                c.FillRect(int(x) - 2, int(y) - 2, 5, 5, Color(0, 0, 0))
-                c.FillRect(int(x) - 1, int(y) - 1, 3, 3, Color(*col))
-            for name, cls in (ev.get("observed") or {}).items():          # observed intensities (after the quake)
-                if name not in PREFS:
-                    continue
-                x, y = self._project(*PREFS[name])
-                c.FillRect(int(x) - 3, int(y) - 3, 7, 7, Color(255, 255, 255))
-                c.FillRect(int(x) - 2, int(y) - 2, 5, 5, Color(*qc.SHINDO_COLOURS.get(cls, (128, 128, 128))))
-            # epicentre ✕ (blinking) and Tokyo / Yokohama
-            ex, ey = self._project(ev["lat"], ev["lon"])
-            on = int(now * 3) % 2 == 0
-            for k in range(-4, 5):
-                for (xx, yy) in ((ex + k, ey + k), (ex + k, ey - k)):
-                    if 0 <= xx < mw and 0 <= yy < H:
-                        c.buf[int(yy), int(xx)] = (255, 255, 255) if on else (255, 40, 30)
-            for name, (la, lo) in qc.SITES.items():
-                x, y = self._project(la, lo)
-                c.FillRect(int(x) - 1, int(y) - 1, 3, 3, Color(255, 255, 255))
-            tx, ty = self._project(*qc.SITES["Tokyo"])
-            self.f_tiny.draw(c, int(tx) + 4, int(ty) - 8, (255, 255, 255), "TOKYO")
-            yx, yy_ = self._project(*qc.SITES["Yokohama"])
-            self.f_tiny.draw(c, int(yx) - 30, int(yy_) + 3, (255, 255, 255), "YOKOHAMA")
-            c.FillRect(mw, 0, 1, H, Color(*accent))
+        mw = self._draw_map(c, ev, now, elapsed) if self._load_map() else 0
+        c.FillRect(mw, 0, 1, H, Color(*accent))
         # ---- bulletin panel
         x = mw + 6
         title = "緊急地震速報" + ("（警報）" if warn else "（予報）")
@@ -189,55 +207,58 @@ class QuakeScreen:
             title = "震源・震度情報"
         if ev.get("cancel"):
             title = "緊急地震速報 取消"
-        c.FillRect(mw + 1, 0, W - mw - 1, 18, Color(*accent))
-        self.f_jp.draw(c, x, 3, (0, 0, 0), title)
+        c.FillRect(mw + 1, 0, W - mw - 1, 17, Color(*accent))
+        f["jp"].draw(c, x, 2, (0, 0, 0), title)
         tag = ("TEST " if ev.get("test") else "") + (f"#{ev.get('serial')}" if ev.get("serial") else "") + (" FINAL" if ev.get("final") else "")
-        self.f_tiny.draw(c, W - 6 - self.f_tiny.width(tag), 7, (0, 0, 0), tag)
-        y = 22
-        self.f_jp.draw(c, x, y, (255, 255, 255), ev.get("hypocenter") or "")
+        f["tiny"].draw(c, W - 5 - f["tiny"].width(tag), 6, (0, 0, 0), tag)
+        y = 20
+        f["jp"].draw(c, x, y, (255, 255, 255), ev.get("hypocenter") or "")
         y += 15
-        ot = datetime.fromtimestamp(float(ev["origin"]), JST).strftime("%H:%M:%S JST")
-        self.f_small.draw(c, x, y, (180, 180, 190), f"M{ev['mag']:.1f}  depth {ev['depth']:.0f} km  {ot}")
-        y += 11
+        ot = datetime.fromtimestamp(float(ev["origin"]), JST).strftime("%H:%M:%S")
+        f["jp_r"].draw(c, x, y, (185, 185, 195), f"M{ev['mag']:.1f}  深さ{ev['depth']:.0f}km  {ot}")
+        y += 14
         # maximum intensity tile
         cls = ev.get("max") or "0"
         col = qc.SHINDO_COLOURS.get(cls, (128, 128, 128))
-        c.FillRect(x, y, 70, 44, Color(*col))
-        self.f_jp_r.draw(c, x + 4, y + 2, (0, 0, 0), "最大震度")
+        c.FillRect(x, y, 62, 48, Color(*col))
+        dark = (0, 0, 0) if cls in ("1", "3", "4", "5-", "5+") else (255, 255, 255)
+        f["jp_r"].draw(c, x + 4, y + 2, dark, "最大震度")
         big = qc.SHINDO_JP.get(cls, cls)
-        num, suf = big[0], big[1:]
-        self.f_big.draw(c, x + 6, y + 6, (0, 0, 0), num)
-        if suf:
-            self.f_jp.draw(c, x + 30, y + 26, (0, 0, 0), suf)
+        f["big"].draw(c, x + 6, y + 10, dark, big[0])
+        if len(big) > 1:
+            f["jp"].draw(c, x + 30, y + 31, dark, big[1:])
         # Tokyo / Yokohama
         sites = qc.site_forecast(ev, now)
         yy = y
+        sx = x + 66
         for name, jp in (("Tokyo", "東京"), ("Yokohama", "横浜")):
             s = sites[name]
             sc = s["class"]
-            sx = x + 76
-            c.FillRect(sx, yy, W - sx - 6, 21, Color(*_dim(qc.SHINDO_COLOURS[sc], 0.35)))
-            c.FillRect(sx, yy, 3, 21, Color(*qc.SHINDO_COLOURS[sc]))
-            self.f_jp_r.draw(c, sx + 6, yy + 1, (255, 255, 255), jp)
-            self.f_tiny.draw(c, sx + 6, yy + 13, (200, 200, 210), name.upper())
-            self.f_key.draw(c, sx + 40, yy + 3, qc.SHINDO_COLOURS[sc], qc.SHINDO_JP[sc])
+            scol = qc.SHINDO_COLOURS[sc]
+            c.FillRect(sx, yy, W - sx - 5, 23, Color(*_dim(scol, 0.28)))
+            c.FillRect(sx, yy, 3, 23, Color(*scol))
+            f["jp_r"].draw(c, sx + 6, yy + 1, (255, 255, 255), jp)
+            f["tiny"].draw(c, sx + 6, yy + 14, (200, 200, 210), name.upper())
+            f["jp"].draw(c, sx + 42, yy + 5, scol, qc.SHINDO_JP[sc])
             if s["s_in"] > 0:
-                t_txt = f"S {s['s_in']:.0f}s"
-                self.f_key.draw(c, W - 8 - self.f_key.width(t_txt), yy + 3, (255, 255, 255) if int(now * 2) % 2 else (255, 90, 90), t_txt)
+                t_txt = f"{s['s_in']:.0f}s"
+                blink = (255, 255, 255) if int(now * 2) % 2 else (255, 110, 110)
+                f["key"].draw(c, W - 8 - f["key"].width(t_txt), yy + 1, blink, t_txt)
+                f["tiny"].draw(c, W - 8 - f["tiny"].width("S-WAVE"), yy + 16, (200, 200, 210), "S-WAVE")
             else:
-                self.f_small.draw(c, W - 8 - self.f_small.width("ARRIVED"), yy + 6, (255, 120, 120), "ARRIVED")
-            yy += 23
-        y += 50
+                f["jp_r"].draw(c, W - 8 - f["jp_r"].width("到達"), yy + 6, (255, 120, 120), "到達")
+            yy += 25
+        y += 54
         # warning areas (from the JMA bulletin) or observed prefectures
         areas = [(a["name"], a["class"]) for a in ev.get("areas") or []] or \
                 sorted(((k, v) for k, v in (ev.get("observed") or {}).items()), key=lambda kv: -qc.class_rank(kv[1]))
-        for name, acls in areas[: max(0, (H - y - 12) // 11)]:
-            c.FillRect(x, y + 1, 8, 8, Color(*qc.SHINDO_COLOURS.get(acls, (128, 128, 128))))
-            self.f_jp_r.draw(c, x + 12, y, (230, 230, 235), f"{name} {qc.SHINDO_JP.get(acls, acls)}")
-            y += 11
+        for name, acls in areas[: max(0, (H - y - 12) // 12)]:
+            c.FillRect(x, y + 2, 8, 8, Color(*qc.SHINDO_COLOURS.get(acls, (128, 128, 128))))
+            f["jp_r"].draw(c, x + 12, y, (230, 230, 235), f"{name} {qc.SHINDO_JP.get(acls, acls)}")
+            y += 12
         if not areas:
-            self.f_small.draw(c, x, y + 2, (150, 150, 160), "Predicted intensity: squares on the map")
-        foot = f"+{elapsed:.0f}s since origin  ·  JMA via Wolfx / P2PQuake"
-        self.f_tiny.draw(c, x, H - 8, (140, 140, 150), foot)
+            f["jp_r"].draw(c, x, y + 1, (160, 160, 170), "予想震度は推計です")
+            f["tiny"].draw(c, x, y + 14, (130, 130, 140), "Tokyo/Yokohama: estimate from M, depth, distance")
+        f["tiny"].draw(c, x, H - 8, (140, 140, 150), f"+{elapsed:.0f}s  NIED Kyoshin Monitor / JMA via Wolfx"[:60])
         draw_border(c, "pulse" if warn else "chase", accent, now)
         return "done" if elapsed > 240 else None
