@@ -214,6 +214,45 @@ def quake_preview(name: str = "tokyo_bay", at: float = 20, scale: int = 2, theme
     return Response(bio.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
+# --- font audit -------------------------------------------------------------
+_font_png = {}
+
+
+@app.get("/api/fonts")
+def fonts_list():
+    from hub import fonts
+    return {"fonts": fonts.catalog(), "samples": {"latin": fonts.LATIN_SAMPLE, "jp": fonts.JP_SAMPLE}}
+
+
+@app.get("/api/fonts/preview.png")
+def fonts_preview(path: str, text: str = "", jp: str = "", scale: int = 2, fg: str = "ffffff", width: int = 448, height: int = 0):
+    """``path`` (under assets/fonts) rendering the samples, wrapped to the wall's width."""
+    from hub import fonts
+    full = Path(fonts.ROOT) / path
+    if ".." in path or not full.is_file() or full.suffix != ".bdf":
+        raise HTTPException(404, "no such font")
+    key = (path, full.stat().st_mtime, text, jp, scale, fg, width, height)
+    png = _font_png.get(key)
+    if png is None:
+        try:
+            col = tuple(int(fg[i:i + 2], 16) for i in (0, 2, 4))
+        except ValueError:
+            col = (255, 255, 255)
+        png = fonts.render_png(path, text or fonts.LATIN_SAMPLE, jp, scale, max(64, min(448, width)), col, height or None)
+        if len(_font_png) > 1500:
+            _font_png.clear()
+        _font_png[key] = png
+    return Response(png, media_type="image/png", headers={"Cache-Control": "max-age=3600"})
+
+
+@app.post("/api/fonts/wall")
+def fonts_wall(payload: dict = Body(...)):
+    """Show one font (or up to 12 stacked) on the wall until "Back to rotation"."""
+    body = {"side": "right", "panel": "font_specimen", "duration_sec": float(payload.get("duration_sec") or 600),
+            "fonts": list(payload.get("fonts") or [])[:12], "text": payload.get("text") or "", "jp": payload.get("jp") or ""}
+    return _display_call("/override", body)
+
+
 # --- live consoles ------------------------------------------------------------
 @app.get("/api/logs")
 def logs(hub: int = 0, display: int = 0):

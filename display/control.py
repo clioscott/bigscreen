@@ -103,6 +103,13 @@ def _make_handler(app):
                 if body["panel"] not in s.panels and body["panel"] not in s.full_panels and body["panel"] not in s.takeover_panels:
                     return self._json({"error": f"panel {body['panel']!r} isn't available on this display"}, 400)
                 extra = {k: v for k, v in body.items() if k not in ("side", "panel", "duration_sec")}
+                if body["panel"] == "font_specimen":           # parse the fonts here, not in the render loop
+                    from display.modules import font_specimen
+                    for rel in (extra.get("fonts") or [])[:12]:
+                        try:
+                            font_specimen.font(rel)
+                        except Exception as e:
+                            return self._json({"error": f"{rel}: {e}"}, 400)
                 eng.set_override(body["panel"], body.get("duration_sec"), extra)
                 return self._json({"ok": True})
             if u.path == "/override/clear":

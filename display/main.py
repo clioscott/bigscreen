@@ -182,6 +182,8 @@ class Screen:
         if prev is not None and getattr(prev, "quake", None) is not None:
             self.quake.adopt(prev.quake)                        # keep a live earthquake across config reloads
         self.takeover_panels["quake"] = self.quake.draw
+        from display.modules.font_specimen import FontSpecimen
+        self.takeover_panels["font_specimen"] = FontSpecimen().draw          # control panel → Fonts
 
         from display.modules.weather_info import WeatherInfoPanel
         self.weather_half = WeatherInfoPanel(cfg, loader, full=False)

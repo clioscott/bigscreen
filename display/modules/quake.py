@@ -45,8 +45,10 @@ BASE_FONTS = {"jp": ("alert/jp-mplus12b.bdf", 1), "jp_r": ("alert/jp-k8x12.bdf",
               "key": ("alert/7x14B.bdf", 1), "num": ("alert/6x13B.bdf", 1), "small": ("alert/5x8.bdf", 1),
               "tiny": ("alert/4x6.bdf", 1), "arcade": ("alert/unscii-8-mcr.bdf", 2), "arcade1": ("alert/unscii-8-mcr.bdf", 1),
               "term": ("alert/t0-12b-uni.bdf", 1),
-              "mid": ("alert/spleen-12x24.bdf", 1)}
+              "mid": ("alert/spleen-12x24.bdf", 1),
+              "jp_mid": ("alert/jp-shnm16b.bdf", 1)}
 _FONT_CACHE = {}
+MAP_CITY_RANK = 10              # map icons: the 10 biggest cities (when affected), plus any city expecting 5弱+
 _MAP_CACHE = {}
 
 
@@ -177,6 +179,11 @@ class QuakeScreen:
         self.hist = deque(maxlen=240)          # per reading: (t, max intensity, stations per class)
         self.series = {}                       # city / "Epicentre" → recent intensities (traces)
         self.log = deque(maxlen=40)            # terminal theme
+        self.max_mag = 0.0                     # highest magnitude across this event's EEW updates
+        self.serials = []                      # [(serial, magnitude, max class)] — one per EEW update
+        self.rep = None                        # nearest station to the epicentre that is reporting
+        self.rep_hist = deque(maxlen=180)      # (t, intensity) readings from that station
+        self._rep_order = (None, None)
         self._maps, self._map_checked = {}, {}
         self._bags = {}
         self._theme_name = self.settings.get("theme") or "monitor"
@@ -197,7 +204,7 @@ class QuakeScreen:
 
     def adopt(self, prev):
         """Carry a live event (and its history) across config reloads."""
-        for k in ("event", "obs", "obs_t", "hist", "series", "log"):
+        for k in ("event", "obs", "obs_t", "hist", "series", "log", "max_mag", "rep", "rep_hist", "serials"):
             setattr(self, k, getattr(prev, k))
 
     # -- data -----------------------------------------------------------------------------------
@@ -222,6 +229,16 @@ class QuakeScreen:
             self.hist.clear()
             self.series = {}
             self.log.clear()
+            self.max_mag = 0.0
+            self.rep = None
+            self.rep_hist.clear()
+            self.serials = []
+        self.max_mag = max(self.max_mag, float(ev.get("mag") or 0))
+        upd = (ev.get("serial") or len(self.serials) + 1, float(ev.get("mag") or 0), ev.get("max") or "0")
+        if not self.serials or self.serials[-1][0] != upd[0]:
+            self.serials.append(upd)
+        else:
+            self.serials[-1] = upd
         self.event = ev
         self.log.append(f"{datetime.now(JST):%H:%M:%S} EEW#{ev.get('serial', '-')} M{float(ev.get('mag') or 0):.1f} "
                         f"D{float(ev.get('depth') or 0):.0f} MAX {ev.get('max', '?')}")
@@ -245,6 +262,20 @@ class QuakeScreen:
         for name, la, lo in targets:
             k = _nearest_station(la, lo)
             self.series.setdefault(name, deque(maxlen=200)).append(_code_to_i(float(obs[k])) if obs[k] else -3.0)
+        if self.event:                                      # the closest station with a reading → seismograph
+            key = (self.event.get("id"), self.event["lat"], self.event["lon"])
+            if self._rep_order[0] != key:
+                pts = np.array([(p_[1], p_[2]) for p_ in kmoni.points()])
+                d2 = (pts[:, 0] - self.event["lat"]) ** 2 + ((pts[:, 1] - self.event["lon"]) * math.cos(math.radians(self.event["lat"]))) ** 2
+                self._rep_order = (key, np.argsort(d2))
+            order = self._rep_order[1]
+            live = order[obs[order] > 0] if len(obs) == len(order) else []
+            if len(live):
+                k = int(live[0])
+                if k != self.rep:
+                    self.rep = k
+                    self.rep_hist.clear()
+                self.rep_hist.append((t, _code_to_i(float(obs[k]))))
         top = int(np.argmax(obs))
         self.log.append(f"{datetime.fromtimestamp(t, JST):%H:%M:%S} MAX{mx:4.1f} {kmoni.points()[top][0]} N{sum(counts)}")
 
@@ -388,6 +419,8 @@ class QuakeScreen:
             font = self.fonts()["tiny"]
             boxes = []
             for k in self.cities(ev, now):
+                if k["rank"] >= MAP_CITY_RANK and qc.class_rank(k["class"]) < qc.class_rank("5-"):
+                    continue
                 x, y = mp.project(k["lat"], k["lon"])
                 x, y = x + x0, y + y0
                 w = font.width(k["class"]) + 5
@@ -436,13 +469,21 @@ class QuakeScreen:
         col = qc.SHINDO_COLOURS.get(cls, (128, 128, 128))
         c.FillRect(x, y, w, h, Color(*col))
         dark = (0, 0, 0) if cls in _DARK_TEXT else (255, 255, 255)
-        f["jp_r" if h >= 40 else "jp_s"].draw(c, x + 3, y + 2, dark, "最大震度")
-        if h - f[big].h < 8:                                          # short tile: a smaller numeral
-            big = "mid"
+        lab = f["jp_r" if h >= 40 else "jp_s"]
+        lab.draw(c, x + 3, y + 2, dark, "最大震度")
+        room = h - lab.line - 3                                       # below the label
+        for cand in (big, "mid", "key"):                              # the biggest numeral that fits under it
+            if f[cand].h <= room:
+                big = cand
+                break
+        else:
+            big = "key"
         s = _jp(cls)
-        f[big].draw(c, x + 5, y + h - f[big].h - 3, dark, s[0])
+        ny = max(y + lab.line + 1, y + h - f[big].h - 2)
+        f[big].draw(c, x + 5, ny, dark, s[0])
         if len(s) > 1:
-            f["jp"].draw(c, x + 7 + f[big].width(s[0]), y + h - 16, dark, s[1:])
+            sub = f["jp"] if f[big].h >= 20 else f["jp_s"]
+            sub.draw(c, x + 7 + f[big].width(s[0]), ny + f[big].h - sub.h, dark, s[1:])
 
     def comp_next(self, c, ev, now, x, y, w, h, num="big"):
         """Countdown box for the next city the S wave reaches."""
@@ -556,6 +597,254 @@ class QuakeScreen:
         if timebar:                                                    # P → S progress at the city
             frac = max(0.0, min(1.0, (now - float(ev["origin"])) / max(1.0, k["ts"])))
             c.FillRect(nx, y + row - 2, int((rx - nx) * frac), 1, Color(*(255, 60, 40) if k["s_in"] <= 0 else (70, 170, 255)))
+
+    # -- sidebar: epicentre, magnitude, Tokyo countdown, seismograph -------------------------------
+    def fit_font(self, text, w, roles=("jp_mid", "jp", "jp_r", "jp_s")):
+        """The largest of ``roles`` in which ``text`` fits ``w`` px."""
+        f = self.fonts()
+        for r in roles:
+            if f[r].width(text) <= w:
+                return f[r]
+        return f[roles[-1]]
+
+    def comp_epicentre(self, c, ev, x, y, w, label=True):
+        """震源 and the hypocentre's name, as big as fits. Returns the y below it."""
+        f = self.fonts()
+        if label:
+            f["jp_s"].draw(c, x, y, (150, 150, 165), "震源")
+            y += f["jp_s"].line
+        name = ev.get("hypocenter") or "震源不明"
+        fn = self.fit_font(name, w)
+        fn.draw(c, x, y, (255, 255, 255), name)
+        return y + fn.line + 1
+
+    def comp_magnitude(self, c, ev, x, y, w, h=26, tile=True):
+        """M (highest so far) in a big numeral, depth and origin time, max-intensity tile on the right."""
+        f = self.fonts()
+        tw = 44 if tile else 0
+        if tile:
+            self.comp_max(c, ev, x + w - tw, y, tw, h)
+        mt = f"M{max(self.max_mag, float(ev.get('mag') or 0)):.1f}"
+        big = f["mid"] if f["mid"].width(mt) + 50 <= w - tw else f["key"]
+        big.draw(c, x, y + (h - big.h) // 2, (255, 225, 120), mt)
+        x2 = x + big.width(mt) + 5
+        f["jp_r"].draw(c, x2, y, (210, 210, 220), f"深さ{ev['depth']:.0f}km")
+        ot = datetime.fromtimestamp(float(ev["origin"]), JST).strftime("%H:%M:%S")
+        f["small"].draw(c, x2, y + h - 8, (150, 150, 165), ot)
+        return y + h + 2
+
+    def tokyo(self, ev, now):
+        s = qc.site_forecast(ev, now)["Tokyo"]
+        return dict(s, jp="東京", name="Tokyo", lat=qc.SITES["Tokyo"][0], lon=qc.SITES["Tokyo"][1])
+
+    def comp_tokyo(self, c, ev, now, x, y, w, h):
+        """Tokyo: predicted intensity and the S-wave countdown (or "揺れの予想なし" when it won't be felt)."""
+        f = self.fonts()
+        k = self.tokyo(ev, now)
+        cls = k["class"]
+        col = qc.SHINDO_COLOURS[cls]
+        c.FillRect(x, y, w, h, Color(*(_dim(col, 0.22) if cls != "0" else (14, 14, 22))))
+        c.FillRect(x, y, 3, h, Color(*col))
+        f["jp_r"].draw(c, x + 6, y + 2, (255, 255, 255), "東京")
+        if cls == "0":
+            f["jp_r"].draw(c, x + 6, y + h - 14, (160, 160, 170), "揺れの予想なし")
+            d = f"{k['dist_km']:.0f}km"
+            f["small"].draw(c, x + w - 3 - f["small"].width(d), y + 4, (150, 150, 165), d)
+            return
+        shindo_icon(c, x + 8 + f["jp_r"].width("東京"), y + 2, cls, f["num"], centre=False)
+        v = self.live_at(k["lat"], k["lon"], now)
+        colt = (255, 255, 255) if k["s_in"] > 10 or int(now * 3) % 2 else (255, 70, 70)
+        t = f"{k['s_in']:.0f}" if k["s_in"] > 0 else None
+        if h < 46 or w < 120:                       # compact: name + icon left, the countdown right-aligned
+            big = f["mid"] if h >= 28 else f["key"]
+            f["jp_s"].draw(c, x + 6, y + h - 10, (215, 215, 225), "S波まで" if t else "S波到達")
+            if t:
+                sec = f["jp_r"]
+                rx = x + w - 3 - sec.width("秒")
+                sec.draw(c, rx, y + h - 3 - sec.h, colt, "秒")
+                big.draw(c, rx - 1 - big.width(t), y + (h - big.h) // 2, colt, t)
+            else:
+                f["jp"].draw(c, x + w - 3 - f["jp"].width("到達"), y + (h - f["jp"].h) // 2, (255, 110, 110), "到達")
+            return
+        lab = "S波到達まで" if t else "S波到達"
+        f["jp_s"].draw(c, x + w - 3 - f["jp_s"].width(lab), y + 4, (215, 215, 225), lab)
+        big = f["big"]
+        if t:
+            big.draw(c, x + 6, y + h - big.h - 2, colt, t)
+            f["jp_r"].draw(c, x + 8 + big.width(t), y + h - 14, colt, "秒")
+        else:
+            f["jp"].draw(c, x + 6, y + h - 15, (255, 110, 110), "到達")
+        if v is not None:
+            sv = f"{v:.1f}"
+            f["key"].draw(c, x + w - 3 - f["key"].width(sv), y + h - 16, kmoni.intensity_colour(v), sv)
+            f["tiny"].draw(c, x + w - 3 - f["key"].width(sv) - 18, y + h - 9, (170, 170, 180), "LIVE")
+
+    def comp_seismograph(self, c, ev, now, x, y, w, h, speed=15, label=True):
+        """A scrolling seismograph for the nearest reporting station: each second's reading sets the
+        envelope; the trace is drawn at ``speed`` px/s so it moves smoothly between readings."""
+        f = self.fonts()
+        c.FillRect(x, y, w, h, Color(6, 10, 8))
+        ty = y
+        if label:
+            if self.rep is not None:
+                pt = kmoni.points()[self.rep]
+                f["jp_s"].draw(c, x + 2, y + 1, (170, 205, 170), f"最寄り観測点 {pt[5] or ''}")
+                f["tiny"].draw(c, x + w - 2 - f["tiny"].width(pt[0]), y + 2, (110, 140, 110), pt[0])
+            else:
+                f["jp_s"].draw(c, x + 2, y + 1, (130, 150, 130), "観測点データ待ち")
+            ty = y + 10
+        th = y + h - ty
+        mid = th // 2
+        c.FillRect(x, ty + mid, w, 1, Color(25, 45, 30))
+        if not self.rep_hist or th < 6:
+            return
+        tv = np.array([t for t, _ in self.rep_hist])
+        vv = np.array([v for _, v in self.rep_hist])
+        tc = now - (w - 1 - np.arange(w)) / speed
+        env = np.interp(tc, tv, vv, left=-3.0, right=float(vv[-1]))
+        idx = np.floor(tc * speed).astype(np.int64)
+        tick = (idx % speed) == 0                              # second marks along the bottom
+        c.buf[ty + th - 1, x:x + w][tick] = (40, 70, 45)
+        noise = np.sin(idx * 12.9898 + 78.233) * 43758.5453
+        noise = (noise - np.floor(noise)) * 2 - 1
+        amp = np.clip((env + 3) / 10, 0, 1) ** 1.6 * (mid - 1) + 0.6
+        yy = np.clip(np.round(mid - noise * amp).astype(int), 0, th - 1)
+        prev = np.concatenate([yy[:1], yy[:-1]])
+        lo, hi = np.minimum(prev, yy), np.maximum(prev, yy)
+        rows = np.arange(th)[:, None]
+        mask = (rows >= lo[None, :]) & (rows <= hi[None, :])
+        cols = _COLOUR_LUT[np.clip(((env + 3) * 20 + 1).astype(int), 1, 255)]
+        region = c.buf[ty:ty + th, x:x + w]
+        region[mask] = np.broadcast_to(cols[None, :, :], (th, w, 3))[mask]
+        v = float(vv[-1])
+        sv = f"{v:.1f}"
+        f["small"].draw(c, x + w - 2 - f["small"].width(sv), ty + 1, kmoni.intensity_colour(v), sv)
+
+    # -- components after real EEW apps ------------------------------------------------------------
+    def comp_card(self, c, ev, now, x, y, w, accent):
+        """JQuake-style bulletin card: warning/forecast strip with the update number, the hypocentre,
+        then three cells — 規模 (magnitude), 深さ (depth), 最大震度 (max intensity) — and the origin time."""
+        f = self.fonts()
+        c.FillRect(x, y, w, 14, Color(*accent))
+        tag = "取消" if ev.get("cancel") else "警報" if ev.get("warn") else "予報"
+        c.FillRect(x + 1, y + 1, f["jp_r"].width(tag) + 6, 12, Color(0, 0, 0))
+        f["jp_r"].draw(c, x + 4, y + 1, accent, tag)
+        sr = f"第{ev.get('serial') or 1}報" + (" 最終" if ev.get("final") else "")
+        f["jp_r"].draw(c, x + w - 3 - f["jp_r"].width(sr), y + 1, (0, 0, 0), sr)
+        y += 16
+        y = self.comp_epicentre(c, ev, x + 1, y, w - 2, label=False)
+        cw = (w - 4) // 3
+        cells = [("規模", f"M{max(self.max_mag, float(ev.get('mag') or 0)):.1f}"), ("深さ", f"{ev['depth']:.0f}km")]
+        for i, (lab, val) in enumerate(cells):
+            cx = x + i * (cw + 2)
+            c.FillRect(cx, y, cw, 34, Color(20, 22, 34))
+            f["jp_s"].draw(c, cx + 2, y + 1, (150, 150, 170), lab)
+            fn = f["mid"] if f["mid"].width(val) <= cw - 4 else f["key"]
+            fn.draw(c, cx + (cw - fn.width(val)) // 2, y + 33 - fn.h, (255, 255, 255), val)
+        mx = x + 2 * (cw + 2)
+        self.comp_max(c, ev, mx, y, w - (mx - x), 34)
+        y += 36
+        o = datetime.fromtimestamp(float(ev["origin"]), JST)
+        ot = f"{o.hour:02d}時{o.minute:02d}分{o.second:02d}秒"     # (strftime can't take kanji on every locale)
+        f["jp_s"].draw(c, x + 1, y, (170, 170, 185), f"発生 {ot}")
+        return y + f["jp_s"].line + 2
+
+    _RING = {}
+
+    def comp_dial(self, c, ev, now, cx, cy, r, site="Tokyo", jp="東京"):
+        """EQMonitor-style countdown dial: the ring fills clockwise as the S wave approaches the site."""
+        f = self.fonts()
+        if r not in self._RING:
+            yy, xx = np.mgrid[-r:r + 1, -r:r + 1]
+            dist = np.hypot(xx, yy)
+            ang = (np.arctan2(xx, -yy) % (2 * np.pi)) / (2 * np.pi)
+            self._RING[r] = ((dist <= r + 0.3) & (dist >= r - 4.2), ang)
+        ring, ang = self._RING[r]
+        k = qc.site_forecast(ev, now)[site]
+        cls = k["class"]
+        col = qc.SHINDO_COLOURS[cls] if cls != "0" else (90, 90, 100)
+        x0, y0 = cx - r, cy - r
+        box = c.buf[y0:y0 + 2 * r + 1, x0:x0 + 2 * r + 1]
+        if box.shape[:2] != ring.shape:
+            return
+        el = now - float(ev["origin"])
+        ts = qc.arrival_s(k["dist_km"], ev["depth"], qc.VS)
+        frac = 1.0 if cls == "0" else max(0.0, min(1.0, el / max(1.0, ts)))
+        box[ring] = _dim(col, 0.25)
+        box[ring & (ang <= frac)] = col if k["s_in"] > 0 or int(now * 4) % 2 else (255, 255, 255)
+        if cls == "0":
+            t, unit = "－", ""
+        elif k["s_in"] > 0:
+            t, unit = f"{k['s_in']:.0f}", "秒"
+        else:
+            t, unit = "到達", ""
+        fn = f["mid"] if t[0].isdigit() else f["jp"]
+        fn.draw(c, cx - fn.width(t) // 2, cy - fn.h // 2 - 3, (255, 255, 255), t)
+        if unit:
+            f["jp_s"].draw(c, cx - f["jp_s"].width(unit) // 2, cy + fn.h // 2 - 2, (210, 210, 220), unit)
+        lab = f"{jp} {_jp(cls)}" if cls != "0" else jp
+        f["jp_r"].draw(c, cx - f["jp_r"].width(lab) // 2, cy + r + 2, col, lab)
+
+    def comp_meter(self, c, x, y, w, h, label=True):
+        """Kiwi Monitor-style level meter: the strongest real-time intensity anywhere, with peak hold."""
+        f = self.fonts()
+        top = y + (10 if label else 0)
+        bh = y + h - top - 8
+        if label:
+            f["jp_s"].draw(c, x, y, (160, 160, 175), "最大震度")
+        c.FillRect(x, top, w, bh, Color(10, 10, 16))
+        cur = self.hist[-1][1] if self.hist else -3.0
+        peak = max((v for _, v, _ in self.hist), default=-3.0)
+        lvl = int(max(0.0, min(1.0, (cur + 3) / 10)) * bh)
+        bw = max(4, w - 14)
+        for i in range(lvl):                               # bar coloured by level, bottom up
+            v = -3 + 10 * i / max(1, bh)
+            c.FillRect(x + 1, top + bh - 1 - i, bw, 1, Color(*kmoni.intensity_colour(v)))
+        py = top + bh - 1 - int(max(0.0, min(1.0, (peak + 3) / 10)) * (bh - 1))
+        c.FillRect(x, py, bw + 2, 1, Color(255, 255, 255))
+        for lv in range(0, 8):                             # shindo scale ticks
+            ty = top + bh - 1 - int((lv + 3) / 10 * (bh - 1))
+            c.FillRect(x + bw + 2, ty, 2, 1, Color(120, 120, 130))
+            if lv % 2 == 1 or lv == 0:
+                f["tiny"].draw(c, x + bw + 5, ty - 3, (130, 130, 145), str(lv))
+        sv = f"{cur:.1f}"
+        f["small"].draw(c, x, y + h - 8, kmoni.intensity_colour(cur), sv)
+
+    def comp_mag_history(self, c, x, y, w, h):
+        """M推移: the magnitude in each EEW update, as a step chart (updates usually revise it upward)."""
+        f = self.fonts()
+        c.FillRect(x, y, w, h, Color(10, 10, 16))
+        f["jp_s"].draw(c, x + 2, y + 1, (160, 160, 175), "M推移")
+        pts = self.serials[-12:]
+        if not pts:
+            return
+        mags = [m for _, m, _ in pts]
+        lo, hi = min(mags) - 0.3, max(mags) + 0.3
+        gx, gw, gy, gh = x + 4, w - 8, y + 11, h - 14
+        step = gw / max(1, len(pts))
+        prev = None
+        for i, (sr, m, cls) in enumerate(pts):
+            px = int(gx + i * step + step / 2)
+            py = int(gy + gh - 1 - (m - lo) / max(0.1, hi - lo) * (gh - 1))
+            if prev:
+                c.FillRect(min(prev[0], px), prev[1], abs(px - prev[0]) + 1, 1, Color(120, 120, 150))
+                c.FillRect(px, min(prev[1], py), 1, abs(py - prev[1]) + 1, Color(120, 120, 150))
+            c.FillRect(px - 1, py - 1, 3, 3, Color(*qc.SHINDO_COLOURS.get(cls, (200, 200, 200))))
+            prev = (px, py)
+        s_ = f"第{pts[-1][0]}報 M{pts[-1][1]:.1f}"
+        f["small"].draw(c, x + w - 2 - f["small"].width(s_[s_.index("M"):]), y + 1, (255, 225, 120), s_[s_.index("M"):])
+
+    def comp_sidebar(self, c, ev, now, x, y, w, h):
+        """Epicentre, magnitude, Tokyo, seismograph — stacked to fill w×h."""
+        bottom = y + h
+        y = self.comp_epicentre(c, ev, x, y, w)
+        y = self.comp_magnitude(c, ev, x, y, w)
+        rest = bottom - y
+        th = 48 if rest >= 48 + 44 else 34
+        self.comp_tokyo(c, ev, now, x, y, w, th)
+        y += th + 3
+        if bottom - y >= 20:
+            self.comp_seismograph(c, ev, now, x, y, w, bottom - y)
 
     def comp_graph(self, c, x, y, w, h, label="最大計測震度"):
         self._blit_cached(c, ("comp_graph", label), x, y, w, h,
@@ -691,7 +980,7 @@ class QuakeScreen:
 
 # =============================================================================================== themes
 def _monitor(s, c, ev, now, el, accent):
-    """Kyoshin Monitor: map on the left, bulletin and city list on the right."""
+    """Kyoshin Monitor: map on the left; epicentre, magnitude, Tokyo countdown and a seismograph on the right."""
     f = s.fonts()
     mp = s.comp_map(c, ev, now)
     mw = mp.w if mp else 270
@@ -700,11 +989,7 @@ def _monitor(s, c, ev, now, el, accent):
     c.FillRect(mw, 0, 1, H, Color(*accent))
     x = mw + 6
     s.comp_header(c, ev, mw + 1, 0, W - mw - 1, 17, accent)
-    y = s.comp_hypo(c, ev, x, 20)
-    s.comp_max(c, ev, x, y)
-    s.comp_next(c, ev, now, x + 66, y, W - x - 71, 48)
-    y += 52
-    s.comp_cities(c, ev, now, x, y, W - x - 6, H - y - 11)
+    s.comp_sidebar(c, ev, now, x, 19, W - x - 6, H - 19 - 11)
     f["jp_s"].draw(c, x, H - 9, (140, 140, 150), f"+{el:.0f}秒  強震モニタ(防災科研)・気象庁")
     draw_border(c, "pulse" if ev.get("warn") else "chase", accent, now)
 
@@ -728,11 +1013,12 @@ def _pachinko(s, c, ev, now, el, accent):
     c.FillRect(mw, 11, 1, H - 11, Color(*accent))
     s.comp_header(c, ev, x, 12, rw, 13, accent, "jp_r")
     s.comp_max(c, ev, x, 27, 50, 40, spin=el < 4, now=now)
-    s.comp_next(c, ev, now, x + 53, 27, rw - 53, 40, "arcade")
-    s.comp_graph(c, x, 70, rw // 2 - 1, 34)
-    s.comp_histogram(c, x + rw // 2 + 1, 70, rw - rw // 2 - 1, 34)
-    s.comp_cities(c, ev, now, x, 106, rw, 44, level=1)
-    s.comp_traces(c, ev, now, x, 151, rw, 33)
+    s.comp_tokyo(c, ev, now, x + 53, 27, rw - 53, 40)
+    y = s.comp_epicentre(c, ev, x, 70, rw, label=False)
+    y = s.comp_magnitude(c, ev, x, y, rw, 24, tile=False)
+    s.comp_graph(c, x, y, rw // 2 - 1, 32)
+    s.comp_histogram(c, x + rw // 2 + 1, y, rw - rw // 2 - 1, 32)
+    s.comp_seismograph(c, ev, now, x, y + 34, rw, H - 4 - (y + 34), speed=24)
     draw_border(c, "lights", _rainbow(now, 200), now)
     s.jackpot(c, ev, now)
 
@@ -750,11 +1036,13 @@ def _fever(s, c, ev, now, el, accent):
     s.comp_histogram(c, 62, 16, 68, 44, label="")
     s.comp_ranking(c, 3, 63, 126, 8)
     s.comp_graph(c, 3, H - 46, 126, 31, label="")
-    # right: countdown + cities
+    # right: Tokyo, epicentre, magnitude, seismograph
     rx = W - 128
     _shade(c.buf[14:H - 14, rx:W])
-    s.comp_next(c, ev, now, rx + 2, 16, 124, 44, "arcade")
-    s.comp_cities(c, ev, now, rx + 2, 63, 124, H - 79, level=1)
+    s.comp_tokyo(c, ev, now, rx + 2, 16, 124, 44)
+    y = s.comp_epicentre(c, ev, rx + 2, 63, 124, label=False)
+    y = s.comp_magnitude(c, ev, rx + 2, y, 124, 24, tile=False)
+    s.comp_seismograph(c, ev, now, rx + 2, y, 124, H - 16 - y, speed=30)
     # centre: flashing banner
     if int(now * 4) % 2 == 0:
         txt = f"震度{_jp(ev.get('max') or '0')}"
@@ -768,7 +1056,7 @@ def _fever(s, c, ev, now, el, accent):
 
 
 def _broadcast(s, c, ev, now, el, accent):
-    """TV broadcast: full-wall map, red EEW box top-left, city panel right, blue crawl."""
+    """TV broadcast: full-wall map, red EEW box and max intensity top-left, bulletin panel right, blue crawl."""
     f = s.fonts()
     s.comp_map(c, ev, now, "japan_wide", dim=0.9)
     bh = 6 + f["jp_big"].line + f["jp_r"].line
@@ -778,32 +1066,35 @@ def _broadcast(s, c, ev, now, el, accent):
     f["jp_big"].draw(c, 6, 3, (255, 255, 255), "緊急地震速報")
     f["jp_r"].draw(c, 6, 4 + f["jp_big"].line, (255, 255, 255), "強い揺れに警戒" if ev.get("warn") else "揺れに注意")
     f["jp_s"].draw(c, bw - 6 - f["jp_s"].width("気象庁"), bh - 10, (255, 220, 220), "気象庁")
+    s.comp_max(c, ev, 0, bh + 3, 64, 48)
     px = W - 128
     _shade(c.buf[0:H - 18, px:W], 2)
-    y = s.comp_hypo(c, ev, px + 4, 3, "jp", "jp_s")
-    s.comp_max(c, ev, px + 4, y + 1, 50, 36)
-    s.comp_next(c, ev, now, px + 57, y + 1, 68, 36, "key")
-    s.comp_cities(c, ev, now, px + 4, y + 40, 120, H - 18 - y - 41, level=1)
+    y = s.comp_epicentre(c, ev, px + 4, 3, 120, label=False)
+    y = s.comp_magnitude(c, ev, px + 4, y, 120, 24, tile=False)
+    s.comp_tokyo(c, ev, now, px + 4, y, 120, 44)
+    s.comp_seismograph(c, ev, now, px + 4, y + 47, 120, H - 20 - (y + 47))
     s.comp_ticker(c, ev, now, 0, H - 17, W, 17, (0, 30, 120), (255, 255, 255), "jp", 70)
     c.FillRect(0, H - 18, W, 1, Color(255, 255, 255))
 
 
 def _dashboard(s, c, ev, now, el, accent):
-    """Map plus instruments: max-intensity history, histogram, cities with P→S progress bars."""
+    """Instruments (after EQMonitor / Kiwi Monitor): Tokyo countdown dial, intensity meter, histogram, M updates."""
     mp = s.comp_map(c, ev, now)
     mw = mp.w if mp else 270
     s.comp_scale(c, 6, H - 9)
     x, rw = mw + 4, W - mw - 8
     s.comp_header(c, ev, mw, 0, W - mw, 15, accent, "jp_r")
-    y = s.comp_hypo(c, ev, x, 17, "jp_r", "jp_s")
-    s.comp_graph(c, x, y, rw // 2 - 1, 40)
-    s.comp_histogram(c, x + rw // 2 + 1, y, rw - rw // 2 - 1, 40)
-    s.comp_cities(c, ev, now, x, y + 43, rw, H - y - 47, timebar=True)
+    y = s.comp_epicentre(c, ev, x, 17, rw, label=False)
+    y = s.comp_magnitude(c, ev, x, y, rw, 24)
+    s.comp_dial(c, ev, now, x + 34, y + 36, 32)
+    s.comp_meter(c, x + 74, y, 34, 84)
+    s.comp_histogram(c, x + 112, y, rw - 112, 84, label="")
+    s.comp_mag_history(c, x, y + 88, rw, H - 4 - (y + 88))
     draw_border(c, "notch", accent, now)
 
 
 def _terminal(s, c, ev, now, el, accent):
-    """Green CRT: the map plus city readouts and a scrolling data log."""
+    """Green CRT: the map plus Tokyo / nearest-station readouts and a scrolling data log."""
     f = s.fonts()
     green = (60, 255, 110)
     mp = s.comp_map(c, ev, now, dim=0.8, ring_cols=(green, (255, 255, 255)))
@@ -815,10 +1106,15 @@ def _terminal(s, c, ev, now, el, accent):
     t.draw(c, x, 2 + t.line, (255, 255, 255), f"> M{ev['mag']:.1f} D{ev['depth']:.0f}KM MAX {ev.get('max')}")
     f["jp_big"].draw(c, x, 3 + 2 * t.line, (200, 255, 200), ev.get("hypocenter") or "")
     yy = 5 + 2 * t.line + f["jp_big"].line
-    for k in s.cities(ev, now)[:5]:
-        line = f"{k['name'][:9].upper():9} {k['class']:>2} " + (f"S-{k['s_in']:3.0f}s" if k["s_in"] > 0 else "ARRIVED")
-        sf.draw(c, x, yy, qc.SHINDO_COLOURS[k["class"]], line)
-        yy += sf.line
+    k = s.tokyo(ev, now)
+    line = f"> TOKYO {k['class']:>2} " + ("--" if k["class"] == "0" else f"S-{k['s_in']:3.0f}s" if k["s_in"] > 0 else "ARRIVED")
+    t.draw(c, x, yy, qc.SHINDO_COLOURS[k["class"]] if k["class"] != "0" else green, line)
+    yy += t.line
+    if s.rep is not None and s.rep_hist:
+        t.draw(c, x, yy, green, f"> STN {kmoni.points()[s.rep][0]} {s.rep_hist[-1][1]:4.1f}")
+        yy += t.line
+    s.comp_seismograph(c, ev, now, x, yy + 1, W - x - 6, 30, label=False)
+    yy += 33
     yy += 2
     for ln in list(s.log)[-max(1, (H - yy - 4) // sf.line):]:
         sf.draw(c, x, yy, (40, 200, 80), ln[:32])
@@ -830,12 +1126,14 @@ def _terminal(s, c, ev, now, el, accent):
 
 
 def _countdown(s, c, ev, now, el, accent):
-    """One enormous number: seconds until the S wave reaches the next major city."""
+    """One enormous number: seconds until the S wave reaches Tokyo (or the next big city if Tokyo won't shake)."""
     f = s.fonts()
     mp = s.comp_map(c, ev, now, dim=0.7)
     mw = mp.w if mp else 270
     x = mw + 8
-    k = s.next_city(ev, now)
+    k = s.tokyo(ev, now)
+    if k["class"] == "0":
+        k = s.next_city(ev, now)
     f["jp_big"].draw(c, x, 4, accent, s.title(ev))
     y = 6 + f["jp_big"].line
     if k:
@@ -848,7 +1146,8 @@ def _countdown(s, c, ev, now, el, accent):
         f["jp_big"].draw(c, x + f["huge"].width(big) + 4, y + f["huge"].h - f["jp_big"].h, col, "秒")
         y += f["huge"].h + 4
         f["jp_r"].draw(c, x, y, qc.SHINDO_COLOURS[k["class"]], f"予想震度 {_jp(k['class'])}")
-        f["jp_s"].draw(c, x, y + 15, (170, 170, 180), f"{ev.get('hypocenter', '')}  M{ev['mag']:.1f}")
+        y = s.comp_epicentre(c, ev, x, y + 16, W - x - 8, label=False)
+        s.comp_magnitude(c, ev, x, y, W - x - 8, 24, tile=False)
     else:
         f["jp_r"].draw(c, x, y + 4, (200, 200, 210), "揺れ到達を待っています")
     draw_border(c, "glow", accent, now)
@@ -861,21 +1160,23 @@ def _ranking(s, c, ev, now, el, accent):
     mw = mp.w if mp else 270
     s.comp_scale(c, 6, H - 9)
     x = mw + 4
-    s.comp_header(c, ev, mw, 0, W - mw, 15, accent, "jp_r")
-    f["jp_r"].draw(c, x, 17, (255, 255, 255), f"{ev.get('hypocenter', '')} M{ev['mag']:.1f}")
-    f["jp_s"].draw(c, x, 31, (150, 150, 160), "リアルタイム震度 上位観測点")
-    s.comp_ranking(c, x, 41, W - x - 5, 16, "jp_s")
+    y = s.comp_card(c, ev, now, x, 3, W - x - 5, accent)
+    f["jp_s"].draw(c, x, y, (150, 150, 160), "リアルタイム震度 上位観測点")
+    y += 10
+    s.comp_ranking(c, x, y, W - x - 5, (H - 4 - y) // (f["jp_r"].line + 1), "jp_r")
     draw_border(c, "corners", accent, now)
 
 
 def _seismo(s, c, ev, now, el, accent):
-    """Seismograph wall: traces for the epicentre and the strongest cities, then the city list."""
+    """Seismograph wall: the nearest station's seismograph, traces for the strongest cities, Tokyo."""
     mp = s.comp_map(c, ev, now)
     mw = mp.w if mp else 270
     x, rw = mw + 3, W - mw - 6
     s.comp_header(c, ev, mw, 0, W - mw, 15, accent, "jp_r")
-    s.comp_traces(c, ev, now, x, 17, rw, 96, n=4)
-    s.comp_cities(c, ev, now, x, 116, rw, H - 120, level=1)
+    y = s.comp_epicentre(c, ev, x, 17, rw, label=False)
+    s.comp_seismograph(c, ev, now, x, y, rw, 52, speed=20)
+    s.comp_traces(c, ev, now, x, y + 54, rw, H - 42 - (y + 54), n=3)
+    s.comp_tokyo(c, ev, now, x, H - 40, rw, 36)
     draw_border(c, "double", accent, now)
 
 
@@ -895,20 +1196,20 @@ def _arcade(s, c, ev, now, el, accent):
     a1.draw(c, x, 46, (255, 255, 0), "MAX SHINDO")
     cls = ev.get("max") or "0"
     a.draw(c, x + 104, 42, qc.SHINDO_COLOURS.get(cls, (255, 255, 255)), cls)
-    a1.draw(c, x, 62, (0, 255, 255), "CITY        SH   S")
-    yy = 72
-    for k in s.cities(ev, now)[:8]:
-        a1.draw(c, x, yy, (255, 255, 255), f"{k['name'][:10].upper():10}")
-        a1.draw(c, x + 96, yy, qc.SHINDO_COLOURS[k["class"]], f"{k['class']:>2}")
-        t = f"{k['s_in']:3.0f}" if k["s_in"] > 0 else "HIT"
-        a1.draw(c, x + 128, yy, (255, 255, 255) if k["s_in"] > 0 or int(now * 6) % 2 else neon, t)
-        yy += 10
-    s.comp_graph(c, x, max(yy + 2, H - 30), W - x - 6, min(26, H - yy - 8), label="")
+    k = s.tokyo(ev, now)
+    a1.draw(c, x, 62, (0, 255, 255), "TOKYO")
+    a1.draw(c, x + 48, 62, qc.SHINDO_COLOURS[k["class"]], "SHINDO " + k["class"])
+    t = "SAFE" if k["class"] == "0" else f"{k['s_in']:.0f}" if k["s_in"] > 0 else "HIT!"
+    a.draw(c, x, 74, (255, 255, 255) if k["s_in"] > 0 or int(now * 6) % 2 else neon, t)
+    if k["class"] != "0" and k["s_in"] > 0:
+        a1.draw(c, x + a.width(t) + 4, 82, (255, 255, 0), "SEC")
+    a1.draw(c, x, 96, (0, 255, 255), "NEAREST STATION")
+    s.comp_seismograph(c, ev, now, x, 106, W - x - 6, H - 112, label=False, speed=25)
     draw_border(c, "lights", neon, now)
 
 
 def _gogai(s, c, ev, now, el, accent):
-    """号外 (newspaper extra): sepia map, vertical (tategaki) headlines in mincho, city list."""
+    """号外 (newspaper extra): sepia map, vertical (tategaki) headlines in mincho, Tokyo and a seismograph."""
     f = s.fonts()
     mp = s.comp_map(c, ev, now, dim=0.75, ring_cols=((230, 200, 140), (230, 40, 40)))
     mw = mp.w if mp else 270
@@ -932,37 +1233,57 @@ def _gogai(s, c, ev, now, el, accent):
     tate(f["jp"], f"最大震度{_jp(ev.get('max') or '0')}", qc.SHINDO_COLOURS.get(ev.get("max") or "0", (255, 255, 255)), 6)
     tate(f["jp_s"], f"M{ev['mag']:.1f} 深さ{ev['depth']:.0f}km", (200, 190, 170), 6)
     lw = x - mw - 8
-    f["jp_r"].draw(c, mw + 6, 4, (230, 200, 140), "各地の予想震度")
-    s.comp_cities(c, ev, now, mw + 6, 19, lw, H - 23, level=1)
+    f["jp_r"].draw(c, mw + 6, 4, (230, 200, 140), "首都への影響")
+    s.comp_tokyo(c, ev, now, mw + 6, 19, lw, 48)
+    f["jp_r"].draw(c, mw + 6, 72, (230, 200, 140), "震源近くの揺れ")
+    s.comp_seismograph(c, ev, now, mw + 6, 87, lw, H - 92, label=False)
     draw_border(c, "double", (200, 40, 30), now)
 
 
+def _jquake(s, c, ev, now, el, accent):
+    """After JQuake: map on the left; the bulletin card, the Tokyo countdown dial and the intensity meter."""
+    f = s.fonts()
+    mp = s.comp_map(c, ev, now)
+    mw = mp.w if mp else 270
+    s.comp_scale(c, 6, H - 9)
+    c.FillRect(mw, 0, W - mw, H, Color(12, 13, 20))
+    x, rw = mw + 4, W - mw - 8
+    y = s.comp_card(c, ev, now, x, 3, rw, accent)
+    r = min(34, (H - y - 18) // 2)
+    s.comp_dial(c, ev, now, x + r + 4, y + r + 2, r)
+    mx = x + 2 * r + 14
+    s.comp_meter(c, mx, y, 30, H - y - 4)
+    s.comp_seismograph(c, ev, now, mx + 34, y, W - 4 - (mx + 34), H - y - 4, label=False, speed=12)
+
+
 THEMES = {
-    "monitor": {"label": "Kyoshin Monitor", "hint": "NIED's monitor look: station dots, waves, bulletin, cities",
+    "monitor": {"label": "Kyoshin Monitor", "hint": "NIED's monitor look: station dots, waves, epicentre, Tokyo, seismograph",
                 "draw": _monitor, "fonts": {}, "type": "M+ 12 bold · k8x12 · Misaki"},
-    "pachinko": {"label": "Pachinko", "hint": "Ticker, shaking map, slot reel, graphs, ranking, cities, traces", "draw": _pachinko,
+    "pachinko": {"label": "Pachinko", "hint": "Ticker, shaking map, slot reel, graphs, ranking, Tokyo, seismograph", "draw": _pachinko,
                  "fonts": {"jp": _jpf("shnm12b"), "jp_r": _jpf("k8x12L"), "jp_s": _jpf("misaki_gothic"), "jp_big": _jpf("kappa20b")},
                  "type": "Shinonome bold · k8x12L · Misaki · Kappa 20"},
     "fever": {"label": "Fever mode", "hint": "Full-wall map, every panel floating on it, two tickers, rainbow", "draw": _fever,
               "fonts": {"jp": _jpf("shnm12maru"), "jp_r": _jpf("shnm12b"), "jp_s": _jpf("misaki_gothic"), "jp_big": _jpf("ayu20")},
               "type": "Shinonome maru · Ayu 20"},
-    "broadcast": {"label": "TV broadcast", "hint": "Full-wall map, red EEW box, city panel, blue crawl", "draw": _broadcast,
+    "jquake": {"label": "JQuake style", "hint": "Bulletin card (規模 / 深さ / 最大震度), Tokyo countdown dial, intensity meter",
+               "draw": _jquake, "fonts": {"jp_r": _jpf("shnm12b"), "jp_mid": _jpf("shnm16b")}, "type": "Shinonome 16/12 bold · Misaki"},
+    "broadcast": {"label": "TV broadcast", "hint": "Full-wall map, red EEW box, bulletin panel, blue crawl", "draw": _broadcast,
                   "fonts": {"jp_big": _jpf("jiskan16"), "jp_r": _jpf("shnm12b")}, "type": "Jiskan 16 · Shinonome bold · M+"},
-    "dashboard": {"label": "Instrument panel", "hint": "Intensity history, histogram, cities with P→S bars", "draw": _dashboard,
+    "dashboard": {"label": "Instrument panel", "hint": "After EQMonitor / Kiwi Monitor: countdown dial, intensity meter, histogram, M updates", "draw": _dashboard,
                   "fonts": {"jp": _jpf("shnm12b"), "jp_r": _jpf("shnm12maru"), "jp_s": _jpf("k8x12S")},
                   "type": "Shinonome maru · k8x12S"},
-    "terminal": {"label": "Data terminal", "hint": "Green CRT with city readouts and a live data log", "draw": _terminal,
+    "terminal": {"label": "Data terminal", "hint": "Green CRT with Tokyo / station readouts and a live data log", "draw": _terminal,
                  "fonts": {"jp_r": _jpf("mplus10r"), "jp_big": _jpf("unifont")}, "type": "GNU Unifont · M+ 10 · t0"},
-    "countdown": {"label": "Countdown", "hint": "One huge number: seconds until the S wave hits the next city", "draw": _countdown,
+    "countdown": {"label": "Countdown", "hint": "One huge number: seconds until the S wave hits Tokyo", "draw": _countdown,
                   "fonts": {"jp_big": _jpf("shnm16min"), "jp_r": _jpf("shnm12min"), "jp_s": _jpf("misaki_mincho")},
                   "type": "Shinonome mincho 16/12 · Misaki mincho"},
-    "ranking": {"label": "League table", "hint": "The strongest stations right now", "draw": _ranking,
+    "ranking": {"label": "League table", "hint": "JQuake-style card, then the strongest stations right now", "draw": _ranking,
                 "fonts": {"jp_r": _jpf("shnm12min"), "jp_s": _jpf("k8x12S")}, "type": "Shinonome mincho · k8x12S"},
-    "seismo": {"label": "Seismographs", "hint": "Traces at the epicentre and the strongest cities", "draw": _seismo,
+    "seismo": {"label": "Seismographs", "hint": "The nearest station's seismograph, traces, Tokyo", "draw": _seismo,
                "fonts": {"jp_r": _jpf("k14"), "jp_s": _jpf("misaki_mincho")}, "type": "JIS X 0213 K14 · Misaki mincho"},
     "arcade": {"label": "Arcade cabinet", "hint": "Neon rings, Midway MCR font scoreboard, chasing lights", "draw": _arcade,
                "fonts": {"jp_big": _jpf("ayu18")}, "type": "Unscii MCR · Ayu 18"},
-    "gogai": {"label": "号外 extra edition", "hint": "Newspaper extra: vertical mincho headlines, city list", "draw": _gogai,
+    "gogai": {"label": "号外 extra edition", "hint": "Newspaper extra: vertical mincho headlines, Tokyo, seismograph", "draw": _gogai,
               "fonts": {"jp_big": _jpf("kappa20b"), "jp": _jpf("shnm16b"), "jp_r": _jpf("shnm12min"), "jp_s": _jpf("misaki_mincho")},
               "type": "Kappa 20 · Shinonome 16 bold · mincho"},
 }
