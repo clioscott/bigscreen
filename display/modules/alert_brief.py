@@ -131,6 +131,7 @@ def brief(alert):
         "amount": key_amount(summary) or key_amount(" ".join(details)) or key_amount(" ".join(impacts)),
         "where": short_where(regions),
         "cities": cities(regions),
+        "areas": area_levels(regions),
         "regions": regions,
         "until": _when(alert.get("expires")),
         "issued": _when(alert.get("published")),
@@ -172,7 +173,7 @@ def paragraphs(b, level="all"):
         out.append({"style": "impact", "tag": "EXPECT", "text": " ".join(b["impacts"])})
     if b["advice"]:
         out.append({"style": "advice", "tag": "DO", "text": " ".join(b["advice"])})
-    if level != "essentials" and (b.get("cities") or b["regions"]):
+    if b.get("cities") or b["regions"]:                    # the area is never left out (it shrinks instead)
         out.append({"style": "regions", "tag": "AREA", "text": " · ".join(b.get("cities") or b["regions"])})
     return [p for p in out if p["text"]]
 
@@ -213,3 +214,70 @@ def cities(regions):
             if name and name not in out:
                 out.append(name)
     return out
+
+
+# Cities that are always named, whatever the space (short form used when compacting).
+KEY_CITIES = [("Vancouver", "Vancouver"), ("Richmond", "Richmond"), ("Burnaby", "Burnaby"), ("Delta", "Delta"),
+              ("Surrey", "Surrey"), ("Coquitlam", "Coquitlam"), ("New Westminster", "New West"), ("Langley", "Langley")]
+
+
+def _key_of(city):
+    """The key-city short name a place counts as ('South Delta' → 'Delta'), or None. Only plain
+    'Vancouver' is Vancouver — North and West Vancouver are their own cities."""
+    for full, short in KEY_CITIES:
+        if full == "Vancouver":
+            if city == "Vancouver":
+                return short
+        elif full.lower() in city.lower() and not city.lower().startswith("port "):
+            return short
+    return None
+
+
+def zones(regions):
+    """[{label, head, part, cities}] — 'Metro Vancouver - North Shore including …' →
+    label 'Metro Vancouver (North Shore)', cities ['West Vancouver', 'North Vancouver']."""
+    out = []
+    for r in regions or []:
+        head, _, tail = r.partition(" - ")
+        part = tail.split(" including ")[0].strip() if tail else ""
+        label = f"{head} ({part[:1].upper() + part[1:]})" if part else head
+        out.append({"label": label, "head": head, "part": part[:1].upper() + part[1:], "cities": cities([r])})
+    return out
+
+
+def area_levels(regions):
+    """Ways to name the affected area, most detailed first; each is a list of items (one per line in a sidebar).
+
+    0  every city
+    1  each zone, with its key cities:   'Metro Vancouver (Central): Vancouver, Burnaby, New West'
+    2  zones merged per area:            'Metro Vancouver (All Regions): Vancouver, Richmond, …'
+    3  zone names only (strips that sit beside a fuller list)
+    Key cities appear at every level but the last."""
+    zs = zones(regions)
+    if not zs:
+        return [[], [], [], []]
+    every = []
+    for z in zs:
+        for cty in z["cities"]:
+            if cty not in every:
+                every.append(cty)
+    lvl1 = []
+    for z in zs:
+        keys = [k for k in (_key_of(cty) for cty in z["cities"]) if k]
+        keys = list(dict.fromkeys(keys))
+        lvl1.append(z["label"] + (": " + ", ".join(keys) if keys else ""))
+    heads = list(dict.fromkeys(z["head"] for z in zs))
+    lvl2, lvl3 = [], []
+    for h in heads:
+        mine = [z for z in zs if z["head"] == h]
+        parts = [z["part"] for z in mine if z["part"]]
+        if len(mine) >= 4:
+            name = f"{h} (All Regions)"
+        elif parts:
+            name = f"{h} ({', '.join(parts)})"
+        else:
+            name = h
+        keys = list(dict.fromkeys(k for z in mine for k in (_key_of(c) for c in z["cities"]) if k))
+        lvl2.append(name + (": " + ", ".join(keys) if keys else ""))
+        lvl3.append(name)
+    return [every, lvl1, lvl2, lvl3]

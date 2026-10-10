@@ -1,5 +1,5 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
-import { store, api, fail, toast, ago, seed, refreshDisplay } from "../core.js";
+import { store, api, fail, toast, ago, seed, refreshDisplay, clone } from "../core.js";
 
 const TYPES = [
   { id: "warning", label: "Warnings", hint: "Severe weather is happening or about to", colour: "#dc1414" },
@@ -11,6 +11,11 @@ const ENTRY = { panel: "weather_alert", when: "weather_alert_active", advance: "
 const DETAIL = [
   { value: "all", label: "Everything", hint: "The whole ECCC text (minus boilerplate) and every forecast region" },
   { value: "essentials", label: "Essentials", hint: "What's happening, what to expect and what to do, in larger text" },
+];
+const DENSITY = [
+  { value: "dense", label: "Dense", hint: "Smaller text, as much of the message as possible" },
+  { value: "balanced", label: "Balanced", hint: "The full message at the largest size that fits" },
+  { value: "minimal", label: "Minimal", hint: "Big text: what's happening, what to do, and where" },
 ];
 const LOOK_KEYS = ["header", "palette", "family", "structure", "border", "reveal", "reveal_speed", "title_font", "title_scale",
   "body_font", "reading_wpm", "min_hold_sec", "detail", "upper", "pulse", "density"];
@@ -125,7 +130,35 @@ export const Alerts = {
         setTimeout(refreshDisplay, 500);
       } catch (e) { fail(e); }
     };
-    const stop = async () => { try { await api("/api/display/override/clear", { json: { side: "right" } }); toast("Back to the rotation"); } catch (e) { fail(e); } };
+    const live = ref(false);              // the wall is showing this page's settings
+    let liveTimer;
+    const pushLive = async () => {
+      const settings = clone(a.value);
+      for (const k of LOOK_KEYS) if (settings[k] === undefined || settings[k] === "") settings[k] = null;   // unset beats saved
+      try {
+        await api("/api/display/preview", { json: { overlay: { modules: { weather_alerts: settings } }, ttl_sec: 4 * 3600 } });
+        if (!live.value) {
+          await api("/api/display/override", { json: { side: "right", panel: "weather_alert", duration_sec: 4 * 3600,
+            ...(cat.value.alerts?.length ? {} : { test: true }) } });
+          live.value = true;
+        }
+      } catch (e) { fail(e); }
+    };
+    let armed = false;                   // only changes the user makes, not the initial load
+    setTimeout(() => { armed = true; }, 1500);
+    watch(() => JSON.stringify(a.value), () => {
+      if (!armed || tour.value) return;
+      clearTimeout(liveTimer);
+      liveTimer = setTimeout(pushLive, 350);
+    });
+    const stop = async () => {
+      try {
+        await api("/api/display/override/clear", { json: { side: "right" } });
+        await api("/api/display/preview/clear", { method: "POST" });
+        live.value = false;
+        toast("Back to the rotation");
+      } catch (e) { fail(e); }
+    };
     const when = (ts) => (ts ? new Date(ts * 1000).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "");
     const typeColour = (k) => TYPES.find((x) => x.id === k)?.colour || "#6e7896";
     const fontName = (f) => f.replace("alert/", "").replace(".bdf", "");
@@ -136,7 +169,7 @@ export const Alerts = {
     const revealAt = computed(() => (tileT.value % 12) * 0.3);               // replays the reveal every few seconds
     const themeOf = computed(() => (cat.value.themes || []).find((x) => x.id === a.value.theme) || {});
     const opts = (dict) => [{ value: "", label: "Theme" }, ...Object.entries(dict || {}).map(([value, label]) => ({ value, label }))];
-    return { optImg, borderAt, revealAt, themeOf, tour, tourSec, tourTheme, startTour, stepTour, stopTour, useTour, tourWall, ids, a, cat, live, shown, onLoaded, tl, t, playing, page, jump, layoutFilter, thumbsOn, themes, thumb, current,
+    return { live, pushLive, DENSITY, optImg, borderAt, revealAt, themeOf, tour, tourSec, tourTheme, startTour, stepTour, stopTour, useTour, tourWall, ids, a, cat, live, shown, onLoaded, tl, t, playing, page, jump, layoutFilter, thumbsOn, themes, thumb, current,
       TYPES, DETAIL, opts, types, toggleType, areas, areaId, setOpt, resetLook, entry, addToRotation, show, stop,
       when, typeColour, ago, fontName };
   },
@@ -144,6 +177,16 @@ export const Alerts = {
     <div class="page-head"><div class="grow"><h1>Weather alerts</h1>
       <p>When Environment Canada has an alert in effect for your area, the wall switches to a full-screen bulletin at the start of the rotation. Each alert fills one dense screen with nearly all of Environment Canada's text (amounts, what to expect and what to do highlighted), framed by a bright animated border, and holds long enough to read.</p></div>
       <Toggle v-model="a.enabled"/></div>
+
+    <div class="card density-card"><div class="card-body row" style="gap:14px; flex-wrap:wrap">
+      <div><div class="section-title" style="margin:0">Text density</div>
+        <div class="faint" style="font-size:12px">{{ DENSITY.find(d => d.value === (a.density || 'balanced')).hint }} — applies to every design</div></div>
+      <Seg :modelValue="a.density || 'balanced'" @update:modelValue="v => a.density = v" :options="DENSITY"/>
+      <span class="spacer"></span>
+      <template v-if="live"><span class="live">ON THE WALL</span><span class="faint" style="font-size:12px">changes show instantly</span>
+        <button class="btn sm" @click="stop"><Icon name="Undo2" :size="14"/>Back to rotation</button></template>
+      <button v-else class="btn sm" @click="pushLive"><Icon name="MonitorPlay" :size="14"/>Show on the wall</button>
+    </div></div>
 
     <div class="two-col">
       <div class="stack sticky">
@@ -231,9 +274,7 @@ export const Alerts = {
             <Field label="Key facts pulse" hint="Amounts glow every couple of seconds after the reveal">
               <Seg :modelValue="a.pulse === true ? 'on' : a.pulse === false ? 'off' : ''" @update:modelValue="v => setOpt('pulse', v === '' ? '' : v === 'on')"
                 :options="[{value:'', label:'Theme'}, {value:'on', label:'On'}, {value:'off', label:'Off'}]"/></Field>
-            <Field label="Density" hint="Max detail = smaller text, more of it; Large = bigger text, essentials only">
-              <Seg :modelValue="a.density || ''" @update:modelValue="v => setOpt('density', v)"
-                :options="[{value:'', label:'Theme'}, {value:'normal', label:'Balanced'}, {value:'max', label:'Max detail'}, {value:'large', label:'Large type'}]"/></Field>
+
           </div></div></div>
 
         <div class="card"><div class="card-head"><Icon name="BookOpenText" :size="15"/><h3>Reading & timing</h3>

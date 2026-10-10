@@ -43,7 +43,9 @@ SAMPLE = {
     "type": "warning", "name": "rainfall warning", "code": "TEST", "test": True, "status": "issued",
     "regions": ["Metro Vancouver - central including the City of Vancouver, Burnaby and New Westminster",
                 "Metro Vancouver - North Shore including West Vancouver and North Vancouver",
-                "Metro Vancouver - southeast including Surrey, Langley and Delta"],
+                "Metro Vancouver - northeast including Coquitlam, Port Coquitlam, Port Moody, Maple Ridge and Pitt Meadows",
+                "Metro Vancouver - southeast including Surrey, White Rock and Langley",
+                "Metro Vancouver - southwest including Richmond and Delta"],
     "text": ("Heavy rain is expected, with total rainfall amounts of 50 to 70 mm, and up to 100 mm near the "
              "North Shore mountains.\n\n"
              "An atmospheric river will bring heavy rain to the region beginning tonight and continuing through "
@@ -347,6 +349,22 @@ def draw_border(c, kind, sev, t):
 # ---------------------------------------------------------------------------
 # the screen
 # ---------------------------------------------------------------------------
+DENSITIES = {"dense": "Dense", "balanced": "Balanced", "minimal": "Minimal"}
+_SQ = []
+
+
+def _squeezed():
+    if not _SQ:
+        _SQ.append((FI("alert/u8g2_squeezed_regular_6.bdf"), FI("alert/u8g2_squeezed_bold_6.bdf")))
+    return _SQ[0]
+_DENSITY_ALIASES = {"max": "dense", "normal": "balanced", "large": "minimal"}
+
+
+def density_of(settings):
+    d = (settings or {}).get("density") or "balanced"
+    return _DENSITY_ALIASES.get(d, d) if _DENSITY_ALIASES.get(d, d) in DENSITIES else "balanced"
+
+
 class St:
     """Per-alert context handed to a structure."""
 
@@ -407,8 +425,6 @@ class AlertScreen:
             th["upper"] = st["upper"]
         if st.get("pulse") in (True, False):
             th["pulse"] = st["pulse"]
-        if st.get("density") in ("max", "normal", "large"):
-            th["density"] = st["density"]
         return th
 
     def family(self, th):
@@ -450,15 +466,35 @@ class AlertScreen:
             ctx.area = "Metro Vancouver" if b["test"] else self.area()
             ctx.title_f = struct.title_font(ctx)
             b["_issued_ts"], b["_expires_ts"] = a.get("published"), a.get("expires")
-            density = th.get("density") or "normal"
-            paras = alert_brief.paragraphs(b, "essentials" if density == "large" and level != "all_forced" else level)
+            # density is a global choice (Dense / Balanced / Minimal) applied to whichever design is shown
+            density = density_of(st)
+            if density == "minimal":
+                paras = [p for p in alert_brief.paragraphs(b, "essentials") if p["style"] in ("lead", "advice", "regions")]
+            else:
+                paras = alert_brief.paragraphs(b, level)
             if struct.lists_cities:
                 paras = [p for p in paras if p["style"] != "regions"]
             boxes = struct.boxes(ctx)
-            ladder = fam["ladder"][1:] if density == "max" and len(fam["ladder"]) > 1 else fam["ladder"]
+            if density == "dense":
+                # smaller sizes first, ending in an extra-compact (real bold) face so more of the text stays
+                ladder = (fam["ladder"][1:] if len(fam["ladder"]) > 1 else list(fam["ladder"])) + [_squeezed()]
+            elif density == "minimal":
+                ladder = [(fam["key"], fam["key"])] + list(fam["ladder"])
+            else:
+                ladder = fam["ladder"]
             chosen = None
-            for drop in ((), ("regions",), ("regions", "detail")):
-                use = [p for p in paras if p["style"] not in drop]
+            def with_area(ps, lvl):
+                out = []
+                for p in ps:
+                    if p["style"] == "regions":
+                        items = (b.get("areas") or [[]] * 4)[lvl] or [b["where"] or ctx.area]
+                        p = dict(p, text=(" · " if lvl == 0 else "; ").join(items))
+                    out.append(p)
+                return out
+            variants = [with_area(paras, 0), with_area(paras, 1), with_area(paras, 2),
+                        with_area([p for p in paras if p["style"] != "detail"], 2),
+                        with_area([p for p in paras if p["style"] not in ("detail", "impact")], 2)]
+            for use in variants:
                 for reg, bold in ladder:
                     fonts = {"reg": reg, "bold": bold, "small": fam["small"] if reg.h > fam["small"].h else reg}
                     lines, over = struct.flow(ctx, use, boxes, fonts)
@@ -470,7 +506,7 @@ class AlertScreen:
             if not chosen:                                  # still too long: smallest size, cut at the end
                 reg, bold = fam["ladder"][-1]
                 fonts = {"reg": reg, "bold": bold, "small": reg}
-                use = [p for p in paras if p["style"] not in ("regions", "detail")]
+                use = variants[-1]
                 lines, _ = struct.flow(ctx, use, boxes, fonts)
                 chosen = (lines, use, fonts)
             lines, use, fonts = chosen
@@ -718,42 +754,85 @@ def facts(ctx):
         out.append(("clock", "UNTIL " if ctx.upper else "until ", b["until"].upper() if ctx.upper else b["until"]))
     if b["issued"]:
         out.append(("check", "ISSUED " if ctx.upper else "issued ", b["issued"].upper() if ctx.upper else b["issued"]))
-    out.append(("pin", "", U(ctx, city_summary(ctx))))
+    out.append(("pin", "", None))                              # area text is fitted to the space left
     return out
 
 
-def city_summary(ctx, n=3):
-    cs = ctx.b.get("cities") or []
-    if not cs:
-        return ctx.b["where"] or ctx.area
-    return ", ".join(cs[:n]) + (f" +{len(cs) - n}" if len(cs) > n else "")
+def _levels(ctx):
+    lv = ctx.b.get("areas") or [[], [], [], []]
+    if not any(lv):
+        name = ctx.b["where"] or ctx.area
+        lv = [[name], [name], [name], [name]]
+    return lv
 
 
-def city_list(c, ctx, x, y, w, y1, f, col=None, glyph_col=None, centre=False):
-    """Cities one per line (pin glyph each); '+N more' if they don't all fit. Returns the next y."""
-    cs = ctx.b.get("cities") or [ctx.b["where"] or ctx.area]
-    for k, name in enumerate(cs):
-        if y + f.h > y1 - (f.line if k < len(cs) - 1 else 0):
-            more = f"+{len(cs) - k} more"
-            f.draw(c, x + 10, y, ctx.pal["dim"], more)
-            return y + f.line
-        name = U(ctx, name)
-        while f.width(name) > w - 10 and len(name) > 3:
-            name = name[:-2] + "."
-        xx = x + (w - 10 - f.width(name)) // 2 if centre else x
-        glyph(c, "pin", xx, y + max(0, (f.h - 7) // 2), glyph_col or ctx.pal["label"])
-        f.draw(c, xx + 10, y, col or ctx.pal["strong"], name)
-        y += f.line
+def area_line(ctx, f, maxw, label_only_ok=True):
+    """The affected area as one line: every city if it fits, else zones with their key cities, else merged
+    zones with key cities, else (strips only) zone names. Never '+N'."""
+    lv = _levels(ctx)
+    tries = [", ".join(lv[0]), "; ".join(lv[1]), "; ".join(lv[2])] + (["; ".join(lv[3])] if label_only_ok else [])
+    for t in tries:
+        t = U(ctx, t)
+        if f.width(t) <= maxw:
+            return t
+    return U(ctx, tries[-1])
+
+
+def city_fits(ctx, f, w, h):
+    """Would some level (0-2) of the area list fit in w x h with font f?"""
+    for items in _levels(ctx)[:3]:
+        if sum(len(_wrap_plain(f, U(ctx, it), w - 10) or [""]) for it in items) * f.line <= h:
+            return True
+    return False
+
+
+def city_list(c, ctx, x, y, w, y1, f, col=None, glyph_col=None, fonts=None):
+    """The affected area one item per line (pin glyph each), wrapping long items with a hanging indent.
+    Uses the most detailed level that fits the space, trying smaller fonts before less detail."""
+    lv = _levels(ctx)
+    cands = []
+    for ff in [f] + [g for g in (fonts or []) if g is not f]:
+        for items in (lv[0], lv[1], lv[2]):
+            rows = []
+            for it in items:
+                wrapped = _wrap_plain(ff, U(ctx, it), w - 10)
+                rows.append(wrapped or [""])
+            if sum(len(r) for r in rows) * ff.line <= y1 - y:
+                cands.append((ff, rows))
+                break
+        if cands:
+            break
+    if not cands:                                              # nothing fits: smallest font, merged level, cut
+        ff = (fonts or [f])[-1]
+        cands.append((ff, [_wrap_plain(ff, U(ctx, it), w - 10) for it in lv[2]]))
+    ff, rows = cands[0]
+    for wrapped in rows:
+        for k, ln in enumerate(wrapped):
+            if y + ff.h > y1:
+                return y
+            if k == 0:
+                glyph(c, "pin", x, y + max(0, (ff.h - 7) // 2), glyph_col or ctx.pal["label"])
+            # "Metro Vancouver (Central): Vancouver, …" — zone in dim, cities bright
+            if k == 0 and ": " in ln:
+                zone, _, rest = ln.partition(": ")
+                xx = x + 10 + ff.draw(c, x + 10, y, ctx.pal["dim"], zone + ":")
+                ff.draw(c, xx + ff.space, y, col or ctx.pal["strong"], rest)
+            else:
+                ff.draw(c, x + 10, y, col or ctx.pal["strong"], ln)
+            y += ff.line
     return y
 
 
 def fact_line(c, ctx, x, y, f, maxw, centre=False):
     items = facts(ctx)
     if centre:
+        items = [(g, a, v if v is not None else area_line(ctx, f, maxw // 2)) for g, a, v in items]
         total = sum(10 + f.width(a + v) + 12 for _, a, v in items) - 12
         x = x + max(0, (maxw - total) // 2)
     end = x + maxw
     for g, a, v in items:
+        if v is None:
+            v = area_line(ctx, f, end - x - 10 - f.width(a))
         if x + 10 + f.width(a + v) > end:
             break
         glyph(c, g, x, y + max(0, (f.h - 7) // 2), ctx.pal["label"])
@@ -874,20 +953,35 @@ class Rail(Structure):
         c.FillRect(x0, y0, rw, y1 - y0, Color(*rail_bg))
         c.FillRect(x0 + rw, y0, 2, y1 - y0, Color(*ctx.sev))
         cx = x0 + rw // 2
-        icon(c, ctx, cx - 24, y0 + 4, 3, rail_bg)
-        y = y0 + 54
         k, sf = ctx.fam["key"], ctx.fam["small"]
-        kind = ctx.b["kind"].upper()
-        k.draw(c, cx - k.width(kind) // 2, y, ctx.sev, kind)
-        y += k.line + 1
-        meter(c, cx - 14, y, ctx)
-        y += 12
         b = ctx.b
         rows = []
         if b["amount"]:
             rows.append((b["amount"].upper(), ctx.pal["amount"], k))
         if b["until"]:
             rows += [("UNTIL", ctx.pal["dim"], sf), (b["until"].upper(), ctx.pal["strong"], k)]
+        rows_h = sum(len(_wrap_plain(f, tx, rw - 8)) * f.line + 1 for tx, _, f in rows)
+        # make room for the whole area list: smaller icon, then no meter, then a smaller font
+        tiny = FI("alert/4x6.bdf")
+        plan = None
+        for scale, show_meter, lf in ((3, True, sf), (2, True, sf), (2, False, sf), (2, False, tiny), (1, False, tiny)):
+            top_h = 16 * scale + 6 + k.line + 1 + (12 if show_meter else 2)
+            avail = (y1 - 2) - (y0 + top_h + rows_h + 5)
+            if city_fits(ctx, lf, rw - 10, avail):
+                plan = (scale, show_meter, lf)
+                break
+        scale, show_meter, lf = plan or (1, False, tiny)
+        iw = 16 * scale
+        icon(c, ctx, cx - iw // 2, y0 + 4, scale, rail_bg)
+        y = y0 + 4 + iw + 2
+        kind = ctx.b["kind"].upper()
+        k.draw(c, cx - k.width(kind) // 2, y, ctx.sev, kind)
+        y += k.line + 1
+        if show_meter:
+            meter(c, cx - 14, y, ctx)
+            y += 12
+        else:
+            y += 2
         for text, col, f in rows:
             for ln in _wrap_plain(f, text, rw - 8):
                 if y + f.h > y1 - 2:
@@ -895,9 +989,8 @@ class Rail(Structure):
                 f.draw(c, cx - f.width(ln) // 2, y, col, ln)
                 y += f.line
             y += 1
-        if y + sf.line * 2 < y1:
-            c.FillRect(x0 + 8, y + 1, rw - 16, 1, Color(*_dim(ctx.sev, 0.5)))
-            city_list(c, ctx, x0 + 6, y + 4, rw - 10, y1 - 2, sf)
+        c.FillRect(x0 + 8, y + 1, rw - 16, 1, Color(*_dim(ctx.sev, 0.5)))
+        city_list(c, ctx, x0 + 6, y + 4, rw - 10, y1 - 2, lf, fonts=[tiny])
         x = x0 + rw + 8
         ctx.title_f.draw(c, x, y0, ctx.sev, title_text(ctx))
         fact_line(c, ctx, x, y0 + ctx.title_f.line, ctx.fam["small"], x1 - x)
@@ -933,7 +1026,7 @@ class Crawl(Structure):
         bh = self.band_h(ctx)
         k = ctx.fam["key"]
         b = ctx.b
-        msg = (f"  /// {title_text(ctx)} IN EFFECT /// {(b['where'] or ctx.area).upper()}"
+        msg = (f"  /// {title_text(ctx)} IN EFFECT /// {', '.join(_levels(ctx)[0]).upper()}"
                + (f" /// UNTIL {b['until'].upper()}" if b["until"] else "") + (f" /// {b['amount'].upper()}" if b["amount"] else ""))
         mw = k.width(msg)
         sub = Canvas(x1 - x0, bh)
@@ -1022,7 +1115,9 @@ class Terminal(Structure):
         x += k.draw(c, x, y, ctx.sev, f"[{title_text(ctx)}]") + 8
         b = ctx.b
         for lab, val in (("STATUS", (b["status"] or "in effect").upper()), ("UNTIL", (b["until"] or "-").upper()),
-                         ("AREA", (b["where"] or ctx.area).upper())):
+                         ("AREA", None)):
+            if val is None:
+                val = area_line(ctx, k, x1 - x - k.width(lab + ":")).upper()
             if x + k.width(lab + ":" + val) > x1:
                 break
             x += k.draw(c, x, y, ctx.pal["dim"], lab + ":")
@@ -1112,7 +1207,7 @@ class FactBar(Structure):
             y += 3
         if y + sf.line * 2 < y1:
             sf.draw(c, fx + 8, y, ctx.pal["dim"], "AREAS")
-            city_list(c, ctx, fx + 8, y + sf.line, self.FW - 12, y1 - 2, sf)
+            city_list(c, ctx, fx + 8, y + sf.line, self.FW - 12, y1 - 2, sf, fonts=[FI("alert/4x6.bdf")])
 
 
 class CitiesRail(Structure):
@@ -1156,9 +1251,8 @@ class CitiesRail(Structure):
         yy += 3
         c.FillRect(rx + 8, yy, self.RW - 16, 1, Color(*_dim(ctx.sev, 0.5)))
         yy += 4
-        n = len(b.get("cities") or [])
-        sf.draw(c, rx + 8, yy, ctx.pal["label"], f"AFFECTED ({n})" if n else "AREA")
-        city_list(c, ctx, rx + 6, yy + sf.line + 1, self.RW - 10, y1 - 2, k if k.h <= 13 else sf)
+        sf.draw(c, rx + 8, yy, ctx.pal["label"], "AFFECTED")
+        city_list(c, ctx, rx + 6, yy + sf.line + 1, self.RW - 10, y1 - 2, k if k.h <= 13 else sf, fonts=[sf, FI("alert/4x6.bdf")])
 
 
 class DualRail(Structure):
@@ -1206,7 +1300,7 @@ class DualRail(Structure):
         c.FillRect(tx, y0 + max(16, f.h) + 2, x1 - rw - tx - 8, 1, Color(*_dim(ctx.sev, 0.6)))
         rx = x1 - rw + 6
         sf.draw(c, rx, y0 + 4, ctx.pal["label"], "AREAS")
-        city_list(c, ctx, rx, y0 + 4 + sf.line + 2, rw - 10, y1 - 2, k if k.h <= 13 else sf)
+        city_list(c, ctx, rx, y0 + 4 + sf.line + 2, rw - 10, y1 - 2, k if k.h <= 13 else sf, fonts=[sf, FI("alert/4x6.bdf")])
 
 
 class KeyFacts(Structure):
@@ -1238,7 +1332,7 @@ class KeyFacts(Structure):
         b = ctx.b
         tiles = [("AMOUNT", U(ctx, b["amount"]) if b["amount"] else b["kind"].upper(), ctx.pal["amount"]),
                  ("UNTIL", U(ctx, b["until"] or "further notice"), ctx.pal["strong"]),
-                 ("WHERE", U(ctx, city_summary(ctx, 2)), ctx.pal["strong"]),
+                 ("WHERE", None, ctx.pal["strong"]),
                  ("LEVEL", b["kind"].upper(), ctx.sev)]
         ty = y0 + rowh + 4
         th = self.tiles_h(ctx)
@@ -1250,6 +1344,10 @@ class KeyFacts(Structure):
             c.FillRect(tx, ty, tw, th, Color(*ctx.pal["panel"]))
             c.FillRect(tx, ty, tw, 2, Color(*ctx.sev))
             sf.draw(c, tx + 4, ty + 4, ctx.pal["dim"], lab)
+            if val is None:
+                val = area_line(ctx, k, tw - 8, label_only_ok=False)
+                if k.width(val) > tw - 8:
+                    val = area_line(ctx, sf, tw - 8)
             fv = k if k.width(val) <= tw - 8 else sf
             fv.draw(c, tx + 4, ty + 4 + sf.line, col, val)
             if lab == "LEVEL":
@@ -1328,7 +1426,7 @@ class Timeline(Structure):
         b = ctx.b
         if b["amount"]:
             x += chip(c, x, y0 + (rowh - sf.h - 2) // 2, U(ctx, b["amount"]), sf, ctx.pal["amount"], (0, 0, 0)) + 8
-        sf.draw(c, x, y0 + (rowh - sf.h) // 2, ctx.pal["strong"], U(ctx, city_summary(ctx, 4)))
+        sf.draw(c, x, y0 + (rowh - sf.h) // 2, ctx.pal["strong"], area_line(ctx, sf, x1 - x - 2))
         y = y0 + rowh + 4
         sf.draw(c, x0 + 2, y, ctx.pal["dim"], U(ctx, f"ISSUED {b['issued']}" if b["issued"] else "ISSUED"))
         lab = U(ctx, f"UNTIL {b['until']}" if b["until"] else "UNTIL FURTHER NOTICE")

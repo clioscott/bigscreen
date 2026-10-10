@@ -138,7 +138,7 @@ for i in range(50):
         "upper": st in ("crawl", "terminal") or fam in ("eightbit",) or i % 7 == 3,
         "header": ("WEATHER WARNING", "ALERT IN EFFECT", "WEATHER ALERT", "SEVERE WEATHER", "ENVIRONMENT CANADA")[i % 5],
         "description": f"{STRUCTURES[st]} · {BORDERS[border]} · {REVEALS[reveal]} · {PALETTES[pal]['name']} · "
-                       f"{FAMILIES[fam]['name']} · {DENSITIES[density]}" + (" · pulsing facts" if pulse else ""),
+                       f"{FAMILIES[fam]['name']}" + (" · pulsing facts" if pulse else ""),
     }
 
 DEFAULT_THEME = "t01"
