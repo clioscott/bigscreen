@@ -39,6 +39,7 @@ PLACES = [(43.06, 141.35), (41.77, 140.73), (43.77, 142.36), (42.98, 144.38), (4
           (35.02, 135.76), (34.69, 135.52), (34.69, 135.18), (34.23, 135.17), (35.50, 134.24), (35.47, 133.05),
           (34.66, 133.93), (34.40, 132.46), (34.19, 131.47), (34.07, 134.56), (33.84, 132.77), (33.56, 133.53),
           (33.61, 130.42), (32.74, 129.87), (32.79, 130.74), (33.24, 131.61), (31.91, 131.42), (31.56, 130.56)]
+_SCALE_STRIP = np.array([kmoni.intensity_colour(-3 + i / 6.0) for i in range(60)], dtype=np.uint8)[None, :, :]
 _COLOUR_LUT = np.array([(0, 0, 0)] + [kmoni.intensity_colour((c - 1) / 20.0 - 3) for c in range(1, 256)], dtype=np.uint8)
 
 
@@ -86,6 +87,9 @@ class QuakeScreen:
             pass
 
     def _load_map(self):
+        if self._map is not None and time.time() - getattr(self, "_map_checked", 0) < 10:
+            return self._map                              # files are checked every 10 s, not every frame
+        self._map_checked = time.time()
         base = os.path.join(self.data_dir or "", "quake")
         try:
             meta = json.load(open(os.path.join(base, "japan.json")))
@@ -99,7 +103,8 @@ class QuakeScreen:
             ys = y1 - (np.arange(meta["h"]) + 0.5) * meta["mpp"]
             lon = np.degrees(xs / R)
             lat = np.degrees(2 * np.arctan(np.exp(ys / R)) - np.pi / 2)
-            self._map = {"img": img, "img16": img.astype(np.int16), "meta": meta, "lon": np.broadcast_to(lon, (meta["h"], meta["w"])),
+            tint = (img.astype(np.float32) * 0.65 + np.array([120, 0, 0]) * 0.35).astype(np.uint8)
+            self._map = {"img": img, "tint": tint, "meta": meta, "lon": np.broadcast_to(lon, (meta["h"], meta["w"])),
                          "lat": np.broadcast_to(lat[:, None], (meta["h"], meta["w"]))}
             pts = kmoni.points()
             sx = np.array([self._project(p[1], p[2])[0] for p in pts])
@@ -136,15 +141,14 @@ class QuakeScreen:
     def _draw_map(self, c, ev, now, elapsed):
         mp = self._map
         mw = mp["meta"]["w"]
-        img = mp["img16"].copy()
         d = self._dist(ev)
         rs = qc.front_radius_km(elapsed, ev["depth"], qc.VS)
         rp = qc.front_radius_km(elapsed, ev["depth"], qc.VP)
         ring_w = mp["meta"]["mpp"] / 1000.0 * math.cos(math.radians(ev["lat"])) * 1.1
-        if rs > 0:
-            inside = d < rs
-            img[inside] = (img[inside] * 0.65 + np.array([120, 0, 0]) * 0.35).astype(np.int16)
-        c.buf[:, :mw] = img.clip(0, 255).astype(np.uint8)
+        if rs > 0:                                             # the area the S wave has crossed, tinted red
+            c.buf[:, :mw] = np.where((d < rs)[..., None], mp["tint"], mp["img"])
+        else:
+            c.buf[:, :mw] = mp["img"]
         # stations: live (or simulated) intensity, weakest first so strong shaking draws on top
         sx, sy = self._st
         obs = self.obs
@@ -166,7 +170,7 @@ class QuakeScreen:
                 c.FillRect(int(x) - 1, int(y) - 1, 3, 3, Color(*qc.SHINDO_COLOURS[cls]))
         for r, col in ((rp, (70, 170, 255)), (rs, (255, 50, 40))):
             if r > 0:
-                ring = np.abs(d - r) < ring_w
+                ring = (d > r - ring_w) & (d < r + ring_w)
                 c.buf[:, :mw][ring] = col
         ex, ey = self._project(ev["lat"], ev["lon"])
         on = int(now * 3) % 2 == 0
@@ -180,8 +184,7 @@ class QuakeScreen:
             c.FillRect(int(x) - 1, int(y) - 1, 3, 3, Color(255, 255, 255))
             f["tiny"].draw(c, int(x) + dx, int(y) + dy, (255, 255, 255), name)
         # Kyoshin Monitor colour scale, bottom left
-        for i in range(60):
-            c.buf[H - 9:H - 5, 6 + i] = kmoni.intensity_colour(-3 + i / 6.0)
+        c.buf[H - 9:H - 5, 6:66] = _SCALE_STRIP
         f["tiny"].draw(c, 6, H - 16, (190, 190, 200), "-3")
         f["tiny"].draw(c, 58, H - 16, (190, 190, 200), "7")
         live = "LIVE NIED" if (obs is not None and not ev.get("test")) else ("SIMULATED" if obs is not None else "PREDICTED")
