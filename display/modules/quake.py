@@ -127,7 +127,7 @@ class QuakeScreen:
             la, lo = np.radians(self._map["lat"]), np.radians(self._map["lon"])
             p1, l1 = math.radians(ev["lat"]), math.radians(ev["lon"])
             a = np.sin((la - p1) / 2) ** 2 + np.cos(la) * math.cos(p1) * np.sin((lo - l1) / 2) ** 2
-            self._distmap = 6371.0 * 2 * np.arcsin(np.sqrt(np.clip(a, 0, 1)))
+            self._distmap = (6371.0 * 2 * np.arcsin(np.sqrt(np.clip(a, 0, 1)))).astype(np.float32)
             self._dist_key = key
             self._places = [(self._project(la_, lo_), qc.shindo_class(qc.intensity_value(ev["mag"], ev["depth"],
                              qc.haversine_km(ev["lat"], ev["lon"], la_, lo_)))) for la_, lo_ in PLACES]
