@@ -31,7 +31,9 @@ STALE_INTERVALS = 3
 
 
 def log(msg):
-    print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {msg}", flush=True)
+    # one write per line, so lines from concurrent jobs never interleave
+    print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {msg}
+", end="", flush=True)
 
 
 class Scheduler:
@@ -122,7 +124,8 @@ class Scheduler:
                         except ValueError:
                             pass
                     else:
-                        print(f"  {name} | {line}", flush=True)
+                        print(f"  {name} | {line}
+", end="", flush=True)
                         tail = (tail + [line])[-40:]
                 proc.wait()
             finally:
