@@ -358,17 +358,27 @@ class AlertScreen:
         self._t0 = None
         self._fonts = {}
         self._static = None          # (key, frame) cached after the reveal
+        self._sample = None          # the test alert, frozen per showing (its times must not change per frame)
+        self._fast = None            # (source identity, plan) so unchanged data skips re-hashing
 
     # -- data ------------------------------------------------------------------
     def alerts(self, entry=None):
         if entry and entry.get("test"):
-            return [dict(SAMPLE, published=time.time() - 600, expires=time.time() + 12 * 3600,
-                         event_end=time.time() + 20 * 3600)]
+            if self._sample is None:
+                now = time.time()
+                self._sample = [dict(SAMPLE, published=now - 600, expires=now + 12 * 3600, event_end=now + 20 * 3600)]
+            return self._sample
         data = (self.loader.get_data("alerts") if self.loader else None) or {}
         now = time.time()
+        key = (id(data), int(now // 30))              # same list object until new data or 30 s pass
+        if getattr(self, "_alerts_cache", None) and self._alerts_cache[0] == key:
+            return self._alerts_cache[1]
         if now - float(data.get("updated_utc") or 0) > 3 * 3600:       # hub down: don't show stale alerts
-            return []
-        return [a for a in data.get("alerts") or [] if not a.get("expires") or a["expires"] > now]
+            out = []
+        else:
+            out = [a for a in data.get("alerts") or [] if not a.get("expires") or a["expires"] > now]
+        self._alerts_cache = (key, out)
+        return out
 
     def active(self):
         return bool(self.alerts())
@@ -479,11 +489,17 @@ class AlertScreen:
         if transition or self._t0 is None:
             self._t0 = now
             self._static = None
+            if transition:
+                self._sample = None
         if not alerts:
             c.FillRect(0, 0, W, H, Color(*pal["bg"]))
             return "done" if now - self._t0 > 5 else None
-        fam = self.family(th)
-        plan = self._plan_for(alerts, th, fam)
+        src = (id(alerts), len(alerts), json.dumps(th, sort_keys=True), json.dumps(self.settings, sort_keys=True, default=str))
+        if self._fast is not None and self._fast[0] == src:
+            plan = self._fast[1]
+        else:
+            plan = self._plan_for(alerts, th, self.family(th))
+            self._fast = (src, plan)
         t = now - self._t0
         segs = plan["segs"]
         i = 0
