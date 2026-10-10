@@ -130,17 +130,17 @@ export const Alerts = {
         setTimeout(refreshDisplay, 500);
       } catch (e) { fail(e); }
     };
-    const live = ref(false);              // the wall is showing this page's settings
+    const onWall = ref(false);            // the wall is showing this page's settings
     let liveTimer;
     const pushLive = async () => {
       const settings = clone(a.value);
       for (const k of LOOK_KEYS) if (settings[k] === undefined || settings[k] === "") settings[k] = null;   // unset beats saved
       try {
         await api("/api/display/preview", { json: { overlay: { modules: { weather_alerts: settings } }, ttl_sec: 4 * 3600 } });
-        if (!live.value) {
+        if (!onWall.value) {
           await api("/api/display/override", { json: { side: "right", panel: "weather_alert", duration_sec: 4 * 3600,
             ...(cat.value.alerts?.length ? {} : { test: true }) } });
-          live.value = true;
+          onWall.value = true;
         }
       } catch (e) { fail(e); }
     };
@@ -155,7 +155,7 @@ export const Alerts = {
       try {
         await api("/api/display/override/clear", { json: { side: "right" } });
         await api("/api/display/preview/clear", { method: "POST" });
-        live.value = false;
+        onWall.value = false;
         toast("Back to the rotation");
       } catch (e) { fail(e); }
     };
@@ -169,7 +169,7 @@ export const Alerts = {
     const revealAt = computed(() => (tileT.value % 12) * 0.3);               // replays the reveal every few seconds
     const themeOf = computed(() => (cat.value.themes || []).find((x) => x.id === a.value.theme) || {});
     const opts = (dict) => [{ value: "", label: "Theme" }, ...Object.entries(dict || {}).map(([value, label]) => ({ value, label }))];
-    return { live, pushLive, DENSITY, optImg, borderAt, revealAt, themeOf, tour, tourSec, tourTheme, startTour, stepTour, stopTour, useTour, tourWall, ids, a, cat, live, shown, onLoaded, tl, t, playing, page, jump, layoutFilter, thumbsOn, themes, thumb, current,
+    return { onWall, pushLive, DENSITY, optImg, borderAt, revealAt, themeOf, tour, tourSec, tourTheme, startTour, stepTour, stopTour, useTour, tourWall, ids, a, cat, live, shown, onLoaded, tl, t, playing, page, jump, layoutFilter, thumbsOn, themes, thumb, current,
       TYPES, DETAIL, opts, types, toggleType, areas, areaId, setOpt, resetLook, entry, addToRotation, show, stop,
       when, typeColour, ago, fontName };
   },
@@ -183,7 +183,7 @@ export const Alerts = {
         <div class="faint" style="font-size:12px">{{ DENSITY.find(d => d.value === (a.density || 'balanced')).hint }} — applies to every design</div></div>
       <Seg :modelValue="a.density || 'balanced'" @update:modelValue="v => a.density = v" :options="DENSITY"/>
       <span class="spacer"></span>
-      <template v-if="live"><span class="live">ON THE WALL</span><span class="faint" style="font-size:12px">changes show instantly</span>
+      <template v-if="onWall"><span class="live">ON THE WALL</span><span class="faint" style="font-size:12px">changes show instantly</span>
         <button class="btn sm" @click="stop"><Icon name="Undo2" :size="14"/>Back to rotation</button></template>
       <button v-else class="btn sm" @click="pushLive"><Icon name="MonitorPlay" :size="14"/>Show on the wall</button>
     </div></div>
