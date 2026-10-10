@@ -49,21 +49,25 @@ AREA = {"id": "japan", "label": "Japan", "fit": {"nw": [45.9, 127.6], "se": [30.
 
 
 def ensure_map():
-    """data/quake/japan.bin (+ .json with the projection) — dark basemap, coast, prefecture lines."""
-    meta_p = OUT / "japan.json"
-    if meta_p.exists() and (OUT / "japan.bin").exists():
-        return read_json(meta_p, {})
-    import numpy as np
-    from hub.weather import carto
-    from hub.weather.geo import View, alpha_over, render_basemap
-    view = View(AREA, MAP_W, MAP_H, fit_width=MAP_W)
-    base = render_basemap(view, {"source": "esri_dark", "brightness": 0.9, "contrast": 1.2})
-    img = alpha_over(base, carto.render_overlay(view, AREA["carto"], 2.0, group="over"))
-    OUT.mkdir(parents=True, exist_ok=True)
-    np.ascontiguousarray(img, dtype=np.uint8).tofile(OUT / "japan.bin")
-    meta = {"w": MAP_W, "h": MAP_H, "merc": list(view.merc), "mpp": view.mpp}
-    atomic_write_json(meta_p, meta)
-    return meta
+    """data/quake/japan.bin (270 px, beside the bulletin) and japan_wide.bin (the whole wall), each with a
+    .json holding the projection — dark basemap, coast, prefecture lines. Same scale, so they line up."""
+    meta = {}
+    for name, w in (("japan", MAP_W), ("japan_wide", 448)):
+        meta_p = OUT / f"{name}.json"
+        if meta_p.exists() and (OUT / f"{name}.bin").exists():
+            meta[name] = read_json(meta_p, {})
+            continue
+        import numpy as np
+        from hub.weather import carto
+        from hub.weather.geo import View, alpha_over, render_basemap
+        view = View(dict(AREA, id=name), w, MAP_H, fit_width=MAP_W)
+        base = render_basemap(view, {"source": "esri_dark", "brightness": 0.9, "contrast": 1.2})
+        img = alpha_over(base, carto.render_overlay(view, AREA["carto"], 2.0, group="over"))
+        OUT.mkdir(parents=True, exist_ok=True)
+        np.ascontiguousarray(img, dtype=np.uint8).tofile(OUT / f"{name}.bin")
+        meta[name] = {"w": w, "h": MAP_H, "merc": list(view.merc), "mpp": view.mpp}
+        atomic_write_json(meta_p, meta[name])
+    return meta["japan"]
 
 
 # ---------------------------------------------------------------------------- parsing
@@ -207,13 +211,15 @@ SCENARIOS = {
 }
 
 
-def test(name):
+def test(name, theme=None):
     sc = SCENARIOS.get(name) or SCENARIOS["tokyo_bay"]
     now = time.time()
     ev = {"source": "test", "id": f"test-{name}-{int(now)}", "serial": 1, "title": "緊急地震速報（警報）",
           "origin": now - 2.0, "announced": now, "lat": sc["lat"], "lon": sc["lon"], "depth": sc["depth"], "mag": sc["mag"],
           "hypocenter": sc["hypocenter"], "max": sc["max"], "warn": qc.class_rank(sc["max"]) >= qc.class_rank("5-"),
           "final": False, "cancel": False, "training": False, "assumption": False, "test": True, "areas": []}
+    if theme:
+        ev["theme"] = theme                                   # try a theme on the wall without saving it
     handle(ev, force=True)
     return ev
 

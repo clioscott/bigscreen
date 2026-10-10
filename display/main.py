@@ -178,9 +178,9 @@ class Screen:
         self.alert_screen = AlertScreen(cfg.modules.get("weather_alerts", {}) or {}, loader)
         self.takeover_panels["weather_alert"] = self.alert_screen.draw
         from display.modules.quake import QuakeScreen
-        self.quake = QuakeScreen(getattr(loader, "data_dir", None))
+        self.quake = QuakeScreen(getattr(loader, "data_dir", None), cfg.modules.get("japan_eew", {}) or {})
         if prev is not None and getattr(prev, "quake", None) is not None:
-            self.quake.event = prev.quake.event                 # keep a live earthquake across config reloads
+            self.quake.adopt(prev.quake)                        # keep a live earthquake across config reloads
         self.takeover_panels["quake"] = self.quake.draw
 
         from display.modules.weather_info import WeatherInfoPanel

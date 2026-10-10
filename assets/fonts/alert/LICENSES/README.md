@@ -12,3 +12,11 @@ Bitmap (BDF) fonts used by the alert and EEW screens. All are freely redistribut
 - Japanese: M+ Bitmap Fonts (M+ FONTS PROJECT, free licence) converted from JIS X 0208 to Unicode
   with Tamzen ASCII merged in (jp-mplus*); k8x12 and Misaki (門真 なむ / littlelimit.net — free,
   redistribution permitted; see misaki-k8x12-readme.txt / k8x12.txt).
+- Japanese, added for the EEW themes (all converted from JIS X 0208 / 0213 to Unicode, each with ASCII from
+  its own family; sources: Debian's xfonts-* orig tarballs):
+  - Shinonome 東雲 gothic / maru / mincho 12–16 px (jp-shnm*): public domain (/efont/ Shinonome project).
+  - Kappa 20 (jp-kappa20b): public domain.
+  - Ayu 18 / 20 gothic (jp-ayu*): public domain.
+  - JIS X 0213 Jiskan16 and K14 (jp-jiskan16, jp-k14): public domain (Imamura et al., Kanji Fonts JIS X 0213).
+  - GNU Unifont (jp-unifont, trimmed to ASCII, Latin-1, kana, CJK symbols and JIS kanji): GPLv2+ with font
+    embedding exception / SIL OFL 1.1.

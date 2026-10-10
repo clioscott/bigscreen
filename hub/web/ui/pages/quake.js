@@ -6,9 +6,12 @@ const TOKYO_CLASSES = ["1", "2", "3", "4", "5-"].map((v) => ({ value: v, label: 
 
 export const Quake = {
   setup() {
-    seed(["modules", "japan_eew"], { enabled: false, min_class: "4", tokyo_class: "3", forecasts: true, show_training: false, duration_sec: 150 });
+    seed(["modules", "japan_eew"], { enabled: false, min_class: "4", tokyo_class: "3", forecasts: true, show_training: false, duration_sec: 150, theme: "monitor" });
     const q = computed(() => store.draft.modules.japan_eew);
-    const st = ref({ connected: {}, last_message: {}, events: [], errors: [], scenarios: {} });
+    const st = ref({ connected: {}, last_message: {}, events: [], errors: [], scenarios: {}, themes: {} });
+    const view = ref(null);                       // theme shown in the preview (defaults to the saved one)
+    const touring = ref(false);
+    const shown = computed(() => view.value || q.value.theme || "monitor");
     const load = async () => { try { st.value = await api("/api/quake"); } catch (e) { /* hub restarting */ } };
     const scenario = ref("tokyo_bay");
     const t = ref(0);
@@ -16,14 +19,23 @@ export const Quake = {
     onMounted(() => {
       load();
       poll = setInterval(load, 5000);
-      tick = setInterval(() => { t.value = (t.value + 1) % 120; }, 500);       // 0.5 s per frame step, 1 s of quake time
+      tick = setInterval(() => {                                                // 0.5 s per frame step, 1 s of quake time
+        t.value = (t.value + 1) % 120;
+        if (touring.value && t.value % 16 === 0) {                                 // tour: next theme every 8 s
+          const ids = Object.keys(st.value.themes);
+          view.value = ids[(ids.indexOf(shown.value) + 1) % ids.length];
+        }
+      }, 500);
     });
     onBeforeUnmount(() => { clearInterval(poll); clearInterval(tick); });
-    const preview = computed(() => `/api/quake/preview.png?name=${scenario.value}&at=${t.value}&scale=2`);
-    const testWall = async () => {
+    const preview = computed(() => `/api/quake/preview.png?name=${scenario.value}&at=${t.value}&scale=2&theme=${shown.value}`);
+    const pick = (id) => { q.value.theme = id; view.value = null; touring.value = false; };
+    const tourHere = () => { touring.value = !touring.value; if (touring.value) { view.value = Object.keys(st.value.themes)[0]; t.value = 0; } else view.value = null; };
+    const testWall = async (theme) => {
+      const th = theme || shown.value;
       try {
-        await api(`/api/quake/test/${scenario.value}`, { method: "POST" });
-        toast(`Playing "${st.value.scenarios[scenario.value]}" on the wall (${q.value.duration_sec || 150} s)`);
+        await api(`/api/quake/test/${scenario.value}?theme=${th}`, { method: "POST" });
+        toast(th === "tour" ? `Touring every theme on the wall (12 s each)` : `Playing "${st.value.scenarios[scenario.value]}" on the wall in ${st.value.themes[th]?.label || th}`);
         setTimeout(load, 1500);
       } catch (e) { fail(e); }
     };
@@ -31,7 +43,7 @@ export const Quake = {
     const when = (ts) => (ts ? new Date(ts * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "");
     const shindo = (c) => String(c || "0").replace("-", "弱").replace("+", "強");
     const SHINDO_COL = { "0": "#6e6e78", "1": "#82a5d2", "2": "#2882eb", "3": "#28c864", "4": "#ffd700", "5-": "#ff9600", "5+": "#ff6400", "6-": "#ff281e", "6+": "#c80028", "7": "#a0006e" };
-    return { q, st, scenario, preview, t, testWall, stop, when, ago, shindo, SHINDO_COL, MIN_CLASSES, TOKYO_CLASSES, store };
+    return { q, st, scenario, preview, t, testWall, stop, when, ago, shindo, SHINDO_COL, MIN_CLASSES, TOKYO_CLASSES, store, shown, pick, tourHere, touring };
   },
   template: `<div class="page">
     <div class="page-head"><div class="grow"><h1>Japan earthquake early warning</h1>
@@ -40,18 +52,31 @@ export const Quake = {
 
     <div class="two-col">
       <div class="stack sticky">
-        <div class="card"><div class="card-head"><span class="live">PREVIEW</span><h3>{{ st.scenarios[scenario] }}</h3><span class="pill">simulated sensors</span></div>
+        <div class="card"><div class="card-head"><span class="live">PREVIEW</span><h3>{{ st.themes[shown]?.label }} · {{ st.scenarios[scenario] }}</h3><span class="pill">simulated sensors</span></div>
           <div class="card-body stack">
             <div style="background:#000; border-radius:8px; overflow:hidden"><img :src="preview" style="width:100%; image-rendering:pixelated; display:block" alt=""></div>
             <div class="row" style="flex-wrap:wrap; gap:6px">
               <button v-for="(lab, id) in st.scenarios" :key="id" class="btn sm" :class="{primary: scenario === id}" @click="scenario = id; t = 0">{{ lab }}</button>
             </div>
             <div class="row">
-              <button class="btn primary" @click="testWall"><Icon name="MonitorPlay" :size="15"/>Test on the wall</button>
+              <button class="btn primary" @click="testWall()"><Icon name="MonitorPlay" :size="15"/>Test on the wall</button>
               <button class="btn ghost" @click="stop"><Icon name="Undo2" :size="15"/>Back to rotation</button>
               <span class="faint mono" style="font-size:12px">+{{ t }} s</span>
             </div>
           </div></div>
+
+        <div class="card"><div class="card-head"><Icon name="Palette" :size="15"/><h3>Theme</h3>
+            <button class="btn sm" :class="{primary: touring}" @click="tourHere"><Icon name="Play" :size="13"/>{{ touring ? 'Stop tour' : 'Play all themes here' }}</button>
+            <button class="btn sm" @click="testWall('tour')"><Icon name="MonitorPlay" :size="13"/>Tour all on the wall</button></div>
+          <div class="list">
+            <div class="list-row" v-for="(th, id) in st.themes" :key="id" style="cursor:pointer" :style="shown === id ? {background: 'var(--accent-soft, rgba(255,255,255,.06))'} : {}" @click="pick(id)">
+              <span class="dot" :class="(q.theme || 'monitor') === id ? 'ok' : ''"></span>
+              <span style="flex:1"><b>{{ th.label }}</b> <span class="faint" style="font-size:12px">— {{ th.hint }}</span><br><span class="faint mono" style="font-size:11px">{{ th.type }}</span></span>
+              <span class="pill" v-if="(q.theme || 'monitor') === id">in use</span>
+            </div>
+          </div>
+          <div class="card-body faint" style="font-size:12.5px">Click a theme to preview it and make it the one used for real earthquakes (Save to keep it). "Test on the wall" plays the theme in the preview without saving.</div>
+        </div>
       </div>
 
       <div class="stack">

@@ -159,22 +159,39 @@ def alerts_timeline(real: int = 0, s: str = ""):
 @app.get("/api/quake")
 def quake_state():
     from hub import quake
+    from display.modules.quake import THEMES
     return {"settings": quake.settings(), "connected": quake.state["connected"],
             "last_message": quake.state["last_message"], "events": quake.state["events"][:10],
             "errors": quake.state["errors"], "pushed": quake.state["pushed"], "obs_at": quake.state.get("obs_at"),
-            "scenarios": {k: v["label"] for k, v in quake.SCENARIOS.items()}}
+            "scenarios": {k: v["label"] for k, v in quake.SCENARIOS.items()},
+            "themes": {k: {"label": v["label"], "hint": v["hint"], "type": v.get("type", "")} for k, v in THEMES.items()}}
 
 
 @app.post("/api/quake/test/{name}")
-def quake_test(name: str):
+def quake_test(name: str, theme: str = ""):
     from hub import quake
-    ev = quake.test(name)
+    ev = quake.test(name, theme or None)
     return {"ok": True, "event": ev, "pushed": quake.state["pushed"]}
 
 
+_quake_obs_cache = {}
+
+
+def _quake_obs(name, sc, sec):
+    """Simulated station readings ``sec`` seconds into a scenario (cached: the preview replays a minute of them)."""
+    key = (name, sec)
+    if key not in _quake_obs_cache:
+        from common import kmoni
+        if len(_quake_obs_cache) > 800:
+            _quake_obs_cache.clear()
+        ev0 = {"origin": 0.0, "lat": sc["lat"], "lon": sc["lon"], "depth": sc["depth"], "mag": sc["mag"]}
+        _quake_obs_cache[key] = kmoni.encode(kmoni.synthetic(ev0, float(sec)))
+    return _quake_obs_cache[key]
+
+
 @app.get("/api/quake/preview.png")
-def quake_preview(name: str = "tokyo_bay", at: float = 20, scale: int = 2):
-    """A frame of the EEW screen for a test scenario ``at`` seconds after origin."""
+def quake_preview(name: str = "tokyo_bay", at: float = 20, scale: int = 2, theme: str = "monitor"):
+    """A frame of the EEW screen for a test scenario ``at`` seconds after origin, in a theme."""
     import time as _t
     from hub import quake
     from display.gfx import Canvas
@@ -183,11 +200,11 @@ def quake_preview(name: str = "tokyo_bay", at: float = 20, scale: int = 2):
     sc = quake.SCENARIOS.get(name) or quake.SCENARIOS["tokyo_bay"]
     now = _t.time()
     ev = {"id": "preview", "origin": now - at, "lat": sc["lat"], "lon": sc["lon"], "depth": sc["depth"], "mag": sc["mag"],
-          "hypocenter": sc["hypocenter"], "max": sc["max"], "warn": True, "serial": 1, "test": True}
-    scr = QuakeScreen(str(paths.DATA_DIR))
+          "hypocenter": sc["hypocenter"], "max": sc["max"], "warn": True, "serial": 1, "test": True, "theme": theme}
+    scr = QuakeScreen(str(paths.DATA_DIR), {"theme": theme})
     scr.set_event(ev)
-    from common import kmoni
-    scr.set_obs(kmoni.encode(kmoni.synthetic(ev, now)), now)
+    for sec in range(max(0, int(at) - 60), int(at) + 1):     # a minute of history for the graphs and traces
+        scr.set_obs(_quake_obs(name, sc, sec), now - (at - sec))
     c = Canvas(448, 192)
     scr.draw(c, (0, 0, 448, 192), {}, True, now=now)
     k = max(1, min(4, scale))
