@@ -93,11 +93,15 @@ FAMILIES = {
 }
 
 STRUCTURES = {"band": "Header band", "rail": "Left rail", "columns": "Two columns", "crawl": "Crawl band",
-              "boxes": "Boxed sections", "terminal": "Terminal", "centered": "Centred header", "factbar": "Fact bar"}
+              "boxes": "Boxed sections", "terminal": "Terminal", "centered": "Centred header", "factbar": "Fact bar",
+              "cities": "Cities rail", "dualrail": "Dual sidebars", "keyfacts": "Key-fact tiles",
+              "spotlight": "Spotlight callout", "timeline": "Timeline"}
 BORDERS = {"chase": "Marching dashes", "pulse": "Slow pulse", "hazard": "Hazard tape", "double": "Double rule",
            "lights": "Chasing lights", "comet": "Comet", "corners": "Corner brackets", "glow": "Glow", "rails": "Chevron rails"}
 REVEALS = {"type": "Typewriter", "lines": "Line by line", "wipe": "Wipe", "scan": "Scan bar", "decode": "Decode",
-           "sections": "Sections slide in", "blinds": "Blinds", "fade": "Fade in"}
+           "sections": "Sections slide in", "blinds": "Blinds", "fade": "Fade in", "cascade": "Cascade",
+           "sweep": "Highlight sweep"}
+DENSITIES = {"normal": "Balanced", "max": "Maximum detail", "large": "Large type, essentials"}
 
 NAMES = ["Beacon", "Sentinel", "Klaxon", "Siren", "Tripwire", "Lighthouse", "Bulletin", "Dispatch", "Watchfire", "Flashpoint",
          "Lantern", "Bastion", "Outpost", "Radar Room", "Night Desk", "Switchboard", "Teletype", "Telex", "Signal Box", "Control",
@@ -110,26 +114,31 @@ _PREFER = {"terminal": ["green_crt", "amber_crt", "black", "midnight", "charcoal
 
 THEMES = {}
 _seen = set()
+_DENS = ["normal", "max", "normal", "large"]
 for i in range(50):
     st = _STRUCT[i % len(_STRUCT)]
     k = i // len(_STRUCT)
     pal_choices = _PREFER.get(st, _PAL)
     for j in range(len(pal_choices) * len(_FAM)):
-        pal = pal_choices[(k + j + i) % len(pal_choices)]
+        pal = pal_choices[(k * 3 + j + i) % len(pal_choices)]
         fam = _FAM[(i * 5 + k * 2 + j) % len(_FAM)]
         if (st, pal, fam) not in _seen:
             break
     _seen.add((st, pal, fam))
     border = _BORD[(i * 4 + k) % len(_BORD)]
-    reveal = _REV[(i * 3 + k * 5) % len(_REV)]
+    reveal = _REV[(i * 3 + k * 7) % len(_REV)]
     if st == "terminal":
-        reveal = ("type", "decode", "lines")[k % 3]
+        reveal = ("type", "decode", "lines", "cascade")[k % 4]
+    density = _DENS[(i + k) % len(_DENS)]
+    pulse = (i * 7 + k) % 3 == 0
     tid = f"t{i + 1:02d}"
     THEMES[tid] = {
         "id": tid, "name": NAMES[i], "structure": st, "border": border, "reveal": reveal, "palette": pal, "family": fam,
+        "density": density, "pulse": pulse,
         "upper": st in ("crawl", "terminal") or fam in ("eightbit",) or i % 7 == 3,
         "header": ("WEATHER WARNING", "ALERT IN EFFECT", "WEATHER ALERT", "SEVERE WEATHER", "ENVIRONMENT CANADA")[i % 5],
-        "description": f"{STRUCTURES[st]} · {BORDERS[border]} · {REVEALS[reveal]} · {PALETTES[pal]['name']} · {FAMILIES[fam]['name']}",
+        "description": f"{STRUCTURES[st]} · {BORDERS[border]} · {REVEALS[reveal]} · {PALETTES[pal]['name']} · "
+                       f"{FAMILIES[fam]['name']} · {DENSITIES[density]}" + (" · pulsing facts" if pulse else ""),
     }
 
 DEFAULT_THEME = "t01"

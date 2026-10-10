@@ -327,3 +327,9 @@ select.input { appearance: none; padding-right: 30px; background-image: url("dat
 .theme-grid.dense .theme-card small { font-size: 10.5px; line-height: 1.3; }
 .tourbar { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .theme-card.touring { border-color: var(--warn); box-shadow: 0 0 0 2px var(--warn-soft); }
+.opt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.opt-card { display: flex; flex-direction: column; gap: 4px; padding: 5px; border-radius: 10px; border: 1px solid var(--line-2);
+  background: var(--surface-2); color: var(--text-2); font: 600 11.5px var(--font); text-align: left; cursor: pointer; }
+.opt-card img { width: 100%; image-rendering: pixelated; border-radius: 5px; background: #000; display: block; }
+.opt-card:hover { border-color: rgba(124, 140, 255, .4); }
+.opt-card.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); color: var(--text); }

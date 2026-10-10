@@ -13,7 +13,7 @@ const DETAIL = [
   { value: "essentials", label: "Essentials", hint: "What's happening, what to expect and what to do, in larger text" },
 ];
 const LOOK_KEYS = ["header", "palette", "family", "structure", "border", "reveal", "reveal_speed", "title_font", "title_scale",
-  "body_font", "reading_wpm", "min_hold_sec", "detail", "upper"];
+  "body_font", "reading_wpm", "min_hold_sec", "detail", "upper", "pulse", "density"];
 
 export const Alerts = {
   setup() {
@@ -69,9 +69,10 @@ export const Alerts = {
     const next = ref("");
     watch(live, (u) => { next.value = u; }, { immediate: true });
     const onLoaded = () => { shown.value = next.value; };
-    let tick;
+    let tick, tileTick;
     onMounted(() => {
       load().then(loadTl);
+      tileTick = setInterval(() => { tileT.value += 1; }, 450);
       tick = setInterval(() => {
         if (!playing.value) return;
         if (tour.value) {
@@ -85,7 +86,7 @@ export const Alerts = {
         t.value = (t.value + 0.25) % Math.max(4, tl.value.total || 30);
       }, 250);
     });
-    onBeforeUnmount(() => { clearInterval(tick); clearTimeout(tlTimer); });
+    onBeforeUnmount(() => { clearInterval(tick); clearInterval(tileTick); clearTimeout(tlTimer); });
     const page = computed(() => [...(tl.value.pages || [])].reverse().find((p) => t.value >= p.start) || tl.value.pages?.[0]);
     const jump = (p) => { t.value = p.start + 0.05; };
 
@@ -128,8 +129,14 @@ export const Alerts = {
     const when = (ts) => (ts ? new Date(ts * 1000).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "");
     const typeColour = (k) => TYPES.find((x) => x.id === k)?.colour || "#6e7896";
     const fontName = (f) => f.replace("alert/", "").replace(".bdf", "");
+    // animated option tiles: the current theme with one border (or reveal) swapped in
+    const tileT = ref(0);
+    const optImg = (over, at) => `/api/alerts/preview/${a.value.theme || "t01"}.png?at=${at.toFixed(2)}&scale=1&s=${encodeURIComponent(JSON.stringify({ ...look.value, ...over }))}`;
+    const borderAt = computed(() => 20 + (tileT.value % 8) * 0.5);           // after the reveal: border motion only
+    const revealAt = computed(() => (tileT.value % 12) * 0.3);               // replays the reveal every few seconds
+    const themeOf = computed(() => (cat.value.themes || []).find((x) => x.id === a.value.theme) || {});
     const opts = (dict) => [{ value: "", label: "Theme" }, ...Object.entries(dict || {}).map(([value, label]) => ({ value, label }))];
-    return { tour, tourSec, tourTheme, startTour, stepTour, stopTour, useTour, tourWall, ids, a, cat, live, shown, onLoaded, tl, t, playing, page, jump, layoutFilter, thumbsOn, themes, thumb, current,
+    return { optImg, borderAt, revealAt, themeOf, tour, tourSec, tourTheme, startTour, stepTour, stopTour, useTour, tourWall, ids, a, cat, live, shown, onLoaded, tl, t, playing, page, jump, layoutFilter, thumbsOn, themes, thumb, current,
       TYPES, DETAIL, opts, types, toggleType, areas, areaId, setOpt, resetLook, entry, addToRotation, show, stop,
       when, typeColour, ago, fontName };
   },
@@ -203,6 +210,32 @@ export const Alerts = {
                 <span>{{ th.name }}</span><small class="faint">{{ th.description }}</small>
               </button></div></div></div>
 
+        <div class="card"><div class="card-head"><Icon name="Frame" :size="15"/><h3>Border</h3>
+          <span class="faint" style="font-size:12px">mix any border with any theme</span></div>
+          <div class="card-body"><div class="opt-grid">
+            <button class="opt-card" :class="{on: !a.border}" @click="setOpt('border', '')">
+              <img :src="optImg({}, borderAt)" alt=""><span>Theme's own · {{ cat.borders?.[themeOf.border] }}</span></button>
+            <button v-for="(lab, id) in cat.borders" :key="id" class="opt-card" :class="{on: a.border === id}" @click="setOpt('border', id)">
+              <img :src="optImg({ border: id }, borderAt)" alt="" loading="lazy"><span>{{ lab }}</span></button>
+          </div></div></div>
+
+        <div class="card"><div class="card-head"><Icon name="Sparkles" :size="15"/><h3>Reveal animation</h3>
+          <span class="faint" style="font-size:12px">how the text first appears</span></div>
+          <div class="card-body stack"><div class="opt-grid">
+            <button class="opt-card" :class="{on: !a.reveal}" @click="setOpt('reveal', '')">
+              <img :src="optImg({}, revealAt)" alt=""><span>Theme's own · {{ cat.reveals?.[themeOf.reveal] }}</span></button>
+            <button v-for="(lab, id) in cat.reveals" :key="id" class="opt-card" :class="{on: a.reveal === id}" @click="setOpt('reveal', id)">
+              <img :src="optImg({ reveal: id, reveal_speed: 1.6 }, revealAt)" alt="" loading="lazy"><span>{{ lab }}</span></button>
+          </div>
+          <div class="fields">
+            <Field label="Key facts pulse" hint="Amounts glow every couple of seconds after the reveal">
+              <Seg :modelValue="a.pulse === true ? 'on' : a.pulse === false ? 'off' : ''" @update:modelValue="v => setOpt('pulse', v === '' ? '' : v === 'on')"
+                :options="[{value:'', label:'Theme'}, {value:'on', label:'On'}, {value:'off', label:'Off'}]"/></Field>
+            <Field label="Density" hint="Max detail = smaller text, more of it; Large = bigger text, essentials only">
+              <Seg :modelValue="a.density || ''" @update:modelValue="v => setOpt('density', v)"
+                :options="[{value:'', label:'Theme'}, {value:'normal', label:'Balanced'}, {value:'max', label:'Max detail'}, {value:'large', label:'Large type'}]"/></Field>
+          </div></div></div>
+
         <div class="card"><div class="card-head"><Icon name="BookOpenText" :size="15"/><h3>Reading & timing</h3>
           <button class="btn sm ghost" @click="resetLook"><Icon name="RotateCcw" :size="13"/>Defaults</button></div><div class="card-body stack">
           <Field label="How much to show"><Seg :modelValue="a.detail || 'all'" @update:modelValue="v => a.detail = v" :options="DETAIL"/></Field>
@@ -229,10 +262,6 @@ export const Alerts = {
           <div class="fields">
             <Field label="Structure"><select class="input" :value="a.structure || ''" @change="setOpt('structure', $event.target.value)">
               <option v-for="o in opts(cat.structures)" :key="o.value" :value="o.value">{{ o.label }}</option></select></Field>
-            <Field label="Border"><select class="input" :value="a.border || ''" @change="setOpt('border', $event.target.value)">
-              <option v-for="o in opts(cat.borders)" :key="o.value" :value="o.value">{{ o.label }}</option></select></Field>
-            <Field label="Reveal"><select class="input" :value="a.reveal || ''" @change="setOpt('reveal', $event.target.value)">
-              <option v-for="o in opts(cat.reveals)" :key="o.value" :value="o.value">{{ o.label }}</option></select></Field>
             <Field label="Font family"><select class="input" :value="a.family || ''" @change="setOpt('family', $event.target.value)">
               <option v-for="o in opts(cat.families)" :key="o.value" :value="o.value">{{ o.label }}</option></select></Field>
             <Field label="Title font"><div class="row nowrap"><select class="input" :value="a.title_font || ''" @change="setOpt('title_font', $event.target.value)">

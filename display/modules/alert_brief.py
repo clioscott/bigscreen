@@ -130,6 +130,7 @@ def brief(alert):
         "advice": advice,
         "amount": key_amount(summary) or key_amount(" ".join(details)) or key_amount(" ".join(impacts)),
         "where": short_where(regions),
+        "cities": cities(regions),
         "regions": regions,
         "until": _when(alert.get("expires")),
         "issued": _when(alert.get("published")),
@@ -171,8 +172,8 @@ def paragraphs(b, level="all"):
         out.append({"style": "impact", "tag": "EXPECT", "text": " ".join(b["impacts"])})
     if b["advice"]:
         out.append({"style": "advice", "tag": "DO", "text": " ".join(b["advice"])})
-    if level != "essentials" and b["regions"]:
-        out.append({"style": "regions", "tag": "AREA", "text": "; ".join(b["regions"])})
+    if level != "essentials" and (b.get("cities") or b["regions"]):
+        out.append({"style": "regions", "tag": "AREA", "text": " · ".join(b.get("cities") or b["regions"])})
     return [p for p in out if p["text"]]
 
 
@@ -186,4 +187,29 @@ def _group(sentences, max_words=45):
             cur = []
     if cur:
         out.append(" ".join(cur))
+    return out
+
+
+_PLACE_PREFIX = re.compile(r"\b(?:the\s+)?(?:City|District|Township|Town|Village|Municipality|Resort Municipality|"
+                           r"Corporation of the City|Regional District)\s+of\s+", re.I)
+
+
+def cities(regions):
+    """Place names from ECCC zone names, in order, without duplicates.
+
+    'Metro Vancouver - central including the City of Vancouver, Burnaby and New Westminster'
+        → ['Vancouver', 'Burnaby', 'New Westminster']
+    A zone without an 'including' list ('Howe Sound') contributes its own name."""
+    out = []
+    for r in regions or []:
+        if " including " in r:
+            part = r.split(" including ", 1)[1]
+        else:
+            head, _, tail = r.partition(" - ")
+            part = tail if tail and tail[:1].isupper() else head
+        part = _PLACE_PREFIX.sub("", part)
+        for name in re.split(r",\s*|\s+and\s+|\s*&\s*", part):
+            name = name.strip(" .;")
+            if name and name not in out:
+                out.append(name)
     return out

@@ -405,6 +405,10 @@ class AlertScreen:
             th["header"] = st.get("header") or st["title"]
         if st.get("upper") in (True, False):
             th["upper"] = st["upper"]
+        if st.get("pulse") in (True, False):
+            th["pulse"] = st["pulse"]
+        if st.get("density") in ("max", "normal", "large"):
+            th["density"] = st["density"]
         return th
 
     def family(self, th):
@@ -445,12 +449,17 @@ class AlertScreen:
             ctx.pal = {k: (sev if v == "sev" else v) for k, v in pal.items() if k != "name"}
             ctx.area = "Metro Vancouver" if b["test"] else self.area()
             ctx.title_f = struct.title_font(ctx)
-            paras = alert_brief.paragraphs(b, level)
+            b["_issued_ts"], b["_expires_ts"] = a.get("published"), a.get("expires")
+            density = th.get("density") or "normal"
+            paras = alert_brief.paragraphs(b, "essentials" if density == "large" and level != "all_forced" else level)
+            if struct.lists_cities:
+                paras = [p for p in paras if p["style"] != "regions"]
             boxes = struct.boxes(ctx)
+            ladder = fam["ladder"][1:] if density == "max" and len(fam["ladder"]) > 1 else fam["ladder"]
             chosen = None
             for drop in ((), ("regions",), ("regions", "detail")):
                 use = [p for p in paras if p["style"] not in drop]
-                for reg, bold in fam["ladder"]:
+                for reg, bold in ladder:
                     fonts = {"reg": reg, "bold": bold, "small": fam["small"] if reg.h > fam["small"].h else reg}
                     lines, over = struct.flow(ctx, use, boxes, fonts)
                     if not over:
@@ -627,6 +636,31 @@ def reveal(c, ctx, seg, mode, p, t):
             q = (p - 0.75 * ln["para"] / P) / 0.25
             return None if q <= 0 else int((1 - _ease(q)) * 80)
         draw_lines(c, lines, offset=off)
+    elif mode == "cascade":
+        L = max(1, len(lines))
+
+        def drop(ln):
+            li = lines.index(ln)
+            q = (p - 0.7 * li / L) / 0.3
+            return None if q <= 0 else 0
+        for li, ln in enumerate(lines):
+            q = (p - 0.7 * li / L) / 0.3
+            if q <= 0:
+                continue
+            dy = -int((1 - _ease(q)) * 10)
+            moved = dict(ln, y=ln["y"] + dy)
+            draw_lines(c, [moved], colour_k=0.4 + 0.6 * _ease(q))
+    elif mode == "sweep":
+        draw_lines(c, lines)
+        edge = x0 + int((x1 - x0 + 40) * _ease(p)) - 20
+        if edge < x1:
+            a = max(x0, edge)
+            c.buf[y0:y1, a:x1] = (c.buf[y0:y1, a:x1] * 0.28).astype(np.uint8)
+        e0, e1 = max(x0, edge - 18), max(x0, min(x1, edge))
+        if e1 > e0:
+            band = c.buf[y0:y1, e0:e1].astype(np.int16)
+            lit = band.max(axis=2, keepdims=True) > 40
+            c.buf[y0:y1, e0:e1] = np.where(lit, 255, band).astype(np.uint8)
     elif mode == "blinds":
         draw_lines(c, lines)
         rows = np.arange(y0, y1)
@@ -684,9 +718,33 @@ def facts(ctx):
         out.append(("clock", "UNTIL " if ctx.upper else "until ", b["until"].upper() if ctx.upper else b["until"]))
     if b["issued"]:
         out.append(("check", "ISSUED " if ctx.upper else "issued ", b["issued"].upper() if ctx.upper else b["issued"]))
-    n = len(b["regions"])
-    out.append(("pin", "", U(ctx, b["where"] or ctx.area) + (f" ({n} zones)" if n > 1 else "")))
+    out.append(("pin", "", U(ctx, city_summary(ctx))))
     return out
+
+
+def city_summary(ctx, n=3):
+    cs = ctx.b.get("cities") or []
+    if not cs:
+        return ctx.b["where"] or ctx.area
+    return ", ".join(cs[:n]) + (f" +{len(cs) - n}" if len(cs) > n else "")
+
+
+def city_list(c, ctx, x, y, w, y1, f, col=None, glyph_col=None, centre=False):
+    """Cities one per line (pin glyph each); '+N more' if they don't all fit. Returns the next y."""
+    cs = ctx.b.get("cities") or [ctx.b["where"] or ctx.area]
+    for k, name in enumerate(cs):
+        if y + f.h > y1 - (f.line if k < len(cs) - 1 else 0):
+            more = f"+{len(cs) - k} more"
+            f.draw(c, x + 10, y, ctx.pal["dim"], more)
+            return y + f.line
+        name = U(ctx, name)
+        while f.width(name) > w - 10 and len(name) > 3:
+            name = name[:-2] + "."
+        xx = x + (w - 10 - f.width(name)) // 2 if centre else x
+        glyph(c, "pin", xx, y + max(0, (f.h - 7) // 2), glyph_col or ctx.pal["label"])
+        f.draw(c, xx + 10, y, col or ctx.pal["strong"], name)
+        y += f.line
+    return y
 
 
 def fact_line(c, ctx, x, y, f, maxw, centre=False):
@@ -735,7 +793,18 @@ class Structure:
     def flow(self, ctx, paras, boxes, fonts, gap=3):
         return layout(paras, boxes, fonts, ctx.pal, ctx.upper, gap=gap)
 
+    lists_cities = False
+
     def dynamic(self, c, ctx, seg, p):
+        if p >= 1.0 and ctx.th.get("pulse"):                 # key facts (amounts) glow every couple of seconds
+            k = max(0.0, math.sin(ctx.t * 2.4)) ** 3
+            if k > 0.02:
+                amt = tuple(ctx.pal["amount"])
+                col = tuple(int(a + (255 - a) * k) for a in amt)
+                for ln in seg["lines"]:
+                    for run in ln["runs"]:
+                        if run[0] != "glyph" and tuple(run[3]) == amt:
+                            run[2].draw(c, run[0], ln["y"], col, run[1])
         if ctx.count > 1:
             s = f"{ctx.index + 1}/{ctx.count}"
             f = ctx.fam["small"]
@@ -786,8 +855,9 @@ class Columns(Band):
 
 
 class Rail(Structure):
-    """Left rail: big icon, alert type, severity meter, key amount and times; the text on the right."""
+    """Left rail: big icon, alert type, severity meter, key amount, expiry and the cities; text on the right."""
     RW = 112
+    lists_cities = True
 
     def boxes(self, ctx):
         x0, y0, x1, y1 = self.inner(ctx)
@@ -818,8 +888,6 @@ class Rail(Structure):
             rows.append((b["amount"].upper(), ctx.pal["amount"], k))
         if b["until"]:
             rows += [("UNTIL", ctx.pal["dim"], sf), (b["until"].upper(), ctx.pal["strong"], k)]
-        if b["issued"]:
-            rows += [("ISSUED", ctx.pal["dim"], sf), (b["issued"].upper(), ctx.pal["text"], sf)]
         for text, col, f in rows:
             for ln in _wrap_plain(f, text, rw - 8):
                 if y + f.h > y1 - 2:
@@ -827,6 +895,9 @@ class Rail(Structure):
                 f.draw(c, cx - f.width(ln) // 2, y, col, ln)
                 y += f.line
             y += 1
+        if y + sf.line * 2 < y1:
+            c.FillRect(x0 + 8, y + 1, rw - 16, 1, Color(*_dim(ctx.sev, 0.5)))
+            city_list(c, ctx, x0 + 6, y + 4, rw - 10, y1 - 2, sf)
         x = x0 + rw + 8
         ctx.title_f.draw(c, x, y0, ctx.sev, title_text(ctx))
         fact_line(c, ctx, x, y0 + ctx.title_f.line, ctx.fam["small"], x1 - x)
@@ -995,8 +1066,9 @@ class Centered(Structure):
 
 
 class FactBar(Structure):
-    """Text on the left; a fact column on the right (type, amount, until, issued, area, meter)."""
+    """Text on the left; a fact column on the right (type, amount, until, issued, cities, meter)."""
     FW = 118
+    lists_cities = True
 
     def boxes(self, ctx):
         x0, y0, x1, y1 = self.inner(ctx)
@@ -1026,8 +1098,7 @@ class FactBar(Structure):
         if b["amount"]:
             rows.append(("AMOUNT", b["amount"].upper(), ctx.pal["amount"]))
         rows += [("UNTIL", (b["until"] or "further notice").upper(), ctx.pal["strong"]),
-                 ("ISSUED", (b["issued"] or "-").upper(), ctx.pal["text"]),
-                 ("AREA", U(ctx, b["where"] or ctx.area), ctx.pal["text"])]
+                 ("ISSUED", (b["issued"] or "-").upper(), ctx.pal["text"])]
         for lab, val, col in rows:
             if y + sf.h > y1:
                 break
@@ -1039,10 +1110,251 @@ class FactBar(Structure):
                 k.draw(c, fx + 8, y, col, ln)
                 y += k.line
             y += 3
+        if y + sf.line * 2 < y1:
+            sf.draw(c, fx + 8, y, ctx.pal["dim"], "AREAS")
+            city_list(c, ctx, fx + 8, y + sf.line, self.FW - 12, y1 - 2, sf)
+
+
+class CitiesRail(Structure):
+    """Text on the left; a right rail listing every affected city, one per line, under the expiry."""
+    RW = 104
+    lists_cities = True
+
+    def boxes(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        top = y0 + max(16, ctx.title_f.h) + ctx.fam["small"].line + 7
+        return [(x0 + 2, top, x1 - x0 - self.RW - 12, y1 - top)]
+
+    def title_font(self, ctx, width=None):
+        return super().title_font(ctx, W - 2 * self.inner(ctx)[0] - self.RW - 70)
+
+    def chrome(self, c, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        f = ctx.title_f
+        rowh = max(16, f.h)
+        x = x0 + 2 + icon(c, ctx, x0 + 2, y0 + (rowh - 16) // 2, 1) + 6
+        f.draw(c, x, y0 + (rowh - f.h) // 2, ctx.sev, title_text(ctx))
+        meter(c, x1 - self.RW - 40, y0 + (rowh - 8) // 2, ctx)
+        sf, k = ctx.fam["small"], ctx.fam["key"]
+        y = y0 + rowh + 2
+        xx = chip(c, x0 + 2, y, U(ctx, ctx.th["header"]), sf, _dim(ctx.sev, 0.35), ctx.pal["strong"], 3) + x0 + 8
+        b = ctx.b
+        if b["amount"]:
+            xx += sf.draw(c, xx, y + 1, ctx.pal["amount"], U(ctx, b["amount"])) + 10
+        if b["issued"]:
+            sf.draw(c, xx, y + 1, ctx.pal["dim"], U(ctx, f"issued {b['issued']}"))
+        c.FillRect(x0, y + sf.line + 3, x1 - x0 - self.RW - 8, 1, Color(*_dim(ctx.sev, 0.6)))
+        rx = x1 - self.RW
+        c.FillRect(rx, y0, self.RW, y1 - y0, Color(*ctx.pal["panel"]))
+        c.FillRect(rx, y0, 2, y1 - y0, Color(*ctx.sev))
+        yy = y0 + 4
+        sf.draw(c, rx + 8, yy, ctx.pal["dim"], "IN EFFECT UNTIL")
+        yy += sf.line
+        for ln in _wrap_plain(k, (b["until"] or "further notice").upper(), self.RW - 12):
+            k.draw(c, rx + 8, yy, ctx.pal["strong"], ln)
+            yy += k.line
+        yy += 3
+        c.FillRect(rx + 8, yy, self.RW - 16, 1, Color(*_dim(ctx.sev, 0.5)))
+        yy += 4
+        n = len(b.get("cities") or [])
+        sf.draw(c, rx + 8, yy, ctx.pal["label"], f"AFFECTED ({n})" if n else "AREA")
+        city_list(c, ctx, rx + 6, yy + sf.line + 1, self.RW - 10, y1 - 2, k if k.h <= 13 else sf)
+
+
+class DualRail(Structure):
+    """Two sidebars: hazard, level and amount on the left; cities on the right; the message in the middle."""
+    LW, RW = 92, 96
+    lists_cities = True
+
+    def boxes(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        top = y0 + max(16, ctx.title_f.h) + 5
+        return [(x0 + self.LW + 8, top, x1 - x0 - self.LW - self.RW - 16, y1 - top)]
+
+    def title_font(self, ctx, width=None):
+        return super().title_font(ctx, W - 2 * self.inner(ctx)[0] - self.LW - self.RW - 20)
+
+    def chrome(self, c, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        lw, rw = self.LW, self.RW
+        lb = _dim(ctx.sev, 0.16)
+        c.FillRect(x0, y0, lw, y1 - y0, Color(*lb))
+        c.FillRect(x0 + lw, y0, 1, y1 - y0, Color(*ctx.sev))
+        c.FillRect(x1 - rw, y0, rw, y1 - y0, Color(*ctx.pal["panel"]))
+        c.FillRect(x1 - rw - 1, y0, 1, y1 - y0, Color(*ctx.sev))
+        cx = x0 + lw // 2
+        icon(c, ctx, cx - 16, y0 + 4, 2, lb)
+        k, sf = ctx.fam["key"], ctx.fam["small"]
+        y = y0 + 40
+        kind = ctx.b["kind"].upper()
+        k.draw(c, cx - k.width(kind) // 2, y, ctx.sev, kind)
+        y += k.line
+        meter(c, cx - 14, y, ctx)
+        y += 12
+        b = ctx.b
+        for text, col, f in ([(b["amount"].upper(), ctx.pal["amount"], k)] if b["amount"] else []) + \
+                [("UNTIL", ctx.pal["dim"], sf), ((b["until"] or "-").upper(), ctx.pal["strong"], k)]:
+            for ln in _wrap_plain(f, text, lw - 8):
+                if y + f.h > y1:
+                    break
+                f.draw(c, cx - f.width(ln) // 2, y, col, ln)
+                y += f.line
+            y += 1
+        tx = x0 + lw + 8
+        f = ctx.title_f
+        f.draw(c, tx, y0 + (max(16, f.h) - f.h) // 2, ctx.pal["strong"], title_text(ctx))
+        c.FillRect(tx, y0 + max(16, f.h) + 2, x1 - rw - tx - 8, 1, Color(*_dim(ctx.sev, 0.6)))
+        rx = x1 - rw + 6
+        sf.draw(c, rx, y0 + 4, ctx.pal["label"], "AREAS")
+        city_list(c, ctx, rx, y0 + 4 + sf.line + 2, rw - 10, y1 - 2, k if k.h <= 13 else sf)
+
+
+class KeyFacts(Structure):
+    """A row of key-fact tiles (amount · until · where · level) above two columns of text."""
+
+    def tiles_h(self, ctx):
+        return ctx.fam["small"].line + ctx.fam["key"].line + 8
+
+    def top(self, ctx):
+        x0, y0, _, _ = self.inner(ctx)
+        return y0 + max(16, ctx.title_f.h) + 4 + self.tiles_h(ctx) + 5
+
+    def boxes(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        top = self.top(ctx)
+        gap = 12
+        cw = (x1 - x0 - 4 - gap) // 2
+        return [(x0 + 2, top, cw, y1 - top), (x0 + 2 + cw + gap, top, cw, y1 - top)]
+
+    def chrome(self, c, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        f = ctx.title_f
+        rowh = max(16, f.h)
+        x = x0 + 2 + icon(c, ctx, x0 + 2, y0 + (rowh - 16) // 2, 1) + 6
+        f.draw(c, x, y0 + (rowh - f.h) // 2, ctx.sev, title_text(ctx))
+        k, sf = ctx.fam["key"], ctx.fam["small"]
+        status = (ctx.b["status"] or "in effect").upper()
+        chip(c, x1 - k.width(status) - 8, y0 + (rowh - k.h - 2) // 2, status, k, ctx.sev, (0, 0, 0))
+        b = ctx.b
+        tiles = [("AMOUNT", U(ctx, b["amount"]) if b["amount"] else b["kind"].upper(), ctx.pal["amount"]),
+                 ("UNTIL", U(ctx, b["until"] or "further notice"), ctx.pal["strong"]),
+                 ("WHERE", U(ctx, city_summary(ctx, 2)), ctx.pal["strong"]),
+                 ("LEVEL", b["kind"].upper(), ctx.sev)]
+        ty = y0 + rowh + 4
+        th = self.tiles_h(ctx)
+        widths = [0.30, 0.22, 0.30, 0.18]
+        tx = x0
+        avail = x1 - x0 - 3 * 5
+        for (lab, val, col), wf in zip(tiles, widths):
+            tw = int(avail * wf)
+            c.FillRect(tx, ty, tw, th, Color(*ctx.pal["panel"]))
+            c.FillRect(tx, ty, tw, 2, Color(*ctx.sev))
+            sf.draw(c, tx + 4, ty + 4, ctx.pal["dim"], lab)
+            fv = k if k.width(val) <= tw - 8 else sf
+            fv.draw(c, tx + 4, ty + 4 + sf.line, col, val)
+            if lab == "LEVEL":
+                meter(c, tx + tw - 32, ty + 4, ctx, 4, 6)
+            tx += tw + 5
+        bx = self.boxes(ctx)
+        c.FillRect(bx[1][0] - 6, bx[1][1], 1, bx[1][3], Color(*_dim(ctx.sev, 0.3)))
+
+
+class Spotlight(Structure):
+    """A big callout — the key amount and the summary — on the left; everything else on the right."""
+    SW = 150
+
+    def boxes(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        top = y0 + max(16, ctx.title_f.h) + 5
+        return [(x0 + self.SW + 10, top, x1 - x0 - self.SW - 12, y1 - top)]
+
+    def flow(self, ctx, paras, boxes, fonts, gap=3):
+        # the summary lives in the spotlight; the rest flows on the right
+        return layout([p for p in paras if p["style"] != "lead"], boxes, fonts, ctx.pal, ctx.upper, gap=gap)
+
+    def chrome(self, c, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        f = ctx.title_f
+        rowh = max(16, f.h)
+        x = x0 + 2 + icon(c, ctx, x0 + 2, y0 + (rowh - 16) // 2, 1) + 6
+        f.draw(c, x, y0 + (rowh - f.h) // 2, ctx.sev, title_text(ctx))
+        fact_line(c, ctx, x + f.width(title_text(ctx)) + 12, y0 + (rowh - ctx.fam["small"].h) // 2, ctx.fam["small"],
+                  x1 - x - f.width(title_text(ctx)) - 12)
+        sw = self.SW
+        top = y0 + rowh + 4
+        c.FillRect(x0, top, sw, y1 - top, Color(*_dim(ctx.sev, 0.14)))
+        c.FillRect(x0, top, 3, y1 - top, Color(*ctx.sev))
+        b = ctx.b
+        y = top + 4
+        big = ctx.fam["titles"][0]
+        if b["amount"]:
+            for ln in _wrap_plain(big, U(ctx, b["amount"]), sw - 12):
+                if big.width(ln) > sw - 12:
+                    big = ctx.fam["key"]
+                big.draw(c, x0 + 8, y, ctx.pal["amount"], ln)
+                y += big.line
+            y += 3
+        k = ctx.fam["key"]
+        reg, bold = ctx.fam["ladder"][0]
+        for g in (bold, reg, ctx.fam["small"]):
+            lines = _wrap_plain(g, U(ctx, b["summary"]), sw - 14)
+            if y + len(lines) * g.line <= y1 - 2:
+                break
+        for ln in lines:
+            if y + g.h > y1 - 2:
+                break
+            g.draw(c, x0 + 8, y, ctx.pal["strong"], ln)
+            y += g.line
+
+
+class Timeline(Structure):
+    """Header, then a timeline bar from issued to expiry with a live 'now' marker, then the text."""
+
+    def bar_h(self, ctx):
+        return ctx.fam["small"].line + 10
+
+    def boxes(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        top = y0 + max(16, ctx.title_f.h) + 4 + self.bar_h(ctx) + 4
+        return [(x0 + 2, top, x1 - x0 - 4, y1 - top)]
+
+    def chrome(self, c, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        f = ctx.title_f
+        rowh = max(16, f.h)
+        x = x0 + 2 + icon(c, ctx, x0 + 2, y0 + (rowh - 16) // 2, 1) + 6
+        x += f.draw(c, x, y0 + (rowh - f.h) // 2, ctx.sev, title_text(ctx)) + 10
+        sf = ctx.fam["small"]
+        b = ctx.b
+        if b["amount"]:
+            x += chip(c, x, y0 + (rowh - sf.h - 2) // 2, U(ctx, b["amount"]), sf, ctx.pal["amount"], (0, 0, 0)) + 8
+        sf.draw(c, x, y0 + (rowh - sf.h) // 2, ctx.pal["strong"], U(ctx, city_summary(ctx, 4)))
+        y = y0 + rowh + 4
+        sf.draw(c, x0 + 2, y, ctx.pal["dim"], U(ctx, f"ISSUED {b['issued']}" if b["issued"] else "ISSUED"))
+        lab = U(ctx, f"UNTIL {b['until']}" if b["until"] else "UNTIL FURTHER NOTICE")
+        sf.draw(c, x1 - 2 - sf.width(lab), y, ctx.pal["strong"], lab)
+        c.FillRect(x0 + 2, y + sf.line + 3, x1 - x0 - 4, 2, Color(*_dim(ctx.sev, 0.35)))
+
+    def dynamic(self, c, ctx, seg, p):
+        x0, y0, x1, y1 = self.inner(ctx)
+        a = ctx.b
+        issued, expires = ctx.b.get("_issued_ts"), ctx.b.get("_expires_ts")
+        sf = ctx.fam["small"]
+        y = y0 + max(16, ctx.title_f.h) + 4 + sf.line + 3
+        frac = 0.1
+        if issued and expires and expires > issued:
+            frac = max(0.0, min(1.0, (ctx.now - issued) / (expires - issued)))
+        bx0, bx1 = x0 + 2, x1 - 2
+        c.FillRect(bx0, y, int((bx1 - bx0) * frac), 2, Color(*ctx.sev))
+        mx = bx0 + int((bx1 - bx0) * frac)
+        glow = 0.6 + 0.4 * math.sin(ctx.t * 5)
+        c.FillRect(mx - 2, y - 3, 5, 8, Color(*_dim((255, 255, 255), glow)))
+        super().dynamic(c, ctx, seg, p)
 
 
 STRUCT_IMPL = {"band": Band(), "columns": Columns(), "rail": Rail(), "crawl": Crawl(), "boxes": Boxes(),
-               "terminal": Terminal(), "centered": Centered(), "factbar": FactBar()}
+               "terminal": Terminal(), "centered": Centered(), "factbar": FactBar(), "cities": CitiesRail(),
+               "dualrail": DualRail(), "keyfacts": KeyFacts(), "spotlight": Spotlight(), "timeline": Timeline()}
 
 
 # ---------------------------------------------------------------------------
