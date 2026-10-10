@@ -32,6 +32,10 @@ RAIN = ("RADAR_1KM_RRAI", "Radar-Rain_14colors",
 SNOW = ("RADAR_1KM_RSNO", "Radar-Snow_14colors",
         [0.1, 0.2, 0.3, 0.5, 0.75, 1, 1.5, 2, 3, 4, 5, 7.5, 10, 20])        # cm/h
 PTYPE = ("Radar_1km_SfcPrecipType", "SfcPrecipType_Dis")
+# Radar nowcast (extrapolation, +72 min every 6 min): same styles and legends as the observed radar.
+NOWCAST_RAIN = ("Radar_1km_RainPrecipRate-Extrapolation", RAIN[1], RAIN[2])
+NOWCAST_SNOW = ("Radar_1km_SnowPrecipRate-Extrapolation", SNOW[1], SNOW[2])
+LIGHTNING = "Lightning_2.5km_Density"                                   # flashes, 10-min steps, last 3 h
 # Legend order top→bottom on GeoMet's SfcPrecipType legend.
 PTYPE_CLASSES = ["fzra_heavy", "fzra_light", "hail_rain", "rain_heavy", "rain_moderate", "rain_light",
                  "mixed_heavy", "mixed_moderate", "mixed_light", "snow_heavy", "snow_moderate", "snow_light"]
@@ -209,6 +213,7 @@ _decoders = {}
 def decoder(kind):
     if kind not in _decoders:
         _decoders[kind] = {"rain": lambda: RampDecoder(*RAIN), "snow": lambda: RampDecoder(*SNOW),
+                           "nc_rain": lambda: RampDecoder(*NOWCAST_RAIN), "nc_snow": lambda: RampDecoder(*NOWCAST_SNOW),
                            "ptype": lambda: ClassDecoder(*PTYPE, len(PTYPE_CLASSES))}[kind]()
     return _decoders[kind]
 

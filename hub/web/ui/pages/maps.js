@@ -5,8 +5,10 @@ const STEP_OPTIONS = [5, 6, 10, 15, 20, 30, 60, 120];
 
 function trackSummary(t) {
   if (t.kind === "accumulation") return `Precipitation (Accumulated) · ${t.window_hours ?? 24} h`;
+  if (t.kind === "forecast") return `Precipitation (Forecast) · next ${t.window_hours ?? 24} h`;
   const h = (t.window_min ?? 180) / 60;
-  const what = (t.layers || []).some((l) => l.type === "radar") ? "Precipitation (Live)" : "Live loop";
+  const what = (t.layers || []).some((l) => l.type === "radar")
+    ? "Precipitation (Live)" + (t.nowcast ? " + nowcast" : "") + (t.lightning ? " + lightning" : "") : "Live loop";
   return `${what} · ${h % 1 ? h.toFixed(1) : h} h`;
 }
 function hasRadar(t) { return t.kind === "accumulation" || (t.layers || []).some((l) => l.type === "radar"); }
@@ -49,7 +51,7 @@ export const Maps = {
           </AnimThumb></div>
         <div class="card-body stack" style="gap:8px">
           <div class="row nowrap"><h3 style="flex:1">{{ t.label || tid }}</h3>
-            <span class="pill" :class="t.kind === 'accumulation' ? 'warn' : 'accent'"><Icon :name="t.kind === 'accumulation' ? 'CloudRain' : 'Repeat'" :size="12"/>{{ t.kind === 'accumulation' ? 'Accum' : 'Live' }}</span></div>
+            <span class="pill" :class="{accumulation: 'warn', forecast: 'ok'}[t.kind] || 'accent'"><Icon :name="{accumulation: 'CloudRain', forecast: 'CalendarClock'}[t.kind] || 'Repeat'" :size="12"/>{{ {accumulation: 'Accum', forecast: 'Fcst'}[t.kind] || 'Live' }}</span></div>
           <div class="muted" style="font-size:13px">{{ trackSummary(t) }} · plays {{ t.loops ?? 2 }}× per visit</div>
           <div style="font-size:12px" v-if="status(tid)">
             <span :class="status(tid).ok ? 'faint' : ''" :style="status(tid).ok ? '' : 'color: var(--bad)'">{{ status(tid).message }}</span>
@@ -76,9 +78,16 @@ export const MapEditor = {
     const bm = computed(() => t.value.basemap);
     const dn = computed(() => bm.value.daynight);
     const catalog = computed(() => store.catalog || { basemaps: [], wms_layers: [] });
-    const isAcc = computed(() => t.value.kind === "accumulation");
+    const isAcc = computed(() => t.value.kind === "accumulation" || t.value.kind === "forecast");   // window in hours
+    const isFc = computed(() => t.value.kind === "forecast");
     // totals need their own window; give a fresh totals map the same 24 h the renderer assumes
-    watch(() => t.value?.kind, (k) => { if (k === "accumulation" && t.value.window_hours == null) t.value.window_hours = 24; });
+    watch(() => t.value?.kind, (k) => {
+      if ((k === "accumulation" || k === "forecast") && t.value.window_hours == null) t.value.window_hours = 24;
+      if (k === "forecast") {                       // model output is hourly
+        if (!(t.value.step_min >= 60)) t.value.step_min = 60;
+        if (!(t.value.refresh_min >= 30)) t.value.refresh_min = 60;
+      }
+    });
     const usesRadar = computed(() => hasRadar(t.value));
 
     const hours = computed({
@@ -126,7 +135,7 @@ export const MapEditor = {
       wm.value.tracks[`${tid}_${n}`] = { ...clone(t.value), label: `${t.value.label} (copy)` };
       go(`maps/${tid}_${n}`);
     };
-    return { tid, t, wm, areas, bm, dn, catalog, isAcc, usesRadar, hours, frames, loopSec, archiveNote, preview, previewInfo, addLayer, pickWms, wmsLabel, del, duplicate,
+    return { tid, t, wm, areas, bm, dn, catalog, isAcc, isFc, usesRadar, hours, frames, loopSec, archiveNote, preview, previewInfo, addLayer, pickWms, wmsLabel, del, duplicate,
       go, dur, STEP_OPTIONS, showNow, rerender, areaLabel, store };
   },
   template: `<div class="page" v-if="t">
@@ -161,14 +170,16 @@ export const MapEditor = {
           </div></div></div>
 
         <div class="card"><div class="card-head"><Icon name="Sparkles" :size="15"/><h3>What it shows</h3></div><div class="card-body stack">
-          <Seg v-model="t.kind" :options="[{value:'loop', label:'Live loop', icon:'Repeat'}, {value:'accumulation', label:'Precipitation (Accumulated)', icon:'CloudRain'}]"/>
+          <Seg v-model="t.kind" :options="[{value:'loop', label:'Live loop', icon:'Repeat'}, {value:'accumulation', label:'Precipitation (Accumulated)', icon:'CloudRain'}, {value:'forecast', label:'Precipitation (Forecast)', icon:'CalendarClock'}]"/>
           <template v-if="!isAcc">
             <div class="faint" style="font-size:12.5px">Satellite and forecast layers are drawn under the coastlines and borders. Radar is drawn on top of everything, opaque at full colour.</div>
             <div class="stack" style="gap:8px" v-sortable="{ list: t.layers }">
               <div class="slot" v-for="(l, i) in t.layers" :key="i">
                 <span class="handle"><Icon name="GripVertical" :size="16"/></span>
                 <span class="kind"><Icon :name="l.type === 'radar' ? 'Radar' : 'Satellite'" :size="17"/></span>
-                <div class="meta" v-if="l.type === 'radar'"><b>Precipitation (Live)</b><span>Radar: rain, snow, mixed & freezing rain in TV colours</span></div>
+                <div class="meta stack" style="gap:8px" v-if="l.type === 'radar'"><div><b>Precipitation (Live)</b><span>Radar: rain, snow, mixed & freezing rain in TV colours</span></div>
+                  <ToggleRow :modelValue="!!t.nowcast" @update:modelValue="v => t.nowcast = v" label="Nowcast" hint="Carry the loop about an hour into the future (ECCC radar extrapolation); future frames are labelled +min"/>
+                  <ToggleRow :modelValue="!!t.lightning" @update:modelValue="v => t.lightning = v" label="Lightning" hint="Flashes from the last 10 minutes of each frame, drawn in bright yellow on top"/></div>
                 <div class="meta stack" style="gap:6px" v-else>
                   <select class="input" :value="l.layer" @change="pickWms(l, $event.target.value)">
                     <option v-for="w in catalog.wms_layers" :key="w.layer" :value="w.layer">{{ w.label }}</option></select>
@@ -182,13 +193,15 @@ export const MapEditor = {
               <button class="btn sm" @click="addLayer('wms')"><Icon name="Plus" :size="14"/>Satellite / forecast layer</button></div>
           </template>
           <template v-else>
-            <div class="faint" style="font-size:12.5px">Each frame shows how much rain and snow has fallen since the start of the window, so heavy, lasting rain builds from green to red. Snow colours take over once a spot's snow passes the threshold below.</div>
+            <div class="faint" style="font-size:12.5px" v-if="isFc">Each frame shows how much rain and snow Environment Canada's HRDPS model expects between now and that hour, in the same colours as the accumulated maps. Updated with every model run (every 6 h).</div>
+            <div class="faint" style="font-size:12.5px" v-else>Each frame shows how much rain and snow has fallen since the start of the window, so heavy, lasting rain builds from green to red. Snow colours take over once a spot's snow passes the threshold below.</div>
             <Field label="Snow colours on top from"><Stepper v-model="t.snow_on_top_cm" :min="0" :max="20" :step="0.1" unit="cm"/></Field>
           </template>
         </div></div>
 
-        <div class="card"><div class="card-head"><Icon name="Timer" :size="15"/><h3>History & playback</h3></div><div class="card-body stack">
-          <Field :label="isAcc ? 'Accumulate the last' : 'Show the last'" :hint="usesRadar ? 'Radar history builds up on the server (Environment Canada keeps only 3 h).' : ''">
+        <div class="card"><div class="card-head"><Icon name="Timer" :size="15"/><h3>{{ isFc ? 'Forecast & playback' : 'History & playback' }}</h3></div><div class="card-body stack">
+          <Field :label="isFc ? 'Forecast the next' : isAcc ? 'Accumulate the last' : 'Show the last'"
+            :hint="isFc ? 'HRDPS forecasts run 48 h ahead on a 2.5 km grid.' : usesRadar ? 'Radar history builds up on the server (Environment Canada keeps only 3 h).' : ''">
             <Slider v-model="hours" :min="0.5" :max="48" :step="0.5" :format="v => (v % 1 ? v.toFixed(1) : v) + ' h'"/></Field>
           <div class="callout info" v-if="archiveNote" style="font-size:12.5px"><Icon name="Info" :size="15"/>{{ archiveNote }}</div>
           <div class="fields">
@@ -223,14 +236,13 @@ export const MapEditor = {
 
         <div class="card"><div class="card-head"><Icon name="Type" :size="15"/><h3>On screen</h3></div><div class="card-body stack">
           <ToggleRow :modelValue="t.timestamp !== false" @update:modelValue="v => t.timestamp = v" label="Time label" hint="Bottom-left: map name and the frame's time"/>
-          <ToggleRow v-if="usesRadar" :modelValue="t.legend !== false" @update:modelValue="v => t.legend = v" label="Colour legend" hint="Top-left: rain and snow colour bars"/>
+          <ToggleRow v-if="usesRadar || isFc" :modelValue="t.legend !== false" @update:modelValue="v => t.legend = v" label="Colour legend" hint="Top-left: rain and snow colour bars"/>
         </div></div>
 
         <div class="row end"><ConfirmButton label="Delete this map" @confirm="del"/></div>
       </div>
     </div>
   </div>
-  <div class="page" v-else><div class="empty">That map doesn't exist. <a href="#/maps">Back to maps</a></div></div>
   <div class="page" v-else><div class="empty"><Icon name="MapPinOff" :size="28"/><h3>No map called “{{ tid }}”</h3>
     <button class="btn" @click="go('maps')"><Icon name="ArrowLeft" :size="14"/>All weather maps</button></div></div>`,
 };

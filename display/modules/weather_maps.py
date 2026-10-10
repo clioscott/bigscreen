@@ -138,12 +138,17 @@ class MapPanel:
         times = meta.get("times") or []
         if meta.get("timestamp", True) and idx < len(times):
             t = datetime.strptime(times[idx], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).astimezone()
-            if meta.get("kind") == "accumulation":
+            if meta.get("kind") == "forecast":
+                t0 = datetime.strptime(times[0], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).astimezone()
+                ahead = (t - t0).total_seconds() / 3600
+                label = f"{meta.get('label', '')}  +{ahead:.0f}h  {t:%a %H:%M}"
+            elif meta.get("kind") == "accumulation":
                 t0 = datetime.strptime(times[0], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).astimezone()
                 label = f"{meta.get('label', '')}  since {t0:%a %H:%M} -> {t:%H:%M}"
             else:
                 age = (datetime.now(timezone.utc) - t.astimezone(timezone.utc)).total_seconds() / 60
-                label = f"{meta.get('label', '')}  {t:%H:%M}" + ("" if age < 15 else f" (-{age / 60:.1f}h)")
+                label = f"{meta.get('label', '')}  {t:%H:%M}" + (f" (+{-age:.0f}m)" if age < -2 else
+                                                                  "" if age < 15 else f" (-{age / 60:.1f}h)")
             self._text(c, x + 2, y + h - 2, label)
         self._text(c, x + w - self._tw("ECCC") - 2, y + 7, "ECCC", self.dim)
 
@@ -170,5 +175,5 @@ class MapPanel:
                 c.FillRect(cx, cy, 4, 5, Color(*rgb))
                 cx += 4
             cx += 2
-            self._text(c, cx, cy + 5, f"{scale['bands'][-1][0]:g}{scale['unit']}", self.dim)
+            self._text(c, cx, cy + 5, scale.get("text") or f"{scale['bands'][-1][0]:g}{scale['unit']}", self.dim)
             cy += 7

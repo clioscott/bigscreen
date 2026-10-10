@@ -116,6 +116,64 @@ def update_archive(view, keep_hours, log=print):
     return added, errors
 
 
+def nowcast(view, after, crop=None, log=print):
+    """ECCC radar extrapolation frames valid after ``after``: [(t, rain, snow, ptype)].
+
+    Cached per nowcast issue (cache/radar/<view>/nowcast/<issue>/), so each issue is fetched once.
+    The nowcast has no precipitation type, so snow is typed as snow where it's the only signal."""
+    times = wms.layer_times(wms.NOWCAST_RAIN[0])
+    if not times:
+        return []
+    issue = times[0].strftime("%Y%m%dT%H%M")
+    base = _dir(view) / "nowcast"
+    d = base / issue
+    d.mkdir(parents=True, exist_ok=True)
+    for old in base.iterdir():
+        if old.is_dir() and old.name != issue and old.name < issue:
+            for p in old.glob("*"):
+                p.unlink(missing_ok=True)
+            old.rmdir()
+    snow_cls = wms.PTYPE_CLASSES.index("snow_moderate")
+    out = []
+    for t in times:
+        if t <= after:
+            continue
+        p = d / _fname(t)
+        if p.exists():
+            z = np.load(p)
+            rain, snow = z["rain"].astype(np.float32), z["snow"].astype(np.float32)
+        else:
+            try:
+                rain = wms.decoder("nc_rain").decode(wms.get_map(wms.NOWCAST_RAIN[0], view, t, style=wms.NOWCAST_RAIN[1]))
+                try:
+                    snow = wms.decoder("nc_snow").decode(wms.get_map(wms.NOWCAST_SNOW[0], view, t, style=wms.NOWCAST_SNOW[1]))
+                except Exception:
+                    snow = np.zeros_like(rain)
+            except wms.FrameGap:
+                continue
+            except Exception as e:
+                log(f"  nowcast {t:%H:%M}: {e}")
+                continue
+            tmp = d / (_fname(t) + ".tmp.npz")
+            np.savez_compressed(tmp, rain=rain.astype(np.float16), snow=snow.astype(np.float16))
+            tmp.replace(p)
+        ptype = np.where((snow > 0) & (rain <= 0), snow_cls, wms.PT_NONE).astype(np.uint8)
+        if crop:
+            x0, x1 = crop
+            rain, snow, ptype = rain[:, x0:x1], snow[:, x0:x1], ptype[:, x0:x1]
+        out.append((t, rain, snow, ptype))
+    return out
+
+
+def lightning_layer(rgba, colour="#ffee33"):
+    """Any lightning pixel → one bright, opaque colour (the WMS style's pastel classes vanish on LEDs)."""
+    out = np.zeros(rgba.shape[:2] + (4,), dtype=np.uint8)
+    m = rgba[..., 3] > 40
+    out[m, :3] = _hex(colour)
+    out[m, 3] = 255
+    return out
+
+
 def archive_times(view):
     return sorted(_parse_fname(p.name) for p in _dir(view).glob("*.npz") if not p.name.endswith(".tmp.npz"))
 

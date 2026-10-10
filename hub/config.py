@@ -133,7 +133,7 @@ def validate(cfg):
                 raise ConfigError(f"track {tid}: unknown area {t.get('area')!r}")
             if t.get("size", "half") not in ("half", "full"):
                 raise ConfigError(f"track {tid}: size must be half or full")
-            if t.get("kind", "loop") == "accumulation" and not 0.5 <= float(t.get("window_hours", 24)) <= 48:
+            if t.get("kind", "loop") in ("accumulation", "forecast") and not 0.5 <= float(t.get("window_hours", 24)) <= 48:
                 raise ConfigError(f"track {tid}: accumulation window must be 0.5–48 h")
             if not 1 <= float(t.get("fps", 8)) <= 30:
                 raise ConfigError(f"track {tid}: fps must be 1–30")

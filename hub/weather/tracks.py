@@ -34,7 +34,7 @@ from PIL import Image
 
 from hub import paths
 from hub.util import atomic_write_json
-from hub.weather import carto, radar, wms
+from hub.weather import carto, forecast, radar, wms
 from hub.weather.geo import View, alpha_over, render_basemap, shade_day_night
 
 ANIM_DIR = paths.DATA_DIR / "anim"
@@ -107,6 +107,20 @@ def _legend_spec(pals, live=False):
     return [{"label": label, "unit": unit, "bands": [[t, c] for t, c in pals[name]]} for name, label, unit in scales]
 
 
+def _legend_for(track, kind, pals):
+    if track.get("legend") is False:
+        return None
+    if kind in ("accumulation", "forecast"):
+        return _legend_spec(pals)
+    if any(l.get("type") == "radar" for l in track.get("layers") or []):
+        spec = _legend_spec(pals, live=True)
+        if track.get("lightning"):
+            spec.append({"label": "Lightning", "unit": "", "text": "lightning",
+                         "bands": [[0, track.get("lightning_colour", "#ffee33")]]})
+        return spec
+    return None
+
+
 def render_track(tid, track, cfg, log=print):
     wm = cfg["modules"].get("weather_maps", {})
     area = dict(wm.get("areas", {})[track["area"]], id=track["area"])
@@ -143,6 +157,22 @@ def render_track(tid, track, cfg, log=print):
                 frames.append(alpha_over(img, layer))         # totals sit on top of every map line
                 times.append(t)
         coverage = f"{(arch[-1] - arch[0]).total_seconds() / 3600:.1f} of {hours:g} h archived"
+    elif kind == "forecast":
+        # HRDPS model: rain & snow accumulated from now to each forecast hour (same colours as totals)
+        hours = float(track.get("window_hours", 24))
+        step_h = max(1, round(float(track.get("step_min", 60)) / 60))
+        for t, rain_mm, snow_cm in forecast.precip_forecast(view, hours, step_h):
+            layer = radar.accumulation_layer(rain_mm, snow_cm, wm.get("palettes"),
+                                             float(track.get("snow_on_top_cm", 0.5)))
+            img = _basemap_for(base, view, track, t, under)
+            if overlay is not None:
+                img = alpha_over(img, overlay)
+            frames.append(alpha_over(img, layer))
+            times.append(t)
+        if not frames:
+            return {"ok": False, "message": "no HRDPS forecast available"}
+        coverage = f"HRDPS run {forecast.run_times()[0] - timedelta(hours=1):%d %H}Z, +{hours:g} h"
+        forecast.prune()
     else:
         window = timedelta(minutes=float(track.get("window_min", 180)))
         step = float(track.get("step_min", 10))
@@ -161,6 +191,22 @@ def render_track(tid, track, cfg, log=print):
             times = _frame_times(driver_times, now - window, now + timedelta(minutes=5), step)
         if not times:
             return {"ok": False, "message": "no frames available in the time window"}
+        has_radar = any(l.get("type") == "radar" for l in layers)
+        # Nowcast: continue the loop past the newest radar frame with ECCC's extrapolation (+72 min).
+        future = {}
+        if track.get("nowcast") and has_radar:
+            try:
+                future = {ft: (r, s, p) for ft, r, s, p in radar.nowcast(arch_view, times[-1], crop, log)}
+                times = times + _frame_times(sorted(future), times[-1] + timedelta(minutes=1),
+                                             times[-1] + timedelta(minutes=75), step)
+            except Exception as e:
+                log(f"  {tid}: nowcast: {e}")
+        lightning_times = []
+        if track.get("lightning") and has_radar:
+            try:
+                lightning_times = wms.layer_times(wms.LIGHTNING)
+            except Exception as e:
+                log(f"  {tid}: lightning times: {e}")
         layer_times = {id(l): (radar.archive_times(arch_view) if l.get("type") == "radar"
                                else ([] if l.get("time") == "static" else wms.layer_times(l["layer"])))
                        for l in layers}
@@ -171,6 +217,10 @@ def render_track(tid, track, cfg, log=print):
             missing = False
             for l in layers:
                 lt = layer_times[id(l)]
+                if t in future:                                # nowcast frame: radar only, no imagery
+                    if l.get("type") == "radar":
+                        radar_layers.append(radar.rate_layer(*future[t], wm.get("palettes")))
+                    continue
                 if l.get("type") != "radar" and l.get("time") == "static":
                     src_t = None
                 else:
@@ -200,10 +250,18 @@ def render_track(tid, track, cfg, log=print):
                 img = alpha_over(img, overlay)
             for rl in radar_layers:
                 img = alpha_over(img, rl)
+            if lightning_times and t not in future:            # flashes in the 10 min up to this frame
+                lc = [x for x in lightning_times if x <= t + timedelta(minutes=1) and t - x < timedelta(minutes=10)]
+                if lc:
+                    try:
+                        img = alpha_over(img, radar.lightning_layer(_wms_frame(wms.LIGHTNING, view, lc[-1], "", 1),
+                                                                    track.get("lightning_colour", "#ffee33")))
+                    except Exception as e:
+                        log(f"  {tid}: lightning @ {lc[-1]}: {e}")
             frames.append(img)
             kept.append(t)
         times = kept
-        coverage = f"{len(times)} frames"
+        coverage = f"{len(times)} frames" + (f", {sum(1 for x in times if x in future)} nowcast" if future else "")
         if not frames:
             return {"ok": False, "message": "every frame failed to fetch"}
 
@@ -218,10 +276,8 @@ def render_track(tid, track, cfg, log=print):
         "fps": float(track.get("fps", 8)), "hold_last_sec": float(track.get("hold_last_sec", 1.5)),
         "loops": int(track.get("loops", 2)), "timestamp": track.get("timestamp", True),
         "times": [t.strftime("%Y-%m-%dT%H:%M:%SZ") for t in times],
-        "legend": (None if track.get("legend") is False else
-                   _legend_spec(pals) if kind == "accumulation" else
-                   _legend_spec(pals, live=True) if any(l.get("type") == "radar" for l in track.get("layers") or []) else None),
-        "window_hours": float(track.get("window_hours", 24)) if kind == "accumulation" else None,
+        "legend": _legend_for(track, kind, pals),
+        "window_hours": float(track.get("window_hours", 24)) if kind in ("accumulation", "forecast") else None,
         "generated_at": time.time(), "attribution": "ECCC",
     }
     atomic_write_json(ANIM_DIR / f"{tid}.json", meta)

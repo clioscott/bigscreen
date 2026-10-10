@@ -13,7 +13,7 @@ import time
 from hub import paths
 from hub.jobs import _harness
 from hub.util import atomic_write_json, read_json
-from hub.weather import geo, radar, tracks
+from hub.weather import forecast, geo, radar, tracks
 
 STATE = paths.CACHE_DIR / "maps_state.json"
 
@@ -58,13 +58,20 @@ def run(cfg):
 
     # 2. render due tracks
     rendered = []
+    run_id = None
+    if any(t.get("kind") == "forecast" for t in enabled.values()):
+        try:
+            run_id = forecast.run_times()[0].isoformat()      # a new HRDPS run re-renders forecast maps
+        except Exception as e:
+            errors.append(f"HRDPS forecast times: {e}"[:160])
     for tid, t in enabled.items():
         step += 1
         st = state.get(tid, {})
         sig = _sig(t, areas[t["area"]], cfg)
         due = (now - st.get("at", 0) >= float(t.get("refresh_min", 10)) * 60 - 20
                or st.get("sig") != sig
-               or (t["area"] in new_radar and t.get("kind") == "accumulation"))
+               or (t["area"] in new_radar and t.get("kind") == "accumulation")
+               or (t.get("kind") == "forecast" and run_id and st.get("run") != run_id))
         if not due:
             continue
         _harness.progress(step - 1, steps, f"rendering {t.get('label') or tid}")
@@ -76,7 +83,7 @@ def run(cfg):
             res = {"ok": False, "message": f"{type(e).__name__}: {e}"}
         res["seconds"] = round(time.time() - t0, 1)
         state[tid] = {"at": now if res.get("ok") else st.get("at", 0), "sig": sig if res.get("ok") else st.get("sig"),
-                      "last": res, "tried": now}
+                      "last": res, "tried": now, "run": run_id if res.get("ok") else st.get("run")}
         (rendered if res.get("ok") else errors).append(f"{tid}: {res['message']}")
         print(f"  {tid}: {'ok' if res.get('ok') else 'FAILED'} in {res['seconds']}s — {res['message']}", flush=True)
         atomic_write_json(STATE, state, indent=1)
