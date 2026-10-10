@@ -174,7 +174,7 @@ def paragraphs(b, level="all"):
     if b["advice"]:
         out.append({"style": "advice", "tag": "DO", "text": " ".join(b["advice"])})
     if b.get("cities") or b["regions"]:                    # the area is never left out (it shrinks instead)
-        out.append({"style": "regions", "tag": "AREA", "text": " · ".join(b.get("cities") or b["regions"])})
+        out.append({"style": "regions", "tag": "AREA", "text": "; ".join((b.get("areas") or [[]])[0] or b["regions"])})
     return [p for p in out if p["text"]]
 
 
@@ -310,3 +310,30 @@ HAZARD_INFO = [
     ("smoke", "Air quality & smoke", "special air quality statements, smoke, dust"),
     ("general", "Other special weather statements", "special weather statements that don't fit a group above"),
 ]
+
+
+INCLUDE_CITIES = ("Vancouver", "Richmond", "Surrey")      # named after the zones when an alert covers them
+
+
+def compact_area(regions):
+    """One short item per area: 'Metro Vancouver (All) including Vancouver, Richmond, Surrey',
+    'Metro Vancouver (Central + North Shore) including Vancouver', 'Howe Sound'."""
+    zs = zones(regions)
+    out = []
+    for h in dict.fromkeys(z["head"] for z in zs):
+        mine = [z for z in zs if z["head"] == h]
+        parts = [z["part"] for z in mine if z["part"]]
+        if len(mine) >= 4:
+            name = f"{h} (All)"
+        elif parts:
+            name = f"{h} ({' + '.join(parts)})"
+        else:
+            name = h
+        found = [c for c in INCLUDE_CITIES if any(x == c for z in mine for x in z["cities"])]
+        out.append(name + (" including " + ", ".join(found) if found else ""))
+    return out
+
+
+def area_levels(regions):              # noqa: F811 — the compact form replaces the city-by-city levels
+    items = compact_area(regions)
+    return [items, items, items, items]

@@ -115,19 +115,22 @@ def run(cfg):
         if meta:
             a["map"] = meta
             metas.append(meta)
-    sample_map = None
+    sample_maps = {}
     if acfg.get("show_map", True) is not False:
-        try:
-            from display.modules.weather_alert import SAMPLE
-            from display.modules.alert_brief import cities as _cities
-            sample_map = alertmap.render_sample(cfg, _cities(SAMPLE["regions"]), home)
-            if sample_map:
-                metas.append(sample_map)
-        except Exception as e:
-            print(f"sample map: {e}", flush=True)
+        from display.modules.alert_samples import SAMPLES
+        for kind, smp in SAMPLES.items():
+            try:
+                m = alertmap.render_sample(cfg, smp["map_cities"], home, home_hit=mentions(smp, home))
+                if m:
+                    sample_maps[kind] = m
+                    metas.append(m)
+            except Exception as e:
+                print(f"sample map {kind}: {e}", flush=True)
+    sample_map = sample_maps.get("rain")
     alertmap.prune(metas)
     atomic_write_json(paths.DATA_DIR / "alerts.json", {
-        "updated_utc": time.time(), "area": label, "bbox": bbox, "alerts": alerts, "sample_map": sample_map})
+        "updated_utc": time.time(), "area": label, "bbox": bbox, "alerts": alerts, "sample_map": sample_map,
+        "sample_maps": sample_maps})
     for a in alerts:
         print(f"{'HOME' if a['home'] else 'nearby'} {a['type'].upper()}: {a['name']} — {', '.join(a['regions'])[:120]}", flush=True)
     return {"ok": True, "message": f"{len(alerts)} alert(s) in effect" if alerts else "no alerts in effect",

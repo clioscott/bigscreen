@@ -18,7 +18,7 @@ const DENSITY = [
   { value: "minimal", label: "Minimal", hint: "Big text: what's happening, what to do, and where" },
 ];
 const LOOK_KEYS = ["header", "palette", "family", "structure", "border", "reveal", "reveal_speed", "title_font", "title_scale",
-  "body_font", "reading_wpm", "min_hold_sec", "detail", "upper", "pulse", "density"];
+  "body_font", "reading_wpm", "min_hold_sec", "detail", "upper", "pulse", "density", "sample"];
 
 export const Alerts = {
   setup() {
@@ -138,16 +138,21 @@ export const Alerts = {
       } catch (e) { fail(e); }
     };
     const onWall = ref(false);            // the wall is showing this page's settings
+    const previewSample = ref(false);      // an alert type was picked: show its sample, even if real alerts exist
+    let wallTest = null;
+    const pickSample = (id) => { previewSample.value = true; a.value.sample = id; };
     let liveTimer;
     const pushLive = async () => {
       const settings = clone(a.value);
       for (const k of LOOK_KEYS) if (settings[k] === undefined || settings[k] === "") settings[k] = null;   // unset beats saved
       try {
         await api("/api/display/preview", { json: { overlay: { modules: { weather_alerts: settings } }, ttl_sec: 4 * 3600 } });
-        if (!onWall.value) {
+        const test = previewSample.value || !cat.value.alerts?.length;
+        if (!onWall.value || wallTest !== test) {
           await api("/api/display/override", { json: { side: "right", panel: "weather_alert", duration_sec: 4 * 3600,
-            ...(cat.value.alerts?.length ? {} : { test: true }) } });
+            ...(test ? { test: true } : {}) } });
           onWall.value = true;
+          wallTest = test;
         }
       } catch (e) { fail(e); }
     };
@@ -163,6 +168,8 @@ export const Alerts = {
         await api("/api/display/override/clear", { json: { side: "right" } });
         await api("/api/display/preview/clear", { method: "POST" });
         onWall.value = false;
+        previewSample.value = false;
+        wallTest = null;
         toast("Back to the rotation");
       } catch (e) { fail(e); }
     };
@@ -176,7 +183,7 @@ export const Alerts = {
     const revealAt = computed(() => (tileT.value % 12) * 0.3);               // replays the reveal every few seconds
     const themeOf = computed(() => (cat.value.themes || []).find((x) => x.id === a.value.theme) || {});
     const opts = (dict) => [{ value: "", label: "Theme" }, ...Object.entries(dict || {}).map(([value, label]) => ({ value, label }))];
-    return { hazards, toggleHazard, onWall, pushLive, DENSITY, optImg, borderAt, revealAt, themeOf, tour, tourSec, tourTheme, startTour, stepTour, stopTour, useTour, tourWall, ids, a, cat, live, shown, onLoaded, tl, t, playing, page, jump, layoutFilter, thumbsOn, themes, thumb, current,
+    return { pickSample, previewSample, hazards, toggleHazard, onWall, pushLive, DENSITY, optImg, borderAt, revealAt, themeOf, tour, tourSec, tourTheme, startTour, stepTour, stopTour, useTour, tourWall, ids, a, cat, live, shown, onLoaded, tl, t, playing, page, jump, layoutFilter, thumbsOn, themes, thumb, current,
       TYPES, DETAIL, opts, types, toggleType, areas, areaId, setOpt, resetLook, entry, addToRotation, show, stop,
       when, typeColour, ago, fontName };
   },
@@ -194,6 +201,18 @@ export const Alerts = {
         <button class="btn sm" @click="stop"><Icon name="Undo2" :size="14"/>Back to rotation</button></template>
       <button v-else class="btn sm" @click="pushLive"><Icon name="MonitorPlay" :size="14"/>Show on the wall</button>
     </div></div>
+
+    <div class="card"><div class="card-head"><Icon name="Siren" :size="16" style="color:var(--bad)"/><h3>Alert type</h3>
+      <span class="faint" style="font-size:12px">click a type to preview its sample · the switch decides whether that kind of alert appears on the wall</span></div>
+      <div class="card-body"><div class="hz-grid">
+        <div v-for="hz in cat.hazards" :key="hz.id" class="hz-card" :class="{on: (a.sample || 'rain') === hz.id, off: !hazards.includes(hz.id)}"
+          @click="pickSample(hz.id)" :title="hz.hint">
+          <img :src="'/api/alerts/icon/' + hz.id + '.png?scale=3'" alt="">
+          <div class="hz-meta"><b>{{ hz.label }}</b>
+            <small>{{ cat.samples?.[hz.id]?.name }} <span class="pill" style="height:17px; font-size:10px">{{ cat.samples?.[hz.id]?.type }}</span></small></div>
+          <span @click.stop><Toggle :modelValue="hazards.includes(hz.id)" @update:modelValue="v => toggleHazard(hz.id, v)"/></span>
+        </div>
+      </div></div></div>
 
     <div class="two-col">
       <div class="stack sticky">
@@ -327,8 +346,7 @@ export const Alerts = {
           <Field label="Area" hint="Alerts for any forecast region touching this map area (Lower Mainland catches nearby alerts too)">
             <select class="input" v-model="areaId"><option v-for="[id, ar] in areas" :key="id" :value="id">{{ ar.label }}</option></select></Field>
           <ToggleRow v-for="x in TYPES" :key="x.id" :modelValue="types.includes(x.id)" @update:modelValue="v => toggleType(x.id, v)" :label="x.label" :hint="x.hint"/>
-          <div class="section-title" style="margin-top:6px">Kinds of weather</div>
-          <ToggleRow v-for="hz in cat.hazards" :key="hz.id" :modelValue="hazards.includes(hz.id)" @update:modelValue="v => toggleHazard(hz.id, v)" :label="hz.label" :hint="hz.hint"/>
+
         </div></div>
 
         <div class="card"><div class="card-head"><Icon name="Repeat" :size="15"/><h3>In the rotation</h3></div><div class="card-body stack">

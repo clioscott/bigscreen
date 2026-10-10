@@ -123,9 +123,11 @@ FAMILIES = {
 STRUCTURES = {"band": "Header band", "rail": "Left rail", "columns": "Two columns", "crawl": "Crawl band",
               "boxes": "Boxed sections", "terminal": "Terminal", "centered": "Centred header", "factbar": "Fact bar",
               "cities": "Cities rail", "dualrail": "Dual sidebars", "keyfacts": "Key-fact tiles",
-              "spotlight": "Spotlight callout", "timeline": "Timeline"}
+              "spotlight": "Spotlight callout", "timeline": "Timeline", "panels": "Panel grid", "newspaper": "Newspaper",
+              "hud": "HUD", "stats": "Stat stack"}
 BORDERS = {"chase": "Marching dashes", "pulse": "Slow pulse", "hazard": "Hazard tape", "double": "Double rule",
-           "lights": "Chasing lights", "comet": "Comet", "corners": "Corner brackets", "glow": "Glow", "rails": "Chevron rails"}
+           "lights": "Chasing lights", "comet": "Comet", "corners": "Corner brackets", "glow": "Glow", "rails": "Chevron rails",
+           "bevel": "Bevel", "notch": "Notched tech frame", "textloop": "Text loop", "scanbars": "Scan bars"}
 REVEALS = {"type": "Typewriter", "lines": "Line by line", "wipe": "Wipe", "scan": "Scan bar", "decode": "Decode",
            "sections": "Sections slide in", "blinds": "Blinds", "fade": "Fade in", "cascade": "Cascade",
            "sweep": "Highlight sweep"}

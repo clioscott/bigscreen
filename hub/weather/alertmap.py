@@ -141,12 +141,12 @@ def _match_city(name, polys):
     return next((k for k in polys if n in k.lower()), None)
 
 
-def render_sample(cfg, cities, home_city="Richmond"):
-    """Map for the built-in test alert: its cities' outlines as the 'affected zones'."""
+def render_sample(cfg, cities, home_city="Richmond", home_hit=True):
+    """Map for a sample alert: its cities' outlines as the 'affected zones'."""
     polys = _city_polygons()
     geoms = []
     for c in cities:
         k = _match_city(c, polys)
         if k:
             geoms.append(polys[k])
-    return render({"geometries": geoms, "home": True}, cfg, home_city)
+    return render({"geometries": geoms, "home": home_hit}, cfg, home_city)

@@ -96,6 +96,8 @@ def alerts_now():
                          for k, v in PALETTES.items()},
             "families": {k: v["name"] for k, v in FAMILIES.items()},
             "hazards": [{"id": h, "label": l, "hint": e} for h, l, e in __import__("display.modules.alert_brief", fromlist=["x"]).HAZARD_INFO],
+            "samples": {k: {"name": v["name"], "type": v["type"]} for k, v in
+                        __import__("display.modules.alert_samples", fromlist=["x"]).SAMPLES.items()},
             "fonts": ["alert/" + f for f in fonts]}
 
 
@@ -111,6 +113,17 @@ def _alert_settings(s: str):
         except ValueError:
             raise HTTPException(400, "s must be JSON")
     return settings
+
+
+@app.get("/api/alerts/icon/{hazard}.png")
+def alerts_icon(hazard: str, scale: int = 3, colour: str = "ffffff"):
+    """The display's pixel-art hazard icon, for the control panel."""
+    from display.modules import alert_art
+    rgb = tuple(int(colour[i:i + 2], 16) for i in (0, 2, 4)) if len(colour) == 6 else (255, 255, 255)
+    rgba = alert_art.icon_rgba(hazard if hazard in alert_art.ICONS else "general", rgb, rgb, (0, 0, 0), max(1, min(6, scale)))
+    bio = io.BytesIO()
+    Image.fromarray(rgba, "RGBA").save(bio, "PNG")
+    return Response(bio.getvalue(), media_type="image/png", headers={"Cache-Control": "max-age=3600"})
 
 
 @app.get("/api/alerts/preview/{theme}.png")

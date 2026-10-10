@@ -269,7 +269,8 @@ def _perimeter(inset):
     return hit
 
 
-BORDER_W = {"chase": 2, "pulse": 2, "hazard": 5, "double": 4, "lights": 3, "comet": 2, "corners": 3, "glow": 3, "rails": 5}
+BORDER_W = {"chase": 2, "pulse": 2, "hazard": 5, "double": 4, "lights": 3, "comet": 2, "corners": 3, "glow": 3, "rails": 5,
+            "bevel": 4, "notch": 3, "textloop": 9, "scanbars": 5}
 _HAZ = {}
 
 
@@ -343,6 +344,59 @@ def draw_border(c, kind, sev, t):
         ys, xs = _perimeter(0)
         idx = (int(t * 90) + np.arange(-14, 15)) % len(xs)
         c.buf[ys[idx], xs[idx]] = (255, 255, 255)
+    elif kind == "bevel":
+        hi, lo = np.clip(sev * 1.0 + 40, 0, 255).astype(np.uint8), (sev * 0.3).astype(np.uint8)
+        for i in range(4):
+            c.buf[i, i:W - i] = hi if i < 2 else lo
+            c.buf[i:H - i, i] = hi if i < 2 else lo
+            c.buf[H - 1 - i, i:W - i] = lo if i < 2 else hi
+            c.buf[i:H - i, W - 1 - i] = lo if i < 2 else hi
+        g = int(t * 120) % (W + 60) - 30                       # a glint sliding along the top edge
+        a, b = max(0, g), min(W, g + 24)
+        if b > a:
+            c.buf[0:2, a:b] = (255, 255, 255)
+    elif kind == "notch":
+        col = (sev * 0.55).astype(np.uint8)
+        ys, xs = _perimeter(1)
+        keep = ~(((xs < 9) | (xs > W - 10)) & ((ys < 9) | (ys > H - 10)))
+        c.buf[ys[keep], xs[keep]] = col
+        for d in range(9):                                     # chamfered corners
+            for (x, y) in ((1 + d, 9 - d), (W - 2 - d, 9 - d), (1 + d, H - 10 + d), (W - 2 - d, H - 10 + d)):
+                c.buf[y, x] = sev.astype(np.uint8)
+        n = (W // 16)
+        lit = int(t * 8) % n
+        for k in range(1, n):
+            x = k * 16
+            col2 = (255, 255, 255) if k == lit else tuple(int(v) for v in sev)
+            c.buf[0:3, x] = col2
+            c.buf[H - 3:H, W - x] = col2
+    elif kind == "textloop":
+        f = FI("alert/5x7.bdf")
+        msg = "  WARNING  ▪  ALERT  ▪ "
+        msg = msg.replace("▪", "*")
+        mw = f.width(msg)
+        c.FillRect(0, 0, W, 9, Color(*(sev * 0.25).astype(np.uint8)))
+        c.FillRect(0, H - 9, W, 9, Color(*(sev * 0.25).astype(np.uint8)))
+        off = int(t * 30) % mw
+        x = -off
+        while x < W:
+            f.draw(c, x, 1, sev.astype(np.uint8), msg)
+            f.draw(c, W - x - mw, H - 8, sev.astype(np.uint8), msg)
+            x += mw
+        c.FillRect(0, 0, 2, H, Color(*sev.astype(np.uint8)))
+        c.FillRect(W - 2, 0, 2, H, Color(*sev.astype(np.uint8)))
+    elif kind == "scanbars":
+        for y0 in (0, H - 4):
+            c.FillRect(0, y0, W, 4, Color(*(sev * 0.35).astype(np.uint8)))
+        x = int(t * 140) % (W + 80) - 40
+        for y0 in (0, H - 4):
+            a, b = max(0, x), min(W, x + 40)
+            if b > a:
+                ramp = np.linspace(0.3, 1.0, b - a)[:, None]
+                c.buf[y0:y0 + 4, a:b] = (sev[None, :] * ramp).clip(0, 255).astype(np.uint8)[None, :, :]
+        for xx in (0, W - 2):
+            c.buf[4:22, xx:xx + 2] = sev.astype(np.uint8)
+            c.buf[H - 22:H - 4, xx:xx + 2] = sev.astype(np.uint8)
     elif kind == "rails":
         off = int(t * 24) % 12
         for y0 in (0, H - 5):
@@ -394,10 +448,14 @@ class AlertScreen:
     # -- data ------------------------------------------------------------------
     def alerts(self, entry=None):
         if entry and entry.get("test"):
-            if self._sample is None:
+            from display.modules.alert_samples import SAMPLES
+            kind = self.settings.get("sample") or "rain"
+            if self._sample is None or self._sample[0] != kind:
                 now = time.time()
-                self._sample = [dict(SAMPLE, published=now - 600, expires=now + 12 * 3600, event_end=now + 20 * 3600)]
-            return self._sample
+                base = SAMPLES.get(kind) or SAMPLES["rain"]
+                self._sample = (kind, [dict(base, code="TEST", test=True, status="issued", published=now - 600,
+                                            expires=now + 12 * 3600, event_end=now + 20 * 3600)])
+            return self._sample[1]
         data = (self.loader.get_data("alerts") if self.loader else None) or {}
         now = time.time()
         key = (id(data), int(now // 30))              # same list object until new data or 30 s pass
@@ -569,7 +627,7 @@ class AlertScreen:
 
     def _sample_map(self):
         data = (self.loader.get_data("alerts") if self.loader else None) or {}
-        return data.get("sample_map")
+        return (data.get("sample_maps") or {}).get(self.settings.get("sample") or "rain") or data.get("sample_map")
 
     def _draw_map(self, c, seg, ctx, local, p):
         """The affected zones pulsing in the severity colour over the map; the home city marked."""
@@ -1599,9 +1657,235 @@ class Timeline(Structure):
         super().dynamic(c, ctx, seg, p)
 
 
+def frame_box(c, ctx, x, y, w, h, label, f):
+    """A panel: thin frame, bright notched corners, a label tab."""
+    dimc = Color(*_dim(ctx.sev, 0.45))
+    c.FillRect(x, y, w, 1, dimc)
+    c.FillRect(x, y + h - 1, w, 1, dimc)
+    c.FillRect(x, y, 1, h, dimc)
+    c.FillRect(x + w - 1, y, 1, h, dimc)
+    br = Color(*ctx.sev)
+    for (cx, cy, dx, dy) in ((x, y, 1, 1), (x + w - 1, y, -1, 1), (x, y + h - 1, 1, -1), (x + w - 1, y + h - 1, -1, -1)):
+        c.FillRect(min(cx, cx + dx * 5), cy, 6, 1, br)
+        c.FillRect(cx, min(cy, cy + dy * 5), 1, 6, br)
+    if label:
+        chip(c, x + 6, y - f.h // 2 - 1, label, f, ctx.pal["bg"], ctx.sev, 3)
+
+
+class PanelGrid(Structure):
+    """Header, then a 2x2 grid of framed panels: WHAT · EXPECT / WHAT TO DO · AREA."""
+    lists_cities = True
+    GROUPS = (("WHAT", ("lead", "detail")), ("EXPECT", ("impact",)), ("WHAT TO DO", ("advice",)))
+
+    def grid(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        top = y0 + max(16, ctx.title_f.h) + 9
+        gap = 7
+        lw = int((x1 - x0 - gap) * getattr(ctx, "panel_frac", 0.6))
+        rh = int((y1 - top - gap) * 0.58)
+        return {"WHAT": (x0, top, lw, rh), "EXPECT": (x0 + lw + gap, top, x1 - x0 - lw - gap, rh),
+                "WHAT TO DO": (x0, top + rh + gap, lw, y1 - top - rh - gap),
+                "AREA": (x0 + lw + gap, top + rh + gap, x1 - x0 - lw - gap, y1 - top - rh - gap)}
+
+    def boxes(self, ctx):
+        g = self.grid(ctx)
+        return [(x + 5, y + 6, w - 10, h - 9) for x, y, w, h in (g["WHAT"], g["EXPECT"], g["WHAT TO DO"])]
+
+    def flow(self, ctx, paras, boxes, fonts, gap=3):
+        what = sum(len(p["text"]) for p in paras if p["style"] in ("lead", "detail"))
+        exp = sum(len(p["text"]) for p in paras if p["style"] == "impact")
+        ctx.panel_frac = min(0.68, max(0.45, what / max(1, what + exp)))
+        boxes = self.boxes(ctx)
+        lines, over, base = [], False, 0
+        for (label, styles), box in zip(self.GROUPS, boxes):
+            group = [p for p in paras if p["style"] in styles]
+            if not group:
+                continue
+            ln, ov = layout(group, [box], fonts, ctx.pal, ctx.upper, prefix="none", gap=gap, home=ctx.home_name)
+            for l in ln:
+                l["para"] += base
+            base += len(group)
+            lines += ln
+            over = over or ov
+        return lines, over
+
+    def chrome(self, c, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        f = ctx.title_f
+        rowh = max(16, f.h)
+        x = x0 + 2 + icon(c, ctx, x0 + 2, y0 + (rowh - 16) // 2, 1) + 6
+        x += f.draw(c, x, y0 + (rowh - f.h) // 2, ctx.sev, title_text(ctx)) + 10
+        sf = ctx.fam["small"]
+        fact_line(c, ctx, x, y0 + (rowh - sf.h) // 2, sf, x1 - x)
+        for label, (bx, by, bw, bh) in self.grid(ctx).items():
+            frame_box(c, ctx, bx, by, bw, bh, U(ctx, label) if not ctx.upper else label, sf)
+        ax, ay, aw, ah = self.grid(ctx)["AREA"]
+        city_list(c, ctx, ax + 5, ay + 7, aw - 8, ay + ah - 3, ctx.fam["key"] if ctx.fam["key"].h <= 13 else sf,
+                  fonts=[sf, FI("alert/4x6.bdf")])
+
+
+class Newspaper(Structure):
+    """A masthead with heavy rules, then three ruled columns of text."""
+
+    def mast_h(self, ctx):
+        return 3 + max(16, ctx.title_f.h) + ctx.fam["small"].line + 7
+
+    def boxes(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        top = y0 + self.mast_h(ctx)
+        gap = 10
+        cw = (x1 - x0 - 2 * gap) // 3
+        return [(x0 + k * (cw + gap), top, cw, y1 - top) for k in range(3)]
+
+    def chrome(self, c, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        c.FillRect(x0, y0, x1 - x0, 3, Color(*ctx.sev))
+        f = ctx.title_f
+        tt = title_text(ctx)
+        rowh = max(16, f.h)
+        cx = (x0 + x1) // 2
+        f.draw(c, cx - f.width(tt) // 2, y0 + 3 + (rowh - f.h) // 2, ctx.pal["strong"], tt)
+        icon(c, ctx, x0 + 2, y0 + 3 + (rowh - 16) // 2, 1)
+        icon(c, ctx, x1 - 18, y0 + 3 + (rowh - 16) // 2, 1)
+        sf = ctx.fam["small"]
+        y = y0 + 3 + rowh + 1
+        fact_line(c, ctx, x0, y, sf, x1 - x0, centre=True)
+        y += sf.line + 2
+        c.FillRect(x0, y, x1 - x0, 1, Color(*ctx.sev))
+        c.FillRect(x0, y + 2, x1 - x0, 1, Color(*_dim(ctx.sev, 0.5)))
+        for bx, by, bw, bh in self.boxes(ctx)[1:]:
+            c.FillRect(bx - 5, by, 1, bh, Color(*_dim(ctx.sev, 0.35)))
+
+
+class Hud(Structure):
+    """HUD: severity gauge column, text in the middle, a radar sweep, expiry countdown and cities on the right."""
+    GW, RW = 26, 118
+    lists_cities = True
+
+    def boxes(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        top = y0 + max(16, ctx.title_f.h) + 5
+        return [(x0 + self.GW + 6, top, x1 - x0 - self.GW - self.RW - 14, y1 - top)]
+
+    def title_font(self, ctx, width=None):
+        return super().title_font(ctx, W - 2 * self.inner(ctx)[0] - self.RW - 40)
+
+    def chrome(self, c, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        f = ctx.title_f
+        rowh = max(16, f.h)
+        x = x0 + 2 + icon(c, ctx, x0 + 2, y0 + (rowh - 16) // 2, 1) + 6
+        f.draw(c, x, y0 + (rowh - f.h) // 2, ctx.sev, title_text(ctx))
+        sf, k = ctx.fam["small"], ctx.fam["key"]
+        # gauge column
+        gx, gy = x0, y0 + rowh + 5
+        gh = y1 - gy
+        lvl = alert_brief.SEVERITY_LEVEL.get(ctx.b["kind"], 1)
+        seg = (gh - 3 * 3) // 4
+        for i in range(4):
+            yy = gy + gh - (i + 1) * seg - i * 3
+            c.FillRect(gx + 4, yy, self.GW - 8, seg, Color(*(ctx.sev if i < lvl else _dim(ctx.sev, 0.15))))
+        c.FillRect(gx + self.GW + 1, gy, 1, gh, Color(*_dim(ctx.sev, 0.5)))
+        # right panel
+        rx = x1 - self.RW
+        frame_box(c, ctx, rx, y0, self.RW, y1 - y0, "", sf)
+        b = ctx.b
+        y = y0 + 70
+        sf.draw(c, rx + 6, y, ctx.pal["dim"], "IN EFFECT UNTIL")
+        y += sf.line
+        k.draw(c, rx + 6, y, ctx.pal["strong"], (b["until"] or "-").upper())
+        y += k.line + 14
+        sf.draw(c, rx + 6, y, ctx.pal["dim"], "AREAS")
+        city_list(c, ctx, rx + 5, y + sf.line, self.RW - 9, y1 - 3, sf, fonts=[FI("alert/4x6.bdf")])
+
+    def dynamic(self, c, ctx, seg, p):
+        x0, y0, x1, y1 = self.inner(ctx)
+        rx = x1 - self.RW
+        cx, cy, r = rx + self.RW // 2, y0 + 34, 26
+        c.buf[cy - r:cy + r + 1, cx - r:cx + r + 1] = (c.buf[cy - r:cy + r + 1, cx - r:cx + r + 1] * 0).astype(np.uint8)
+        for rr in (r, r * 2 // 3, r // 3):
+            for a in np.linspace(0, 2 * math.pi, int(rr * 6), endpoint=False):
+                c.buf[int(cy + rr * math.sin(a)), int(cx + rr * math.cos(a))] = _dim(ctx.sev, 0.45)
+        ang = ctx.t * 2.2
+        for j in range(18):                                    # sweep with a fading trail
+            a = ang - j * 0.06
+            k = 1 - j / 18
+            for d in range(1, r):
+                c.buf[int(cy + d * math.sin(a)), int(cx + d * math.cos(a))] = _dim(ctx.sev, 0.25 + 0.75 * k) if j else (255, 255, 255)
+        # blips at the home city bearing
+        blip = 0.5 + 0.5 * math.sin(ctx.t * 6)
+        c.FillRect(cx + 9, cy - 7, 3, 3, Color(*_dim((255, 255, 255), blip)))
+        exp = ctx.b.get("_expires_ts")
+        if exp:
+            left = max(0, exp - ctx.now)
+            s = f"T- {int(left // 3600):02d}:{int(left % 3600 // 60):02d}:{int(left % 60):02d}"
+            f = ctx.fam["small"]
+            c.FillRect(rx + 4, y0 + 62 - f.h, self.RW - 8, f.h + 1, Color(*ctx.pal["bg"]))
+            f.draw(c, rx + (self.RW - f.width(s)) // 2, y0 + 62 - f.h, ctx.pal["amount"], s)
+        super().dynamic(c, ctx, seg, p)
+
+
+class StatStack(Structure):
+    """Text on the left; stacked stat panels on the right: amount, time left (shrinking bar), area."""
+    SW = 132
+    lists_cities = True
+
+    def boxes(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        top = y0 + max(16, ctx.title_f.h) + 5
+        return [(x0 + 2, top, x1 - x0 - self.SW - 10, y1 - top)]
+
+    def title_font(self, ctx, width=None):
+        return super().title_font(ctx, W - 2 * self.inner(ctx)[0] - self.SW - 30)
+
+    def panels(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        sx = x1 - self.SW
+        k, sf = ctx.fam["key"], ctx.fam["small"]
+        h1 = sf.line + k.line + 8
+        h2 = sf.line + k.line + 12
+        return sx, [(y0 + 4, h1), (y0 + 4 + h1 + 8, h2), (y0 + 4 + h1 + h2 + 16, y1 - (y0 + 4 + h1 + h2 + 16))]
+
+    def chrome(self, c, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        f = ctx.title_f
+        rowh = max(16, f.h)
+        x = x0 + 2 + icon(c, ctx, x0 + 2, y0 + (rowh - 16) // 2, 1) + 6
+        f.draw(c, x, y0 + (rowh - f.h) // 2, ctx.pal["strong"], title_text(ctx))
+        c.FillRect(x0, y0 + rowh + 2, x1 - x0 - self.SW - 8, 1, Color(*_dim(ctx.sev, 0.6)))
+        sx, ps = self.panels(ctx)
+        k, sf = ctx.fam["key"], ctx.fam["small"]
+        b = ctx.b
+        labels = ("AMOUNT" if b["amount"] else "LEVEL", "TIME LEFT", "AREAS")
+        for (py, ph), lab in zip(ps, labels):
+            frame_box(c, ctx, sx, py, self.SW, ph, lab, sf)
+        py, ph = ps[0]
+        val = U(ctx, b["amount"]) if b["amount"] else b["kind"].upper()
+        (k if k.width(val) <= self.SW - 12 else sf).draw(c, sx + 6, py + 6, ctx.pal["amount"], val)
+        py, ph = ps[2]
+        city_list(c, ctx, sx + 5, py + 7, self.SW - 8, py + ph - 3, sf, fonts=[FI("alert/4x6.bdf")])
+
+    def dynamic(self, c, ctx, seg, p):
+        sx, ps = self.panels(ctx)
+        py, ph = ps[1]
+        k, sf = ctx.fam["key"], ctx.fam["small"]
+        iss, exp = ctx.b.get("_issued_ts"), ctx.b.get("_expires_ts")
+        c.FillRect(sx + 2, py + 4, self.SW - 4, ph - 6, Color(*ctx.pal["bg"]))
+        if exp:
+            left = max(0, exp - ctx.now)
+            s = f"{int(left // 3600)}h {int(left % 3600 // 60):02d}m"
+            k.draw(c, sx + 6, py + 6, ctx.pal["strong"], s)
+            frac = max(0.0, min(1.0, left / max(1, (exp - (iss or exp - 86400)))))
+            bw = self.SW - 12
+            c.FillRect(sx + 6, py + ph - 7, bw, 3, Color(*_dim(ctx.sev, 0.25)))
+            c.FillRect(sx + 6, py + ph - 7, int(bw * frac), 3, Color(*ctx.sev))
+        super().dynamic(c, ctx, seg, p)
+
+
 STRUCT_IMPL = {"band": Band(), "columns": Columns(), "rail": Rail(), "crawl": Crawl(), "boxes": Boxes(),
                "terminal": Terminal(), "centered": Centered(), "factbar": FactBar(), "cities": CitiesRail(),
-               "dualrail": DualRail(), "keyfacts": KeyFacts(), "spotlight": Spotlight(), "timeline": Timeline()}
+               "dualrail": DualRail(), "keyfacts": KeyFacts(), "spotlight": Spotlight(), "timeline": Timeline(),
+               "panels": PanelGrid(), "newspaper": Newspaper(), "hud": Hud(), "stats": StatStack()}
 
 
 # ---------------------------------------------------------------------------
@@ -1624,7 +1908,7 @@ def render_preview(theme, alerts_data=None, at=4.0, settings=None):
     scr = AlertScreen(s, _DataLoader())
     c = Canvas(W, H)
     entry = {} if alerts_data and alerts_data.get("alerts") and scr.alerts() else {"test": True}
-    t0 = 1_000_000.0
+    t0 = time.time() - max(0.0, at)
     scr.draw(c, (0, 0, W, H), entry, True, now=t0)
     scr.draw(c, (0, 0, W, H), entry, False, now=t0 + at)
     return c.buf.copy()
