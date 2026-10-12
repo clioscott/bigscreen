@@ -146,7 +146,7 @@ export const Fonts = {
 
     <div class="row" style="gap:8px; flex-wrap:wrap; margin-bottom:12px" role="tablist" aria-label="Font type">
       <button v-for="t in TABS" :key="t.value" role="tab" :aria-selected="script === t.value" class="btn" :class="{primary: script === t.value}"
-        :title="t.hint" @click="script = t.value; review = -1">{{ t.label }} <span class="pill" style="margin-left:4px">{{ tabCount(t.value) }}</span></button>
+        :title="t.hint" @click="script = t.value; review = -1">{{ t.label }} <span class="pill" :style="script === t.value ? {marginLeft: '4px', background: 'rgba(0,0,0,.28)', color: '#fff', borderColor: 'transparent'} : {marginLeft: '4px'}">{{ tabCount(t.value) }}</span></button>
     </div>
     <div class="faint" style="font-size:12.5px; margin:-4px 0 12px">{{ TABS.find(t => t.value === script).hint }}</div>
 
