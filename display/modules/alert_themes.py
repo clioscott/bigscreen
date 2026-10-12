@@ -12,10 +12,30 @@ Text density (Dense / Balanced / Minimal) is a global switch applied to whicheve
 
 from __future__ import annotations
 
+# The alert level's colour: used for the level label box (WARNING / WATCH / ADVISORY / STATEMENT) and the level scale.
 SEVERITY = {"warning": (255, 30, 30), "watch": (255, 140, 0), "advisory": (255, 210, 0), "statement": (120, 150, 255)}
 
-# Every accent ("sev") is the alert level's colour, so a watch is orange and a statement blue whatever the theme;
-# "tint" palettes also take their ground from it (bg, panel as fractions of the level colour).
+# The weather type's colours (main, second): every theme's accents follow the kind of weather — rain blues, snow
+# white and ice blue, lightning yellow… The main colour is the accent ("sev" in the palettes below), the second
+# marks the home region and lighter details.
+HAZARD_PALETTE = {
+    "rain":     ((40, 130, 255), (130, 200, 255)),
+    "snow":     ((235, 242, 255), (140, 195, 255)),
+    "freezing": ((120, 200, 255), (215, 240, 255)),
+    "wind":     ((0, 210, 190), (150, 255, 230)),
+    "thunder":  ((255, 215, 0), (255, 250, 170)),
+    "tornado":  ((200, 90, 255), (255, 140, 230)),
+    "flood":    ((0, 110, 255), (0, 210, 255)),
+    "heat":     ((255, 120, 0), (255, 200, 70)),
+    "cold":     ((110, 180, 255), (225, 240, 255)),
+    "frost":    ((150, 235, 255), (230, 250, 255)),
+    "fog":      ((185, 190, 200), (230, 232, 236)),
+    "smoke":    ((215, 140, 70), (245, 195, 130)),
+    "general":  ((175, 150, 255), (220, 205, 255)),
+}
+
+# Every accent ("sev") is the weather type's main colour (HAZARD_PALETTE), so rain is blue and lightning yellow
+# whatever the theme; "tint" palettes also take their ground from it (bg, panel as fractions of that colour).
 PALETTES = {   # text roles: strong (summary), text (details), impact, advice, amount, dim, label; panel = raised surface
     "blackout":  {"name": "Blackout", "bg": (0, 0, 0), "panel": (18, 18, 22), "strong": (255, 255, 255), "text": (196, 198, 206),
                   "impact": (255, 168, 64), "advice": (96, 226, 255), "amount": (255, 228, 0), "dim": (118, 120, 132),
@@ -23,7 +43,7 @@ PALETTES = {   # text roles: strong (summary), text (details), impact, advice, a
     "midnight":  {"name": "Midnight", "bg": (0, 4, 20), "panel": (4, 16, 46), "strong": (236, 244, 255), "text": (164, 186, 226),
                   "impact": (255, 188, 92), "advice": (118, 255, 204), "amount": (255, 222, 64), "dim": (88, 108, 158),
                   "label": "sev", "border": "sev", "icon": (236, 244, 255)},
-    "oxide":     {"name": "Oxide (level-tinted)", "tint": (0.05, 0.16), "bg": (12, 2, 0), "panel": (40, 10, 4), "strong": (255, 236, 222), "text": (222, 170, 150),
+    "oxide":     {"name": "Oxide (weather-tinted)", "tint": (0.05, 0.16), "bg": (12, 2, 0), "panel": (40, 10, 4), "strong": (255, 236, 222), "text": (222, 170, 150),
                   "impact": (255, 150, 60), "advice": (255, 224, 128), "amount": (255, 255, 255), "dim": (150, 92, 76),
                   "label": "sev", "border": "sev", "icon": (255, 226, 210)},
     "graphite":  {"name": "Graphite", "bg": (9, 10, 12), "panel": (28, 30, 34), "strong": (250, 250, 250), "text": (184, 188, 196),
@@ -47,7 +67,7 @@ PALETTES = {   # text roles: strong (summary), text (details), impact, advice, a
     "signal":    {"name": "Signal yellow", "bg": (0, 0, 0), "panel": (26, 24, 0), "strong": (255, 236, 0), "text": (228, 228, 228),
                   "impact": (255, 150, 0), "advice": (255, 255, 255), "amount": (255, 236, 0), "dim": (140, 130, 60),
                   "label": "sev", "border": "sev", "icon": (255, 236, 0)},
-    "ember":     {"name": "Ember (level-tinted)", "tint": (0.04, 0.15), "bg": (10, 0, 0), "panel": (36, 4, 6), "strong": (255, 244, 240), "text": (228, 180, 176),
+    "ember":     {"name": "Ember (weather-tinted)", "tint": (0.04, 0.15), "bg": (10, 0, 0), "panel": (36, 4, 6), "strong": (255, 244, 240), "text": (228, 180, 176),
                   "impact": (255, 200, 90), "advice": (255, 255, 200), "amount": (255, 120, 90), "dim": (150, 86, 86),
                   "label": "sev", "border": "sev", "icon": (255, 230, 226)},
 }

@@ -88,7 +88,7 @@ def cart_size(font, extent="lm", gap=1):
 def cartogram(c, ctx, x, y, font, extent="lm", w=None, h=None, gap=1):
     """The regions as a geographic grid of labelled tiles: affected tiles filled in the hazard colour, others
     outlined; the home region in a lighter tint (filled) or a warm outline (clear). Labels shorten to fit.
-    Affected tiles take the alert level's colour (warning red, watch orange, advisory yellow, statement blue)."""
+    Affected tiles take the weather type's main colour; the home tile its second colour."""
     nw, nh = cart_size(font, extent, gap)
     w, h = w or nw, h or nh
     hit = affected(ctx)
@@ -97,7 +97,7 @@ def cartogram(c, ctx, x, y, font, extent="lm", w=None, h=None, gap=1):
     for name, (tx, ty, tw, th) in tile_rects(extent, x, y, w, h, gap).items():
         on, mine = name in hit, name == home
         if on:
-            col = _mix(fill, (255, 255, 255), 0.45) if mine else fill
+            col = getattr(ctx, "sev2", _mix(fill, (255, 255, 255), 0.45)) if mine else fill
             c.FillRect(tx, ty, tw, th, Color(*col))
             ink = (0, 0, 0) if sum(col) > 300 else (255, 255, 255)
         else:

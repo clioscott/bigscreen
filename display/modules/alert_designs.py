@@ -170,6 +170,24 @@ def amount_text(c, ctx, x, y, w, h):
     return True
 
 
+def badge_font(ctx, cap=None):
+    return faces(ctx, cap=cap or ctx.fam["key"].h)[0]
+
+
+def badge_w(ctx, f):
+    return f.width(kind_word(ctx)) + 8
+
+
+def level_badge(c, ctx, x, y, f, h=None):
+    """The alert level as a label box in its own colour: WARNING red, WATCH orange, ADVISORY yellow,
+    STATEMENT blue. Returns its width."""
+    s = kind_word(ctx)
+    w, h = f.width(s) + 8, h or f.h + 4
+    c.FillRect(x, y, w, h, Color(*ctx.level))
+    f.draw(c, x + 4, y + (h - f.h) // 2, (0, 0, 0), s)
+    return w
+
+
 def frame(c, x, y, w, h, col):
     for rx, ry, rw, rh in ((x, y, w, 1), (x, y + h - 1, w, 1), (x, y, 1, h), (x + w - 1, y, 1, h)):
         c.FillRect(rx, ry, rw, rh, Color(*col))
@@ -208,17 +226,22 @@ class Design(wa.Structure):
         return self.m(ctx).get("tf") or ctx.fam["key"]
 
     # -- drawing helpers --------------------------------------------------------------------------------
-    def header(self, c, ctx, x, y, w, col=None):
-        """Icon + alert name on one line, the name in the largest face that fits. Returns the height."""
-        f, s = pick(ctx, wa.title_text(ctx), w - 30, big=True)
+    def header(self, c, ctx, x, y, w, col=None, badge=True):
+        """Icon, the level's label box, then the alert name in the largest face that fits. Returns the height."""
+        bf = badge_font(ctx)
+        bw = badge_w(ctx, bf) + 6 if badge else 0
+        f, s = pick(ctx, wa.title_text(ctx), w - 30 - bw, big=True)
         hh = max(24, f.h)
         col = col or ctx.sev
         px.draw(c, px.hazard(ctx.b["hazard"]), x, y + (hh - 24) // 2, col)
-        f.draw(c, x + 30, y + (hh - f.h) // 2, col, s)
+        if badge:
+            level_badge(c, ctx, x + 30, y + (hh - bf.h - 4) // 2, bf)
+        f.draw(c, x + 30 + bw, y + (hh - f.h) // 2, col, s)
         return hh
 
-    def header_h(self, ctx, w):
-        f, _ = pick(ctx, wa.title_text(ctx), w - 30, big=True)
+    def header_h(self, ctx, w, badge=True):
+        bw = badge_w(ctx, badge_font(ctx)) + 6 if badge else 0
+        f, _ = pick(ctx, wa.title_text(ctx), w - 30 - bw, big=True)
         return max(24, f.h)
 
     def moving(self, c, ctx, seg, p):
@@ -258,10 +281,14 @@ class Briefing(Design):
         lw = x1 - x0 - cw - 10
         tf, tl = title_lines(ctx, lw - 30, 2)
         k = ctx.fam["key"]
-        ff, fs = pick_list(ctx, fact_items(ctx), lw, cap=k.h)
+        bf = badge_font(ctx)
+        bw = badge_w(ctx, bf) + 6
+        ff, fs = pick_list(ctx, fact_items(ctx), lw - bw, cap=k.h)
         th = max(24, len(tl) * tf.line)
-        top = max(ch, th + 3 + ff.h) + 5
-        return {"cw": cw, "ch": ch, "lw": lw, "tf": tf, "tl": tl, "th": th, "ff": ff, "fs": fs, "top": top}
+        rh = max(ff.h, bf.h + 4)
+        top = max(ch, th + 3 + rh) + 5
+        return {"cw": cw, "ch": ch, "lw": lw, "tf": tf, "tl": tl, "th": th, "ff": ff, "fs": fs, "top": top,
+                "bf": bf, "bw": bw, "rh": rh}
 
     def text_area(self, ctx):
         x0, y0, x1, y1 = self.inner(ctx)
@@ -275,7 +302,9 @@ class Briefing(Design):
         px.draw(c, px.hazard(ctx.b["hazard"]), x0, y0 + (m["th"] - 24) // 2, ctx.sev)
         for i, ln in enumerate(m["tl"]):
             m["tf"].draw(c, x0 + 30, y0 + i * m["tf"].line + (m["th"] - len(m["tl"]) * m["tf"].line) // 2, ctx.sev, ln)
-        m["ff"].draw(c, x0, y0 + m["th"] + 3, ctx.pal["strong"], m["fs"])
+        ry = y0 + m["th"] + 3
+        level_badge(c, ctx, x0, ry + (m["rh"] - m["bf"].h - 4) // 2, m["bf"])
+        m["ff"].draw(c, x0 + m["bw"], ry + (m["rh"] - m["ff"].h) // 2, ctx.pal["strong"], m["fs"])
         c.FillRect(x0, y0 + m["top"], x1 - x0, 1, Color(*_dim(ctx.sev, 0.5)))
 
 
@@ -291,12 +320,15 @@ class Headline(Design):
         k = ctx.fam["key"]
         wf, ws = best_where(ctx, w, big=True, min_h=k.h)
         uf, us = pick(ctx, U(ctx, "until " + ctx.b["until"]) if ctx.b["until"] else "", w // 3, cap=k.h)
-        tf, ts = pick(ctx, wa.title_text(ctx), w - 30 - uf.width(us) - 12, cap=max(k.h, 24))
+        bf = badge_font(ctx)
+        bw = badge_w(ctx, bf) + 6
+        tf, ts = pick(ctx, wa.title_text(ctx), w - 30 - bw - uf.width(us) - 12, cap=max(k.h, 24))
         rest = fact_items(ctx, issued=True)[1:] if ctx.b["until"] else fact_items(ctx, issued=True)
         sf, ss = pick_list(ctx, rest, w, cap=ctx.fam["small"].h)
         row2 = max(24, tf.h)
         top = wf.line + 2 + row2 + 3 + (sf.line + 3 if ss else 0)
-        return {"wf": wf, "ws": ws, "uf": uf, "us": us, "tf": tf, "ts": ts, "sf": sf, "ss": ss, "row2": row2, "top": top}
+        return {"wf": wf, "ws": ws, "uf": uf, "us": us, "tf": tf, "ts": ts, "sf": sf, "ss": ss, "row2": row2, "top": top,
+                "bf": bf, "bw": bw}
 
     def text_area(self, ctx):
         x0, y0, x1, y1 = self.inner(ctx)
@@ -316,7 +348,8 @@ class Headline(Design):
         wa.draw_home_text(c, ctx, m["wf"], x0, y0, m["ws"], ctx.pal["strong"])
         y = y0 + m["wf"].line + 2
         px.draw(c, px.hazard(ctx.b["hazard"]), x0, y + (m["row2"] - 24) // 2, ctx.sev)
-        m["tf"].draw(c, x0 + 30, y + (m["row2"] - m["tf"].h) // 2, ctx.sev, m["ts"])
+        level_badge(c, ctx, x0 + 30, y + (m["row2"] - m["bf"].h - 4) // 2, m["bf"])
+        m["tf"].draw(c, x0 + 30 + m["bw"], y + (m["row2"] - m["tf"].h) // 2, ctx.sev, m["ts"])
         m["uf"].draw(c, x1 - m["uf"].width(m["us"]), y + (m["row2"] - m["uf"].h) // 2, ctx.pal["strong"], m["us"])
         y += m["row2"] + 3
         if m["ss"]:
@@ -340,8 +373,7 @@ class Dashboard(Design):
         x0, y0, x1, y1 = self.inner(ctx)
         w = x1 - x0
         sf, k = ctx.fam["small"], ctx.fam["key"]
-        kind = f"{kind_word(ctx)} · {status_word(ctx)}"
-        kf, ks = pick(ctx, kind, w // 3, cap=sf.h)
+        kf, ks = pick(ctx, status_word(ctx), w // 4, cap=sf.h)
         hh = self.header_h(ctx, w - kf.width(ks) - 10)
         cw, ch = ap.cart_size(tiny())
         rest = w - (cw + 6) - 8
@@ -574,11 +606,15 @@ class Gazette(Design):
         w = x1 - x0
         sf, k = ctx.fam["small"], ctx.fam["key"]
         mast = U(ctx, ctx.th.get("header") or "WEATHER")
-        ed = U(ctx, f"{kind_word(ctx)} · ISSUED {ctx.b['issued']}" if ctx.b["issued"] else f"{kind_word(ctx)} · {status_word(ctx)}")
+        st = status_word(ctx)
+        ed = U(ctx, (f"ISSUED {ctx.b['issued']}" if st == "ISSUED" else f"{st} · ISSUED {ctx.b['issued']}")
+               if ctx.b["issued"] else st)
         mast = fit(sf, mast, w // 2 - 6)
         if sf.width(mast) + sf.width(ed) + 12 > w:
             ed = fit(sf, ed, w - sf.width(mast) - 12)
-        tf, ts = pick(ctx, wa.title_text(ctx), w, big=True)
+        bf = badge_font(ctx)
+        bw = badge_w(ctx, bf) + 8
+        tf, ts = pick(ctx, wa.title_text(ctx), w - bw, big=True)
         until = U(ctx, " · until " + ctx.b["until"]) if ctx.b["until"] else ""
         df, ws = best_where(ctx, w - k.width(until + "For "), cap=k.h, min_h=sf.h + 1)
         deck = fit(df, U(ctx, "For ") + ws + until, w)
@@ -586,7 +622,8 @@ class Gazette(Design):
         nat = ap.cart_size(tiny())
         cart = (min(nat[0], cw), nat[1])
         head = sf.line + 4 + tf.line + df.line + 6
-        return {"mast": mast, "ed": ed, "tf": tf, "ts": ts, "df": df, "deck": deck, "cw": cw, "cart": cart, "head": head}
+        return {"mast": mast, "ed": ed, "tf": tf, "ts": ts, "df": df, "deck": deck, "cw": cw, "cart": cart, "head": head,
+                "bf": bf, "bw": bw}
 
     def text_area(self, ctx):
         x0, y0, x1, y1 = self.inner(ctx)
@@ -608,7 +645,9 @@ class Gazette(Design):
         sf.draw(c, x1 - sf.width(m["ed"]), y0, ctx.pal["dim"], m["ed"])
         c.FillRect(x0, y0 + sf.line + 1, x1 - x0, 1, Color(*ctx.pal["dim"]))
         y = y0 + sf.line + 4
-        m["tf"].draw(c, x0 + (x1 - x0 - m["tf"].width(m["ts"])) // 2, y, ctx.sev, m["ts"])
+        tx = x0 + (x1 - x0 - m["bw"] - m["tf"].width(m["ts"])) // 2
+        level_badge(c, ctx, tx, y + (m["tf"].h - m["bf"].h - 4) // 2, m["bf"])
+        m["tf"].draw(c, tx + m["bw"], y, ctx.sev, m["ts"])
         y += m["tf"].line
         df = m["df"]
         wa.draw_home_text(c, ctx, df, x0 + (x1 - x0 - df.width(m["deck"])) // 2, y + 1, m["deck"], ctx.pal["strong"])
@@ -626,13 +665,15 @@ class Sign(Design):
 
     def metrics(self, ctx):
         x0, y0, x1, y1 = self.inner(ctx)
-        w = x1 - x0 - 60
         k = ctx.fam["key"]
+        bf = badge_font(ctx)
+        bw = badge_w(ctx, bf)
+        w = x1 - x0 - 2 * (bw + 14)
         tf, ts = pick(ctx, wa.title_text(ctx), w, big=True)
         wf, ws = best_where(ctx, w, cap=k.h, min_h=ctx.fam["small"].h + 1)
         lf, ls = pick_list(ctx, fact_items(ctx), w, cap=k.h)
         sh = tf.line + wf.line + lf.line + 10
-        return {"tf": tf, "ts": ts, "wf": wf, "ws": ws, "lf": lf, "ls": ls, "sh": sh}
+        return {"tf": tf, "ts": ts, "wf": wf, "ws": ws, "lf": lf, "ls": ls, "sh": sh, "bf": bf, "bw": bw}
 
     def text_area(self, ctx):
         x0, y0, x1, y1 = self.inner(ctx)
@@ -649,7 +690,8 @@ class Sign(Design):
             for by in (y0 + 1, y0 + sh - 3):
                 c.FillRect(bx, by, 2, 2, Color(150, 152, 160))
         cx = (x0 + x1) // 2
-        lit = ap._mix(ctx.sev, (255, 255, 255), 0.15)   # lamps in the alert level's colour
+        level_badge(c, ctx, x0 + 8, y0 + (sh - m["bf"].h - 4) // 2, m["bf"])
+        lit = ap._mix(ctx.sev, (255, 255, 255), 0.15)   # lamps in the weather's colour
         y = y0 + 5
         for f, s, col in ((m["tf"], m["ts"], lit), (m["wf"], m["ws"], lit), (m["lf"], m["ls"], _dim(lit, 0.85))):
             f.draw(c, cx - f.width(s) // 2, y, col, s)
@@ -658,10 +700,9 @@ class Sign(Design):
     def moving(self, c, ctx, seg, p):
         x0, y0, x1, y1 = self.inner(ctx)
         sh = self.m(ctx)["sh"]
-        on = int(ctx.t * 1.6) % 2
+        on = int(ctx.t * 1.6) % 2                         # a flashing beacon in the level's colour
         sz = min(14, sh - 12)
-        for i, bx in enumerate((x0 + 8, x1 - 8 - sz)):
-            c.FillRect(bx, y0 + (sh - sz) // 2, sz, sz, Color(*(ctx.sev if i == on else _dim(ctx.sev, 0.15))))
+        c.FillRect(x1 - 8 - sz, y0 + (sh - sz) // 2, sz, sz, Color(*(ctx.level if on else _dim(ctx.level, 0.15))))
 
 
 # ============================================================================================ split
@@ -676,7 +717,7 @@ class Split(Design):
         x0, y0, x1, y1 = self.inner(ctx)
         k = ctx.fam["key"]
         names = [t for _, t in region_lines(ctx, k, 158)]
-        want = max([k.width(kind_word(ctx)) + 36] + [k.width(n) + 12 for n in names[:4]] + [120])
+        want = max([badge_w(ctx, badge_font(ctx)) + 44] + [k.width(n) + 12 for n in names[:4]] + [120])
         lw = min(170, want)
         inner_w = lw - 12
         tf, tl = title_lines(ctx, inner_w, 3, max_h=(y1 - y0) // 2)
@@ -697,7 +738,12 @@ class Split(Design):
         c.FillRect(x0, y0, lw, y1 - y0, Color(*col))
         x, y = x0 + 6, y0 + 5
         px.draw(c, px.hazard(ctx.b["hazard"]), x, y, ink)
-        k.draw(c, x + 30, y + (24 - k.h) // 2, ink, fit(k, kind_word(ctx), iw - 30))
+        bf = badge_font(ctx)
+        if badge_w(ctx, bf) > iw - 30:
+            bf = ctx.fam["small"]
+        bx_, by_ = x + 30, y + (24 - bf.h - 4) // 2
+        c.FillRect(bx_ - 1, by_ - 1, badge_w(ctx, bf) + 2, bf.h + 6, Color(0, 0, 0))   # keeps it apart from the panel
+        level_badge(c, ctx, bx_, by_, bf)
         y += 28
         for ln in m["tl"]:
             m["tf"].draw(c, x, y, ink, ln)
@@ -774,7 +820,7 @@ class Sidebar(Design):
 
     def rows(self, ctx):
         b = ctx.b
-        out = [("ALERT", [kind_word(ctx)], ctx.sev)]
+        out = [("ALERT", [kind_word(ctx)], ctx.level)]
         out.append(("AREAS", [t for _, t in region_lines(ctx, ctx.fam["key"], 150)], ctx.pal["strong"]))
         if b["until"]:
             out.append(("UNTIL", [U(ctx, b["until"])], ctx.pal["strong"]))
@@ -791,7 +837,7 @@ class Sidebar(Design):
         widths = [k.width(v) for _, vals, _ in self.rows(ctx) for v in vals]
         lw = max(100, min(160, max(widths) + 12))
         rx = x0 + lw + 8
-        return {"lw": lw, "rx": rx, "hh": self.header_h(ctx, x1 - rx)}
+        return {"lw": lw, "rx": rx, "hh": self.header_h(ctx, x1 - rx, badge=False)}
 
     def text_area(self, ctx):
         x0, y0, x1, y1 = self.inner(ctx)
@@ -818,6 +864,11 @@ class Sidebar(Design):
                     tf.draw(c, x0 + 5, y, ctx.pal["dim"], f"+{len(vals) - i} MORE")
                     y += tf.h + 2
                     break
+                if label == "ALERT":
+                    f = badge_font(ctx) if badge_w(ctx, badge_font(ctx)) <= iw else ctx.fam["small"]
+                    level_badge(c, ctx, x0 + 5, y, f)
+                    y += f.h + 6
+                    continue
                 if label == "AREAS" and ap.is_home(ctx, region_lines(ctx, ctx.fam["key"], 150)[i][0]):
                     c.FillRect(x0 + 3, y - 1, f.width(s) + 4, f.h + 2, Color(*ctx.sev))
                     f.draw(c, x0 + 5, y, (0, 0, 0), s)
@@ -825,7 +876,7 @@ class Sidebar(Design):
                     f.draw(c, x0 + 5, y, col, s)
                 y += f.line
             y += 5
-        self.header(c, ctx, m["rx"], y0, x1 - m["rx"])
+        self.header(c, ctx, m["rx"], y0, x1 - m["rx"], badge=False)
         c.FillRect(m["rx"], y0 + m["hh"] + 2, x1 - m["rx"], 1, Color(*_dim(ctx.sev, 0.5)))
 
 
@@ -845,9 +896,12 @@ class Teletype(Design):
         ts = b.get("_issued_ts") or 0
         stamp = datetime.fromtimestamp(ts, timezone.utc).strftime("%d%H%M") if ts else "------"
         title = b["title"] if kind_word(ctx) in b["title"].upper() else f"{b['title']} {kind_word(ctx)}"
-        heads = [pick(ctx, f"WWCN{self.CODES.get(b['hazard'], 23):02d} CWVR {stamp}", lw, cap=k.h),
+        bf = badge_font(ctx)
+        bw = badge_w(ctx, bf)
+        heads = [pick(ctx, f"WWCN{self.CODES.get(b['hazard'], 23):02d} CWVR {stamp}", lw - bw - 8, cap=k.h),
                  pick(ctx, f"{title} {status_word(ctx)}".upper(), lw, cap=k.h)]
-        return {"tw": tw, "lw": lw, "heads": heads, "top": sum(f.line for f, _ in heads) + 6}
+        top = max(heads[0][0].line, bf.h + 5) + heads[1][0].line + 6
+        return {"tw": tw, "lw": lw, "heads": heads, "top": top, "bf": bf, "bw": bw}
 
     def text_area(self, ctx):
         x0, y0, x1, y1 = self.inner(ctx)
@@ -861,10 +915,12 @@ class Teletype(Design):
         x0, y0, x1, y1 = self.inner(ctx)
         m = self.m(ctx)
         sf = ctx.fam["small"]
-        y = y0
-        for i, (f, s) in enumerate(m["heads"]):
-            f.draw(c, x0, y, ctx.pal["dim"] if i == 0 else ctx.sev, s)
-            y += f.line
+        (f1, s1), (f2, s2) = m["heads"]
+        level_badge(c, ctx, x0 + m["lw"] - m["bw"], y0, m["bf"])
+        f1.draw(c, x0, y0 + max(0, (m["bf"].h + 4 - f1.h) // 2), ctx.pal["dim"], s1)
+        y = y0 + max(f1.line, m["bf"].h + 5)
+        f2.draw(c, x0, y, ctx.sev, s2)
+        y += f2.line
         for xx in range(x0, x0 + m["lw"], 4):
             c.FillRect(xx, y + 2, 2, 1, Color(*_dim(ctx.sev, 0.6)))
         tx = x1 - m["tw"]

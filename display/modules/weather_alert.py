@@ -36,7 +36,8 @@ from display.modules import pixel_icons as px
 
 GLYPH_ICON = {"warn": "warning", "eye": "eye", "arrow": "arrow", "pin": "pin", "clock": "clock", "check": "check"}
 from display.modules import alert_brief
-from display.modules.alert_themes import BORDERS, FAMILIES, PALETTES, REVEALS, SEVERITY, STRUCTURES, THEMES, resolve
+from display.modules.alert_themes import (BORDERS, FAMILIES, HAZARD_PALETTE, PALETTES, REVEALS, SEVERITY, STRUCTURES,
+                                          THEMES, resolve)
 
 W, H = 448, 192
 SCRAMBLE = "#%&@$*+=?ABCDEFGHJKLMNPQRSTUVWXYZ0123456789"
@@ -550,15 +551,17 @@ class AlertScreen:
         segs, t = [], 0.0
         for ai, a in enumerate(alerts):
             b = alert_brief.brief(a)
-            sev = SEVERITY.get(b["kind"], SEVERITY["statement"])
+            # main colours follow the weather (rain blue, snow white…); the level has its own colour for its label
+            sev, sev2 = HAZARD_PALETTE.get(b["hazard"], HAZARD_PALETTE["general"])
             ctx = St()
             ctx.th, ctx.b, ctx.sev, ctx.upper, ctx.fam = th, b, sev, th["upper"], fam
+            ctx.sev2, ctx.level = sev2, SEVERITY.get(b["kind"], SEVERITY["statement"])
             ctx.home_name = self.home
             ctx.home = alert_brief.mentions(a, self.home)
             codes = [code for _, code in alert_brief.region_labels(a.get("regions") or [], self.home)]
             ctx.header = " · ".join(codes) if codes else th["header"]          # e.g. "RICHMOND · VAN · SURREY"
             ctx.pal = {k: (sev if v == "sev" else v) for k, v in pal.items() if k not in ("name", "tint")}
-            if pal.get("tint"):                              # ground tinted by the alert level
+            if pal.get("tint"):                              # ground tinted by the weather type
                 ctx.pal["bg"], ctx.pal["panel"] = _dim(sev, pal["tint"][0]), _dim(sev, pal["tint"][1])
             ctx.pal["home_bg"] = sev
             ctx.area = "Metro Vancouver" if b["test"] else self.area()
@@ -663,7 +666,7 @@ class AlertScreen:
             return False
         mc = self._maps
         sev = np.array(ctx.sev, dtype=np.int16)
-        fill = sev                                              # zones in the alert level's colour
+        fill = sev                                              # zones in the weather type's colour
         reach = _ease(p) * 520                                  # zones flood outward from home
         m = mc.mask & (mc.dist <= reach)
         strength = FILL_STRENGTH.get(ctx.b["kind"], 0.4)
@@ -679,9 +682,9 @@ class AlertScreen:
         c.buf[0:band + sf.line + 3] = (c.buf[0:band + sf.line + 3] * 0.25).astype(np.uint8)
         x = 8 + icon(c, ctx, 8, 2 + (band - 16) // 2, 1, (0, 0, 0)) + 6
         x += f.draw(c, x, 2 + (band - f.h) // 2, ctx.sev, title_text(ctx)) + 10
-        lab = U(ctx, "AFFECTED AREA")
-        if x + k_f.width(lab) + 6 < W - 44:                     # only when the title leaves room
-            chip(c, x, 2 + (band - k_f.h - 2) // 2, lab, k_f, ctx.sev, (0, 0, 0))
+        lab = ctx.b["kind"].upper()                             # the level's label box, in the level's colour
+        if x + k_f.width(lab) + 6 < W - 44:
+            chip(c, x, 2 + (band - k_f.h - 2) // 2, lab, k_f, ctx.level, (0, 0, 0))
         b = ctx.b
         info = U(ctx, " · ".join(v for v in (f"until {b['until']}" if b["until"] else "", b["amount"]) if v))
         sf.draw(c, 8, band + 1, ctx.pal["strong"], info)
@@ -946,7 +949,8 @@ def meter(c, x, y, ctx, cell=5, h=8):
     """Severity meter: 4 blocks, filled up to the alert's level."""
     lvl = alert_brief.SEVERITY_LEVEL.get(ctx.b["kind"], 1)
     for k in range(4):
-        c.FillRect(x + k * (cell + 2), y, cell, h, Color(*(ctx.sev if k < lvl else _dim(ctx.sev, 0.18))))
+        col = getattr(ctx, "level", ctx.sev)
+        c.FillRect(x + k * (cell + 2), y, cell, h, Color(*(col if k < lvl else _dim(col, 0.18))))
     return 4 * (cell + 2)
 
 
