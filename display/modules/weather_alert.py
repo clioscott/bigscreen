@@ -762,10 +762,7 @@ class AlertScreen:
             c.buf[:] = self._static[1]
         else:
             c.FillRect(0, 0, W, H, Color(*ctx.pal["bg"]))
-            if getattr(struct, "paged", False):                # later pages are the design's dynamic layer
-                reveal(c, ctx, dict(seg, lines=[ln for ln in seg["lines"] if ln.get("page", 0) == 0]), th["reveal"], p, t)
-            else:
-                reveal(c, ctx, seg, th["reveal"], p, t)
+            reveal(c, ctx, seg, th["reveal"], p, t)
             struct.chrome(c, ctx)                    # after the text, so panels clip anything sliding in
             if p >= 1.0:
                 self._static = (skey, c.buf.copy())

@@ -8,7 +8,7 @@ height of the font drawn in them, columns the width of what they hold, and every
 smaller face of the family, then shortened — so nothing runs past its box or the screen edge.
 
 Each layout is a Structure (weather_alert.py): ``boxes`` → where the text flows, ``chrome`` → static parts
-(cached once the reveal ends), ``dynamic`` → per-frame parts (page turns, page dots, the alert counter).
+(cached once the reveal ends), ``dynamic`` → per-frame parts (beacons, the countdown ring, the alert counter).
 """
 
 from __future__ import annotations
@@ -17,7 +17,6 @@ import math
 from datetime import datetime, timezone
 
 from display.gfx import Color
-from display.modules import alert_brief
 from display.modules import alert_parts as ap
 from display.modules import pixel_icons as px
 from display.modules import weather_alert as wa
@@ -95,21 +94,47 @@ def title_lines(ctx, w, max_lines=2, max_h=None, big=True):
 
 
 def where_text(ctx, f, maxw):
-    """Region names ("Richmond + Vancouver"); a single region may use ECCC's own wording; else the codes;
-    else as many codes as fit."""
-    labs = ap.labels(ctx)
-    cands = [ctx.b["regions"][0]] if len(ctx.b.get("regions") or []) == 1 else []
-    cands += [" + ".join(n for n, _ in labs), " · ".join(c for _, c in labs)]
-    for s in cands:
-        if s and f.width(U(ctx, s)) <= maxw:
-            return U(ctx, s)
+    """The affected regions on one line, in the fullest wording that fits: ECCC's text for a single region,
+    "Metro Vancouver (All Regions)", the wall's names joined with "+", then the codes; else as many codes
+    as fit."""
+    for var in ap.label_variants(ctx):
+        s = U(ctx, (" · " if var[0][1] == ap.CODES.get(var[0][0]) else " + ").join(t for _, t in var))
+        if s and f.width(s) <= maxw:
+            return s
     out = ""
-    for _, code in labs:
+    for _, code in ap.labels(ctx):
         cand = (out + " · " if out else "") + code
         if f.width(cand) > maxw:
             break
         out = cand
-    return out or fit(f, labs[0][1] if labs else "", maxw)
+    return out or fit(f, ap.labels(ctx)[0][1] if ap.labels(ctx) else "", maxw)
+
+
+def best_where(ctx, w, big=False, cap=None, min_h=0):
+    """(font, text): the fullest wording of the affected regions that fits ``w`` on one line in a face at
+    least ``min_h`` tall — wording before size, so one region gets ECCC's full text when there's room."""
+    fs = [f for f in faces(ctx, big, cap) if f.h >= min_h] or faces(ctx, big, cap)[:1]
+    for var in ap.label_variants(ctx):
+        s = U(ctx, (" · " if var[0][1] == ap.CODES.get(var[0][0]) else " + ").join(t for _, t in var))
+        for f in fs:
+            if f.width(s) <= w:
+                return f, s
+    f = faces(ctx, big, cap)[-1]
+    return f, where_text(ctx, f, w)
+
+
+def region_lines(ctx, f, w, wrap=4):
+    """Region lines for column layouts: the fullest wording whose lines fit ``w`` in ``f``. A single region's
+    ECCC text may wrap over up to ``wrap`` lines; otherwise one region per line."""
+    for var in ap.label_variants(ctx):
+        if len(var) == 1 and var[0][1] not in (var[0][0], ap.CODES.get(var[0][0])):
+            ls = wa._wrap_plain(f, U(ctx, var[0][1]), w)
+            if len(ls) <= wrap and all(f.width(x) <= w for x in ls):
+                return [(var[0][0], x) for x in ls]
+            continue
+        if all(f.width(U(ctx, t)) <= w for _, t in var):
+            return [(n, U(ctx, t)) for n, t in var]
+    return [(n, U(ctx, t)) for n, t in ap.label_variants(ctx)[-1]]
 
 
 def fact_items(ctx, issued=False):
@@ -152,8 +177,6 @@ def frame(c, x, y, w, h, col):
 
 class Design(wa.Structure):
     lists_cities = True          # where is shown by chips / tiles; the regions paragraph would repeat it
-    paged = False                # the whole message on one screen: body text steps down a size instead
-    max_pages = 3
 
     # -- measurements, once per alert -------------------------------------------------------------------
     def m(self, ctx):
@@ -181,11 +204,6 @@ class Design(wa.Structure):
     def boxes(self, ctx):
         return [self.text_box(ctx)]
 
-    def flow(self, ctx, paras, boxes, fonts, gap=3):
-        if not self.paged:
-            return super().flow(ctx, paras, boxes, fonts, gap)
-        return ap.paged_flow(wa.layout, ctx, paras, boxes[0], fonts, gap, (ctx.th.get("opts") or {}).get("pages", self.max_pages))
-
     def title_font(self, ctx, width=None):
         return self.m(ctx).get("tf") or ctx.fam["key"]
 
@@ -203,21 +221,11 @@ class Design(wa.Structure):
         f, _ = pick(ctx, wa.title_text(ctx), w - 30, big=True)
         return max(24, f.h)
 
-    def text_bg(self, ctx):
-        return ctx.pal["bg"]
-
     def moving(self, c, ctx, seg, p):
         pass
 
     def dynamic(self, c, ctx, seg, p):
-        shown, page, pages = seg, 0, 1
-        if self.paged:
-            page, pages = ap.page_now(seg, ctx)
-            shown = dict(seg, lines=[ln for ln in seg["lines"] if ln.get("page", 0) == page])
-            if page > 0:
-                bx, by, bw, bh = self.text_box(ctx)
-                c.FillRect(bx, by, bw, bh, Color(*self.text_bg(ctx)))
-                wa.draw_lines(c, shown["lines"])
+        shown = seg
         self.moving(c, ctx, seg, p)
         if p >= 1.0 and ctx.th.get("pulse"):                 # amounts glow every couple of seconds
             k = max(0.0, math.sin(ctx.t * 2.4)) ** 3
@@ -236,9 +244,7 @@ class Design(wa.Structure):
             x -= sf.width(s) + 4
             c.FillRect(x - 2, y - 1, sf.width(s) + 4, sf.h + 2, Color(*ctx.sev))
             sf.draw(c, x, y, (0, 0, 0), s)
-            x -= 6
-        if pages > 1 and p >= 1.0:
-            ap.page_dots(c, x - pages * 6, y + (sf.h - 4) // 2, page, pages, ctx.sev, _dim(ctx.sev, 0.25))
+
 
 
 # ============================================================================================ briefing
@@ -282,11 +288,8 @@ class Headline(Design):
     def metrics(self, ctx):
         x0, y0, x1, y1 = self.inner(ctx)
         w = x1 - x0
-        for wf in faces(ctx, big=True):
-            ws = where_text(ctx, wf, w)
-            if wf.width(ws) <= w:
-                break
         k = ctx.fam["key"]
+        wf, ws = best_where(ctx, w, big=True, min_h=k.h)
         uf, us = pick(ctx, U(ctx, "until " + ctx.b["until"]) if ctx.b["until"] else "", w // 3, cap=k.h)
         tf, ts = pick(ctx, wa.title_text(ctx), w - 30 - uf.width(us) - 12, cap=max(k.h, 24))
         rest = fact_items(ctx, issued=True)[1:] if ctx.b["until"] else fact_items(ctx, issued=True)
@@ -392,7 +395,6 @@ class Dashboard(Design):
 class Storyboard(Design):
     """NOW / EXPECT / DO columns (only those with something in them) under a header with the region chips and
     the expiry; the validity timeline along the foot."""
-    paged = False
     GROUPS = [("NOW", ("lead", "detail"), "warning"), ("EXPECT", ("impact",), "eye"), ("DO", ("advice",), "arrow")]
 
     def metrics(self, ctx):
@@ -566,7 +568,6 @@ class Countdown(Design):
 class Gazette(Design):
     """Newspaper: masthead, the alert as the headline, "For Richmond + Vancouver · until …" as the deck, two
     columns of text with the region grid at the top of the right-hand one."""
-    paged = False
 
     def metrics(self, ctx):
         x0, y0, x1, y1 = self.inner(ctx)
@@ -579,12 +580,8 @@ class Gazette(Design):
             ed = fit(sf, ed, w - sf.width(mast) - 12)
         tf, ts = pick(ctx, wa.title_text(ctx), w, big=True)
         until = U(ctx, " · until " + ctx.b["until"]) if ctx.b["until"] else ""
-        for df in faces(ctx, cap=k.h):
-            deck = U(ctx, "For ") + where_text(ctx, df, w - df.width(until) - df.width("For ")) + until
-            if df.width(deck) <= w:
-                break
-        else:
-            deck = fit(df, deck, w)
+        df, ws = best_where(ctx, w - k.width(until + "For "), cap=k.h, min_h=sf.h + 1)
+        deck = fit(df, U(ctx, "For ") + ws + until, w)
         cw = (w - 14) // 2
         nat = ap.cart_size(tiny())
         cart = (min(nat[0], cw), nat[1])
@@ -632,15 +629,7 @@ class Sign(Design):
         w = x1 - x0 - 60
         k = ctx.fam["key"]
         tf, ts = pick(ctx, wa.title_text(ctx), w, big=True)
-        wf, ws = None, ""
-        for f in faces(ctx, cap=k.h):
-            s = where_text(ctx, f, w)
-            if f.width(s) <= w:
-                wf, ws = f, s
-                break
-        if wf is None:
-            wf = faces(ctx)[-1]
-            ws = where_text(ctx, wf, w)
+        wf, ws = best_where(ctx, w, cap=k.h, min_h=ctx.fam["small"].h + 1)
         lf, ls = pick_list(ctx, fact_items(ctx), w, cap=k.h)
         sh = tf.line + wf.line + lf.line + 10
         return {"tf": tf, "ts": ts, "wf": wf, "ws": ws, "lf": lf, "ls": ls, "sh": sh}
@@ -685,8 +674,8 @@ class Split(Design):
 
     def metrics(self, ctx):
         x0, y0, x1, y1 = self.inner(ctx)
-        k, sf = ctx.fam["key"], ctx.fam["small"]
-        names = [U(ctx, n) for n, _ in ap.labels(ctx)]
+        k = ctx.fam["key"]
+        names = [t for _, t in region_lines(ctx, k, 158)]
         want = max([k.width(kind_word(ctx)) + 36] + [k.width(n) + 12 for n in names[:4]] + [120])
         lw = min(170, want)
         inner_w = lw - 12
@@ -715,10 +704,9 @@ class Split(Design):
             y += m["tf"].line
         y += 4
         bottom = y1 - (sf.line + 6 if ctx.b["until"] else 2)
-        labs = ap.labels(ctx)
-        for i, (name, code) in enumerate(labs):
-            s = U(ctx, name)
-            f, s = pick(ctx, s, iw, cap=k.h)
+        labs = region_lines(ctx, k, iw)
+        for i, (name, text) in enumerate(labs):
+            f, s = pick(ctx, text, iw, cap=k.h)
             if y + f.h > bottom - (sf.line if i < len(labs) - 1 else 0):
                 sf.draw(c, x, y, ink, fit(sf, f"+{len(labs) - i} more", iw))
                 break
@@ -764,7 +752,7 @@ class Stack(Design):
     def chrome(self, c, ctx):
         x0, y0, x1, y1 = self.inner(ctx)
         m = self.m(ctx)
-        k, sf = ctx.fam["key"], ctx.fam["small"]
+        sf = ctx.fam["small"]
         c.FillRect(x0, y0, x1 - x0, m["hh"], Color(*ctx.pal["panel"]))
         c.FillRect(x0, y0, 3, m["hh"], Color(*ctx.sev))
         self.header(c, ctx, x0 + 6, y0 + 3, x1 - x0 - 12)
@@ -794,7 +782,7 @@ class Sidebar(Design):
     def rows(self, ctx):
         b = ctx.b
         out = [("ALERT", [kind_word(ctx)], ctx.sev)]
-        out.append(("AREAS", [U(ctx, n) for n, _ in ap.labels(ctx)], ctx.pal["strong"]))
+        out.append(("AREAS", [t for _, t in region_lines(ctx, ctx.fam["key"], 150)], ctx.pal["strong"]))
         if b["until"]:
             out.append(("UNTIL", [U(ctx, b["until"])], ctx.pal["strong"]))
         r = ap.remaining_text(ctx)
@@ -837,7 +825,7 @@ class Sidebar(Design):
                     tf.draw(c, x0 + 5, y, ctx.pal["dim"], f"+{len(vals) - i} MORE")
                     y += tf.h + 2
                     break
-                if label == "AREAS" and ap.is_home(ctx, ap.labels(ctx)[i][0]):
+                if label == "AREAS" and ap.is_home(ctx, region_lines(ctx, ctx.fam["key"], 150)[i][0]):
                     c.FillRect(x0 + 3, y - 1, f.width(s) + 4, f.h + 2, Color(*ctx.sev))
                     f.draw(c, x0 + 5, y, (0, 0, 0), s)
                 else:

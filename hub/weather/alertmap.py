@@ -40,12 +40,42 @@ def _rings(geometry):
     return []
 
 
-def pick_area(cfg, rings, home_hit):
-    """Core Metro for alerts on the home city whose zones sit in Metro Vancouver; else the Lower Mainland."""
+def _zones(rings):
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+    polys = [Polygon(r).buffer(0) for r in rings if len(r) >= 3]
+    return unary_union([p for p in polys if not p.is_empty])
+
+
+def _share(view, zones):
+    """Share of the zones' area (exact geometry) that falls inside ``view``."""
+    from shapely.geometry import box
+    if zones.is_empty or zones.area == 0:
+        return 0.0
+    return zones.intersection(box(*view.lonlat)).area / zones.area
+
+
+def pick_area(cfg, zone_rings, home_hit=None, keep=0.5, some=0.2, max_jump=3.0):
+    """The closest-in map area that shows the whole alert. ``zone_rings`` is one ring list per alert zone.
+
+    A view shows a zone when ``keep`` of its area is on screen (ECCC zones run into empty mountains — the
+    North Shore zone is half backcountry — so "all of it" is too strict). If that needs a view more than
+    ``max_jump`` × coarser than one showing ``some`` of every zone (Sea to Sky and the Sunshine Coast reach far
+    up the coast), the closer view wins: better a zone running off the edge than Metro shrunk to a dot."""
     areas = cfg["modules"].get("weather_maps", {}).get("areas", {})
-    if home_hit and "core_metro" in areas:
-        return "core_metro"
-    return "metro" if "metro" in areas else next(iter(areas), None)
+    if not areas:
+        return None
+    views = sorted(((View(dict(a, id=k), W, H, fit_width=W), k) for k, a in areas.items()),
+                   key=lambda vk: vk[0].km_per_px)
+    zones = [z for z in (_zones(r) for r in zone_rings) if not z.is_empty]
+    if not zones:
+        return views[0][1]
+
+    def first(th):
+        return next(((v, k) for v, k in views if min(_share(v, z) for z in zones) >= th), views[-1])
+
+    full, part = first(keep), first(some)
+    return part[1] if full[0].km_per_px > max_jump * part[0].km_per_px else full[1]
 
 
 HOME_DEFAULT = (-123.0918, 49.1442)          # home (approximate)
@@ -56,7 +86,7 @@ def render(alert, cfg, home_city="Richmond", home_ll=None):
     rings = [r for g in alert.get("geometries") or [] for r in _rings(g)]
     if not rings:
         return None
-    aid = pick_area(cfg, rings, alert.get("home"))
+    aid = pick_area(cfg, [_rings(g) for g in alert.get("geometries") or []], alert.get("home"))
     areas = cfg["modules"].get("weather_maps", {}).get("areas", {})
     if aid not in areas:
         return None
