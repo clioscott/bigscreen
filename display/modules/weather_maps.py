@@ -77,6 +77,7 @@ class MapPanel:
         self.shadow = Color(0, 0, 0)
         self.dim = Color(170, 170, 170)
         self.marker = Color(255, 230, 90)
+        self.forecast_bg = Color(200, 80, 0)          # FORECAST tag, and the forecast stretch of the progress bar
         self._started = {}
         self._loops_seen = {}
         self._fonts = {}
@@ -141,7 +142,11 @@ class MapPanel:
         if meta.get("timestamp", True) and idx < len(times):
             t = times[idx]
             label = f"{t:%a}".upper() + f" {t.hour % 12 or 12}:{t:%M}{'A' if t.hour < 12 else 'P'}"
-            self._text(c, x + 2, y + h - 4, label, self.marker if t.timestamp() > now + 120 else self.white)
+            lx = x + 2 + self._text(c, x + 2, y + h - 4, label) + 4
+            if t.timestamp() > now + 120:                      # model forecast / radar nowcast frame
+                tag = "FORECAST"
+                c.FillRect(lx - 1, y + h - 11, self._tw(tag) + 3, 8, self.forecast_bg)
+                graphics.DrawText(c, self.font, lx + 1, y + h - 4, self.white, tag)
         self._text(c, x + w - self._tw("ECCC") - 2, y + 7, "ECCC", self.dim)
 
         if meta.get("legend"):
@@ -172,12 +177,12 @@ class MapPanel:
         future = next((i for i, t in enumerate(times) if t.timestamp() > now + 120), None)
         if future is not None:                                  # where the forecast part of the loop starts
             fx = x + round(w * future / (n - 1))
-            c.FillRect(fx, y, x + w - fx, 2, Color(90, 70, 20))
+            c.FillRect(fx, y, x + w - fx, 2, Color(80, 32, 0))
         px = round(w * idx / (n - 1))
         fx = x + round(w * future / (n - 1)) if future is not None else x + w
         c.FillRect(x, y, min(px, fx - x), 2, self.white)
         if px > fx - x:
-            c.FillRect(fx, y, x + px - fx, 2, self.marker)
+            c.FillRect(fx, y, x + px - fx, 2, self.forecast_bg)
 
     def default_loops(self, tid):
         pack = self.store.get(tid)
