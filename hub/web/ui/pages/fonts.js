@@ -1,7 +1,21 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
 import { store, api, fail, toast, seed } from "../core.js";
 
-const SCRIPTS = [{ value: "all", label: "All" }, { value: "latin", label: "English" }, { value: "japanese", label: "Japanese" }];
+const TABS = [
+  { value: "latin", label: "English", hint: "Latin text fonts" },
+  { value: "kanji", label: "Japanese – Kanji", hint: "Full Japanese: kana plus at least 95% of the 2,965 JIS level-1 kanji" },
+  { value: "kana", label: "Japanese – Kana", hint: "Partial Japanese: kana (and maybe some kanji), see each font's character sets" },
+];
+// katakana → hiragana / half-width katakana, for previewing kana-only fonts in the sets they actually have
+const HALF_FROM = "。「」、・ヲァィゥェォャュョッーアイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワン";
+const HALF_TO = "｡｢｣､･ｦｧｨｩｪｫｬｭｮｯｰｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ";
+const toHiragana = (s) => s.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60));
+const toHalfwidth = (s) => [...s.normalize("NFD")].map((c) => {
+  if (c === "゙") return "ﾞ";           // combining dakuten → half-width ﾞ (ガ → ｶﾞ)
+  if (c === "゚") return "ﾟ";           // combining handakuten → ﾟ (パ → ﾊﾟ)
+  const i = HALF_FROM.indexOf(c);
+  return i >= 0 ? HALF_TO[i] : c === "　" ? " " : c;
+}).join("");
 const STATUSES = [{ value: "all", label: "All" }, { value: "unreviewed", label: "To review" }, { value: "approved", label: "Approved" },
   { value: "dropped", label: "Dropped" }, { value: "candidate", label: "New candidates" }];
 const COLOURS = [{ value: "ffffff", label: "White" }, { value: "ffc040", label: "Amber" }, { value: "50ff80", label: "Green" },
@@ -18,10 +32,10 @@ export const Fonts = {
     const st = computed(() => store.draft.hub.fonts.status);
     const all = ref([]);
     const samples = ref({ latin: "", jp: "" });
-    const latin = ref(""), jp = ref("");
+    const latin = ref(""), jp = ref(""), kana = ref("キンキュウ ジシン ソクホウ トウキョウ マデ 23ビョウ ツヨイ ユレニ ケイカイ");
     const fg = ref("ffffff");
     const zoom = ref(2);
-    const script = ref("all"), status = ref("unreviewed"), sort = ref("size"), q = ref(""), usedOnly = ref(false);
+    const script = ref("latin"), status = ref("unreviewed"), sort = ref("size"), q = ref(""), usedOnly = ref(false);
     const size = ref("text");
     const compare = ref([]);
     const review = ref(-1);              // index into `shown` while reviewing one by one
@@ -41,7 +55,7 @@ export const Fonts = {
     const shown = computed(() => {
       const needle = q.value.trim().toLowerCase();
       const out = all.value.filter((f) =>
-        (script.value === "all" || f.script === script.value) &&
+        f.script === script.value &&
         (status.value === "all" || verdict(f) === status.value) &&
         (!usedOnly.value || f.used_by.length) &&
         (size.value === "num" ? (f.height > 24 || f.tags.includes("big numerals")) : f.height >= SIZE_RANGE[size.value][0] && f.height <= SIZE_RANGE[size.value][1]) &&
@@ -49,12 +63,24 @@ export const Fonts = {
       const key = { size: (f) => [f.height, f.family, f.name], family: (f) => [f.family, f.height, f.name], name: (f) => [f.name] }[sort.value];
       return out.sort((a, b) => { const ka = key(a), kb = key(b); for (let i = 0; i < ka.length; i++) { if (ka[i] < kb[i]) return -1; if (ka[i] > kb[i]) return 1; } return 0; });
     });
+    const tabCount = (t) => all.value.filter((f) => f.script === t).length;
     const counts = computed(() => {
       const c = { approved: 0, dropped: 0, unreviewed: 0, candidate: 0 };
       for (const f of all.value) c[verdict(f)]++;
       return c;
     });
-    const sampleFor = (f) => (f.script === "japanese" ? { text: f.ascii > 40 ? latin.value : "", jp: jp.value } : { text: latin.value, jp: "" });
+    const latinFor = (f) => (f.alnum === "full" ? latin.value : f.alnum === "upper" ? latin.value.toUpperCase() : "");
+    const sampleFor = (f) => {
+      if (f.script === "kanji") return { text: latinFor(f), jp: jp.value };
+      if (f.script === "kana") {                     // one line per kana set the font really has
+        const lines = [];
+        if (f.hiragana >= 60) lines.push(toHiragana(kana.value));
+        if (f.katakana >= 60) lines.push(kana.value);
+        if (f.halfwidth >= 50) lines.push(toHalfwidth(kana.value));
+        return { text: latinFor(f), jp: lines.join("\n") };
+      }
+      return { text: latin.value, jp: "" };
+    };
     const img = (f, z) => {
       const s = sampleFor(f);
       return `/api/fonts/preview.png?path=${encodeURIComponent(f.path)}&text=${encodeURIComponent(s.text)}&jp=${encodeURIComponent(s.jp)}&scale=1&fg=${fg.value}`;
@@ -103,8 +129,8 @@ export const Fonts = {
     onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
 
     const statusClass = (f) => ({ approved: "ok", dropped: "bad", candidate: "warn" }[verdict(f)] || "");
-    return { all, shown, counts, latin, jp, fg, zoom, script, status, sort, q, usedOnly, size, SIZES, compare, review, mirror, current,
-      SCRIPTS, STATUSES, COLOURS, SORTS, verdict, img, set, wall, back, toggleCompare, startReview, step, judge, statusClass, samples };
+    return { all, shown, counts, tabCount, TABS, kana, latin, jp, fg, zoom, script, status, sort, q, usedOnly, size, SIZES, compare, review, mirror, current,
+      STATUSES, COLOURS, SORTS, verdict, img, set, wall, back, toggleCompare, startReview, step, judge, statusClass, samples };
   },
   template: `<div class="page">
     <div class="page-head"><div class="grow"><h1>Fonts</h1>
@@ -117,11 +143,17 @@ export const Fonts = {
         <span class="pill" style="color:var(--warn, #fbbf24)">{{ counts.candidate }} candidates</span>
       </div></div>
 
+    <div class="row" style="gap:8px; flex-wrap:wrap; margin-bottom:12px" role="tablist" aria-label="Font type">
+      <button v-for="t in TABS" :key="t.value" role="tab" :aria-selected="script === t.value" class="btn" :class="{primary: script === t.value}"
+        :title="t.hint" @click="script = t.value; review = -1">{{ t.label }} <span class="pill" style="margin-left:4px">{{ tabCount(t.value) }}</span></button>
+    </div>
+    <div class="faint" style="font-size:12.5px; margin:-4px 0 12px">{{ TABS.find(t => t.value === script).hint }}</div>
+
     <div class="card"><div class="card-head"><Icon name="Type" :size="15"/><h3>Sample text &amp; filters</h3></div><div class="card-body stack">
       <Field label="English sample"><input class="input" v-model.lazy="latin" @keydown.enter="$event.target.blur()"></Field>
-      <Field label="Japanese sample" hint="Shown for fonts with kana / kanji"><input class="input" v-model.lazy="jp" @keydown.enter="$event.target.blur()"></Field>
+      <Field label="Japanese sample" hint="For full kanji fonts" v-if="script === 'kanji'"><input class="input" v-model.lazy="jp" @keydown.enter="$event.target.blur()"></Field>
+      <Field label="Kana sample (type it in katakana)" hint="Each font shows it in hiragana, katakana and half-width katakana, whichever it supports" v-if="script === 'kana'"><input class="input" v-model.lazy="kana" @keydown.enter="$event.target.blur()"></Field>
       <div class="row" style="flex-wrap:wrap; gap:14px">
-        <Field label="Script"><Seg v-model="script" :options="SCRIPTS"/></Field>
         <Field label="Verdict"><Seg v-model="status" :options="STATUSES"/></Field>
         <Field label="Sort by"><Seg v-model="sort" :options="SORTS"/></Field>
       </div>
@@ -145,7 +177,7 @@ export const Fonts = {
         <button class="btn sm ghost" @click="review = -1">Close</button></div>
       <div class="card-body stack">
         <div style="background:#000; border-radius:8px; padding:8px; overflow:auto"><img :src="img(current)" :style="{width: 448 * 3 + 'px', maxWidth: '100%', imageRendering: 'pixelated', display: 'block'}" alt=""></div>
-        <div class="faint" style="font-size:12.5px">{{ current.height }} px · {{ current.glyphs }} glyphs<template v-if="current.kanji"> · {{ current.kanji }} kanji</template> · {{ current.origin }} · {{ current.licence }}
+        <div class="faint" style="font-size:12.5px">{{ current.height }} px · {{ current.glyphs }} glyphs<template v-if="current.script !== 'latin'"> · {{ current.sets.join(' · ') }}</template> · {{ current.origin }} · {{ current.licence }}
           <template v-if="current.used_by.length"><br>Used by: {{ current.used_by.join(' · ') }}</template></div>
         <div class="row" style="gap:8px">
           <button class="btn" @click="step(-1)"><Icon name="ChevronLeft" :size="15"/>Prev</button>
@@ -169,7 +201,7 @@ export const Fonts = {
           <span class="faint mono" style="font-size:11.5px">{{ f.path }}</span>
           <span class="pill">{{ f.height }} px</span>
           <span class="pill" v-if="f.bold">bold</span>
-          <span class="pill" v-if="f.kanji">{{ f.kanji }} kanji</span>
+          <span class="pill" v-for="cs in (f.script === 'latin' ? [] : f.sets)" :key="cs" style="color:var(--accent, #9aa4ff)">{{ cs }}</span>
           <span class="pill" v-if="f.jis">JIS-encoded</span>
           <span class="pill" v-for="t in f.tags.filter(t => t !== 'japanese')" :key="t">{{ t }}</span>
           <span class="grow"></span>

@@ -3505,5 +3505,319 @@
   "tags": [
    "japanese"
   ]
+ },
+ "candidates/jp-ark10-mono.bdf": {
+  "family": "Ark Pixel 10 (monospaced)",
+  "origin": "TakWolf/ark-pixel-font",
+  "licence": "OFL",
+  "tags": [
+   "japanese"
+  ]
+ },
+ "candidates/jp-ark10-prop.bdf": {
+  "family": "Ark Pixel 10 (proportional)",
+  "origin": "TakWolf/ark-pixel-font",
+  "licence": "OFL",
+  "tags": [
+   "japanese"
+  ]
+ },
+ "candidates/jp-ark12-mono.bdf": {
+  "family": "Ark Pixel 12 (monospaced)",
+  "origin": "TakWolf/ark-pixel-font",
+  "licence": "OFL",
+  "tags": [
+   "japanese"
+  ]
+ },
+ "candidates/jp-ark12-prop.bdf": {
+  "family": "Ark Pixel 12 (proportional)",
+  "origin": "TakWolf/ark-pixel-font",
+  "licence": "OFL",
+  "tags": [
+   "japanese"
+  ]
+ },
+ "candidates/jp-fusion8-mono.bdf": {
+  "family": "Fusion Pixel 8 (monospaced)",
+  "origin": "TakWolf/fusion-pixel-font",
+  "licence": "OFL",
+  "tags": [
+   "japanese"
+  ]
+ },
+ "candidates/jp-fusion8-prop.bdf": {
+  "family": "Fusion Pixel 8 (proportional)",
+  "origin": "TakWolf/fusion-pixel-font",
+  "licence": "OFL",
+  "tags": [
+   "japanese"
+  ]
+ },
+ "candidates/jp-fusion10-mono.bdf": {
+  "family": "Fusion Pixel 10 (monospaced)",
+  "origin": "TakWolf/fusion-pixel-font",
+  "licence": "OFL",
+  "tags": [
+   "japanese"
+  ]
+ },
+ "candidates/jp-fusion10-prop.bdf": {
+  "family": "Fusion Pixel 10 (proportional)",
+  "origin": "TakWolf/fusion-pixel-font",
+  "licence": "OFL",
+  "tags": [
+   "japanese"
+  ]
+ },
+ "candidates/jp-fusion12-mono.bdf": {
+  "family": "Fusion Pixel 12 (monospaced)",
+  "origin": "TakWolf/fusion-pixel-font",
+  "licence": "OFL",
+  "tags": [
+   "japanese"
+  ]
+ },
+ "candidates/jp-fusion12-prop.bdf": {
+  "family": "Fusion Pixel 12 (proportional)",
+  "origin": "TakWolf/fusion-pixel-font",
+  "licence": "OFL",
+  "tags": [
+   "japanese"
+  ]
+ },
+ "candidates/jp-galmuri7.bdf": {
+  "family": "Galmuri 7",
+  "origin": "quiple/galmuri",
+  "licence": "OFL",
+  "tags": [
+   "japanese"
+  ]
+ },
+ "candidates/jp-galmuri9.bdf": {
+  "family": "Galmuri 9",
+  "origin": "quiple/galmuri",
+  "licence": "OFL",
+  "tags": [
+   "japanese"
+  ]
+ },
+ "candidates/jp-galmuri11.bdf": {
+  "family": "Galmuri 11",
+  "origin": "quiple/galmuri",
+  "licence": "OFL",
+  "tags": [
+   "japanese"
+  ]
+ },
+ "candidates/jp-galmuri11-bold.bdf": {
+  "family": "Galmuri 11 Bold",
+  "origin": "quiple/galmuri",
+  "licence": "OFL",
+  "tags": [
+   "japanese"
+  ]
+ },
+ "candidates/jp-galmuri11-condensed.bdf": {
+  "family": "Galmuri 11 Condensed",
+  "origin": "quiple/galmuri",
+  "licence": "OFL",
+  "tags": [
+   "japanese"
+  ]
+ },
+ "candidates/jp-galmuri14.bdf": {
+  "family": "Galmuri 14",
+  "origin": "quiple/galmuri",
+  "licence": "OFL",
+  "tags": [
+   "japanese"
+  ]
+ },
+ "candidates/jp-galmurimono7.bdf": {
+  "family": "Galmuri Mono 7",
+  "origin": "quiple/galmuri",
+  "licence": "OFL",
+  "tags": [
+   "japanese"
+  ]
+ },
+ "candidates/jp-galmurimono9.bdf": {
+  "family": "Galmuri Mono 9",
+  "origin": "quiple/galmuri",
+  "licence": "OFL",
+  "tags": [
+   "japanese"
+  ]
+ },
+ "candidates/jp-galmurimono11.bdf": {
+  "family": "Galmuri Mono 11",
+  "origin": "quiple/galmuri",
+  "licence": "OFL",
+  "tags": [
+   "japanese"
+  ]
+ },
+ "candidates/jp-k6x8-gothic.bdf": {
+  "family": "k6x8 gothic",
+  "origin": "littlelimit.net",
+  "licence": "free",
+  "tags": [
+   "japanese"
+  ]
+ },
+ "candidates/jp-k6x8-mincho.bdf": {
+  "family": "k6x8 mincho",
+  "origin": "littlelimit.net",
+  "licence": "free",
+  "tags": [
+   "japanese"
+  ]
+ },
+ "candidates/jp-k12x8.bdf": {
+  "family": "k12x8 (2021)",
+  "origin": "littlelimit.net",
+  "licence": "free",
+  "tags": [
+   "japanese"
+  ]
+ },
+ "candidates/retro-pixel-arcade.bdf": {
+  "family": "Retro Pixel arcade",
+  "origin": "TakWolf/retro-pixel-font",
+  "licence": "OFL",
+  "tags": [
+   "video game"
+  ]
+ },
+ "candidates/retro-pixel-cute-mono.bdf": {
+  "family": "Retro Pixel cute (mono)",
+  "origin": "TakWolf/retro-pixel-font",
+  "licence": "OFL",
+  "tags": [
+   "video game"
+  ]
+ },
+ "candidates/retro-pixel-cute-prop.bdf": {
+  "family": "Retro Pixel cute",
+  "origin": "TakWolf/retro-pixel-font",
+  "licence": "OFL",
+  "tags": [
+   "video game"
+  ]
+ },
+ "candidates/retro-pixel-petty-5h.bdf": {
+  "family": "Retro Pixel petty 5h",
+  "origin": "TakWolf/retro-pixel-font",
+  "licence": "OFL",
+  "tags": [
+   "video game"
+  ]
+ },
+ "candidates/retro-pixel-petty-5x5.bdf": {
+  "family": "Retro Pixel petty 5×5",
+  "origin": "TakWolf/retro-pixel-font",
+  "licence": "OFL",
+  "tags": [
+   "video game"
+  ]
+ },
+ "candidates/retro-pixel-thick.bdf": {
+  "family": "Retro Pixel thick",
+  "origin": "TakWolf/retro-pixel-font",
+  "licence": "OFL",
+  "tags": [
+   "video game"
+  ]
+ },
+ "candidates/jp-kana-sony8x16.bdf": {
+  "family": "Sony 8×16 kana",
+  "origin": "X.Org Sony",
+  "licence": "X11",
+  "tags": [
+   "japanese",
+   "half-width kana"
+  ]
+ },
+ "candidates/jp-kana-sony12x24.bdf": {
+  "family": "Sony 12×24 kana",
+  "origin": "X.Org Sony",
+  "licence": "X11",
+  "tags": [
+   "japanese",
+   "half-width kana"
+  ]
+ },
+ "candidates/jp-kana-etl18.bdf": {
+  "family": "ETL 18 kana",
+  "origin": "GNU intlfonts (ETL)",
+  "licence": "public domain",
+  "tags": [
+   "japanese",
+   "half-width kana"
+  ]
+ },
+ "candidates/jp-kana-etl18b.bdf": {
+  "family": "ETL 18 kana bold",
+  "origin": "GNU intlfonts (ETL)",
+  "licence": "public domain",
+  "tags": [
+   "japanese",
+   "half-width kana"
+  ]
+ },
+ "candidates/jp-kana-kappa20b.bdf": {
+  "family": "Kappa 20 kana bold",
+  "origin": "Kappa fonts",
+  "licence": "public domain",
+  "tags": [
+   "japanese",
+   "half-width kana"
+  ]
+ },
+ "candidates/jp-kana-kappa20m.bdf": {
+  "family": "Kappa 20 kana",
+  "origin": "Kappa fonts",
+  "licence": "public domain",
+  "tags": [
+   "japanese",
+   "half-width kana"
+  ]
+ },
+ "candidates/jp-kana-ayu18.bdf": {
+  "family": "Ayu 18 kana",
+  "origin": "Ayu fonts",
+  "licence": "public domain",
+  "tags": [
+   "japanese",
+   "half-width kana"
+  ]
+ },
+ "candidates/jp-kana-ayu20.bdf": {
+  "family": "Ayu 20 kana",
+  "origin": "Ayu fonts",
+  "licence": "public domain",
+  "tags": [
+   "japanese",
+   "half-width kana"
+  ]
+ },
+ "candidates/jp-kana-maru14.bdf": {
+  "family": "Marumoji 14 kana",
+  "origin": "xfonts-marumoji",
+  "licence": "public domain",
+  "tags": [
+   "japanese",
+   "half-width kana"
+  ]
+ },
+ "candidates/jp-zpix.bdf": {
+  "family": "Zpix 最像素 (Chinese glyph forms)",
+  "origin": "SolidZORO/zpix-pixel-font",
+  "licence": "OFL",
+  "tags": [
+   "japanese",
+   "chinese forms"
+  ]
  }
 }
