@@ -56,7 +56,8 @@ export const Fonts = {
       const needle = q.value.trim().toLowerCase();
       const out = all.value.filter((f) =>
         f.script === script.value &&
-        (status.value === "all" || verdict(f) === status.value) &&
+        (status.value === "all" || verdict(f) === status.value ||
+          (status.value === "unreviewed" && verdict(f) === "candidate")) &&     // "To review" = no verdict yet, new candidates too
         (!usedOnly.value || f.used_by.length) &&
         (size.value === "num" ? (f.height > 24 || f.tags.includes("big numerals")) : f.height >= SIZE_RANGE[size.value][0] && f.height <= SIZE_RANGE[size.value][1]) &&
         (!needle || (f.path + " " + f.family + " " + f.origin + " " + f.tags.join(" ")).toLowerCase().includes(needle)));
@@ -139,7 +140,7 @@ export const Fonts = {
       <div class="row" style="gap:6px; flex-wrap:wrap">
         <span class="pill" style="color:var(--ok, #4ade80)">{{ counts.approved }} approved</span>
         <span class="pill" style="color:var(--bad, #f87171)">{{ counts.dropped }} dropped</span>
-        <span class="pill">{{ counts.unreviewed }} to review</span>
+        <span class="pill">{{ counts.unreviewed + counts.candidate }} to review</span>
         <span class="pill" style="color:var(--warn, #fbbf24)">{{ counts.candidate }} candidates</span>
       </div></div>
 
