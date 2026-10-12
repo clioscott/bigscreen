@@ -109,6 +109,9 @@ def brief(alert):
     main = text.split("###")[0]
     paras = [p.strip() for p in re.split(r"\n\s*\n", main) if p.strip()]
     paras = [re.sub(r"\s*\n\s*", " ", p) for p in paras]
+    # web addresses can't be followed on a wall (and won't wrap): "at EmergencyInfoBC (https://…)" → "at EmergencyInfoBC"
+    paras = [re.sub(r"\s*\(?\b(?:https?://|www\.)\S+?\)?(?=[\s.,;:]*(?:\s|$))", "", p).strip() for p in paras]
+    paras = [p for p in paras if p]
     summary = paras[0] if paras else ""
     if summary.lower().startswith("this warning is in effect") and len(paras) > 1:
         summary = paras[1]                                   # "...due to the following hazard(s): - …"

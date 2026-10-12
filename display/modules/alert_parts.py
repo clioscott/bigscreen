@@ -168,7 +168,17 @@ TILES = {
 }
 
 
-def tile_rects(extent, x, y, w, h, gap=2):
+HOME_TINT = (255, 226, 120)      # the home region's tile outline / label when the alert doesn't cover it
+TILE_SHORT = {"Tri-Cities": "TRI-C", "Howe Sound": "HOWE", "Sunshine Coast": "SUN C", "Sea to Sky": "SEA2SKY",
+              "North Shore": "N VAN", "Abbotsford": "ABBY", "Chilliwack": "CHWK", "Richmond": "RICH", "Vancouver": "VAN",
+              "Surrey": "SURREY"}
+
+
+def is_home(ctx, name):
+    return name == getattr(ctx, "home_name", "Richmond") or (name == "Metro Vancouver" and home_hit(ctx))
+
+
+def tile_rects(extent, x, y, w, h, gap=1):
     t = TILES[extent]
     cw = (w - gap * (t["cols"] - 1)) // t["cols"]
     ch = (h - gap * (t["rows"] - 1)) // t["rows"]
@@ -176,75 +186,69 @@ def tile_rects(extent, x, y, w, h, gap=2):
             for n, (col, row, span) in t["tiles"].items()}
 
 
-def cartogram(c, ctx, x, y, w, h, font, extent="metro", k=1.0, gap=2):
-    """The regions as a geographic grid of labelled tiles: affected tiles filled, others outlined, home marked."""
+def cart_size(font, extent="lm", gap=1):
+    """Natural size of the tile grid: every single tile wide enough for its code in ``font``."""
+    t = TILES[extent]
+    tw = max(font.width(CODES.get(n, n.upper())) for n, (_, _, span) in t["tiles"].items() if span == 1) + 6
+    th = font.h + 5
+    return t["cols"] * tw + gap * (t["cols"] - 1), t["rows"] * th + gap * (t["rows"] - 1)
+
+
+def cartogram(c, ctx, x, y, font, extent="lm", w=None, h=None, gap=1):
+    """The regions as a geographic grid of labelled tiles: affected tiles filled in the hazard colour, others
+    outlined; the home region in a lighter tint (filled) or a warm outline (clear). Labels shorten to fit."""
+    nw, nh = cart_size(font, extent, gap)
+    w, h = w or nw, h or nh
     hit = affected(ctx)
-    fill = _dim(hazard_colour(ctx), k)
+    fill = hazard_colour(ctx)
+    home = getattr(ctx, "home_name", "Richmond")
     for name, (tx, ty, tw, th) in tile_rects(extent, x, y, w, h, gap).items():
-        on = name in hit
+        on, mine = name in hit, name == home
         if on:
-            c.FillRect(tx, ty, tw, th, Color(*fill))
+            col = _mix(fill, (255, 255, 255), 0.45) if mine else fill
+            c.FillRect(tx, ty, tw, th, Color(*col))
+            ink = (0, 0, 0) if sum(col) > 300 else (255, 255, 255)
         else:
+            edge = HOME_TINT if mine else _dim(ctx.pal["dim"], 0.7)
             c.FillRect(tx, ty, tw, th, Color(*ctx.pal["panel"]))
-            c.FillRect(tx, ty, tw, 1, Color(*_dim(ctx.pal["dim"], 0.7)))
-            c.FillRect(tx, ty + th - 1, tw, 1, Color(*_dim(ctx.pal["dim"], 0.7)))
-            c.FillRect(tx, ty, 1, th, Color(*_dim(ctx.pal["dim"], 0.7)))
-            c.FillRect(tx + tw - 1, ty, 1, th, Color(*_dim(ctx.pal["dim"], 0.7)))
+            for rx, ry, rw, rh in ((tx, ty, tw, 1), (tx, ty + th - 1, tw, 1), (tx, ty, 1, th), (tx + tw - 1, ty, 1, th)):
+                c.FillRect(rx, ry, rw, rh, Color(*edge))
+            ink = HOME_TINT if mine else ctx.pal["dim"]
         code = CODES.get(name, name.upper())
-        if font.width(code) > tw - 4:
-            code = code.split()[0][: max(2, (tw - 4) // max(1, font.width("M")))]
-        col = (0, 0, 0) if on and sum(fill) > 300 else ((255, 255, 255) if on else ctx.pal["dim"])
-        font.draw(c, tx + (tw - font.width(code)) // 2, ty + (th - font.h) // 2, col, code)
-        if name == getattr(ctx, "home_name", "Richmond") and th >= 10:
-            draw_house(c, tx + 5, ty + 5, on, ctx)
+        for cand in (code, TILE_SHORT.get(name, code)):
+            if font.width(cand) <= tw - 2:
+                code = cand
+                break
+        else:
+            while code and font.width(code) > tw - 2:
+                code = code[:-1]
+        font.draw(c, tx + (tw - font.width(code)) // 2, ty + (th - font.h) // 2, ink, code)
+    return w, h
 
 
 def chips(c, ctx, x, y, maxw, font, pad=3, gap=4, lines=2):
-    """Region codes as chips: the home region filled (with the house), others outlined. Wraps up to ``lines``
-    rows; returns the height used."""
-    items = labels(ctx)
+    """Region codes as chips: the home region filled in the severity colour, others outlined. Wraps up to
+    ``lines`` rows; a chip that would not fit is left off (never drawn past ``maxw``). Returns the height."""
     hh = font.h + 4
     cx, cy, used = x, y, hh
-    for name, code in items:
-        home = name == getattr(ctx, "home_name", "Richmond") or (name == "Metro Vancouver" and home_hit(ctx))
-        w = font.width(code) + 2 * pad + (10 if home else 0)
+    for name, code in labels(ctx):
+        w = font.width(code) + 2 * pad
         if cx + w > x + maxw and cx > x:
             if (cy - y) // (hh + 3) + 1 >= lines:
                 break
             cx, cy = x, cy + hh + 3
             used = cy - y + hh
-        if home:
+        if w > maxw:
+            break
+        if is_home(ctx, name):
             c.FillRect(cx, cy, w, hh, Color(*ctx.sev))
-            draw_house(c, cx + 5, cy + hh // 2, True, ctx)
-            font.draw(c, cx + pad + 10, cy + 2, (0, 0, 0), code)
+            font.draw(c, cx + pad, cy + 2, (0, 0, 0), code)
         else:
-            col = ctx.sev
-            c.FillRect(cx, cy, w, 1, Color(*col))
-            c.FillRect(cx, cy + hh - 1, w, 1, Color(*col))
-            c.FillRect(cx, cy, 1, hh, Color(*col))
-            c.FillRect(cx + w - 1, cy, 1, hh, Color(*col))
+            for rx, ry, rw, rh in ((cx, cy, w, 1), (cx, cy + hh - 1, w, 1), (cx, cy, 1, hh), (cx + w - 1, cy, 1, hh)):
+                c.FillRect(rx, ry, rw, rh, Color(*ctx.sev))
             font.draw(c, cx + pad, cy + 2, ctx.pal["strong"], code)
         cx += w + gap
     return used
-
-
-def home_badge(c, ctx, x, y, font):
-    """The home city and whether this alert covers it: a lit house on the severity colour, or a dim house with
-    a check mark (home is clear). Returns width."""
-    name = getattr(ctx, "home_name", "Richmond").upper()
-    hh = font.h + 4
-    if home_hit(ctx):
-        w = font.width(name) + 18
-        c.FillRect(x, y, w, hh, Color(*ctx.sev))
-        draw_house(c, x + 6, y + hh // 2, True, ctx)
-        font.draw(c, x + 13, y + 2, (0, 0, 0), name)
-    else:
-        w = font.width(name) + 28
-        c.FillRect(x, y, w, hh, Color(*ctx.pal["panel"]))
-        draw_house(c, x + 6, y + hh // 2, False, ctx)
-        font.draw(c, x + 13, y + 2, ctx.pal["dim"], name)
-        c.BlitMask(px.mask("check", 8), x + w - 11, y + (hh - 8) // 2, Color(70, 200, 110))
-    return w
 
 
 # ------------------------------------------------------------------------------------------------ when
@@ -280,7 +284,9 @@ def countdown_ring(c, ctx, cx, cy, r, font, small, now=None):
         return
     box[ring] = _dim(ctx.sev, 0.22)
     box[ring & (ang <= frac)] = ctx.sev
-    t = remaining_text(ctx, now) or "—"
+    t = remaining_text(ctx, now) or "-"
+    if font.width(t) > 2 * r - 6:
+        font = small
     font.draw(c, cx - font.width(t) // 2, cy - font.h // 2 - 2, ctx.pal["strong"], t)
     lab = "LEFT"
     small.draw(c, cx - small.width(lab) // 2, cy + font.h // 2, ctx.pal["dim"], lab)
@@ -295,6 +301,10 @@ def timeline(c, ctx, x, y, w, font, now=None):
     frac = max(0.0, min(1.0, frac))
     a = ("ISSUED " + b["issued"]).upper() if b.get("issued") else ""
     z = ("UNTIL " + b["until"]).upper() if b.get("until") else ""
+    if font.width(a) + font.width(z) + 8 > w:          # no room for both: the end time matters more
+        a = ""
+    while z and font.width(z) > w:
+        z = z[:-1]
     font.draw(c, x, y, ctx.pal["dim"], a)
     font.draw(c, x + w - font.width(z), y, ctx.pal["strong"], z)
     by = y + font.line + 2
@@ -362,6 +372,8 @@ def amount_gauge(c, ctx, x, y, w, h, font, small):
         return False
     lo, hi, unit, smax, smin = a
     val = f"{lo:g}-{hi:g} {unit}" if lo != smin else f"up to {hi:g} {unit}"
+    if font.width(val) > w:
+        font = small
     font.draw(c, x, y, ctx.pal["amount"], val)
     by = y + font.line + 1
     bh = max(3, h - font.line - small.line - 2)

@@ -426,6 +426,19 @@ def _squeezed():
     if not _SQ:
         _SQ.append((FI("alert/u8g2_squeezed_regular_6.bdf"), FI("alert/u8g2_squeezed_bold_6.bdf")))
     return _SQ[0]
+_STEPS = []
+
+
+def _with_steps(ladder):
+    """The family's body sizes, then shared compact faces (10, 8 and 7 px, each with a real bold) below its
+    smallest — so a long alert steps down a size at a time instead of jumping, and always fits whole."""
+    if not _STEPS:
+        _STEPS.extend([(FI("alert/nokia-small.bdf"), FI("alert/nokia-small-bold.bdf")),
+                       (FI("alert/u8g2_squeezed_regular_7.bdf"), FI("alert/u8g2_squeezed_bold_7.bdf")), _squeezed()])
+    low = ladder[-1][0].h
+    return list(ladder) + [st for st in _STEPS if st[0].h < low]
+
+
 _DENSITY_ALIASES = {"max": "dense", "normal": "balanced", "large": "minimal"}
 
 
@@ -528,7 +541,7 @@ class AlertScreen:
                                       + [th, st], sort_keys=True, default=str).encode()).hexdigest()
         if key == self._plan_key:
             return self._plan
-        struct = STRUCT_IMPL.get(th["structure"]) or STRUCT_IMPL["command"]
+        struct = STRUCT_IMPL.get(th["structure"]) or STRUCT_IMPL["briefing"]
         wps = max(1.0, float(st.get("reading_wpm") or 200)) / 60.0
         min_hold = max(4.0, float(st.get("min_hold_sec") or 12))
         speed = max(0.25, float(st.get("reveal_speed") or 1.0))
@@ -547,6 +560,7 @@ class AlertScreen:
             ctx.pal = {k: (sev if v == "sev" else v) for k, v in pal.items() if k != "name"}
             ctx.pal["home_bg"] = sev
             ctx.area = "Metro Vancouver" if b["test"] else self.area()
+            ctx.index, ctx.count = ai, len(alerts)
             ctx.title_f = struct.title_font(ctx)
             b["_issued_ts"], b["_expires_ts"] = a.get("published"), a.get("expires")
             # density is a global choice (Dense / Balanced / Minimal) applied to whichever design is shown
@@ -560,11 +574,12 @@ class AlertScreen:
             boxes = struct.boxes(ctx)
             if density == "dense":
                 # smaller sizes first, ending in an extra-compact (real bold) face so more of the text stays
-                ladder = (fam["ladder"][1:] if len(fam["ladder"]) > 1 else list(fam["ladder"])) + [_squeezed()]
+                ladder = _with_steps(fam["ladder"][1:] if len(fam["ladder"]) > 1 else list(fam["ladder"]))
             elif density == "minimal":
                 ladder = [(fam["key"], fam["key"])] + list(fam["ladder"])
             else:
-                ladder = fam["ladder"]
+                # every size of the family, then a compact face: the whole message stays on screen
+                ladder = _with_steps(list(fam["ladder"]))
             chosen = None
             def with_area(ps, lvl):
                 out = []
@@ -741,7 +756,7 @@ class AlertScreen:
                 self._static = None
                 return "done"
             return None
-        struct = STRUCT_IMPL.get(th["structure"]) or STRUCT_IMPL["command"]
+        struct = STRUCT_IMPL.get(th["structure"]) or STRUCT_IMPL["briefing"]
         skey = (self._plan_key, i)
         if p >= 1.0 and self._static is not None and self._static[0] == skey:
             c.buf[:] = self._static[1]
