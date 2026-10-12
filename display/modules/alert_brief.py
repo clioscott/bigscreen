@@ -63,6 +63,8 @@ def spans(text):
     """[(chunk, highlighted)] with amounts highlighted."""
     out, pos = [], 0
     for m in AMOUNT.finditer(text):
+        if is_motion(text, m.start()):
+            continue
         if m.start() > pos:
             out.append((text[pos:m.start()], False))
         out.append((m.group(0), True))
@@ -85,9 +87,16 @@ def short_where(regions, limit=3):
     return s + (f" +{len(heads) - limit}" if len(heads) > limit else "")
 
 
+def is_motion(text, start):
+    """True if the number at ``start`` is a storm's speed of travel ("moving east at 30 km/h"), not an amount."""
+    return bool(re.search(r"\b(moving|travell?ing|speed)\b[^.]{0,24}$", text[max(0, start - 40):start], re.I))
+
+
 def key_amount(text):
-    m = AMOUNT.search(text or "")
-    return re.sub(r"\s+", " ", m.group(0)).strip() if m else ""
+    for m in AMOUNT.finditer(text or ""):
+        if not is_motion(text, m.start()):
+            return re.sub(r"\s+", " ", m.group(0)).strip()
+    return ""
 
 
 def _when(ts, fmt="%a %H:%M"):

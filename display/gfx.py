@@ -236,13 +236,11 @@ def _make_glyph(device_width, cur):
         return g
     m = np.zeros((h, device_width), dtype=bool)
     for y, xs in enumerate(rows):
-        # bdf-font.cc: bitmap[row] >>= x_offset. A negative shift converts to a huge size_t and
-        # empties the bitset, so such rows render blank on the real panel — keep that behaviour.
-        if x_off < 0:
-            continue
+        # bdf-font.cc shifts by x_offset and a negative shift empties the row, so rgbmatrix drew such
+        # glyphs (j in several Lucida faces) blank. v2 renders every pixel itself: draw them, clipped at 0.
         for x in xs:
             px = x + x_off
-            if px < device_width:          # DrawGlyph only scans x < device_width
+            if 0 <= px < device_width:     # DrawGlyph only scans x < device_width
                 m[y, px] = True
     g.mask = m if m.any() else None
     return g

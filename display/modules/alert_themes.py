@@ -123,10 +123,11 @@ FAMILIES = {
                               (A + "nokia-small.bdf", A + "nokia-small-bold.bdf", 1)]},
 }
 
-STRUCTURES = {"masthead": "Masthead", "ledger": "Ledger", "tape": "Ticker tape", "signboard": "Signboard", "dossier": "Dossier",
-              "console": "Console", "transit": "Transit line", "flipboard": "Flipboard", "poster": "Poster",
-              "validity": "Validity strip", "quad": "Four panels", "teletype": "Teletype bulletin", "scope": "Radar scope",
-              "stripes": "Hazard stripes"}
+STRUCTURES = {"command": "Command map", "headline": "Where-first headline", "headline_cols": "Where-first, two columns",
+              "dashboard": "Instrument dashboard", "storyboard": "Now · Expect · Do", "scene": "Animated scene",
+              "broadcast": "TV broadcast", "ladder": "Severity ladder", "countdown": "Countdown", "gazette": "Gazette",
+              "sign": "Overhead sign", "scope": "Radar scope", "split": "Split panel", "split_hazard": "Split, hazard colour",
+              "stack": "Fact stack", "teletype": "Teletype + region table"}
 BORDERS = {"chase": "Marching dashes", "pulse": "Slow pulse", "hazard": "Hazard tape", "double": "Double rule",
            "lights": "Chasing lights", "comet": "Comet", "corners": "Corner brackets", "glow": "Glow", "rails": "Chevron rails",
            "bevel": "Bevel", "notch": "Notched tech frame", "textloop": "Text loop", "scanbars": "Scan bars"}
@@ -135,62 +136,65 @@ REVEALS = {"type": "Typewriter", "lines": "Line by line", "wipe": "Wipe", "scan"
            "sweep": "Highlight sweep"}
 DENSITIES = {"dense": "Dense", "balanced": "Balanced", "minimal": "Minimal"}
 
-# (name, design, family, palette, border, reveal, header, upper, pulse) — curated, not generated
+# (name, design, family, palette, border, reveal, header, upper, pulse, opts) — curated, not generated.
+# opts: extent "metro" (Metro Vancouver) | "lm" (Lower Mainland incl. Howe Sound … Chilliwack); pages: text pages;
+# lit: overhead-sign lamp colour.
+M, LM = {"extent": "metro"}, {"extent": "lm"}
 _T = [
-    ("Bulletin", "masthead", "helvetica", "blackout", "pulse", "lines", "WEATHER ALERT", False, True),
-    ("Newsroom", "masthead", "crox", "graphite", "chase", "wipe", "ENVIRONMENT CANADA", False, False),
-    ("Night Desk", "masthead", "kakwa", "midnight", "glow", "fade", "WEATHER WARNING", False, True),
-    ("Ledger", "ledger", "typewriter", "graphite", "double", "type", "ALERT IN EFFECT", False, False),
-    ("Logbook", "ledger", "dina", "slate", "corners", "lines", "WEATHER ALERT", False, True),
-    ("Register", "ledger", "mplus", "violet", "comet", "cascade", "SEVERE WEATHER", False, False),
-    ("Wire", "tape", "fixed", "blackout", "rails", "sections", "WEATHER WARNING", True, True),
-    ("Crawl", "tape", "neep", "oxide", "chase", "wipe", "ALERT", True, False),
-    ("Ticker", "tape", "terminus", "cyanotype", "scanbars", "scan", "LIVE ALERT", True, True),
-    ("Overhead Sign", "signboard", "fixed", "sodium", "lights", "blinds", "ROAD WEATHER", True, False),
-    ("Gantry", "signboard", "neep", "signal", "lights", "decode", "WEATHER", True, True),
-    ("Matrix Sign", "signboard", "retro", "blackout", "corners", "blinds", "ALERT", True, False),
-    ("Case File", "dossier", "typewriter", "oxide", "double", "type", "CASE FILE", False, False),
-    ("Field Report", "dossier", "clean", "slate", "corners", "lines", "FIELD REPORT", False, True),
-    ("Docket", "dossier", "cherry", "violet", "bevel", "fade", "BULLETIN", False, False),
-    ("Control Room", "console", "terminus", "graphite", "notch", "scan", "STORM DESK", True, True),
-    ("Switchboard", "console", "gohu", "midnight", "bevel", "decode", "MONITOR", True, False),
-    ("Ops Panel", "console", "envy", "slate", "notch", "cascade", "OPERATIONS", False, True),
-    ("Route Map", "transit", "helvetica", "midnight", "pulse", "sections", "SERVICE ALERT", False, False),
-    ("Express", "transit", "crox", "blackout", "comet", "wipe", "WEATHER ALERT", False, True),
-    ("Local Line", "transit", "kakwa", "cyanotype", "glow", "lines", "NOTICE", False, False),
-    ("Departures", "flipboard", "fixed", "blackout", "chase", "decode", "WEATHER", True, False),
-    ("Split Flap", "flipboard", "terminus", "sodium", "double", "decode", "ALERT", True, True),
-    ("Arrivals Hall", "flipboard", "typewriter", "graphite", "lights", "decode", "NOTICE", True, False),
-    ("Poster", "poster", "crox", "ember", "glow", "fade", "WEATHER WARNING", False, True),
-    ("Billboard", "poster", "profont", "violet", "pulse", "sweep", "ALERT", False, False),
-    ("Placard", "poster", "helvetica", "signal", "hazard", "wipe", "WARNING", True, True),
-    ("Countdown", "validity", "mplus", "slate", "notch", "lines", "IN EFFECT", False, True),
-    ("Hourglass", "validity", "dina", "oxide", "comet", "fade", "VALID UNTIL", False, False),
-    ("Window", "validity", "clean", "midnight", "corners", "sections", "ALERT WINDOW", False, True),
-    ("Four Square", "quad", "helvetica", "graphite", "double", "sections", "WEATHER ALERT", False, False),
-    ("Grid Room", "quad", "terminus", "phosphor", "scanbars", "cascade", "STATUS", True, True),
-    ("Quadrant", "quad", "kakwa", "violet", "bevel", "blinds", "ADVISORY", False, False),
-    ("Teletype", "teletype", "fixed", "phosphor", "scanbars", "type", "WWCN", True, False),
-    ("Telex", "teletype", "typewriter", "sodium", "double", "type", "TELEX", True, True),
-    ("Mainframe", "teletype", "envy", "phosphor", "notch", "decode", "MAINFRAME", True, False),
-    ("Radar Room", "scope", "terminus", "phosphor", "corners", "scan", "RADAR", True, True),
-    ("Sweep", "scope", "neep", "cyanotype", "glow", "sweep", "SCOPE", True, False),
-    ("Sonar", "scope", "gohu", "midnight", "comet", "fade", "TRACKING", False, True),
-    ("Hazard Tape", "stripes", "crox", "blackout", "hazard", "wipe", "CAUTION", True, True),
-    ("Caution", "stripes", "spectrum", "signal", "hazard", "blinds", "CAUTION", True, False),
-    ("Arcade", "stripes", "retro", "violet", "lights", "decode", "ALERT", True, False),
-    ("Beacon", "masthead", "neep", "ember", "lights", "cascade", "BEACON", True, True),
-    ("Pocket Pager", "ledger", "spectrum", "phosphor", "corners", "type", "PAGE", True, False),
-    ("Night Bus", "transit", "gohu", "violet", "chase", "sections", "NIGHT SERVICE", False, True),
-    ("Weather Radio", "console", "profont", "sodium", "pulse", "lines", "WEATHERADIO", True, False),
-    ("Storm Poster", "poster", "kakwa", "cyanotype", "glow", "sweep", "STORM WATCH", False, True),
-    ("Afterglow", "validity", "cherry", "ember", "glow", "fade", "UNTIL", False, False),
+    # map-led
+    ("Command", "command", "helvetica", "blackout", "pulse", "lines", "WEATHER ALERT", False, True, M),
+    ("Ops Centre", "command", "terminus", "graphite", "notch", "scan", "STORM DESK", True, True, M),
+    ("Region Watch", "command", "kakwa", "midnight", "glow", "fade", "WEATHER ALERT", False, False, LM),
+    ("Coastline", "command", "dina", "cyanotype", "corners", "sections", "COASTAL WEATHER", False, True, LM),
+    ("Situation Room", "command", "gohu", "slate", "bevel", "decode", "SITUATION", True, False, M),
+    # location-first
+    ("Front Page", "headline", "crox", "blackout", "double", "wipe", "WEATHER ALERT", False, True, M),
+    ("Neighbourhood", "headline", "helvetica", "midnight", "chase", "lines", "LOCAL ALERT", False, False, M),
+    ("Lower Mainland", "headline", "mplus", "slate", "comet", "cascade", "LOWER MAINLAND", False, True, LM),
+    ("Two Column", "headline_cols", "clean", "graphite", "corners", "fade", "WEATHER ALERT", False, False, M),
+    ("Region Brief", "headline_cols", "kakwa", "violet", "glow", "sweep", "BRIEFING", False, True, LM),
+    # instruments
+    ("Dashboard", "dashboard", "terminus", "blackout", "notch", "cascade", "WEATHER", True, True, M),
+    ("Cockpit", "dashboard", "envy", "midnight", "bevel", "scan", "INSTRUMENTS", True, False, M),
+    ("Gauges", "dashboard", "profont", "slate", "corners", "sections", "STATUS", False, True, LM),
+    ("Fact Stack", "stack", "helvetica", "graphite", "double", "sections", "WEATHER ALERT", False, False, M),
+    ("Index Cards", "stack", "cherry", "violet", "corners", "cascade", "ALERT", False, True, M),
+    ("Field Notes", "stack", "dina", "oxide", "comet", "lines", "FIELD NOTES", False, False, M),
+    # what to do
+    ("Storyboard", "storyboard", "helvetica", "blackout", "pulse", "sections", "WEATHER ALERT", False, True, M),
+    ("Action Plan", "storyboard", "clean", "slate", "double", "cascade", "ACTION PLAN", False, False, M),
+    ("Checklist", "storyboard", "kakwa", "cyanotype", "corners", "lines", "CHECKLIST", False, True, M),
+    # animated weather
+    ("Weather Window", "scene", "crox", "midnight", "glow", "fade", "WEATHER ALERT", False, True, M),
+    ("Storm Watch", "scene", "neep", "blackout", "lights", "wipe", "STORM WATCH", True, False, M),
+    ("Skylight", "scene", "mplus", "cyanotype", "pulse", "sections", "SKY", False, True, M),
+    ("Broadcast", "broadcast", "helvetica", "blackout", "rails", "wipe", "WEATHER", False, True, M),
+    ("News at Six", "broadcast", "crox", "midnight", "chase", "sections", "BREAKING WEATHER", False, False, LM),
+    ("Radar Room", "scope", "terminus", "phosphor", "corners", "scan", "RADAR", True, True, M),
+    ("Sonar", "scope", "gohu", "cyanotype", "comet", "fade", "TRACKING", False, False, LM),
+    # severity and time
+    ("Severity Scale", "ladder", "helvetica", "graphite", "double", "lines", "WEATHER ALERT", False, True, M),
+    ("Threat Level", "ladder", "fixed", "ember", "hazard", "blinds", "THREAT LEVEL", True, False, M),
+    ("Countdown", "countdown", "mplus", "slate", "notch", "lines", "IN EFFECT", False, True, M),
+    ("Hourglass", "countdown", "kakwa", "oxide", "glow", "fade", "VALID UNTIL", False, False, M),
+    # bold graphic
+    ("Colour Block", "split", "helvetica", "blackout", "pulse", "wipe", "ALERT", False, True, M),
+    ("Poster", "split", "crox", "ember", "glow", "fade", "WARNING", True, False, M),
+    ("Weather Colour", "split_hazard", "kakwa", "graphite", "double", "sections", "WEATHER", False, True, M),
+    ("Paint Chip", "split_hazard", "cherry", "blackout", "corners", "blinds", "WEATHER", False, False, M),
+    # vernacular
+    ("Gazette", "gazette", "typewriter", "graphite", "double", "type", "THE WEATHER GAZETTE", False, False, LM),
+    ("Morning Edition", "gazette", "crox", "oxide", "corners", "wipe", "MORNING EDITION", False, True, M),
+    ("Overhead Sign", "sign", "fixed", "blackout", "lights", "blinds", "ROAD WEATHER", True, False, dict(lit=(255, 176, 0))),
+    ("Gantry", "sign", "neep", "signal", "lights", "decode", "ROAD WEATHER", True, True, dict(lit=(255, 236, 60))),
+    ("Teletype", "teletype", "fixed", "phosphor", "scanbars", "type", "WWCN", True, False, M),
+    ("Telex", "teletype", "typewriter", "sodium", "double", "type", "TELEX", True, True, M),
 ]
 THEMES = {}
-for i, (name, design, fam, pal, border, rev, header, upper, pulse) in enumerate(_T):
+for i, (name, design, fam, pal, border, rev, header, upper, pulse, opts) in enumerate(_T):
     tid = f"t{i + 1:02d}"
     THEMES[tid] = {"id": tid, "name": name, "structure": design, "family": fam, "palette": pal, "border": border,
-                   "reveal": rev, "header": header, "upper": upper, "pulse": pulse,
+                   "reveal": rev, "header": header, "upper": upper, "pulse": pulse, "opts": dict(opts),
                    "description": f"{STRUCTURES[design]} · {FAMILIES[fam]['name']} · {PALETTES[pal]['name']} · "
                                   f"{BORDERS[border]} · {REVEALS[rev]}"}
 

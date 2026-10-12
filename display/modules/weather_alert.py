@@ -528,7 +528,7 @@ class AlertScreen:
                                       + [th, st], sort_keys=True, default=str).encode()).hexdigest()
         if key == self._plan_key:
             return self._plan
-        struct = STRUCT_IMPL.get(th["structure"]) or STRUCT_IMPL["masthead"]
+        struct = STRUCT_IMPL.get(th["structure"]) or STRUCT_IMPL["command"]
         wps = max(1.0, float(st.get("reading_wpm") or 200)) / 60.0
         min_hold = max(4.0, float(st.get("min_hold_sec") or 12))
         speed = max(0.25, float(st.get("reveal_speed") or 1.0))
@@ -741,13 +741,16 @@ class AlertScreen:
                 self._static = None
                 return "done"
             return None
-        struct = STRUCT_IMPL.get(th["structure"]) or STRUCT_IMPL["masthead"]
+        struct = STRUCT_IMPL.get(th["structure"]) or STRUCT_IMPL["command"]
         skey = (self._plan_key, i)
         if p >= 1.0 and self._static is not None and self._static[0] == skey:
             c.buf[:] = self._static[1]
         else:
             c.FillRect(0, 0, W, H, Color(*ctx.pal["bg"]))
-            reveal(c, ctx, seg, th["reveal"], p, t)
+            if getattr(struct, "paged", False):                # later pages are the design's dynamic layer
+                reveal(c, ctx, dict(seg, lines=[ln for ln in seg["lines"] if ln.get("page", 0) == 0]), th["reveal"], p, t)
+            else:
+                reveal(c, ctx, seg, th["reveal"], p, t)
             struct.chrome(c, ctx)                    # after the text, so panels clip anything sliding in
             if p >= 1.0:
                 self._static = (skey, c.buf.copy())
@@ -917,8 +920,8 @@ def U(ctx, s):
 
 
 def title_text(ctx):
-    near = "" if ctx.home or not getattr(ctx, "home_name", "") else "NEARBY · "
-    return ("TEST - " if ctx.b["test"] else "") + near + ctx.b["title"]
+    """The alert's name. Whether it covers home is shown graphically (home chip / house), not in the title."""
+    return ("TEST - " if ctx.b["test"] else "") + ctx.b["title"]
 
 
 def chip(c, x, y, text, f, bg, fg, pad=3):
