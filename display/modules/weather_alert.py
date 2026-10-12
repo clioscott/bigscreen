@@ -989,10 +989,13 @@ def draw_home_text(c, ctx, f, x, y, text, col):
 
 
 def area_line(ctx, f, maxw, label_only_ok=True):
-    """The affected regions as one line in the wall's naming: "Richmond + Vancouver + Surrey" (or "Metro
-    Vancouver" when all five fire), falling back to the short codes "RICHMOND · VAN · SURREY". Never '+N'."""
+    """The affected regions as one line: ECCC's full wording when a single region is affected and it fits
+    ("Metro Vancouver - southwest including Richmond and Delta"), else the wall's names ("Richmond + Vancouver
+    + Surrey", or "Metro Vancouver" when all five fire), else the short codes ("RICHMOND · VAN"). Never '+N'."""
     lv = _levels(ctx)
-    tries = [" + ".join(lv[0])] + ([" · ".join(lv[3])] if label_only_ok else [])
+    regions = ctx.b.get("regions") or []
+    full = [regions[0]] if len(regions) == 1 else []
+    tries = full + [" + ".join(lv[0])] + ([" · ".join(lv[3])] if label_only_ok else [])
     for t in tries:
         t = U(ctx, t)
         if f.width(t) <= maxw:
