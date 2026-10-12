@@ -312,28 +312,57 @@ HAZARD_INFO = [
 ]
 
 
-INCLUDE_CITIES = ("Vancouver", "Richmond", "Surrey")      # named after the zones when an alert covers them
+# The wall's own names for ECCC's alert regions (chosen by the user, 2026-10): (name, short code), in display order.
+# ECCC wording researched in RESEARCH.md; both eras are covered (one "Metro Vancouver" region until 2023-03,
+# five sub-regions since), plus ECCC's NW/NE/SE/SW short forms and the coastal-flooding zones.
+REGIONS = [("Richmond", "RICHMOND"), ("Vancouver", "VAN"), ("North Shore", "NORTH VAN"), ("Tri-Cities", "TRI-CITIES"),
+           ("Surrey", "SURREY"), ("Howe Sound", "HOWE SOUND"), ("Sea to Sky", "SEA2SKY"), ("Abbotsford", "ABBY"),
+           ("Chilliwack", "CHWK"), ("Sunshine Coast", "SUN COAST")]
+METRO = ("Metro Vancouver", "METRO")
+_METRO_PARTS = {"Richmond", "Vancouver", "North Shore", "Tri-Cities", "Surrey"}
+_REGION_RULES = [   # (ECCC name prefix / text, lower case) → our region names
+    ("metro vancouver - central", ["Vancouver"]), ("metro vancouver - north shore", ["North Shore"]),
+    ("metro vancouver - northeast", ["Tri-Cities"]), ("metro vancouver - southeast", ["Surrey"]),
+    ("metro vancouver - southwest", ["Richmond"]), ("metro vancouver - nw", ["North Shore"]), ("metro vancouver - ne", ["Tri-Cities"]),
+    ("metro vancouver - se", ["Surrey"]), ("metro vancouver - sw", ["Richmond"]),
+    ("coastline of metro vancouver incl. west vancouver", ["North Shore"]), ("coastline of metro vancouver incl. vancouver", ["Vancouver"]),
+    ("boundary bay", ["Richmond"]), ("mud and semiahmoo bay", ["Surrey"]),
+    ("howe sound", ["Howe Sound"]), ("shoreline of howe sound", ["Howe Sound"]),
+    ("sea to sky", ["Sea to Sky"]), ("whistler", ["Sea to Sky"]),
+    ("fraser valley - west", ["Abbotsford"]), ("central fraser valley", ["Abbotsford"]),
+    ("fraser valley - central", ["Chilliwack"]), ("fraser valley - east", ["Chilliwack"]), ("eastern fraser valley", ["Chilliwack"]),
+    ("sunshine coast", ["Sunshine Coast"]),
+]
 
 
-def compact_area(regions):
-    """One short item per area: 'Metro Vancouver (All) including Vancouver, Richmond, Surrey',
-    'Metro Vancouver (Central + North Shore) including Vancouver', 'Howe Sound'."""
-    zs = zones(regions)
+def region_labels(regions, home="Richmond"):
+    """ECCC region strings → [(name, short)] in the wall's naming: the home region first, then display order;
+    all five Metro Vancouver regions (or the pre-2023 single region) become "Metro Vancouver"."""
+    names, other = set(), []
+    for r in regions or []:
+        low = " ".join(r.lower().split())
+        if low == "metro vancouver":
+            names |= _METRO_PARTS
+            continue
+        if low == "fraser valley":
+            names |= {"Abbotsford", "Chilliwack"}
+            continue
+        hit = next((ours for key, ours in _REGION_RULES if low.startswith(key)), None)
+        if hit:
+            names.update(hit)
+        elif r not in other:
+            other.append(r)                                    # anything unknown keeps ECCC's own name
     out = []
-    for h in dict.fromkeys(z["head"] for z in zs):
-        mine = [z for z in zs if z["head"] == h]
-        parts = [z["part"] for z in mine if z["part"]]
-        if len(mine) >= 4:
-            name = f"{h} (All)"
-        elif parts:
-            name = f"{h} ({' + '.join(parts)})"
-        else:
-            name = h
-        found = [c for c in INCLUDE_CITIES if any(x == c for z in mine for x in z["cities"])]
-        out.append(name + (" including " + ", ".join(found) if found else ""))
-    return out
+    if _METRO_PARTS <= names:                                  # all five: one name (it includes the home region)
+        out.append(METRO)
+        names -= _METRO_PARTS
+    ordered = [rg for rg in REGIONS if rg[0] in names]
+    ordered.sort(key=lambda rg: rg[0] != home)                # otherwise the wall's own region leads
+    return out + ordered + [(o, o.upper()) for o in other]
 
 
-def area_levels(regions):              # noqa: F811 — the compact form replaces the city-by-city levels
-    items = compact_area(regions)
-    return [items, items, items, items]
+def area_levels(regions):              # noqa: F811 — the region names replace the city-by-city levels
+    """[names, names, names, short codes] — e.g. ["Richmond", "Vancouver"] / ["RICHMOND", "VAN"]."""
+    labels = region_labels(regions)
+    names = [n for n, _ in labels]
+    return [names, names, names, [s for _, s in labels]]

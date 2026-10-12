@@ -542,8 +542,8 @@ class AlertScreen:
             ctx.th, ctx.b, ctx.sev, ctx.upper, ctx.fam = th, b, sev, th["upper"], fam
             ctx.home_name = self.home
             ctx.home = alert_brief.mentions(a, self.home)
-            ctx.header = (f"INCLUDES {self.home.upper()}" if ctx.home else f"NEARBY · NOT {self.home.upper()}") \
-                if self.home else th["header"]
+            codes = [code for _, code in alert_brief.region_labels(a.get("regions") or [], self.home)]
+            ctx.header = " · ".join(codes) if codes else th["header"]          # e.g. "RICHMOND · VAN · SURREY"
             ctx.pal = {k: (sev if v == "sev" else v) for k, v in pal.items() if k != "name"}
             ctx.pal["home_bg"] = sev
             ctx.area = "Metro Vancouver" if b["test"] else self.area()
@@ -571,7 +571,7 @@ class AlertScreen:
                 for p in ps:
                     if p["style"] == "regions":
                         items = (b.get("areas") or [[]] * 4)[lvl] or [b["where"] or ctx.area]
-                        p = dict(p, text=(" · " if lvl == 0 else "; ").join(items))
+                        p = dict(p, text=" + ".join(items))
                     out.append(p)
                 return out
             variants = [with_area(paras, 0), with_area(paras, 1), with_area(paras, 2),
@@ -989,10 +989,10 @@ def draw_home_text(c, ctx, f, x, y, text, col):
 
 
 def area_line(ctx, f, maxw, label_only_ok=True):
-    """The affected area as one line: every city if it fits, else zones with their key cities, else merged
-    zones with key cities, else (strips only) zone names. Never '+N'."""
+    """The affected regions as one line in the wall's naming: "Richmond + Vancouver + Surrey" (or "Metro
+    Vancouver" when all five fire), falling back to the short codes "RICHMOND · VAN · SURREY". Never '+N'."""
     lv = _levels(ctx)
-    tries = [", ".join(lv[0]), "; ".join(lv[1]), "; ".join(lv[2])] + (["; ".join(lv[3])] if label_only_ok else [])
+    tries = [" + ".join(lv[0])] + ([" · ".join(lv[3])] if label_only_ok else [])
     for t in tries:
         t = U(ctx, t)
         if f.width(t) <= maxw:

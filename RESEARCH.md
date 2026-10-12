@@ -202,3 +202,24 @@ later optimisation (e.g. trigger radar pulls the moment a new DPQPE frame is ann
 - Headlines: Reddit, 15 subreddits, 30 min.
 - Weather: Environment Canada citypage XML + SWOB obs (Vancouver / CYVR), 15 min — working.
 - Radar/satellite: built on server from geodata/tiles (`build_radar_anim.py`, `basemap_presets.json`).
+
+## ECCC alert location strings for the Lower Mainland (researched 2026-10-12)
+
+Sources: ~2,300 Internet Archive snapshots of weather.gc.ca/warnings (2021-01 → 2023-03), 775 snapshots of ECCC BC
+RSS feeds (2023-01 → 2026-08), every CAP file from the Vancouver office on the HPFX mirror (2026-08-22 → 2026-10-12),
+and the MSC Geography Package 6.15 (alert region names + CAP-CP census subdivisions for the city lists).
+
+Until March 2023 Metro Vancouver was one alert region ("Metro Vancouver"); from April 2023 it is five:
+- `Metro Vancouver - central including the City of Vancouver Burnaby and New Westminster`
+- `Metro Vancouver - North Shore including West Vancouver and North Vancouver`
+- `Metro Vancouver - northeast including Coquitlam and Maple Ridge`
+- `Metro Vancouver - southeast including Surrey and Langley`
+- `Metro Vancouver - southwest including Richmond and Delta`
+Neighbours: `Howe Sound`, `Whistler`, `Sea to Sky - Squamish to Whistler`, `Fraser Valley - west including Abbotsford`,
+`Fraser Valley - central including Chilliwack`, `Fraser Valley - east including Hope`, `Sunshine Coast - Gibsons to Earls Cove`,
+`Sunshine Coast - Saltery Bay to Powell River`; air-quality statements use `Central Fraser Valley`, `Eastern Fraser Valley`,
+`Manning - Skagit Valley`. Pre-2023 neighbours: `Fraser Valley`, `Howe Sound`, `Sunshine Coast`, `Whistler`.
+Defined but not seen firing: `Metro Vancouver - NW/NE/SE/SW`, and coastal-flooding zones `Coastline of Metro Vancouver incl.
+Vancouver and Musqueam FN`, `… incl. West Vancouver and Bowen Island`, `Boundary Bay including Beach Grove`, `Mud and Semiahmoo
+Bay: South Surrey - White Rock - Semiahmoo FN`, `Shoreline of Howe Sound`. Note Bowen Island and Lions Bay (Metro Vancouver
+municipalities) fall in the Howe Sound alert region, and UBC/UEL (Electoral Area A) in the North Shore one.
