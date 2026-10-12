@@ -99,7 +99,9 @@ def alerts_now():
     from display.modules.alert_themes import BORDERS, FAMILIES, PALETTES, REVEALS, STRUCTURES
     from display.modules.weather_alert import THEME_LIST
     data = read_json(paths.DATA_DIR / "alerts.json", {}) or {}
-    fonts = sorted(p.name for p in (Path(ASSETS_DIR) / "fonts" / "alert").glob("*.bdf"))
+    status = ((config.load().get("hub") or {}).get("fonts") or {}).get("status") or {}
+    fonts = sorted(p for p, v in status.items() if v == "approved" and not p.split("/")[-1].startswith("jp-")
+                   and (Path(ASSETS_DIR) / "fonts" / p).exists())       # override pickers: approved Latin fonts only
     hexc = lambda c: "#%02x%02x%02x" % c if isinstance(c, tuple) else None
     return {**data, "themes": THEME_LIST, "structures": STRUCTURES, "borders": BORDERS, "reveals": REVEALS,
             "palettes": {k: {"name": v["name"], "swatch": [hexc(v["bg"]), hexc(v["strong"]), hexc(v["amount"]), hexc(v["advice"])]}
@@ -108,7 +110,7 @@ def alerts_now():
             "hazards": [{"id": h, "label": l, "hint": e} for h, l, e in __import__("display.modules.alert_brief", fromlist=["x"]).HAZARD_INFO],
             "samples": {k: {"name": v["name"], "type": v["type"]} for k, v in
                         __import__("display.modules.alert_samples", fromlist=["x"]).SAMPLES.items()},
-            "fonts": ["alert/" + f for f in fonts]}
+            "fonts": fonts}
 
 
 def _alert_settings(s: str):
@@ -200,7 +202,7 @@ def _quake_obs(name, sc, sec):
 
 
 @app.get("/api/quake/preview.png")
-def quake_preview(name: str = "tokyo_bay", at: float = 20, scale: int = 2, theme: str = "monitor"):
+def quake_preview(name: str = "tokyo_bay", at: float = 20, scale: int = 2, theme: str = "kmoni"):
     """A frame of the EEW screen for a test scenario ``at`` seconds after origin, in a theme."""
     import time as _t
     from hub import quake

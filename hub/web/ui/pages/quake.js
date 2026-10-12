@@ -6,12 +6,12 @@ const TOKYO_CLASSES = ["1", "2", "3", "4", "5-"].map((v) => ({ value: v, label: 
 
 export const Quake = {
   setup() {
-    seed(["modules", "japan_eew"], { enabled: false, min_class: "4", tokyo_class: "3", forecasts: true, show_training: false, duration_sec: 150, theme: "monitor" });
+    seed(["modules", "japan_eew"], { enabled: false, min_class: "4", tokyo_class: "3", forecasts: true, show_training: false, duration_sec: 150, theme: "kmoni" });
     const q = computed(() => store.draft.modules.japan_eew);
     const st = ref({ connected: {}, last_message: {}, events: [], errors: [], scenarios: {}, themes: {} });
     const view = ref(null);                       // theme shown in the preview (defaults to the saved one)
     const touring = ref(false);
-    const shown = computed(() => view.value || q.value.theme || "monitor");
+    const shown = computed(() => view.value || q.value.theme || "kmoni");
     const load = async () => { try { st.value = await api("/api/quake"); } catch (e) { /* hub restarting */ } };
     const scenario = ref("tokyo_bay");
     const t = ref(0);
@@ -70,9 +70,9 @@ export const Quake = {
             <button class="btn sm" @click="testWall('tour')"><Icon name="MonitorPlay" :size="13"/>Tour all on the wall</button></div>
           <div class="list">
             <div class="list-row" v-for="(th, id) in st.themes" :key="id" style="cursor:pointer" :style="shown === id ? {background: 'var(--accent-soft, rgba(255,255,255,.06))'} : {}" @click="pick(id)">
-              <span class="dot" :class="(q.theme || 'monitor') === id ? 'ok' : ''"></span>
+              <span class="dot" :class="(q.theme || 'kmoni') === id ? 'ok' : ''"></span>
               <span style="flex:1"><b>{{ th.label }}</b> <span class="faint" style="font-size:12px">— {{ th.hint }}</span><br><span class="faint mono" style="font-size:11px">{{ th.type }}</span></span>
-              <span class="pill" v-if="(q.theme || 'monitor') === id">in use</span>
+              <span class="pill" v-if="(q.theme || 'kmoni') === id">in use</span>
             </div>
           </div>
           <div class="card-body faint" style="font-size:12.5px">Click a theme to preview it and make it the one used for real earthquakes (Save to keep it). "Test on the wall" plays the theme in the preview without saving.</div>

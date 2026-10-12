@@ -20,3 +20,9 @@ Bitmap (BDF) fonts used by the alert and EEW screens. All are freely redistribut
   - JIS X 0213 Jiskan16 and K14 (jp-jiskan16, jp-k14): public domain (Imamura et al., Kanji Fonts JIS X 0213).
   - GNU Unifont (jp-unifont, trimmed to ASCII, Latin-1, kana, CJK symbols and JIS kanji): GPLv2+ with font
     embedding exception / SIL OFL 1.1.
+
+# Icons (assets/icons/pixel_icons.json)
+
+- 24 px: pixelarticons by Gerrit Halfmann (MIT), rasterised exactly from their 24-px grid SVGs; the rain,
+  thunder, freezing-rain, fog and tornado icons are composites drawn on the same grid for BigScreen.
+- 8 / 16 px: Open Iconic (MIT / OFL), from the u8g2 icon fonts.

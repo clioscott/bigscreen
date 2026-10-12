@@ -175,7 +175,7 @@ export const Alerts = {
     };
     const when = (ts) => (ts ? new Date(ts * 1000).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "");
     const typeColour = (k) => TYPES.find((x) => x.id === k)?.colour || "#6e7896";
-    const fontName = (f) => f.replace("alert/", "").replace(".bdf", "");
+    const fontName = (f) => f.replace(/^(alert|candidates)\//, "").replace(".bdf", "");
     // animated option tiles: the current theme with one border (or reveal) swapped in
     const tileT = ref(0);
     const optImg = (over, at) => `/api/alerts/preview/${a.value.theme || "t01"}.png?at=${at.toFixed(2)}&scale=1&s=${encodeURIComponent(JSON.stringify({ ...look.value, ...over }))}`;
@@ -332,9 +332,8 @@ export const Alerts = {
               <option v-for="o in opts(cat.structures)" :key="o.value" :value="o.value">{{ o.label }}</option></select></Field>
             <Field label="Font family"><select class="input" :value="a.family || ''" @change="setOpt('family', $event.target.value)">
               <option v-for="o in opts(cat.families)" :key="o.value" :value="o.value">{{ o.label }}</option></select></Field>
-            <Field label="Title font"><div class="row nowrap"><select class="input" :value="a.title_font || ''" @change="setOpt('title_font', $event.target.value)">
-              <option value="">Family default</option><option v-for="f in cat.fonts" :key="f" :value="f">{{ fontName(f) }}</option></select>
-              <Stepper v-if="a.title_font" :modelValue="a.title_scale || 1" @update:modelValue="v => a.title_scale = v" :min="1" :max="4" unit="×"/></div></Field>
+            <Field label="Title font" hint="Approved fonts, at their native size"><select class="input" :value="a.title_font || ''" @change="setOpt('title_font', $event.target.value)">
+              <option value="">Family default</option><option v-for="f in cat.fonts" :key="f" :value="f">{{ fontName(f) }}</option></select></Field>
             <Field label="Body font" hint="Tried first; the family's sizes are the fallback"><select class="input" :value="a.body_font || ''" @change="setOpt('body_font', $event.target.value)">
               <option value="">Family default</option><option v-for="f in cat.fonts" :key="f" :value="f">{{ fontName(f) }}</option></select></Field>
           </div>
