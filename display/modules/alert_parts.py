@@ -23,16 +23,6 @@ def _mix(a, b, k):
     return tuple(int(x + (y - x) * k) for x, y in zip(a, b))
 
 
-HAZARD_COLOURS = {"rain": (40, 120, 255), "snow": (215, 235, 255), "freezing": (175, 95, 255), "wind": (0, 215, 195),
-                  "thunder": (255, 215, 0), "tornado": (255, 0, 185), "flood": (0, 80, 255), "heat": (255, 110, 0),
-                  "cold": (120, 200, 255), "frost": (150, 255, 255), "fog": (175, 175, 180), "smoke": (195, 125, 60),
-                  "hail": (255, 215, 0), "general": (255, 190, 60)}
-
-
-def hazard_colour(ctx):
-    return HAZARD_COLOURS.get(ctx.b["hazard"], ctx.sev)
-
-
 # ------------------------------------------------------------------------------------------------ where
 METRO_PARTS = ("Richmond", "Vancouver", "North Shore", "Tri-Cities", "Surrey")
 CODES = dict(alert_brief.REGIONS)
@@ -97,11 +87,12 @@ def cart_size(font, extent="lm", gap=1):
 
 def cartogram(c, ctx, x, y, font, extent="lm", w=None, h=None, gap=1):
     """The regions as a geographic grid of labelled tiles: affected tiles filled in the hazard colour, others
-    outlined; the home region in a lighter tint (filled) or a warm outline (clear). Labels shorten to fit."""
+    outlined; the home region in a lighter tint (filled) or a warm outline (clear). Labels shorten to fit.
+    Affected tiles take the alert level's colour (warning red, watch orange, advisory yellow, statement blue)."""
     nw, nh = cart_size(font, extent, gap)
     w, h = w or nw, h or nh
     hit = affected(ctx)
-    fill = hazard_colour(ctx)
+    fill = ctx.sev
     home = getattr(ctx, "home_name", "Richmond")
     for name, (tx, ty, tw, th) in tile_rects(extent, x, y, w, h, gap).items():
         on, mine = name in hit, name == home

@@ -14,6 +14,8 @@ from __future__ import annotations
 
 SEVERITY = {"warning": (255, 30, 30), "watch": (255, 140, 0), "advisory": (255, 210, 0), "statement": (120, 150, 255)}
 
+# Every accent ("sev") is the alert level's colour, so a watch is orange and a statement blue whatever the theme;
+# "tint" palettes also take their ground from it (bg, panel as fractions of the level colour).
 PALETTES = {   # text roles: strong (summary), text (details), impact, advice, amount, dim, label; panel = raised surface
     "blackout":  {"name": "Blackout", "bg": (0, 0, 0), "panel": (18, 18, 22), "strong": (255, 255, 255), "text": (196, 198, 206),
                   "impact": (255, 168, 64), "advice": (96, 226, 255), "amount": (255, 228, 0), "dim": (118, 120, 132),
@@ -21,21 +23,21 @@ PALETTES = {   # text roles: strong (summary), text (details), impact, advice, a
     "midnight":  {"name": "Midnight", "bg": (0, 4, 20), "panel": (4, 16, 46), "strong": (236, 244, 255), "text": (164, 186, 226),
                   "impact": (255, 188, 92), "advice": (118, 255, 204), "amount": (255, 222, 64), "dim": (88, 108, 158),
                   "label": "sev", "border": "sev", "icon": (236, 244, 255)},
-    "oxide":     {"name": "Oxide", "bg": (12, 2, 0), "panel": (40, 10, 4), "strong": (255, 236, 222), "text": (222, 170, 150),
+    "oxide":     {"name": "Oxide (level-tinted)", "tint": (0.05, 0.16), "bg": (12, 2, 0), "panel": (40, 10, 4), "strong": (255, 236, 222), "text": (222, 170, 150),
                   "impact": (255, 150, 60), "advice": (255, 224, 128), "amount": (255, 255, 255), "dim": (150, 92, 76),
-                  "label": (255, 92, 48), "border": "sev", "icon": (255, 226, 210)},
+                  "label": "sev", "border": "sev", "icon": (255, 226, 210)},
     "graphite":  {"name": "Graphite", "bg": (9, 10, 12), "panel": (28, 30, 34), "strong": (250, 250, 250), "text": (184, 188, 196),
                   "impact": (255, 146, 92), "advice": (148, 216, 255), "amount": (255, 210, 72), "dim": (108, 112, 122),
                   "label": "sev", "border": "sev", "icon": (232, 234, 240)},
     "sodium":    {"name": "Sodium lamp", "bg": (6, 3, 0), "panel": (34, 18, 0), "strong": (255, 196, 96), "text": (214, 150, 60),
                   "impact": (255, 120, 40), "advice": (255, 232, 170), "amount": (255, 255, 236), "dim": (132, 84, 28),
-                  "label": (255, 168, 40), "border": "sev", "icon": (255, 196, 96)},
+                  "label": "sev", "border": "sev", "icon": (255, 196, 96)},
     "phosphor":  {"name": "Phosphor", "bg": (0, 5, 2), "panel": (0, 22, 8), "strong": (132, 255, 150), "text": (66, 204, 96),
                   "impact": (220, 255, 120), "advice": (186, 255, 226), "amount": (255, 255, 255), "dim": (32, 118, 52),
-                  "label": (96, 255, 128), "border": "sev", "icon": (132, 255, 150)},
+                  "label": "sev", "border": "sev", "icon": (132, 255, 150)},
     "cyanotype": {"name": "Cyanotype", "bg": (0, 8, 22), "panel": (0, 30, 62), "strong": (220, 248, 255), "text": (128, 196, 232),
                   "impact": (255, 196, 110), "advice": (255, 255, 255), "amount": (120, 255, 255), "dim": (60, 116, 160),
-                  "label": (90, 220, 255), "border": "sev", "icon": (180, 240, 255)},
+                  "label": "sev", "border": "sev", "icon": (180, 240, 255)},
     "violet":    {"name": "Violet hour", "bg": (8, 0, 14), "panel": (30, 8, 46), "strong": (250, 238, 255), "text": (196, 168, 222),
                   "impact": (255, 162, 126), "advice": (136, 232, 255), "amount": (255, 218, 96), "dim": (122, 94, 152),
                   "label": "sev", "border": "sev", "icon": (250, 238, 255)},
@@ -44,8 +46,8 @@ PALETTES = {   # text roles: strong (summary), text (details), impact, advice, a
                   "label": "sev", "border": "sev", "icon": (236, 246, 252)},
     "signal":    {"name": "Signal yellow", "bg": (0, 0, 0), "panel": (26, 24, 0), "strong": (255, 236, 0), "text": (228, 228, 228),
                   "impact": (255, 150, 0), "advice": (255, 255, 255), "amount": (255, 236, 0), "dim": (140, 130, 60),
-                  "label": (255, 236, 0), "border": "sev", "icon": (255, 236, 0)},
-    "ember":     {"name": "Ember", "bg": (10, 0, 0), "panel": (36, 4, 6), "strong": (255, 244, 240), "text": (228, 180, 176),
+                  "label": "sev", "border": "sev", "icon": (255, 236, 0)},
+    "ember":     {"name": "Ember (level-tinted)", "tint": (0.04, 0.15), "bg": (10, 0, 0), "panel": (36, 4, 6), "strong": (255, 244, 240), "text": (228, 180, 176),
                   "impact": (255, 200, 90), "advice": (255, 255, 200), "amount": (255, 120, 90), "dim": (150, 86, 86),
                   "label": "sev", "border": "sev", "icon": (255, 230, 226)},
 }
@@ -126,7 +128,7 @@ FAMILIES = {
 STRUCTURES = {"briefing": "Briefing + region grid", "headline": "Where-first headline", "headline_cols": "Where-first, two columns",
               "dashboard": "Fact cards + region grid", "storyboard": "Now · Expect · Do", "sidebar": "Info sidebar",
               "ladder": "Severity rail", "countdown": "Countdown", "gazette": "Gazette", "sign": "Overhead sign",
-              "split": "Colour panel", "split_hazard": "Hazard-colour panel", "stack": "Fact stack",
+              "split": "Colour panel", "stack": "Fact stack",
               "teletype": "Teletype"}
 BORDERS = {"chase": "Marching dashes", "pulse": "Slow pulse", "hazard": "Hazard tape", "double": "Double rule",
            "lights": "Chasing lights", "comet": "Comet", "corners": "Corner brackets", "glow": "Glow", "rails": "Chevron rails",
@@ -137,7 +139,6 @@ REVEALS = {"type": "Typewriter", "lines": "Line by line", "wipe": "Wipe", "scan"
 DENSITIES = {"dense": "Dense", "balanced": "Balanced", "minimal": "Minimal"}
 
 # (name, design, family, palette, border, reveal, header, upper, pulse, opts) — curated, not generated.
-# opts: lit = overhead-sign lamp colour.
 _T = [
     ("Briefing", "briefing", "helvetica", "blackout", "pulse", "lines", "WEATHER ALERT", False, True, {}),
     ("Ops Desk", "briefing", "terminus", "graphite", "notch", "lines", "STORM DESK", True, True, {}),
@@ -166,12 +167,12 @@ _T = [
     ("Hourglass", "countdown", "kakwa", "oxide", "glow", "fade", "VALID UNTIL", False, False, {}),
     ("Colour Block", "split", "helvetica", "blackout", "pulse", "wipe", "ALERT", False, True, {}),
     ("Poster", "split", "crox", "ember", "glow", "fade", "WARNING", True, False, {}),
-    ("Weather Colour", "split_hazard", "kakwa", "graphite", "double", "sections", "WEATHER", False, True, {}),
-    ("Paint Chip", "split_hazard", "cherry", "blackout", "corners", "blinds", "WEATHER", False, False, {}),
+    ("Level Colour", "split", "kakwa", "graphite", "double", "sections", "WEATHER", False, True, {}),
+    ("Paint Chip", "split", "cherry", "oxide", "corners", "blinds", "WEATHER", False, False, {}),
     ("Gazette", "gazette", "typewriter", "graphite", "double", "type", "THE WEATHER GAZETTE", False, False, {}),
     ("Morning Edition", "gazette", "crox", "oxide", "corners", "wipe", "MORNING EDITION", False, True, {}),
-    ("Overhead Sign", "sign", "fixed", "blackout", "lights", "blinds", "ROAD WEATHER", True, False, {"lit": (255, 176, 0)}),
-    ("Gantry", "sign", "neep", "signal", "lights", "decode", "ROAD WEATHER", True, True, {"lit": (255, 236, 60)}),
+    ("Overhead Sign", "sign", "fixed", "blackout", "lights", "blinds", "ROAD WEATHER", True, False, {}),
+    ("Gantry", "sign", "neep", "signal", "lights", "decode", "ROAD WEATHER", True, True, {}),
     ("Teletype", "teletype", "fixed", "phosphor", "scanbars", "type", "WWCN", True, False, {}),
     ("Telex", "teletype", "typewriter", "sodium", "double", "type", "TELEX", True, True, {}),
     ("Wire Room", "teletype", "terminus", "graphite", "corners", "type", "WIRE", True, False, {}),

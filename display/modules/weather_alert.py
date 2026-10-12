@@ -557,7 +557,9 @@ class AlertScreen:
             ctx.home = alert_brief.mentions(a, self.home)
             codes = [code for _, code in alert_brief.region_labels(a.get("regions") or [], self.home)]
             ctx.header = " · ".join(codes) if codes else th["header"]          # e.g. "RICHMOND · VAN · SURREY"
-            ctx.pal = {k: (sev if v == "sev" else v) for k, v in pal.items() if k != "name"}
+            ctx.pal = {k: (sev if v == "sev" else v) for k, v in pal.items() if k not in ("name", "tint")}
+            if pal.get("tint"):                              # ground tinted by the alert level
+                ctx.pal["bg"], ctx.pal["panel"] = _dim(sev, pal["tint"][0]), _dim(sev, pal["tint"][1])
             ctx.pal["home_bg"] = sev
             ctx.area = "Metro Vancouver" if b["test"] else self.area()
             ctx.index, ctx.count = ai, len(alerts)
@@ -661,7 +663,7 @@ class AlertScreen:
             return False
         mc = self._maps
         sev = np.array(ctx.sev, dtype=np.int16)
-        fill = np.array(HAZARD_COLOURS.get(ctx.b["hazard"], ctx.sev), dtype=np.int16)
+        fill = sev                                              # zones in the alert level's colour
         reach = _ease(p) * 520                                  # zones flood outward from home
         m = mc.mask & (mc.dist <= reach)
         strength = FILL_STRENGTH.get(ctx.b["kind"], 0.4)
@@ -775,10 +777,7 @@ class AlertScreen:
         return None
 
 
-# zone fill on alert maps: the colour says what kind of weather, the strength and outline say how severe
-HAZARD_COLOURS = {"rain": (40, 120, 255), "snow": (215, 235, 255), "freezing": (175, 95, 255), "wind": (0, 215, 195),
-                  "thunder": (255, 215, 0), "tornado": (255, 0, 185), "flood": (0, 80, 255), "heat": (255, 110, 0),
-                  "cold": (120, 200, 255), "frost": (150, 255, 255), "fog": (175, 175, 180), "smoke": (195, 125, 60)}
+# zone fill on alert maps: the alert level's colour; the strength and outline say how severe
 FILL_STRENGTH = {"warning": 0.58, "watch": 0.46, "advisory": 0.36, "statement": 0.28}
 HOME_ICON = ["....W....", "...WWW...", "..WWWWW..", ".WWWWWWW.", "WWWWWWWWW", ".WW...WW.", ".WW.W.WW.", ".WW.W.WW.", ".WWWWWWW."]
 

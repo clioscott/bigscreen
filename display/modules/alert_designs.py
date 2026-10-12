@@ -649,7 +649,7 @@ class Sign(Design):
             for by in (y0 + 1, y0 + sh - 3):
                 c.FillRect(bx, by, 2, 2, Color(150, 152, 160))
         cx = (x0 + x1) // 2
-        lit = tuple((ctx.th.get("opts") or {}).get("lit", (255, 176, 0)))
+        lit = ap._mix(ctx.sev, (255, 255, 255), 0.15)   # lamps in the alert level's colour
         y = y0 + 5
         for f, s, col in ((m["tf"], m["ts"], lit), (m["wf"], m["ws"], lit), (m["lf"], m["ls"], _dim(lit, 0.85))):
             f.draw(c, cx - f.width(s) // 2, y, col, s)
@@ -718,13 +718,6 @@ class Split(Design):
             y += f.line
         if ctx.b["until"]:
             sf.draw(c, x, y1 - sf.h - 5, ink, fit(sf, U(ctx, "until " + ctx.b["until"]), iw))
-
-
-class SplitHazard(Split):
-    """Split with the panel in the hazard's own colour (rain blue, snow white…)."""
-
-    def panel_col(self, ctx):
-        return ap.hazard_colour(ctx)
 
 
 # ============================================================================================ stack
@@ -901,5 +894,5 @@ class Teletype(Design):
 
 STRUCT_IMPL = {"briefing": Briefing(), "headline": Headline(), "headline_cols": HeadlineCols(), "dashboard": Dashboard(),
                "storyboard": Storyboard(), "ladder": Ladder(), "countdown": Countdown(), "gazette": Gazette(),
-               "sign": Sign(), "split": Split(), "split_hazard": SplitHazard(), "stack": Stack(), "sidebar": Sidebar(),
+               "sign": Sign(), "split": Split(), "stack": Stack(), "sidebar": Sidebar(),
                "teletype": Teletype()}
