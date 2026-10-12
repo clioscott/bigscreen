@@ -129,12 +129,16 @@ def _alert_settings(s: str):
 
 @app.get("/api/alerts/icon/{hazard}.png")
 def alerts_icon(hazard: str, scale: int = 3, colour: str = "ffffff"):
-    """The display's pixel-art hazard icon, for the control panel."""
-    from display.modules import alert_art
+    """The wall's 24-px hazard icon (pixel_icons), enlarged by whole pixels for the control panel."""
+    import numpy as np
+    from display.modules import pixel_icons
     rgb = tuple(int(colour[i:i + 2], 16) for i in (0, 2, 4)) if len(colour) == 6 else (255, 255, 255)
-    rgba = alert_art.icon_rgba(hazard if hazard in alert_art.ICONS else "general", rgb, rgb, (0, 0, 0), max(1, min(6, scale)))
+    m = pixel_icons.mask(pixel_icons.hazard(hazard), 24)
+    rgba = np.zeros(m.shape + (4,), np.uint8)
+    rgba[m] = rgb + (255,)
+    k = max(1, min(6, scale))
     bio = io.BytesIO()
-    Image.fromarray(rgba, "RGBA").save(bio, "PNG")
+    Image.fromarray(rgba, "RGBA").resize((m.shape[1] * k, m.shape[0] * k), Image.NEAREST).save(bio, "PNG")
     return Response(bio.getvalue(), media_type="image/png", headers={"Cache-Control": "max-age=3600"})
 
 
