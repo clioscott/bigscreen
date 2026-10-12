@@ -80,6 +80,7 @@ class MapPanel:
         self._started = {}
         self._loops_seen = {}
         self._fonts = {}
+        self._time_cache = {}
 
     def _font(self, name):
         """Label fonts by file name (assets/fonts/<name>), cached."""
@@ -134,22 +135,13 @@ class MapPanel:
         fr = frames[idx]
         c.Blit(fr[: min(h, fr.shape[0]), : min(w, fr.shape[1])], x, y)
 
-        # time label (local)
-        times = meta.get("times") or []
+        # bottom edge: a progress bar for the animation, and the frame's local time ("MON 12:10P") above it
+        times = self._times(tid, meta)
+        self._progress(c, x, y + h - 2, w, idx, n, times, now)
         if meta.get("timestamp", True) and idx < len(times):
-            t = datetime.strptime(times[idx], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).astimezone()
-            if meta.get("kind") == "forecast":
-                t0 = datetime.strptime(times[0], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).astimezone()
-                ahead = (t - t0).total_seconds() / 3600
-                label = f"{meta.get('label', '')}  +{ahead:.0f}h  {t:%a %H:%M}"
-            elif meta.get("kind") == "accumulation":
-                t0 = datetime.strptime(times[0], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).astimezone()
-                label = f"{meta.get('label', '')}  since {t0:%a %H:%M} -> {t:%H:%M}"
-            else:
-                age = (datetime.now(timezone.utc) - t.astimezone(timezone.utc)).total_seconds() / 60
-                label = f"{meta.get('label', '')}  {t:%H:%M}" + (f" (+{-age:.0f}m)" if age < -2 else
-                                                                  "" if age < 15 else f" (-{age / 60:.1f}h)")
-            self._text(c, x + 2, y + h - 2, label)
+            t = times[idx]
+            label = f"{t:%a}".upper() + f" {t.hour % 12 or 12}:{t:%M}{'A' if t.hour < 12 else 'P'}"
+            self._text(c, x + 2, y + h - 4, label, self.marker if t.timestamp() > now + 120 else self.white)
         self._text(c, x + w - self._tw("ECCC") - 2, y + 7, "ECCC", self.dim)
 
         if meta.get("legend"):
@@ -159,6 +151,33 @@ class MapPanel:
             self._loops_seen[tid] = done_loops
             return "done"
         return None
+
+    def _times(self, tid, meta):
+        """Frame times as local datetimes, parsed once per pack (not every frame)."""
+        key = id(meta)                                      # a reloaded pack is a new meta object
+        cached = self._time_cache.get(tid)
+        if cached and cached[0] == key:
+            return cached[1]
+        out = [datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).astimezone()
+               for s in meta.get("times") or []]
+        self._time_cache[tid] = (key, out)
+        return out
+
+    def _progress(self, c, x, y, w, idx, n, times, now):
+        """2-px bar along the bottom: the played part bright, the rest dim; nowcast (future) frames amber."""
+        c.FillRect(x, y, w, 2, Color(45, 45, 52))
+        if n <= 1:
+            c.FillRect(x, y, w, 2, self.white)
+            return
+        future = next((i for i, t in enumerate(times) if t.timestamp() > now + 120), None)
+        if future is not None:                                  # where the forecast part of the loop starts
+            fx = x + round(w * future / (n - 1))
+            c.FillRect(fx, y, x + w - fx, 2, Color(90, 70, 20))
+        px = round(w * idx / (n - 1))
+        fx = x + round(w * future / (n - 1)) if future is not None else x + w
+        c.FillRect(x, y, min(px, fx - x), 2, self.white)
+        if px > fx - x:
+            c.FillRect(fx, y, x + px - fx, 2, self.marker)
 
     def default_loops(self, tid):
         pack = self.store.get(tid)

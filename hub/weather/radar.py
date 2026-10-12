@@ -21,6 +21,7 @@ from hub.weather import wms
 from hub.weather.geo import View, _hex
 
 ARCHIVE = paths.CACHE_DIR / "radar"
+ARCHIVE_HOURS = 48.0            # kept per area (rolling) — the longest window a track can ask for
 STEP = timedelta(minutes=6)
 
 # Default palettes: (threshold, colour) — a pixel gets the colour of the highest threshold it reaches.
@@ -114,6 +115,21 @@ def update_archive(view, keep_hours, log=print):
         except ValueError:
             p.unlink(missing_ok=True)
     return added, errors
+
+
+def prune_stale_archives(active_keys, log=print):
+    """Delete archives no current area uses whose newest frame is older than the archive length
+    (an area's archive key changes with its centre, scale or the panel size)."""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=ARCHIVE_HOURS + 2)
+    for d in ARCHIVE.iterdir() if ARCHIVE.exists() else []:
+        if not d.is_dir() or d.name in active_keys:
+            continue
+        newest = max((_parse_fname(p.name) for p in d.glob("*.npz") if p.name[:8].isdigit()), default=None)
+        if newest is None or newest < cutoff:
+            for p in d.iterdir():
+                p.unlink(missing_ok=True)
+            d.rmdir()
+            log(f"removed stale radar archive {d.name}")
 
 
 def nowcast(view, after, crop=None, log=print):

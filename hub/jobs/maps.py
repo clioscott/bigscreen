@@ -2,8 +2,9 @@
 
 Runs every few minutes. Each track re-renders when its refresh_min has passed
 or its settings changed. The radar archive is updated once per run for every
-area used by a radar or accumulation track, keeping as many hours as the
-longest window needs (up to 48 h).
+area used by a radar or accumulation track and always keeps a rolling 48 h
+(radar.ARCHIVE_HOURS), so a 48 h accumulation fills up within two days of the
+area being created and then rolls.
 """
 
 import hashlib
@@ -32,21 +33,23 @@ def run(cfg):
     now = time.time()
     notes, errors = [], []
 
-    # 1. radar archive per area (full-width grid), long enough for every track that uses it
+    # 1. radar archive per area (full-width grid). GeoMet only serves the last 3 h, so every area a radar
+    #    track uses keeps a full ARCHIVE_HOURS of frames, whatever the tracks' current windows: history
+    #    builds up from the first run, and lengthening a window later finds it already there.
     need = {}
     for t in enabled.values():
         uses_radar = t.get("kind") == "accumulation" or any(l.get("type") == "radar" for l in t.get("layers", []))
         if uses_radar:
-            hours = float(t.get("window_hours", 24)) if t.get("kind") == "accumulation" \
-                else float(t.get("window_min", 180)) / 60
-            need[t["area"]] = max(need.get(t["area"], 0), min(48.0, hours))
+            need[t["area"]] = radar.ARCHIVE_HOURS
     new_radar = set()
+    active_keys = set()
     steps, step = len(need) + len(enabled), 0
     for aid, hours in need.items():
         _harness.progress(step, steps, f"radar archive · {areas[aid].get('short_label') or aid}")
         step += 1
         area = dict(areas[aid], id=aid)
         _, arch_view, _ = tracks.views_for(area, "full", cfg)
+        active_keys.add(arch_view.key)
         added, errs = radar.update_archive(arch_view, hours)
         if added:
             new_radar.add(aid)
@@ -97,6 +100,7 @@ def run(cfg):
             state.pop(p.stem, None)
     atomic_write_json(STATE, state, indent=1)
     tracks.prune_wms_cache()
+    radar.prune_stale_archives(active_keys)
     geo.prune_cache()
 
     return {"ok": not errors or bool(rendered),
