@@ -11,11 +11,10 @@
    "name": "West Vancouver-Sea to Sky",
    "labels": [
     "WEST VANCOUVER-SEA TO SKY",
-    "W VAN-SEA TO SKY",
-    "W V S T SKY",
-    "WVSTS",
-    "WVN-STSK",
-    "WEST V"
+    "W VANCOUVER-SEA TO SKY",
+    "W VAN SEA SKY",
+    "W V S SKY",
+    "WVSS"
    ],
    "col": 4,
    "row": 0
@@ -25,11 +24,14 @@
    "name": "North Vancouver-Seymour",
    "labels": [
     "NORTH VANCOUVER-SEYMOUR",
-    "N VAN-SEYMOUR",
-    "N V SEYMOUR",
-    "NVS",
-    "NVN-SYMR",
-    "NORTH"
+    "N VANCOUVER-SEYMOUR",
+    "N VAN SEYMOUR",
+    "N VAN SEYMOU",
+    "N VAN SEYMO",
+    "N VAN SEYM",
+    "N VAN SEY",
+    "N V SEYMO",
+    "NVS"
    ],
    "col": 4,
    "row": 1
@@ -39,10 +41,13 @@
    "name": "Maple Ridge-Pitt Meadows",
    "labels": [
     "MAPLE RIDGE-PITT MEADOWS",
-    "M R P MEADOWS",
-    "MRPM",
-    "MPLRDG-P",
-    "MAPLE"
+    "MAPLE RIDGE PITT MEADOWS",
+    "MAPLE RIDGE PITT MEADOW",
+    "MAPLE RIDGE PITT MEADO",
+    "MAPL RIDG PITT MEAD",
+    "MAP RID PIT MEA",
+    "M R P MEADO",
+    "MRPM"
    ],
    "col": 8,
    "row": 1
@@ -52,11 +57,9 @@
    "name": "Vancouver-West End",
    "labels": [
     "VANCOUVER-WEST END",
-    "VAN-W END",
+    "VAN W END",
     "V W END",
-    "VWE",
-    "VN-WEND",
-    "VANCOU"
+    "VWE"
    ],
    "col": 1,
    "row": 2
@@ -66,11 +69,14 @@
    "name": "West Vancouver-Capilano",
    "labels": [
     "WEST VANCOUVER-CAPILANO",
-    "W VAN-CAPILANO",
-    "W V CAPILANO",
-    "WVC",
-    "WVN-CPLN",
-    "WEST V"
+    "W VANCOUVER-CAPILANO",
+    "W VAN CAPILANO",
+    "W VAN CAPILA",
+    "W VAN CAPIL",
+    "W VAN CAPI",
+    "W VAN CAP",
+    "W V CAPIL",
+    "WVC"
    ],
    "col": 2,
    "row": 2
@@ -80,27 +86,16 @@
    "name": "North Vancouver-Lonsdale",
    "labels": [
     "NORTH VANCOUVER-LONSDALE",
-    "N VAN-LONSDALE",
-    "N V LONSDALE",
-    "NVL",
-    "NVN-LNSD",
-    "NORTH"
+    "N VANCOUVER-LONSDALE",
+    "N VAN LONSDALE",
+    "N VAN LONSDA",
+    "N VAN LONSD",
+    "N VAN LONS",
+    "N VAN LON",
+    "N V LONSD",
+    "NVL"
    ],
    "col": 3,
-   "row": 2
-  },
-  {
-   "id": "VHA",
-   "name": "Vancouver-Hastings",
-   "labels": [
-    "VANCOUVER-HASTINGS",
-    "VAN-HASTINGS",
-    "V HASTINGS",
-    "VH",
-    "VN-HSTNG",
-    "VANCOU"
-   ],
-   "col": 4,
    "row": 2
   },
   {
@@ -110,11 +105,9 @@
     "BURNABY NORTH",
     "BBY N",
     "B NORTH",
-    "BN",
-    "BBYN",
-    "BURNAB"
+    "BN"
    ],
-   "col": 5,
+   "col": 4,
    "row": 2
   },
   {
@@ -123,12 +116,15 @@
    "labels": [
     "PORT MOODY-BURQUITLAM",
     "PT MOODY-BURQUITLAM",
-    "P M BURQUITLAM",
-    "PMB",
-    "PTMDY-BR",
-    "PORT M"
+    "PT MOODY BURQUITLAM",
+    "PT MOODY BURQUI",
+    "PT MOODY BURQU",
+    "PT MOOD BURQ",
+    "PT MOO BUR",
+    "P M BURQU",
+    "PMB"
    ],
-   "col": 6,
+   "col": 5,
    "row": 2
   },
   {
@@ -136,11 +132,12 @@
    "name": "Coquitlam-Burke Mountain",
    "labels": [
     "COQUITLAM-BURKE MOUNTAIN",
-    "COQ-BURKE MTN",
-    "C B MOUNTAIN",
-    "CBM",
-    "CQ-BRKMT",
-    "COQUIT"
+    "COQUITLAM-BURKE MTN",
+    "COQ BURKE MTN",
+    "COQ BURK MTN",
+    "COQ BUR MTN",
+    "C B MOUNT",
+    "CBM"
    ],
    "col": 7,
    "row": 2
@@ -150,10 +147,13 @@
    "name": "Nanaimo-Lantzville",
    "labels": [
     "NANAIMO-LANTZVILLE",
-    "N LANTZVILLE",
-    "NL",
-    "NNM-LNTZ",
-    "NANAIM"
+    "NANAIMO LANTZVILLE",
+    "NANAIM LANTZV",
+    "NANAI LANTZ",
+    "NANA LANT",
+    "NAN LAN",
+    "N LANTZ",
+    "NL"
    ],
    "col": 0,
    "row": 3
@@ -163,11 +163,13 @@
    "name": "Vancouver-South Granville",
    "labels": [
     "VANCOUVER-SOUTH GRANVILLE",
-    "VAN-S GRANVILLE",
-    "V S GRANVILLE",
-    "VSG",
-    "VN-SGRNV",
-    "VANCOU"
+    "VAN S GRANVILLE",
+    "VAN S GRANVI",
+    "VAN S GRANV",
+    "VAN S GRAN",
+    "VAN S GRA",
+    "V S GRANV",
+    "VSG"
    ],
    "col": 1,
    "row": 3
@@ -177,11 +179,13 @@
    "name": "Vancouver-Yaletown",
    "labels": [
     "VANCOUVER-YALETOWN",
-    "VAN-YALETOWN",
-    "V YALETOWN",
-    "VY",
-    "VN-YLTWN",
-    "VANCOU"
+    "VAN YALETOWN",
+    "VAN YALETO",
+    "VAN YALET",
+    "VAN YALE",
+    "VAN YAL",
+    "V YALET",
+    "VY"
    ],
    "col": 2,
    "row": 3
@@ -191,25 +195,29 @@
    "name": "Vancouver-Strathcona",
    "labels": [
     "VANCOUVER-STRATHCONA",
-    "VAN-STRATHCONA",
-    "V STRATHCONA",
-    "VS",
-    "VN-STRTH",
-    "VANCOU"
+    "VAN STRATHCONA",
+    "VAN STRATH",
+    "VAN STRAT",
+    "VAN STRA",
+    "VAN STR",
+    "V STRAT",
+    "VS"
    ],
    "col": 3,
    "row": 3
   },
   {
-   "id": "VNR",
-   "name": "Vancouver-Renfrew",
+   "id": "VHA",
+   "name": "Vancouver-Hastings",
    "labels": [
-    "VANCOUVER-RENFREW",
-    "VAN-RENFREW",
-    "V RENFREW",
-    "VR",
-    "VN-RNFRW",
-    "VANCOU"
+    "VANCOUVER-HASTINGS",
+    "VAN HASTINGS",
+    "VAN HASTIN",
+    "VAN HASTI",
+    "VAN HAST",
+    "VAN HAS",
+    "V HASTI",
+    "VH"
    ],
    "col": 4,
    "row": 3
@@ -221,9 +229,7 @@
     "BURNABY EAST",
     "BBY E",
     "B EAST",
-    "BE",
-    "BBYE",
-    "BURNAB"
+    "BE"
    ],
    "col": 5,
    "row": 3
@@ -233,13 +239,27 @@
    "name": "Coquitlam-Maillardville",
    "labels": [
     "COQUITLAM-MAILLARDVILLE",
-    "COQ-MAILLARDVILLE",
-    "C MAILLARDVILLE",
-    "CM",
-    "CQ-MLLRD",
-    "COQUIT"
+    "COQ MAILLARDVILLE",
+    "COQ MAILLA",
+    "COQ MAILL",
+    "COQ MAIL",
+    "COQ MAI",
+    "C MAILL",
+    "CM"
    ],
    "col": 6,
+   "row": 3
+  },
+  {
+   "id": "POC",
+   "name": "Port Coquitlam",
+   "labels": [
+    "PORT COQUITLAM",
+    "PT COQ",
+    "P COQUI",
+    "PC"
+   ],
+   "col": 7,
    "row": 3
   },
   {
@@ -247,11 +267,11 @@
    "name": "Vancouver-Point Grey",
    "labels": [
     "VANCOUVER-POINT GREY",
-    "VAN-POINT GREY",
+    "VAN POINT GREY",
+    "VAN POIN GREY",
+    "VAN POI GRE",
     "V P GREY",
-    "VPG",
-    "VN-PNTGR",
-    "VANCOU"
+    "VPG"
    ],
    "col": 0,
    "row": 4
@@ -261,11 +281,13 @@
    "name": "Vancouver-Quilchena",
    "labels": [
     "VANCOUVER-QUILCHENA",
-    "VAN-QUILCHENA",
-    "V QUILCHENA",
-    "VQ",
-    "VN-QLCHN",
-    "VANCOU"
+    "VAN QUILCHENA",
+    "VAN QUILCH",
+    "VAN QUILC",
+    "VAN QUIL",
+    "VAN QUI",
+    "V QUILC",
+    "VQ"
    ],
    "col": 1,
    "row": 4
@@ -275,11 +297,13 @@
    "name": "Vancouver-Little Mountain",
    "labels": [
     "VANCOUVER-LITTLE MOUNTAIN",
-    "VAN-LITTLE MTN",
-    "V L MOUNTAIN",
-    "VLM",
-    "VN-LTTLM",
-    "VANCOU"
+    "VANCOUVER-LITTLE MTN",
+    "VAN LITTLE MTN",
+    "VAN LITTL MTN",
+    "VAN LITT MTN",
+    "VAN LIT MTN",
+    "V L MOUNT",
+    "VLM"
    ],
    "col": 2,
    "row": 4
@@ -289,13 +313,31 @@
    "name": "Vancouver-Kensington",
    "labels": [
     "VANCOUVER-KENSINGTON",
-    "VAN-KENSINGTON",
-    "V KENSINGTON",
-    "VK",
-    "VN-KNSNG",
-    "VANCOU"
+    "VAN KENSINGTON",
+    "VAN KENSIN",
+    "VAN KENSI",
+    "VAN KENS",
+    "VAN KEN",
+    "V KENSI",
+    "VK"
    ],
    "col": 3,
+   "row": 4
+  },
+  {
+   "id": "VNR",
+   "name": "Vancouver-Renfrew",
+   "labels": [
+    "VANCOUVER-RENFREW",
+    "VAN RENFREW",
+    "VAN RENFRE",
+    "VAN RENFR",
+    "VAN RENF",
+    "VAN REN",
+    "V RENFR",
+    "VR"
+   ],
+   "col": 4,
    "row": 4
   },
   {
@@ -304,24 +346,8 @@
    "labels": [
     "BURNABY CENTRE",
     "BBY CTR",
-    "B CENTRE",
-    "BC",
-    "BBYCTR",
-    "BURNAB"
-   ],
-   "col": 4,
-   "row": 4
-  },
-  {
-   "id": "BNN",
-   "name": "Burnaby-New Westminster",
-   "labels": [
-    "BURNABY-NEW WESTMINSTER",
-    "BBY-NEW WEST",
-    "B N WESTMINSTER",
-    "BNW",
-    "BBY-NWWS",
-    "BURNAB"
+    "B CENTR",
+    "BC"
    ],
    "col": 5,
    "row": 4
@@ -331,25 +357,26 @@
    "name": "New Westminster-Coquitlam",
    "labels": [
     "NEW WESTMINSTER-COQUITLAM",
-    "NEW WEST-COQ",
-    "N W COQUITLAM",
-    "NWC",
-    "NWWST-CQ",
-    "NEW WE"
+    "NEW WEST COQ",
+    "NEW WES COQ",
+    "N W COQUI",
+    "NWC"
    ],
    "col": 6,
    "row": 4
   },
   {
-   "id": "POC",
-   "name": "Port Coquitlam",
+   "id": "SRG",
+   "name": "Surrey-Guildford",
    "labels": [
-    "PORT COQUITLAM",
-    "PT COQ",
-    "P COQUITLAM",
-    "PC",
-    "PTCQ",
-    "PORT C"
+    "SURREY-GUILDFORD",
+    "SRY GUILDFORD",
+    "SRY GUILDF",
+    "SRY GUILD",
+    "SRY GUIL",
+    "SRY GUI",
+    "S GUILD",
+    "SG"
    ],
    "col": 7,
    "row": 4
@@ -360,24 +387,43 @@
    "labels": [
     "MAPLE RIDGE EAST",
     "MAPLE RIDGE E",
+    "MAPL RIDG E",
+    "MAP RID E",
     "M R EAST",
-    "MRE",
-    "MPLRDGE",
-    "MAPLE"
+    "MRE"
    ],
    "col": 8,
    "row": 4
+  },
+  {
+   "id": "NAI",
+   "name": "Nanaimo-Gabriola Island",
+   "labels": [
+    "NANAIMO-GABRIOLA ISLAND",
+    "NANAIMO-GABRIOLA I",
+    "NANAIMO GABRIOLA I",
+    "NANAIM GABRIO I",
+    "NANAI GABRI I",
+    "NANA GABR I",
+    "NAN GAB I",
+    "N G ISLAN",
+    "NGI"
+   ],
+   "col": 0,
+   "row": 5
   },
   {
    "id": "RCB",
    "name": "Richmond-Bridgeport",
    "labels": [
     "RICHMOND-BRIDGEPORT",
-    "RICH-BRIDGEPORT",
-    "R BRIDGEPORT",
-    "RB",
-    "RCH-BRDG",
-    "RICHMO"
+    "RICH BRIDGEPORT",
+    "RICH BRIDGE",
+    "RICH BRIDG",
+    "RICH BRID",
+    "RIC BRI",
+    "R BRIDG",
+    "RB"
    ],
    "col": 1,
    "row": 5
@@ -387,11 +433,13 @@
    "name": "Vancouver-Langara",
    "labels": [
     "VANCOUVER-LANGARA",
-    "VAN-LANGARA",
-    "V LANGARA",
-    "VL",
-    "VN-LNGR",
-    "VANCOU"
+    "VAN LANGARA",
+    "VAN LANGAR",
+    "VAN LANGA",
+    "VAN LANG",
+    "VAN LAN",
+    "V LANGA",
+    "VL"
    ],
    "col": 2,
    "row": 5
@@ -401,11 +449,13 @@
    "name": "Vancouver-Fraserview",
    "labels": [
     "VANCOUVER-FRASERVIEW",
-    "VAN-FRASERVIEW",
-    "V FRASERVIEW",
-    "VF",
-    "VN-FRSRV",
-    "VANCOU"
+    "VAN FRASERVIEW",
+    "VAN FRASER",
+    "VAN FRASE",
+    "VAN FRAS",
+    "VAN FRA",
+    "V FRASE",
+    "VF"
    ],
    "col": 3,
    "row": 5
@@ -415,25 +465,28 @@
    "name": "Burnaby South-Metrotown",
    "labels": [
     "BURNABY SOUTH-METROTOWN",
-    "BBY S-METROTOWN",
-    "B S METROTOWN",
-    "BSM",
-    "BBYS-MTR",
-    "BURNAB"
+    "BBY SOUTH-METROTOWN",
+    "BBY S METROTOWN",
+    "BBY S METROT",
+    "BBY S METRO",
+    "BBY S METR",
+    "BBY S MET",
+    "B S METRO",
+    "BSM"
    ],
    "col": 4,
    "row": 5
   },
   {
-   "id": "SUN",
-   "name": "Surrey North",
+   "id": "BNN",
+   "name": "Burnaby-New Westminster",
    "labels": [
-    "SURREY NORTH",
-    "SRY N",
-    "S NORTH",
-    "SN",
-    "SRYN",
-    "SURREY"
+    "BURNABY-NEW WESTMINSTER",
+    "BURNABY-NEW WEST",
+    "BBY NEW WEST",
+    "BBY NEW WES",
+    "B N WESTM",
+    "BNW"
    ],
    "col": 5,
    "row": 5
@@ -444,24 +497,25 @@
    "labels": [
     "SURREY CITY CENTRE",
     "SRY CITY CTR",
-    "S C CENTRE",
-    "SCC",
-    "SRYCTYCT",
-    "SURREY"
+    "SRY CIT CTR",
+    "S C CENTR",
+    "SCC"
    ],
    "col": 6,
    "row": 5
   },
   {
-   "id": "SRG",
-   "name": "Surrey-Guildford",
+   "id": "SRF",
+   "name": "Surrey-Fleetwood",
    "labels": [
-    "SURREY-GUILDFORD",
-    "SRY-GUILDFORD",
-    "S GUILDFORD",
-    "SG",
-    "SRY-GLDF",
-    "SURREY"
+    "SURREY-FLEETWOOD",
+    "SRY FLEETWOOD",
+    "SRY FLEETW",
+    "SRY FLEET",
+    "SRY FLEE",
+    "SRY FLE",
+    "S FLEET",
+    "SF"
    ],
    "col": 7,
    "row": 5
@@ -471,11 +525,12 @@
    "name": "Langley-Walnut Grove",
    "labels": [
     "LANGLEY-WALNUT GROVE",
-    "LGLY-WALNUT GROVE",
+    "LGLY WALNUT GROVE",
+    "LGLY WALNU GROVE",
+    "LGLY WALN GROV",
+    "LGL WAL GRO",
     "L W GROVE",
-    "LWG",
-    "LGLY-WLN",
-    "LANGLE"
+    "LWG"
    ],
    "col": 8,
    "row": 5
@@ -486,38 +541,25 @@
    "labels": [
     "CHILLIWACK NORTH",
     "CHWK N",
+    "CHW N",
     "C NORTH",
-    "CN",
-    "CHWKN",
-    "CHILLI"
+    "CN"
    ],
    "col": 10,
    "row": 5
-  },
-  {
-   "id": "NAI",
-   "name": "Nanaimo-Gabriola Island",
-   "labels": [
-    "NANAIMO-GABRIOLA ISLAND",
-    "NANAIMO-GABRIOLA I",
-    "N G ISLAND",
-    "NGI",
-    "NNM-GBRL",
-    "NANAIM"
-   ],
-   "col": 0,
-   "row": 6
   },
   {
    "id": "RCS",
    "name": "Richmond-Steveston",
    "labels": [
     "RICHMOND-STEVESTON",
-    "RICH-STEVESTON",
-    "R STEVESTON",
-    "RS",
-    "RCH-STVS",
-    "RICHMO"
+    "RICH STEVESTON",
+    "RICH STEVES",
+    "RICH STEVE",
+    "RICH STEV",
+    "RIC STE",
+    "R STEVE",
+    "RS"
    ],
    "col": 1,
    "row": 6
@@ -528,10 +570,9 @@
    "labels": [
     "RICHMOND CENTRE",
     "RICH CTR",
-    "R CENTRE",
-    "RC",
-    "RCHCTR",
-    "RICHMO"
+    "RIC CTR",
+    "R CENTR",
+    "RC"
    ],
    "col": 2,
    "row": 6
@@ -541,11 +582,13 @@
    "name": "Richmond-Queensborough",
    "labels": [
     "RICHMOND-QUEENSBOROUGH",
-    "RICH-QUEENSBOROUGH",
-    "R QUEENSBOROUGH",
-    "RQ",
-    "RCH-QNSB",
-    "RICHMO"
+    "RICH QUEENSBOROUGH",
+    "RICH QUEENS",
+    "RICH QUEEN",
+    "RICH QUEE",
+    "RIC QUE",
+    "R QUEEN",
+    "RQ"
    ],
    "col": 3,
    "row": 6
@@ -556,12 +599,24 @@
    "labels": [
     "DELTA NORTH",
     "DELTA N",
+    "DELT N",
+    "DEL N",
     "D NORTH",
-    "DN",
-    "DLTN",
-    "DELTA"
+    "DN"
    ],
    "col": 4,
+   "row": 6
+  },
+  {
+   "id": "SUN",
+   "name": "Surrey North",
+   "labels": [
+    "SURREY NORTH",
+    "SRY N",
+    "S NORTH",
+    "SN"
+   ],
+   "col": 5,
    "row": 6
   },
   {
@@ -569,25 +624,12 @@
    "name": "Surrey-Newton",
    "labels": [
     "SURREY-NEWTON",
-    "SRY-NEWTON",
-    "S NEWTON",
-    "SN",
-    "SRY-NWTN",
-    "SURREY"
-   ],
-   "col": 5,
-   "row": 6
-  },
-  {
-   "id": "SRF",
-   "name": "Surrey-Fleetwood",
-   "labels": [
-    "SURREY-FLEETWOOD",
-    "SRY-FLEETWOOD",
-    "S FLEETWOOD",
-    "SF",
-    "SRY-FLTW",
-    "SURREY"
+    "SRY NEWTON",
+    "SRY NEWTO",
+    "SRY NEWT",
+    "SRY NEW",
+    "S NEWTO",
+    "SN"
    ],
    "col": 6,
    "row": 6
@@ -597,11 +639,14 @@
    "name": "Surrey-Serpentine River",
    "labels": [
     "SURREY-SERPENTINE RIVER",
-    "SRY-SERPENTINE R",
+    "SURREY-SERPENTINE R",
+    "SRY SERPENTINE R",
+    "SRY SERPEN R",
+    "SRY SERPE R",
+    "SRY SERP R",
+    "SRY SER R",
     "S S RIVER",
-    "SSR",
-    "SRY-SRPN",
-    "SURREY"
+    "SSR"
    ],
    "col": 7,
    "row": 6
@@ -611,25 +656,26 @@
    "name": "Surrey-Cloverdale",
    "labels": [
     "SURREY-CLOVERDALE",
-    "SRY-CLOVERDALE",
-    "S CLOVERDALE",
-    "SC",
-    "SRY-CLVR",
-    "SURREY"
+    "SRY CLOVERDALE",
+    "SRY CLOVER",
+    "SRY CLOVE",
+    "SRY CLOV",
+    "SRY CLO",
+    "S CLOVE",
+    "SC"
    ],
    "col": 8,
    "row": 6
   },
   {
-   "id": "ABM",
-   "name": "Abbotsford-Mission",
+   "id": "ABW",
+   "name": "Abbotsford West",
    "labels": [
-    "ABBOTSFORD-MISSION",
-    "ABBY-MISSION",
-    "A MISSION",
-    "AM",
-    "ABBY-MSS",
-    "ABBOTS"
+    "ABBOTSFORD WEST",
+    "ABBY W",
+    "ABB W",
+    "A WEST",
+    "AW"
    ],
    "col": 9,
    "row": 6
@@ -639,11 +685,13 @@
    "name": "Chilliwack-Cultus Lake",
    "labels": [
     "CHILLIWACK-CULTUS LAKE",
-    "CHWK-CULTUS LK",
+    "CHILLIWACK-CULTUS LK",
+    "CHWK CULTUS LK",
+    "CHWK CULTU LK",
+    "CHWK CULT LK",
+    "CHW CUL LK",
     "C C LAKE",
-    "CCL",
-    "CHWK-CLT",
-    "CHILLI"
+    "CCL"
    ],
    "col": 10,
    "row": 6
@@ -654,10 +702,10 @@
    "labels": [
     "DELTA SOUTH",
     "DELTA S",
+    "DELT S",
+    "DEL S",
     "D SOUTH",
-    "DS",
-    "DLTS",
-    "DELTA"
+    "DS"
    ],
    "col": 2,
    "row": 7
@@ -667,11 +715,11 @@
    "name": "Surrey-White Rock",
    "labels": [
     "SURREY-WHITE ROCK",
-    "SRY-WHITE ROCK",
+    "SRY WHITE ROCK",
+    "SRY WHIT ROCK",
+    "SRY WHI ROC",
     "S W ROCK",
-    "SWR",
-    "SRY-WHTR",
-    "SURREY"
+    "SWR"
    ],
    "col": 4,
    "row": 7
@@ -681,11 +729,13 @@
    "name": "Surrey-Panorama",
    "labels": [
     "SURREY-PANORAMA",
-    "SRY-PANORAMA",
-    "S PANORAMA",
-    "SP",
-    "SRY-PNRM",
-    "SURREY"
+    "SRY PANORAMA",
+    "SRY PANORA",
+    "SRY PANOR",
+    "SRY PANO",
+    "SRY PAN",
+    "S PANOR",
+    "SP"
    ],
    "col": 5,
    "row": 7
@@ -697,9 +747,7 @@
     "SURREY SOUTH",
     "SRY S",
     "S SOUTH",
-    "SS",
-    "SRYS",
-    "SURREY"
+    "SS"
    ],
    "col": 6,
    "row": 7
@@ -709,11 +757,13 @@
    "name": "Langley-Willowbrook",
    "labels": [
     "LANGLEY-WILLOWBROOK",
-    "LGLY-WILLOWBROOK",
-    "L WILLOWBROOK",
-    "LW",
-    "LGLY-WLL",
-    "LANGLE"
+    "LGLY WILLOWBROOK",
+    "LGLY WILLOW",
+    "LGLY WILLO",
+    "LGLY WILL",
+    "LGL WIL",
+    "L WILLO",
+    "LW"
    ],
    "col": 7,
    "row": 7
@@ -723,25 +773,26 @@
    "name": "Langley-Abbotsford",
    "labels": [
     "LANGLEY-ABBOTSFORD",
-    "LGLY-ABBY",
-    "L ABBOTSFORD",
-    "LA",
-    "LGLY-ABB",
-    "LANGLE"
+    "LGLY ABBY",
+    "LGL ABB",
+    "L ABBOT",
+    "LA"
    ],
    "col": 8,
    "row": 7
   },
   {
-   "id": "ABW",
-   "name": "Abbotsford West",
+   "id": "ABM",
+   "name": "Abbotsford-Mission",
    "labels": [
-    "ABBOTSFORD WEST",
-    "ABBY W",
-    "A WEST",
-    "AW",
-    "ABBYW",
-    "ABBOTS"
+    "ABBOTSFORD-MISSION",
+    "ABBY MISSION",
+    "ABBY MISSIO",
+    "ABBY MISSI",
+    "ABBY MISS",
+    "ABB MIS",
+    "A MISSI",
+    "AM"
    ],
    "col": 9,
    "row": 7
@@ -752,10 +803,9 @@
    "labels": [
     "ABBOTSFORD SOUTH",
     "ABBY S",
+    "ABB S",
     "A SOUTH",
-    "AS",
-    "ABBYS",
-    "ABBOTS"
+    "AS"
    ],
    "col": 10,
    "row": 7

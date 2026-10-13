@@ -8,13 +8,15 @@
  "units": [
   {
    "id": "361",
-   "name": "Stikine Region (Unincorporated)",
+   "name": "Stikine Region",
    "labels": [
-    "STIKINE REGION (UNINCORPORATED)",
-    "S R (UNINCORPORATED)",
-    "SR(",
-    "STKNRGN(",
-    "STIKIN"
+    "STIKINE REGION",
+    "STIKIN REGION",
+    "STIKI REGIO",
+    "STIK REGI",
+    "STI REG",
+    "S REGIO",
+    "SR"
    ],
    "col": 1,
    "row": 0
@@ -25,10 +27,10 @@
    "labels": [
     "PEACE RIVER REGIONAL DISTRICT",
     "PEACE R REG DIST",
-    "P R R DISTRICT",
-    "PRRD",
-    "PCRRGDST",
-    "PEACE"
+    "PEAC R REG DIST",
+    "PEA R REG DIS",
+    "P R R DISTR",
+    "PRRD"
    ],
    "col": 5,
    "row": 0
@@ -38,10 +40,13 @@
    "name": "Kitimat-Stikine",
    "labels": [
     "KITIMAT-STIKINE",
-    "K STIKINE",
-    "KS",
-    "KTMT-STK",
-    "KITIMA"
+    "KITIMAT STIKINE",
+    "KITIMA STIKIN",
+    "KITIM STIKI",
+    "KITI STIK",
+    "KIT STI",
+    "K STIKI",
+    "KS"
    ],
    "col": 0,
    "row": 1
@@ -51,10 +56,13 @@
    "name": "Bulkley-Nechako",
    "labels": [
     "BULKLEY-NECHAKO",
-    "B NECHAKO",
-    "BN",
-    "BLKLY-NC",
-    "BULKLE"
+    "BULKLEY NECHAKO",
+    "BULKLE NECHAK",
+    "BULKL NECHA",
+    "BULK NECH",
+    "BUL NEC",
+    "B NECHA",
+    "BN"
    ],
    "col": 2,
    "row": 1
@@ -64,11 +72,12 @@
    "name": "Fraser-Fort George",
    "labels": [
     "FRASER-FORT GEORGE",
-    "FRASER-FT GEORGE",
-    "F F GEORGE",
-    "FFG",
-    "FRSR-FTG",
-    "FRASER"
+    "FRASER FT GEORGE",
+    "FRASE FT GEORG",
+    "FRAS FT GEOR",
+    "FRA FT GEO",
+    "F F GEORG",
+    "FFG"
    ],
    "col": 5,
    "row": 1
@@ -79,10 +88,10 @@
    "labels": [
     "NORTH COAST REGIONAL DISTRICT",
     "N COAST REG DIST",
-    "N C R DISTRICT",
-    "NCRD",
-    "NCSTRGDS",
-    "NORTH"
+    "N COAS REG DIST",
+    "N COA REG DIS",
+    "N C R DISTR",
+    "NCRD"
    ],
    "col": 0,
    "row": 2
@@ -93,10 +102,10 @@
    "labels": [
     "CENTRAL COAST REGIONAL DISTRICT",
     "C COAST REG DIST",
-    "C C R DISTRICT",
-    "CCRD",
-    "CCSTRGDS",
-    "CENTRA"
+    "C COAS REG DIST",
+    "C COA REG DIS",
+    "C C R DISTR",
+    "CCRD"
    ],
    "col": 1,
    "row": 2
@@ -107,10 +116,12 @@
    "labels": [
     "CARIBOO REGIONAL DISTRICT",
     "CARIBOO REG DIST",
-    "C R DISTRICT",
-    "CRD",
-    "CRBRGDST",
-    "CARIBO"
+    "CARIBO REG DIST",
+    "CARIB REG DIST",
+    "CARI REG DIST",
+    "CAR REG DIS",
+    "C R DISTR",
+    "CRD"
    ],
    "col": 4,
    "row": 2
@@ -121,10 +132,12 @@
    "labels": [
     "COLUMBIA SHUSWAP REGIONAL DISTRICT",
     "COL SHUSWAP REG DIST",
-    "C S R DISTRICT",
-    "CSRD",
-    "CLSHSWPR",
-    "COLUMB"
+    "COL SHUSWA REG DIST",
+    "COL SHUSW REG DIST",
+    "COL SHUS REG DIST",
+    "COL SHU REG DIS",
+    "C S R DISTR",
+    "CSRD"
    ],
    "col": 7,
    "row": 2
@@ -135,10 +148,12 @@
    "labels": [
     "MOUNT WADDINGTON",
     "MT WADDINGTON",
-    "M WADDINGTON",
-    "MW",
-    "MTWDDNGT",
-    "MOUNT"
+    "MT WADDIN",
+    "MT WADDI",
+    "MT WADD",
+    "MT WAD",
+    "M WADDI",
+    "MW"
    ],
    "col": 1,
    "row": 3
@@ -149,10 +164,12 @@
    "labels": [
     "STRATHCONA REGIONAL DISTRICT",
     "STRATHCONA REG DIST",
-    "S R DISTRICT",
-    "SRD",
-    "STRTHCNR",
-    "STRATH"
+    "STRATH REG DIST",
+    "STRAT REG DIST",
+    "STRA REG DIST",
+    "STR REG DIS",
+    "S R DISTR",
+    "SRD"
    ],
    "col": 2,
    "row": 3
@@ -163,10 +180,11 @@
    "labels": [
     "QATHET REGIONAL DISTRICT",
     "QATHET REG DIST",
-    "Q R DISTRICT",
-    "QRD",
-    "QTHTRGDS",
-    "QATHET"
+    "QATHE REG DIST",
+    "QATH REG DIST",
+    "QAT REG DIS",
+    "Q R DISTR",
+    "QRD"
    ],
    "col": 3,
    "row": 3
@@ -176,11 +194,14 @@
    "name": "Squamish-Lillooet Regional District",
    "labels": [
     "SQUAMISH-LILLOOET REGIONAL DISTRICT",
-    "SQMSH-LILLOOET REG DIST",
-    "S L R DISTRICT",
-    "SLRD",
-    "SQMSH-LL",
-    "SQUAMI"
+    "SQUAMISH-LILLOOET REG DIST",
+    "SQMSH LILLOOET REG DIST",
+    "SQMSH LILLOO REG DIST",
+    "SQMSH LILLO REG DIST",
+    "SQMS LILL REG DIST",
+    "SQM LIL REG DIS",
+    "S L R DISTR",
+    "SLRD"
    ],
    "col": 4,
    "row": 3
@@ -191,10 +212,13 @@
    "labels": [
     "THOMPSON-NICOLA REGIONAL DISTRICT",
     "THOMPSON-NICOLA REG DIST",
-    "T N R DISTRICT",
-    "TNRD",
-    "THMPSN-N",
-    "THOMPS"
+    "THOMPSON NICOLA REG DIST",
+    "THOMPS NICOLA REG DIST",
+    "THOMP NICOL REG DIST",
+    "THOM NICO REG DIST",
+    "THO NIC REG DIS",
+    "T N R DISTR",
+    "TNRD"
    ],
    "col": 5,
    "row": 3
@@ -205,10 +229,9 @@
    "labels": [
     "NORTH OKANAGAN",
     "N OKAN",
-    "N OKANAGAN",
-    "NO",
-    "NOKN",
-    "NORTH"
+    "N OKA",
+    "N OKANA",
+    "NO"
    ],
    "col": 6,
    "row": 3
@@ -219,10 +242,9 @@
    "labels": [
     "EAST KOOTENAY",
     "E KOOT",
-    "E KOOTENAY",
-    "EK",
-    "EKT",
-    "EAST K"
+    "E KOO",
+    "E KOOTE",
+    "EK"
    ],
    "col": 7,
    "row": 3
@@ -233,10 +255,10 @@
    "labels": [
     "COMOX VALLEY REGIONAL DISTRICT",
     "COMOX VLY REG DIST",
-    "C V R DISTRICT",
-    "CVRD",
-    "CMXVLYRG",
-    "COMOX"
+    "COMO VLY REG DIST",
+    "COM VLY REG DIS",
+    "C V R DISTR",
+    "CVRD"
    ],
    "col": 2,
    "row": 4
@@ -246,8 +268,10 @@
    "name": "Nanaimo",
    "labels": [
     "NANAIMO",
-    "NNM",
-    "NANAIM"
+    "NANAIM",
+    "NANAI",
+    "NANA",
+    "NAN"
    ],
    "col": 3,
    "row": 4
@@ -258,10 +282,10 @@
    "labels": [
     "SUNSHINE COAST REGIONAL DISTRICT",
     "SUN COAST REG DIST",
-    "S C R DISTRICT",
-    "SCRD",
-    "SNCSTRGD",
-    "SUNSHI"
+    "SUN COAS REG DIST",
+    "SUN COA REG DIS",
+    "S C R DISTR",
+    "SCRD"
    ],
    "col": 4,
    "row": 4
@@ -272,10 +296,11 @@
    "labels": [
     "FRASER VALLEY REGIONAL DISTRICT",
     "FRASER VLY REG DIST",
-    "F V R DISTRICT",
-    "FVRD",
-    "FRSRVLYR",
-    "FRASER"
+    "FRASE VLY REG DIST",
+    "FRAS VLY REG DIST",
+    "FRA VLY REG DIS",
+    "F V R DISTR",
+    "FVRD"
    ],
    "col": 5,
    "row": 4
@@ -286,10 +311,9 @@
    "labels": [
     "CENTRAL OKANAGAN",
     "C OKAN",
-    "C OKANAGAN",
-    "CO",
-    "COKN",
-    "CENTRA"
+    "C OKA",
+    "C OKANA",
+    "CO"
    ],
    "col": 6,
    "row": 4
@@ -300,10 +324,9 @@
    "labels": [
     "CENTRAL KOOTENAY",
     "C KOOT",
-    "C KOOTENAY",
-    "CK",
-    "CKT",
-    "CENTRA"
+    "C KOO",
+    "C KOOTE",
+    "CK"
    ],
    "col": 7,
    "row": 4
@@ -313,10 +336,13 @@
    "name": "Alberni-Clayoquot",
    "labels": [
     "ALBERNI-CLAYOQUOT",
-    "A CLAYOQUOT",
-    "AC",
-    "ALBRN-CL",
-    "ALBERN"
+    "ALBERNI CLAYOQUOT",
+    "ALBERN CLAYOQ",
+    "ALBER CLAYO",
+    "ALBE CLAY",
+    "ALB CLA",
+    "A CLAYO",
+    "AC"
    ],
    "col": 1,
    "row": 5
@@ -327,10 +353,12 @@
    "labels": [
     "CAPITAL REGIONAL DISTRICT",
     "CAPITAL REG DIST",
-    "C R DISTRICT",
-    "CRD",
-    "CPTLRGDS",
-    "CAPITA"
+    "CAPITA REG DIST",
+    "CAPIT REG DIST",
+    "CAPI REG DIST",
+    "CAP REG DIS",
+    "C R DISTR",
+    "CRD"
    ],
    "col": 2,
    "row": 5
@@ -341,10 +369,12 @@
    "labels": [
     "COWICHAN VALLEY REGIONAL DISTRICT",
     "COWICHAN VLY REG DIST",
-    "C V R DISTRICT",
-    "CVRD",
-    "CWCHNVLY",
-    "COWICH"
+    "COWICH VLY REG DIST",
+    "COWIC VLY REG DIST",
+    "COWI VLY REG DIST",
+    "COW VLY REG DIS",
+    "C V R DISTR",
+    "CVRD"
    ],
    "col": 3,
    "row": 5
@@ -355,10 +385,10 @@
    "labels": [
     "METRO VANCOUVER REGIONAL DISTRICT",
     "METRO VAN REG DIST",
-    "M V R DISTRICT",
-    "MVRD",
-    "MTRVNRGD",
-    "METRO"
+    "METR VAN REG DIST",
+    "MET VAN REG DIS",
+    "M V R DISTR",
+    "MVRD"
    ],
    "col": 4,
    "row": 5
@@ -368,11 +398,13 @@
    "name": "Okanagan-Similkameen",
    "labels": [
     "OKANAGAN-SIMILKAMEEN",
-    "OKAN-SIMILKAMEEN",
-    "O SIMILKAMEEN",
-    "OS",
-    "OKN-SMLK",
-    "OKANAG"
+    "OKAN SIMILKAMEEN",
+    "OKAN SIMILK",
+    "OKAN SIMIL",
+    "OKAN SIMI",
+    "OKA SIM",
+    "O SIMIL",
+    "OS"
    ],
    "col": 5,
    "row": 5
@@ -383,10 +415,12 @@
    "labels": [
     "KOOTENAY BOUNDARY",
     "KOOT BOUNDARY",
-    "K BOUNDARY",
-    "KB",
-    "KTBNDRY",
-    "KOOTEN"
+    "KOOT BOUNDA",
+    "KOOT BOUND",
+    "KOOT BOUN",
+    "KOO BOU",
+    "K BOUND",
+    "KB"
    ],
    "col": 6,
    "row": 5

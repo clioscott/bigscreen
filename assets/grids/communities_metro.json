@@ -11,12 +11,29 @@
    "name": "Bowen Island/Lions Bay",
    "labels": [
     "BOWEN ISLAND/LIONS BAY",
+    "BOWEN ISLAND BAY",
+    "BOWEN ISLAN BAY",
+    "BOWE ISLA BAY",
+    "BOW ISL BAY",
     "B I BAY",
-    "BIB",
-    "BWNISLND",
-    "BOWEN"
+    "BIB"
    ],
    "col": 0,
+   "row": 0
+  },
+  {
+   "id": "3315",
+   "name": "North Vancouver DM - West",
+   "labels": [
+    "NORTH VANCOUVER DM - WEST",
+    "N VAN DM WEST",
+    "WEST",
+    "N VAN DM",
+    "N VAN DM W",
+    "N V D WEST",
+    "NVDW"
+   ],
+   "col": 2,
    "row": 0
   },
   {
@@ -24,11 +41,12 @@
    "name": "North Vancouver DM - East",
    "labels": [
     "NORTH VANCOUVER DM - EAST",
-    "N VAN DM-E",
+    "N VAN DM EAST",
+    "EAST",
+    "N VAN DM",
+    "N VAN DM E",
     "N V D EAST",
-    "NVDE",
-    "NVNDM-E",
-    "NORTH"
+    "NVDE"
    ],
    "col": 4,
    "row": 0
@@ -39,10 +57,8 @@
    "labels": [
     "NORTH COQUITLAM",
     "N COQ",
-    "N COQUITLAM",
-    "NC",
-    "NCQ",
-    "NORTH"
+    "N COQUI",
+    "NC"
    ],
    "col": 8,
    "row": 0
@@ -52,11 +68,13 @@
    "name": "West Vancouver - Upper",
    "labels": [
     "WEST VANCOUVER - UPPER",
-    "W VAN-UPPER",
+    "W VAN UPPER",
+    "UPPER",
+    "W VAN",
+    "W VAN UPPE",
+    "W VAN UPP",
     "W V UPPER",
-    "WVU",
-    "WVN-UPPR",
-    "WEST V"
+    "WVU"
    ],
    "col": 0,
    "row": 1
@@ -66,25 +84,29 @@
    "name": "West Vancouver - Lower",
    "labels": [
     "WEST VANCOUVER - LOWER",
-    "W VAN-LOWER",
+    "W VAN LOWER",
+    "LOWER",
+    "W VAN",
+    "W VAN LOWE",
+    "W VAN LOW",
     "W V LOWER",
-    "WVL",
-    "WVN-LWR",
-    "WEST V"
+    "WVL"
    ],
    "col": 1,
    "row": 1
   },
   {
-   "id": "3315",
-   "name": "North Vancouver DM - West",
+   "id": "3312",
+   "name": "North Vancouver City - West",
    "labels": [
-    "NORTH VANCOUVER DM - WEST",
-    "N VAN DM-W",
-    "N V D WEST",
-    "NVDW",
-    "NVNDM-W",
-    "NORTH"
+    "NORTH VANCOUVER CITY - WEST",
+    "N VAN CITY WEST",
+    "WEST",
+    "N VAN CITY",
+    "N VAN CITY W",
+    "N VAN CIT W",
+    "N V C WEST",
+    "NVCW"
    ],
    "col": 2,
    "row": 1
@@ -94,11 +116,12 @@
    "name": "North Vancouver DM - Central",
    "labels": [
     "NORTH VANCOUVER DM - CENTRAL",
-    "N VAN DM-C",
-    "N V D CENTRAL",
-    "NVDC",
-    "NVNDM-C",
-    "NORTH"
+    "N VAN DM CENTRAL",
+    "CENTRAL",
+    "N VAN DM",
+    "N VAN DM C",
+    "N V D CENTR",
+    "NVDC"
    ],
    "col": 3,
    "row": 1
@@ -109,9 +132,7 @@
    "labels": [
     "WEST END",
     "W END",
-    "WE",
-    "WEND",
-    "WEST E"
+    "WE"
    ],
    "col": 0,
    "row": 2
@@ -122,24 +143,27 @@
    "labels": [
     "DOWNTOWN VANCOUVER",
     "DOWNTOWN VAN",
-    "D VANCOUVER",
-    "DV",
-    "DWNTWNVN",
-    "DOWNTO"
+    "DOWNTO VAN",
+    "DOWNT VAN",
+    "DOWN VAN",
+    "DOW VAN",
+    "D VANCO",
+    "DV"
    ],
    "col": 1,
    "row": 2
   },
   {
-   "id": "3312",
-   "name": "North Vancouver City - West",
+   "id": "3221",
+   "name": "Downtown Eastside",
    "labels": [
-    "NORTH VANCOUVER CITY - WEST",
-    "N VAN CITY-W",
-    "N V C WEST",
-    "NVCW",
-    "NVNCTY-W",
-    "NORTH"
+    "DOWNTOWN EASTSIDE",
+    "DOWNTO EASTSI",
+    "DOWNT EASTS",
+    "DOWN EAST",
+    "DOW EAS",
+    "D EASTS",
+    "DE"
    ],
    "col": 2,
    "row": 2
@@ -149,11 +173,13 @@
    "name": "North Vancouver City - East",
    "labels": [
     "NORTH VANCOUVER CITY - EAST",
-    "N VAN CITY-E",
+    "N VAN CITY EAST",
+    "EAST",
+    "N VAN CITY",
+    "N VAN CITY E",
+    "N VAN CIT E",
     "N V C EAST",
-    "NVCE",
-    "NVNCTY-E",
-    "NORTH"
+    "NVCE"
    ],
    "col": 3,
    "row": 2
@@ -164,10 +190,12 @@
    "labels": [
     "BURNABY HEIGHTS/CAPITAL HILL",
     "BBY HEIGHTS/CAPITAL HILL",
+    "BBY HEIGHT HILL",
+    "BBY HEIGH HILL",
+    "BBY HEIG HILL",
+    "BBY HEI HIL",
     "B H HILL",
-    "BHH",
-    "BBYHGHTS",
-    "BURNAB"
+    "BHH"
    ],
    "col": 4,
    "row": 2
@@ -178,10 +206,12 @@
    "labels": [
     "PORT MOODY NORTH/ANMORE/BELCARRA",
     "PT MOODY NORTH/ANMORE/BELCARRA",
-    "P M NORTH/ANMORE/BELCARRA",
-    "PMN",
-    "PTMDYNRT",
-    "PORT M"
+    "PT MOODY NORTH/",
+    "PT MOODY NORTH",
+    "PT MOOD NORT",
+    "PT MOO NOR",
+    "P M NORTH",
+    "PMN"
    ],
    "col": 6,
    "row": 2
@@ -191,8 +221,10 @@
    "name": "Kitsilano",
    "labels": [
     "KITSILANO",
-    "KTSLN",
-    "KITSIL"
+    "KITSIL",
+    "KITSI",
+    "KITS",
+    "KIT"
    ],
    "col": 0,
    "row": 3
@@ -203,25 +235,12 @@
    "labels": [
     "NORTHEAST FALSE CREEK",
     "NE FALSE CREEK",
+    "NE FALS CREE",
+    "NE FAL CRE",
     "N F CREEK",
-    "NFC",
-    "NEFLSCRK",
-    "NORTHE"
+    "NFC"
    ],
    "col": 1,
-   "row": 3
-  },
-  {
-   "id": "3221",
-   "name": "Downtown Eastside",
-   "labels": [
-    "DOWNTOWN EASTSIDE",
-    "D EASTSIDE",
-    "DE",
-    "DWNTWNES",
-    "DOWNTO"
-   ],
-   "col": 2,
    "row": 3
   },
   {
@@ -229,12 +248,15 @@
    "name": "Grandview-Woodland",
    "labels": [
     "GRANDVIEW-WOODLAND",
-    "G WOODLAND",
-    "GW",
-    "GRNDVW-W",
-    "GRANDV"
+    "GRANDVIEW WOODLAND",
+    "GRANDV WOODLA",
+    "GRAND WOODL",
+    "GRAN WOOD",
+    "GRA WOO",
+    "G WOODL",
+    "GW"
    ],
-   "col": 3,
+   "col": 2,
    "row": 3
   },
   {
@@ -242,24 +264,41 @@
    "name": "Hastings-Sunrise",
    "labels": [
     "HASTINGS-SUNRISE",
-    "H SUNRISE",
-    "HS",
-    "HSTNGS-S",
-    "HASTIN"
+    "HASTINGS SUNRISE",
+    "HASTIN SUNRIS",
+    "HASTI SUNRI",
+    "HAST SUNR",
+    "HAS SUN",
+    "H SUNRI",
+    "HS"
+   ],
+   "col": 3,
+   "row": 3
+  },
+  {
+   "id": "2222",
+   "name": "Brentwood/Willingdon/Parkcrest",
+   "labels": [
+    "BRENTWOOD/WILLINGDON/PARKCREST",
+    "BRENTW",
+    "BRENT",
+    "BREN",
+    "BRE"
    ],
    "col": 4,
    "row": 3
   },
   {
-   "id": "2224",
-   "name": "Burnaby Mountain/Lougheed",
+   "id": "2223",
+   "name": "Westridge/Sperling/Gov't Road",
    "labels": [
-    "BURNABY MOUNTAIN/LOUGHEED",
-    "BBY MOUNTAIN/LOUGHEED",
-    "B MOUNTAIN/LOUGHEED",
-    "BM",
-    "BBYMNTN/",
-    "BURNAB"
+    "WESTRIDGE/SPERLING/GOV'T ROAD",
+    "WESTRI ROAD",
+    "WESTR ROAD",
+    "WEST ROAD",
+    "WES ROA",
+    "W ROAD",
+    "WR"
    ],
    "col": 5,
    "row": 3
@@ -270,10 +309,10 @@
    "labels": [
     "PORT MOODY SOUTH",
     "PT MOODY S",
+    "PT MOOD S",
+    "PT MOO S",
     "P M SOUTH",
-    "PMS",
-    "PTMDYS",
-    "PORT M"
+    "PMS"
    ],
    "col": 6,
    "row": 3
@@ -283,10 +322,12 @@
    "name": "Pitt Meadows",
    "labels": [
     "PITT MEADOWS",
-    "P MEADOWS",
-    "PM",
-    "PTTMDWS",
-    "PITT M"
+    "PITT MEADOW",
+    "PITT MEADO",
+    "PITT MEAD",
+    "PIT MEA",
+    "P MEADO",
+    "PM"
    ],
    "col": 8,
    "row": 3
@@ -297,10 +338,13 @@
    "labels": [
     "UNIVERSITY OF BRITISH COLUMBIA",
     "UNIVERSITY OF BRITISH COL",
-    "U O B COLUMBIA",
-    "UOBC",
-    "UNVRSTYF",
-    "UNIVER"
+    "UNIVERSITY BRITISH COL",
+    "UNIVER BRITIS COL",
+    "UNIVE BRITI COL",
+    "UNIV BRIT COL",
+    "UNI BRI COL",
+    "U B COLUM",
+    "UBC"
    ],
    "col": 0,
    "row": 4
@@ -310,8 +354,10 @@
    "name": "Fairview",
    "labels": [
     "FAIRVIEW",
-    "FRVW",
-    "FAIRVI"
+    "FAIRVI",
+    "FAIRV",
+    "FAIR",
+    "FAI"
    ],
    "col": 1,
    "row": 4
@@ -322,47 +368,59 @@
    "labels": [
     "MOUNT PLEASANT",
     "MT PLEASANT",
-    "M PLEASANT",
-    "MP",
-    "MTPLSNT",
-    "MOUNT"
+    "MT PLEASA",
+    "MT PLEAS",
+    "MT PLEA",
+    "MT PLE",
+    "M PLEAS",
+    "MP"
    ],
    "col": 2,
    "row": 4
   },
   {
-   "id": "3231",
-   "name": "Cedar Cottage",
+   "id": "3233",
+   "name": "Renfrew-Collingwood",
    "labels": [
-    "CEDAR COTTAGE",
-    "C COTTAGE",
-    "CC",
-    "CDRCTTG",
-    "CEDAR"
+    "RENFREW-COLLINGWOOD",
+    "RENFREW COLLINGWOOD",
+    "RENFRE COLLIN",
+    "RENFR COLLI",
+    "RENF COLL",
+    "REN COL",
+    "R COLLI",
+    "RC"
    ],
    "col": 3,
    "row": 4
   },
   {
-   "id": "2222",
-   "name": "Brentwood/Willingdon/Parkcrest",
+   "id": "2225",
+   "name": "Garden Village/Cascade/Douglas/Gilpin",
    "labels": [
-    "BRENTWOOD/WILLINGDON/PARKCREST",
-    "BRNTWD/W",
-    "BRENTW"
+    "GARDEN VILLAGE/CASCADE/DOUGLAS/GILPIN",
+    "GARDEN VILLAG",
+    "GARDE VILLA",
+    "GARD VILL",
+    "GAR VIL",
+    "G VILLA",
+    "GV"
    ],
    "col": 4,
    "row": 4
   },
   {
-   "id": "2223",
-   "name": "Westridge/Sperling/Gov't Road",
+   "id": "2224",
+   "name": "Burnaby Mountain/Lougheed",
    "labels": [
-    "WESTRIDGE/SPERLING/GOV'T ROAD",
-    "W ROAD",
-    "WR",
-    "WSTRDG/S",
-    "WESTRI"
+    "BURNABY MOUNTAIN/LOUGHEED",
+    "BBY MOUNTAIN/LOUGHEED",
+    "BBY MOUNTA",
+    "BBY MOUNT",
+    "BBY MOUN",
+    "BBY MOU",
+    "B MOUNT",
+    "BM"
    ],
    "col": 5,
    "row": 4
@@ -373,10 +431,8 @@
    "labels": [
     "SOUTHWEST COQUITLAM",
     "SW COQ",
-    "S COQUITLAM",
-    "SC",
-    "SWCQ",
-    "SOUTHW"
+    "S COQUI",
+    "SC"
    ],
    "col": 6,
    "row": 4
@@ -387,10 +443,8 @@
    "labels": [
     "PORT COQUITLAM",
     "PT COQ",
-    "P COQUITLAM",
-    "PC",
-    "PTCQ",
-    "PORT C"
+    "P COQUI",
+    "PC"
    ],
    "col": 7,
    "row": 4
@@ -401,10 +455,13 @@
    "labels": [
     "WEST POINT GREY/DUNBAR-SOUTHLANDS",
     "W POINT GREY/DUNBAR-SOUTHLANDS",
-    "W P G SOUTHLANDS",
-    "WPGS",
-    "WPNTGRY/",
-    "WEST P"
+    "W POINT GREY/DUNBAR SOUTHLANDS",
+    "W POINT GREY/D SOUTHL",
+    "W POINT GREY/ SOUTH",
+    "W POIN GREY SOUT",
+    "W POI GRE SOU",
+    "W P G SOUTH",
+    "WPGS"
    ],
    "col": 0,
    "row": 5
@@ -415,10 +472,12 @@
    "labels": [
     "SOUTH CAMBIE/RILEY PARK",
     "S CAMBIE/RILEY PARK",
+    "S CAMBIE PARK",
+    "S CAMBI PARK",
+    "S CAMB PARK",
+    "S CAM PAR",
     "S C PARK",
-    "SCP",
-    "SCMB/RLY",
-    "SOUTH"
+    "SCP"
    ],
    "col": 1,
    "row": 5
@@ -428,34 +487,38 @@
    "name": "Kensington",
    "labels": [
     "KENSINGTON",
-    "KNSNGTN",
-    "KENSIN"
+    "KENSIN",
+    "KENSI",
+    "KENS",
+    "KEN"
    ],
    "col": 2,
    "row": 5
   },
   {
-   "id": "3233",
-   "name": "Renfrew-Collingwood",
+   "id": "3231",
+   "name": "Cedar Cottage",
    "labels": [
-    "RENFREW-COLLINGWOOD",
-    "R COLLINGWOOD",
-    "RC",
-    "RNFRW-CL",
-    "RENFRE"
+    "CEDAR COTTAGE",
+    "CEDAR COTTAG",
+    "CEDAR COTTA",
+    "CEDA COTT",
+    "CED COT",
+    "C COTTA",
+    "CC"
    ],
    "col": 3,
    "row": 5
   },
   {
-   "id": "2225",
-   "name": "Garden Village/Cascade/Douglas/Gilpin",
+   "id": "2226",
+   "name": "Metrotown/Marlborough/Windsor",
    "labels": [
-    "GARDEN VILLAGE/CASCADE/DOUGLAS/GILPIN",
-    "G VILLAGE/CASCADE/DOUGLAS/GILPIN",
-    "GV",
-    "GRDNVLLG",
-    "GARDEN"
+    "METROTOWN/MARLBOROUGH/WINDSOR",
+    "METROT",
+    "METRO",
+    "METR",
+    "MET"
    ],
    "col": 4,
    "row": 5
@@ -465,10 +528,12 @@
    "name": "Buckingham/Lakeview/Cariboo/Second Street",
    "labels": [
     "BUCKINGHAM/LAKEVIEW/CARIBOO/SECOND STREET",
-    "B STREET",
-    "BS",
-    "BCKNGHM/",
-    "BUCKIN"
+    "BUCKIN STREET",
+    "BUCKI STREE",
+    "BUCK STRE",
+    "BUC STR",
+    "B STREE",
+    "BS"
    ],
    "col": 5,
    "row": 5
@@ -479,10 +544,8 @@
    "labels": [
     "SOUTHEAST COQUITLAM",
     "SE COQ",
-    "S COQUITLAM",
-    "SC",
-    "SECQ",
-    "SOUTHE"
+    "S COQUI",
+    "SC"
    ],
    "col": 6,
    "row": 5
@@ -492,12 +555,27 @@
    "name": "Shaughnessy/Arbutus Ridge/Kerrisdale",
    "labels": [
     "SHAUGHNESSY/ARBUTUS RIDGE/KERRISDALE",
-    "S RIDGE/KERRISDALE",
-    "SR",
-    "SHGHNSSY",
-    "SHAUGH"
+    "SHAUGH RIDGE/",
+    "SHAUG RIDGE",
+    "SHAU RIDG",
+    "SHA RID",
+    "S RIDGE",
+    "SR"
    ],
    "col": 0,
+   "row": 6
+  },
+  {
+   "id": "3262",
+   "name": "Oakridge/Marpole",
+   "labels": [
+    "OAKRIDGE/MARPOLE",
+    "OAKRID",
+    "OAKRI",
+    "OAKR",
+    "OAK"
+   ],
+   "col": 1,
    "row": 6
   },
   {
@@ -505,9 +583,11 @@
    "name": "Sunset",
    "labels": [
     "SUNSET",
-    "SNST"
+    "SUNSE",
+    "SUNS",
+    "SUN"
    ],
-   "col": 1,
+   "col": 2,
    "row": 6
   },
   {
@@ -515,21 +595,13 @@
    "name": "Victoria-Fraserview",
    "labels": [
     "VICTORIA-FRASERVIEW",
-    "V FRASERVIEW",
-    "VF",
-    "VCTR-FRS",
-    "VICTOR"
-   ],
-   "col": 2,
-   "row": 6
-  },
-  {
-   "id": "2226",
-   "name": "Metrotown/Marlborough/Windsor",
-   "labels": [
-    "METROTOWN/MARLBOROUGH/WINDSOR",
-    "MTRTWN/M",
-    "METROT"
+    "VICTORIA FRASERVIEW",
+    "VICTOR FRASER",
+    "VICTO FRASE",
+    "VICT FRAS",
+    "VIC FRA",
+    "V FRASE",
+    "VF"
    ],
    "col": 3,
    "row": 6
@@ -539,8 +611,10 @@
    "name": "Kingsway/Edmonds",
    "labels": [
     "KINGSWAY/EDMONDS",
-    "KNGSWY/E",
-    "KINGSW"
+    "KINGSW",
+    "KINGS",
+    "KING",
+    "KIN"
    ],
    "col": 4,
    "row": 6
@@ -550,11 +624,13 @@
    "name": "New Westminster - Central",
    "labels": [
     "NEW WESTMINSTER - CENTRAL",
-    "NEW WEST-C",
-    "N W CENTRAL",
-    "NWC",
-    "NWWST-C",
-    "NEW WE"
+    "NEW WEST CENTRAL",
+    "CENTRAL",
+    "NEW WEST",
+    "NEW WEST C",
+    "NEW WES C",
+    "N W CENTR",
+    "NWC"
    ],
    "col": 5,
    "row": 6
@@ -564,11 +640,13 @@
    "name": "New Westminster - East",
    "labels": [
     "NEW WESTMINSTER - EAST",
-    "NEW WEST-E",
+    "NEW WEST EAST",
+    "EAST",
+    "NEW WEST",
+    "NEW WEST E",
+    "NEW WES E",
     "N W EAST",
-    "NWE",
-    "NWWST-E",
-    "NEW WE"
+    "NWE"
    ],
    "col": 6,
    "row": 6
@@ -578,7 +656,8 @@
    "name": "Haney",
    "labels": [
     "HANEY",
-    "HNY"
+    "HANE",
+    "HAN"
    ],
    "col": 9,
    "row": 6
@@ -588,19 +667,23 @@
    "name": "Thompson/Seafair",
    "labels": [
     "THOMPSON/SEAFAIR",
-    "THMPSN/S",
-    "THOMPS"
+    "THOMPS",
+    "THOMP",
+    "THOM",
+    "THO"
    ],
    "col": 0,
    "row": 7
   },
   {
-   "id": "3262",
-   "name": "Oakridge/Marpole",
+   "id": "3111",
+   "name": "Richmond City Centre",
    "labels": [
-    "OAKRIDGE/MARPOLE",
-    "OKRDG/MR",
-    "OAKRID"
+    "RICHMOND CITY CENTRE",
+    "RICH CITY CTR",
+    "RIC CIT CTR",
+    "R C CENTR",
+    "RCC"
    ],
    "col": 1,
    "row": 7
@@ -611,10 +694,12 @@
    "labels": [
     "EAST AND WEST CAMBIE/BRIDGEPORT",
     "E AND W CAMBIE/BRIDGEPORT",
-    "E A W CAMBIE/BRIDGEPORT",
-    "EAWC",
-    "ENDWCMB/",
-    "EAST A"
+    "E W CAMBIE/BRIDGEPORT",
+    "E W CAMBIE",
+    "E W CAMBI",
+    "E W CAMB",
+    "E W CAM",
+    "EWC"
    ],
    "col": 2,
    "row": 7
@@ -624,8 +709,10 @@
    "name": "Killarney",
    "labels": [
     "KILLARNEY",
-    "KLLRNY",
-    "KILLAR"
+    "KILLAR",
+    "KILLA",
+    "KILL",
+    "KIL"
    ],
    "col": 3,
    "row": 7
@@ -636,10 +723,12 @@
    "labels": [
     "SOUTH SLOPE/BIG BEND",
     "S SLOPE/BIG BEND",
+    "S SLOPE/ BEND",
+    "S SLOPE BEND",
+    "S SLOP BEND",
+    "S SLO BEN",
     "S S BEND",
-    "SSB",
-    "SSLP/BGB",
-    "SOUTH"
+    "SSB"
    ],
    "col": 4,
    "row": 7
@@ -649,22 +738,27 @@
    "name": "New Westminster - Downtown",
    "labels": [
     "NEW WESTMINSTER - DOWNTOWN",
-    "NEW WEST-DOWNTOWN",
-    "N W DOWNTOWN",
-    "NWD",
-    "NWWST-DW",
-    "NEW WE"
+    "NEW WEST DOWNTOWN",
+    "DOWNTOWN",
+    "NEW WEST",
+    "NEW WEST DOWNTO",
+    "NEW WEST DOWNT",
+    "NEW WEST DOWN",
+    "NEW WES DOW",
+    "N W DOWNT",
+    "NWD"
    ],
    "col": 5,
    "row": 7
   },
   {
-   "id": "2331",
-   "name": "Whalley",
+   "id": "2332",
+   "name": "North Surrey",
    "labels": [
-    "WHALLEY",
-    "WHLLY",
-    "WHALLE"
+    "NORTH SURREY",
+    "N SRY",
+    "N SURRE",
+    "NS"
    ],
    "col": 6,
    "row": 7
@@ -674,8 +768,10 @@
    "name": "Guildford",
    "labels": [
     "GUILDFORD",
-    "GLDFRD",
-    "GUILDF"
+    "GUILDF",
+    "GUILD",
+    "GUIL",
+    "GUI"
    ],
    "col": 7,
    "row": 7
@@ -686,10 +782,12 @@
    "labels": [
     "WALNUT GROVE/FORT LANGLEY",
     "WALNUT GROVE/FORT LGLY",
-    "W G LANGLEY",
-    "WGL",
-    "WLNTGRV/",
-    "WALNUT"
+    "WALNUT GROVE/ LGLY",
+    "WALNU GROVE LGLY",
+    "WALN GROV LGLY",
+    "WAL GRO LGL",
+    "W G LANGL",
+    "WGL"
    ],
    "col": 9,
    "row": 7
@@ -699,22 +797,23 @@
    "name": "Blundell",
    "labels": [
     "BLUNDELL",
-    "BLNDLL",
-    "BLUNDE"
+    "BLUNDE",
+    "BLUND",
+    "BLUN",
+    "BLU"
    ],
    "col": 0,
    "row": 8
   },
   {
-   "id": "3111",
-   "name": "Richmond City Centre",
+   "id": "3113",
+   "name": "Broadmoor",
    "labels": [
-    "RICHMOND CITY CENTRE",
-    "RICH CITY CTR",
-    "R C CENTRE",
-    "RCC",
-    "RCHCTYCT",
-    "RICHMO"
+    "BROADMOOR",
+    "BROADM",
+    "BROAD",
+    "BROA",
+    "BRO"
    ],
    "col": 1,
    "row": 8
@@ -724,10 +823,12 @@
    "name": "Gilmore/Shellmont/East/Hamilton",
    "labels": [
     "GILMORE/SHELLMONT/EAST/HAMILTON",
-    "GLMR/SHL",
-    "GILMOR"
+    "GILMOR",
+    "GILMO",
+    "GILM",
+    "GIL"
    ],
-   "col": 2,
+   "col": 3,
    "row": 8
   },
   {
@@ -735,27 +836,17 @@
    "name": "New Westminster - West/Queensborough",
    "labels": [
     "NEW WESTMINSTER - WEST/QUEENSBOROUGH",
-    "NEW WEST-WEST/QUEENSBOROUGH",
-    "N W WEST/QUEENSBOROUGH",
-    "NWW",
-    "NWWST-WS",
-    "NEW WE"
+    "NEW WEST WEST/QUEENSBOROUGH",
+    "WEST/QUEENSBOROUGH",
+    "NEW WEST",
+    "NEW WEST WEST/Q",
+    "NEW WEST WEST/",
+    "NEW WEST WEST",
+    "NEW WES WES",
+    "N W WEST/",
+    "NWW"
    ],
    "col": 4,
-   "row": 8
-  },
-  {
-   "id": "2332",
-   "name": "North Surrey",
-   "labels": [
-    "NORTH SURREY",
-    "N SRY",
-    "N SURREY",
-    "NS",
-    "NSRY",
-    "NORTH"
-   ],
-   "col": 5,
    "row": 8
   },
   {
@@ -764,9 +855,23 @@
    "labels": [
     "WEST NEWTON",
     "W NEWTON",
-    "WN",
-    "WNWTN",
-    "WEST N"
+    "W NEWTO",
+    "W NEWT",
+    "W NEW",
+    "WN"
+   ],
+   "col": 5,
+   "row": 8
+  },
+  {
+   "id": "2331",
+   "name": "Whalley",
+   "labels": [
+    "WHALLEY",
+    "WHALLE",
+    "WHALL",
+    "WHAL",
+    "WHA"
    ],
    "col": 6,
    "row": 8
@@ -776,8 +881,10 @@
    "name": "Fleetwood",
    "labels": [
     "FLEETWOOD",
-    "FLTWD",
-    "FLEETW"
+    "FLEETW",
+    "FLEET",
+    "FLEE",
+    "FLE"
    ],
    "col": 7,
    "row": 8
@@ -787,10 +894,27 @@
    "name": "Willoughby",
    "labels": [
     "WILLOUGHBY",
-    "WLLGHBY",
-    "WILLOU"
+    "WILLOU",
+    "WILLO",
+    "WILL",
+    "WIL"
    ],
    "col": 8,
+   "row": 8
+  },
+  {
+   "id": "2141",
+   "name": "South Mission",
+   "labels": [
+    "SOUTH MISSION",
+    "S MISSION",
+    "S MISSIO",
+    "S MISSI",
+    "S MISS",
+    "S MIS",
+    "SM"
+   ],
+   "col": 11,
    "row": 8
   },
   {
@@ -798,21 +922,12 @@
    "name": "Steveston",
    "labels": [
     "STEVESTON",
-    "STVSTN",
-    "STEVES"
+    "STEVES",
+    "STEVE",
+    "STEV",
+    "STE"
    ],
    "col": 0,
-   "row": 9
-  },
-  {
-   "id": "3113",
-   "name": "Broadmoor",
-   "labels": [
-    "BROADMOOR",
-    "BRDMR",
-    "BROADM"
-   ],
-   "col": 1,
    "row": 9
   },
   {
@@ -820,7 +935,9 @@
    "name": "Ladner",
    "labels": [
     "LADNER",
-    "LDNR"
+    "LADNE",
+    "LADN",
+    "LAD"
    ],
    "col": 4,
    "row": 9
@@ -831,9 +948,9 @@
    "labels": [
     "NORTH DELTA",
     "N DELTA",
-    "ND",
-    "NDLT",
-    "NORTH"
+    "N DELT",
+    "N DEL",
+    "ND"
    ],
    "col": 5,
    "row": 9
@@ -844,9 +961,10 @@
    "labels": [
     "EAST NEWTON",
     "E NEWTON",
-    "EN",
-    "ENWTN",
-    "EAST N"
+    "E NEWTO",
+    "E NEWT",
+    "E NEW",
+    "EN"
    ],
    "col": 6,
    "row": 9
@@ -856,8 +974,10 @@
    "name": "Cloverdale",
    "labels": [
     "CLOVERDALE",
-    "CLVRDL",
-    "CLOVER"
+    "CLOVER",
+    "CLOVE",
+    "CLOV",
+    "CLO"
    ],
    "col": 7,
    "row": 9
@@ -868,7 +988,7 @@
    "labels": [
     "LANGLEY",
     "LGLY",
-    "LANGLE"
+    "LGL"
    ],
    "col": 8,
    "row": 9
@@ -879,23 +999,26 @@
    "labels": [
     "NORTH LANGLEY TOWNSHIP",
     "N LGLY TOWNSHIP",
-    "N L TOWNSHIP",
-    "NLT",
-    "NLGLYTWN",
-    "NORTH"
+    "N LGLY TOWNSH",
+    "N LGLY TOWNS",
+    "N LGLY TOWN",
+    "N LGL TOW",
+    "N L TOWNS",
+    "NLT"
    ],
    "col": 9,
    "row": 9
   },
   {
-   "id": "2141",
-   "name": "South Mission",
+   "id": "2134",
+   "name": "Abbotsford Rural",
    "labels": [
-    "SOUTH MISSION",
-    "S MISSION",
-    "SM",
-    "SMSSN",
-    "SOUTH"
+    "ABBOTSFORD RURAL",
+    "ABBY RURAL",
+    "ABBY RURA",
+    "ABB RUR",
+    "A RURAL",
+    "AR"
    ],
    "col": 11,
    "row": 9
@@ -905,8 +1028,10 @@
    "name": "Panorama",
    "labels": [
     "PANORAMA",
-    "PNRM",
-    "PANORA"
+    "PANORA",
+    "PANOR",
+    "PANO",
+    "PAN"
    ],
    "col": 6,
    "row": 10
@@ -916,8 +1041,10 @@
    "name": "Brookswood/Murrayville",
    "labels": [
     "BROOKSWOOD/MURRAYVILLE",
-    "BRKSWD/M",
-    "BROOKS"
+    "BROOKS",
+    "BROOK",
+    "BROO",
+    "BRO"
    ],
    "col": 8,
    "row": 10
@@ -927,22 +1054,23 @@
    "name": "Aldergrove/Otter",
    "labels": [
     "ALDERGROVE/OTTER",
-    "ALDRGRV/",
-    "ALDERG"
+    "ALDERG",
+    "ALDER",
+    "ALDE",
+    "ALD"
    ],
    "col": 10,
    "row": 10
   },
   {
-   "id": "2134",
-   "name": "Abbotsford Rural",
+   "id": "2133",
+   "name": "West Abbotsford",
    "labels": [
-    "ABBOTSFORD RURAL",
-    "ABBY RURAL",
-    "A RURAL",
-    "AR",
-    "ABBYRRL",
-    "ABBOTS"
+    "WEST ABBOTSFORD",
+    "W ABBY",
+    "W ABB",
+    "W ABBOT",
+    "WA"
    ],
    "col": 11,
    "row": 10
@@ -952,8 +1080,10 @@
    "name": "Tsawwassen",
    "labels": [
     "TSAWWASSEN",
-    "TSWWSSN",
-    "TSAWWA"
+    "TSAWWA",
+    "TSAWW",
+    "TSAW",
+    "TSA"
    ],
    "col": 2,
    "row": 11
@@ -965,9 +1095,7 @@
     "SOUTH SURREY WEST",
     "S SRY W",
     "S S WEST",
-    "SSW",
-    "SSRYW",
-    "SOUTH"
+    "SSW"
    ],
    "col": 6,
    "row": 11
@@ -977,10 +1105,10 @@
    "name": "White Rock",
    "labels": [
     "WHITE ROCK",
+    "WHIT ROCK",
+    "WHI ROC",
     "W ROCK",
-    "WR",
-    "WHTRCK",
-    "WHITE"
+    "WR"
    ],
    "col": 7,
    "row": 11
@@ -992,9 +1120,7 @@
     "SOUTH SURREY EAST",
     "S SRY E",
     "S S EAST",
-    "SSE",
-    "SSRYE",
-    "SOUTH"
+    "SSE"
    ],
    "col": 8,
    "row": 11
@@ -1005,26 +1131,14 @@
    "labels": [
     "SOUTH LANGLEY TOWNSHIP",
     "S LGLY TOWNSHIP",
-    "S L TOWNSHIP",
-    "SLT",
-    "SLGLYTWN",
-    "SOUTH"
+    "S LGLY TOWNSH",
+    "S LGLY TOWNS",
+    "S LGLY TOWN",
+    "S LGL TOW",
+    "S L TOWNS",
+    "SLT"
    ],
    "col": 9,
-   "row": 11
-  },
-  {
-   "id": "2133",
-   "name": "West Abbotsford",
-   "labels": [
-    "WEST ABBOTSFORD",
-    "W ABBY",
-    "W ABBOTSFORD",
-    "WA",
-    "WABBY",
-    "WEST A"
-   ],
-   "col": 10,
    "row": 11
   },
   {
@@ -1033,10 +1147,9 @@
    "labels": [
     "CENTRAL ABBOTSFORD",
     "C ABBY",
-    "C ABBOTSFORD",
-    "CA",
-    "CABBY",
-    "CENTRA"
+    "C ABB",
+    "C ABBOT",
+    "CA"
    ],
    "col": 11,
    "row": 11

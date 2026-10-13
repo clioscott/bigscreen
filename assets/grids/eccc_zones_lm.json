@@ -11,11 +11,18 @@
    "name": "Sunshine Coast - Gibsons to Earls Cove",
    "labels": [
     "SUNSHINE COAST - GIBSONS TO EARLS COVE",
-    "SUN COAST-GIBSONS TO EARLS COVE",
-    "S C G T E COVE",
-    "SCGTEC",
-    "SNCST-GB",
-    "SUNSHI"
+    "SUN COAST GIBSONS EARLS",
+    "SUN COAST GIBSONS",
+    "GIBSONS EARLS",
+    "SUN COAST",
+    "SUN COAST GIBSONS TO EARLS COVE",
+    "SUN COAST GIBSONS EARLS COVE",
+    "SUN COAST GIBSON EARLS COVE",
+    "SUN COAST GIBSO EARLS COVE",
+    "SUN COAS GIBS EARL COVE",
+    "SUN COA GIB EAR COV",
+    "S C G E COVE",
+    "SCGEC"
    ],
    "col": 0,
    "row": 0
@@ -25,24 +32,12 @@
    "name": "Whistler",
    "labels": [
     "WHISTLER",
-    "WHSTLR",
-    "WHISTL"
+    "WHISTL",
+    "WHIST",
+    "WHIS",
+    "WHI"
    ],
    "col": 3,
-   "row": 0
-  },
-  {
-   "id": "Fraser Canyon - south including Lytton",
-   "name": "Fraser Canyon - south",
-   "labels": [
-    "FRASER CANYON - SOUTH",
-    "FRASER CANYON-SOUTH",
-    "F C SOUTH",
-    "FCS",
-    "FRSRCNYN",
-    "FRASER"
-   ],
-   "col": 5,
    "row": 0
   },
   {
@@ -50,12 +45,29 @@
    "name": "Howe Sound",
    "labels": [
     "HOWE SOUND",
+    "HOWE SOUN",
+    "HOW SOU",
     "H SOUND",
-    "HS",
-    "HWSND",
-    "HOWE S"
+    "HS"
    ],
    "col": 1,
+   "row": 1
+  },
+  {
+   "id": "Fraser Canyon - south including Lytton",
+   "name": "Fraser Canyon - south",
+   "labels": [
+    "FRASER CANYON - SOUTH",
+    "FRASER CANYON SOUTH",
+    "SOUTH",
+    "FRASER CANYON",
+    "FRASE CANYO SOUTH",
+    "FRAS CANY SOUT",
+    "FRA CAN SOU",
+    "F C SOUTH",
+    "FCS"
+   ],
+   "col": 5,
    "row": 1
   },
   {
@@ -64,9 +76,9 @@
    "labels": [
     "NORTH SHORE",
     "N SHORE",
-    "NS",
-    "NSHR",
-    "NORTH"
+    "N SHOR",
+    "N SHO",
+    "NS"
    ],
    "col": 2,
    "row": 2
@@ -76,8 +88,10 @@
    "name": "northeast",
    "labels": [
     "NORTHEAST",
-    "NRTHST",
-    "NORTHE"
+    "NORTHE",
+    "NORTH",
+    "NORT",
+    "NOR"
    ],
    "col": 3,
    "row": 2
@@ -87,11 +101,15 @@
    "name": "Fraser Valley - central",
    "labels": [
     "FRASER VALLEY - CENTRAL",
-    "FRASER VLY-CENTRAL",
-    "F V CENTRAL",
-    "FVC",
-    "FRSRVLY-",
-    "FRASER"
+    "FRASER VLY CENTRAL",
+    "CENTRAL",
+    "FRASER VLY",
+    "FRASER VLY CENTRA",
+    "FRASE VLY CENTR",
+    "FRAS VLY CENT",
+    "FRA VLY CEN",
+    "F V CENTR",
+    "FVC"
    ],
    "col": 4,
    "row": 2
@@ -101,11 +119,14 @@
    "name": "Fraser Valley - east",
    "labels": [
     "FRASER VALLEY - EAST",
-    "FRASER VLY-EAST",
+    "FRASER VLY EAST",
+    "EAST",
+    "FRASER VLY",
+    "FRASE VLY EAST",
+    "FRAS VLY EAST",
+    "FRA VLY EAS",
     "F V EAST",
-    "FVE",
-    "FRSRVLY-",
-    "FRASER"
+    "FVE"
    ],
    "col": 5,
    "row": 2
@@ -116,10 +137,12 @@
    "labels": [
     "SOUTHERN GULF ISLANDS",
     "SOUTHERN GULF IS",
-    "S G ISLANDS",
-    "SGI",
-    "STHRNGLF",
-    "SOUTHE"
+    "SOUTHE GULF IS",
+    "SOUTH GULF IS",
+    "SOUT GULF IS",
+    "SOU GUL IS",
+    "S G ISLAN",
+    "SGI"
    ],
    "col": 0,
    "row": 3
@@ -129,8 +152,10 @@
    "name": "central",
    "labels": [
     "CENTRAL",
-    "CNTRL",
-    "CENTRA"
+    "CENTRA",
+    "CENTR",
+    "CENT",
+    "CEN"
    ],
    "col": 1,
    "row": 3
@@ -140,8 +165,10 @@
    "name": "southwest",
    "labels": [
     "SOUTHWEST",
-    "STHWST",
-    "SOUTHW"
+    "SOUTHW",
+    "SOUTH",
+    "SOUT",
+    "SOU"
    ],
    "col": 2,
    "row": 3
@@ -151,8 +178,10 @@
    "name": "southeast",
    "labels": [
     "SOUTHEAST",
-    "STHST",
-    "SOUTHE"
+    "SOUTHE",
+    "SOUTH",
+    "SOUT",
+    "SOU"
    ],
    "col": 3,
    "row": 3
@@ -162,11 +191,14 @@
    "name": "Fraser Valley - west",
    "labels": [
     "FRASER VALLEY - WEST",
-    "FRASER VLY-WEST",
+    "FRASER VLY WEST",
+    "WEST",
+    "FRASER VLY",
+    "FRASE VLY WEST",
+    "FRAS VLY WEST",
+    "FRA VLY WES",
     "F V WEST",
-    "FVW",
-    "FRSRVLY-",
-    "FRASER"
+    "FVW"
    ],
    "col": 4,
    "row": 3

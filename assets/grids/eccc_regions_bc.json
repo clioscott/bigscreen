@@ -11,7 +11,8 @@
    "name": "Atlin",
    "labels": [
     "ATLIN",
-    "ATLN"
+    "ATLI",
+    "ATL"
    ],
    "col": 0,
    "row": 0
@@ -22,10 +23,10 @@
    "labels": [
     "DEASE LAKE",
     "DEASE LK",
+    "DEAS LK",
+    "DEA LK",
     "D LAKE",
-    "DL",
-    "DSLK",
-    "DEASE"
+    "DL"
    ],
    "col": 1,
    "row": 0
@@ -35,11 +36,16 @@
    "name": "Muncho Lake Park - Stone Mountain Park",
    "labels": [
     "MUNCHO LAKE PARK - STONE MOUNTAIN PARK",
-    "MUNCHO LK PARK-STONE MTN PARK",
+    "MUNCHO LK PARK STONE MOUNTAIN",
+    "MUNCHO LK PARK STONE",
+    "STONE MOUNTAIN",
+    "MUNCHO LK PARK",
+    "MUNCHO LK PARK STONE MTN PARK",
+    "MUNCH LK PARK STONE MTN PARK",
+    "MUNC LK PARK STON MTN PARK",
+    "MUN LK PAR STO MTN PAR",
     "M L P S M PARK",
-    "MLPSMP",
-    "MNCHLKPR",
-    "MUNCHO"
+    "MLPSMP"
    ],
    "col": 3,
    "row": 0
@@ -50,10 +56,11 @@
    "labels": [
     "FORT NELSON",
     "FT NELSON",
-    "F NELSON",
-    "FN",
-    "FTNLSN",
-    "FORT N"
+    "FT NELSO",
+    "FT NELS",
+    "FT NEL",
+    "F NELSO",
+    "FN"
    ],
    "col": 5,
    "row": 0
@@ -63,27 +70,18 @@
    "name": "North Coast - inland sections",
    "labels": [
     "NORTH COAST - INLAND SECTIONS",
-    "N COAST-INLAND SECTIONS",
-    "N C I SECTIONS",
-    "NCIS",
-    "NCST-INL",
-    "NORTH"
+    "N COAST INLAND SECTIONS",
+    "N COAST INLAND",
+    "INLAND SECTIONS",
+    "N COAST",
+    "N COAST INLAND SECTIO",
+    "N COAST INLAN SECTI",
+    "N COAS INLA SECT",
+    "N COA INL SEC",
+    "N C I SECTI",
+    "NCIS"
    ],
    "col": 1,
-   "row": 1
-  },
-  {
-   "id": "Bulkley Valley and the Lakes District",
-   "name": "Bulkley Valley and the Lakes District",
-   "labels": [
-    "BULKLEY VALLEY AND THE LAKES DISTRICT",
-    "BULKLEY VLY AND THE LAKES DIST",
-    "B V A T L DISTRICT",
-    "BVATLD",
-    "BLKLYVLY",
-    "BULKLE"
-   ],
-   "col": 2,
    "row": 1
   },
   {
@@ -91,10 +89,12 @@
    "name": "Williston",
    "labels": [
     "WILLISTON",
-    "WLLSTN",
-    "WILLIS"
+    "WILLIS",
+    "WILLI",
+    "WILL",
+    "WIL"
    ],
-   "col": 4,
+   "col": 3,
    "row": 1
   },
   {
@@ -103,12 +103,12 @@
    "labels": [
     "B.C. PEACE RIVER",
     "B.C. PEACE R",
+    "B.C. PEAC R",
+    "B.C PEA R",
     "B P RIVER",
-    "BPR",
-    "B.C.PCR",
-    "B.C. P"
+    "BPR"
    ],
-   "col": 6,
+   "col": 5,
    "row": 1
   },
   {
@@ -116,13 +116,35 @@
    "name": "North Coast - coastal sections",
    "labels": [
     "NORTH COAST - COASTAL SECTIONS",
-    "N COAST-COASTAL SECTIONS",
-    "N C C SECTIONS",
-    "NCCS",
-    "NCST-CST",
-    "NORTH"
+    "N COAST COASTAL SECTIONS",
+    "N COAST COASTAL",
+    "COASTAL SECTIONS",
+    "N COAST",
+    "N COAST COASTA SECTIO",
+    "N COAST COAST SECTI",
+    "N COAS COAS SECT",
+    "N COA COA SEC",
+    "N C C SECTI",
+    "NCCS"
    ],
    "col": 1,
+   "row": 2
+  },
+  {
+   "id": "Bulkley Valley and the Lakes District",
+   "name": "Bulkley Valley and the Lakes District",
+   "labels": [
+    "BULKLEY VALLEY AND THE LAKES DISTRICT",
+    "BULKLEY VLY AND THE LAKES DIST",
+    "BULKLEY VLY LAKES DIST",
+    "BULKLE VLY LAKES DIST",
+    "BULKL VLY LAKES DIST",
+    "BULK VLY LAKE DIST",
+    "BUL VLY LAK DIS",
+    "B V L DISTR",
+    "BVLD"
+   ],
+   "col": 2,
    "row": 2
   },
   {
@@ -130,11 +152,15 @@
    "name": "Stuart - Nechako",
    "labels": [
     "STUART - NECHAKO",
-    "STUART-NECHAKO",
-    "S NECHAKO",
-    "SN",
-    "STRT-NCH",
-    "STUART"
+    "STUART NECHAKO",
+    "NECHAKO",
+    "STUART",
+    "STUART NECHAK",
+    "STUAR NECHA",
+    "STUA NECH",
+    "STU NEC",
+    "S NECHA",
+    "SN"
    ],
    "col": 3,
    "row": 2
@@ -144,10 +170,11 @@
    "name": "Prince George",
    "labels": [
     "PRINCE GEORGE",
-    "P GEORGE",
-    "PG",
-    "PRNCGRG",
-    "PRINCE"
+    "PRINC GEORG",
+    "PRIN GEOR",
+    "PRI GEO",
+    "P GEORG",
+    "PG"
    ],
    "col": 4,
    "row": 2
@@ -157,8 +184,10 @@
    "name": "McGregor",
    "labels": [
     "MCGREGOR",
-    "MCGRGR",
-    "MCGREG"
+    "MCGREG",
+    "MCGRE",
+    "MCGR",
+    "MCG"
    ],
    "col": 5,
    "row": 2
@@ -168,10 +197,10 @@
    "name": "Haida Gwaii",
    "labels": [
     "HAIDA GWAII",
+    "HAID GWAI",
+    "HAI GWA",
     "H GWAII",
-    "HG",
-    "HDGW",
-    "HAIDA"
+    "HG"
    ],
    "col": 0,
    "row": 3
@@ -181,8 +210,10 @@
    "name": "Cariboo",
    "labels": [
     "CARIBOO",
-    "CRB",
-    "CARIBO"
+    "CARIBO",
+    "CARIB",
+    "CARI",
+    "CAR"
    ],
    "col": 5,
    "row": 3
@@ -192,8 +223,10 @@
    "name": "Yellowhead",
    "labels": [
     "YELLOWHEAD",
-    "YLLWHD",
-    "YELLOW"
+    "YELLOW",
+    "YELLO",
+    "YELL",
+    "YEL"
    ],
    "col": 6,
    "row": 3
@@ -203,8 +236,10 @@
    "name": "Kinbasket",
    "labels": [
     "KINBASKET",
-    "KNBSKT",
-    "KINBAS"
+    "KINBAS",
+    "KINBA",
+    "KINB",
+    "KIN"
    ],
    "col": 7,
    "row": 3
@@ -214,11 +249,16 @@
    "name": "Central Coast - coastal sections",
    "labels": [
     "CENTRAL COAST - COASTAL SECTIONS",
-    "C COAST-COASTAL SECTIONS",
-    "C C C SECTIONS",
-    "CCCS",
-    "CCST-CST",
-    "CENTRA"
+    "C COAST COASTAL SECTIONS",
+    "C COAST COASTAL",
+    "COASTAL SECTIONS",
+    "C COAST",
+    "C COAST COASTA SECTIO",
+    "C COAST COAST SECTI",
+    "C COAS COAS SECT",
+    "C COA COA SEC",
+    "C C C SECTI",
+    "CCCS"
    ],
    "col": 1,
    "row": 4
@@ -228,11 +268,16 @@
    "name": "Central Coast - inland sections",
    "labels": [
     "CENTRAL COAST - INLAND SECTIONS",
-    "C COAST-INLAND SECTIONS",
-    "C C I SECTIONS",
-    "CCIS",
-    "CCST-INL",
-    "CENTRA"
+    "C COAST INLAND SECTIONS",
+    "C COAST INLAND",
+    "INLAND SECTIONS",
+    "C COAST",
+    "C COAST INLAND SECTIO",
+    "C COAST INLAN SECTI",
+    "C COAS INLA SECT",
+    "C COA INL SEC",
+    "C C I SECTI",
+    "CCIS"
    ],
    "col": 2,
    "row": 4
@@ -242,10 +287,12 @@
    "name": "Chilcotin",
    "labels": [
     "CHILCOTIN",
-    "CHLCTN",
-    "CHILCO"
+    "CHILCO",
+    "CHILC",
+    "CHIL",
+    "CHI"
    ],
-   "col": 3,
+   "col": 4,
    "row": 4
   },
   {
@@ -253,10 +300,9 @@
    "name": "100 Mile",
    "labels": [
     "100 MILE",
+    "100 MIL",
     "1 MILE",
-    "1M",
-    "100ML",
-    "100 MI"
+    "1M"
    ],
    "col": 5,
    "row": 4
@@ -267,9 +313,11 @@
    "labels": [
     "NORTH THOMPSON",
     "N THOMPSON",
-    "NT",
-    "NTHMPSN",
-    "NORTH"
+    "N THOMPS",
+    "N THOMP",
+    "N THOM",
+    "N THO",
+    "NT"
    ],
    "col": 6,
    "row": 4
@@ -280,10 +328,8 @@
    "labels": [
     "NORTH COLUMBIA",
     "N COL",
-    "N COLUMBIA",
-    "NC",
-    "NCL",
-    "NORTH"
+    "N COLUM",
+    "NC"
    ],
    "col": 7,
    "row": 4
@@ -294,26 +340,24 @@
    "labels": [
     "EAST COLUMBIA",
     "E COL",
-    "E COLUMBIA",
-    "EC",
-    "ECL",
-    "EAST C"
+    "E COLUM",
+    "EC"
    ],
    "col": 8,
    "row": 4
   },
   {
-   "id": "Sunshine Coast",
-   "name": "Sunshine Coast",
+   "id": "Fraser Canyon",
+   "name": "Fraser Canyon",
    "labels": [
-    "SUNSHINE COAST",
-    "SUN COAST",
-    "S COAST",
-    "SC",
-    "SNCST",
-    "SUNSHI"
+    "FRASER CANYON",
+    "FRASE CANYO",
+    "FRAS CANY",
+    "FRA CAN",
+    "F CANYO",
+    "FC"
    ],
-   "col": 3,
+   "col": 4,
    "row": 5
   },
   {
@@ -322,9 +366,11 @@
    "labels": [
     "SOUTH THOMPSON",
     "S THOMPSON",
-    "ST",
-    "STHMPSN",
-    "SOUTH"
+    "S THOMPS",
+    "S THOMP",
+    "S THOM",
+    "S THO",
+    "ST"
    ],
    "col": 5,
    "row": 5
@@ -334,8 +380,10 @@
    "name": "Shuswap",
    "labels": [
     "SHUSWAP",
-    "SHSWP",
-    "SHUSWA"
+    "SHUSWA",
+    "SHUSW",
+    "SHUS",
+    "SHU"
    ],
    "col": 6,
    "row": 5
@@ -346,10 +394,8 @@
    "labels": [
     "WEST COLUMBIA",
     "W COL",
-    "W COLUMBIA",
-    "WC",
-    "WCL",
-    "WEST C"
+    "W COLUM",
+    "WC"
    ],
    "col": 7,
    "row": 5
@@ -359,11 +405,14 @@
    "name": "Yoho Park - Kootenay Park",
    "labels": [
     "YOHO PARK - KOOTENAY PARK",
-    "YOHO PARK-KOOT PARK",
+    "YOHO PARK KOOTENAY PARK",
+    "YOHO PARK KOOTENAY",
+    "KOOTENAY PARK",
+    "YOHO PARK",
+    "YOHO PARK KOOT PARK",
+    "YOH PAR KOO PAR",
     "Y P K PARK",
-    "YPKP",
-    "YHPRK-KT",
-    "YOHO P"
+    "YPKP"
    ],
    "col": 8,
    "row": 5
@@ -374,23 +423,22 @@
    "labels": [
     "NORTH VANCOUVER ISLAND",
     "N VAN I",
-    "N V ISLAND",
-    "NVI",
-    "NVNI",
-    "NORTH"
+    "N V ISLAN",
+    "NVI"
    ],
    "col": 2,
    "row": 6
   },
   {
-   "id": "Howe Sound",
-   "name": "Howe Sound",
+   "id": "Sunshine Coast",
+   "name": "Sunshine Coast",
    "labels": [
-    "HOWE SOUND",
-    "H SOUND",
-    "HS",
-    "HWSND",
-    "HOWE S"
+    "SUNSHINE COAST",
+    "SUN COAST",
+    "SUN COAS",
+    "SUN COA",
+    "S COAST",
+    "SC"
    ],
    "col": 3,
    "row": 6
@@ -400,23 +448,12 @@
    "name": "Whistler",
    "labels": [
     "WHISTLER",
-    "WHSTLR",
-    "WHISTL"
+    "WHISTL",
+    "WHIST",
+    "WHIS",
+    "WHI"
    ],
    "col": 4,
-   "row": 6
-  },
-  {
-   "id": "Fraser Canyon",
-   "name": "Fraser Canyon",
-   "labels": [
-    "FRASER CANYON",
-    "F CANYON",
-    "FC",
-    "FRSRCNYN",
-    "FRASER"
-   ],
-   "col": 5,
    "row": 6
   },
   {
@@ -424,7 +461,22 @@
    "name": "Nicola",
    "labels": [
     "NICOLA",
-    "NCL"
+    "NICOL",
+    "NICO",
+    "NIC"
+   ],
+   "col": 5,
+   "row": 6
+  },
+  {
+   "id": "Okanagan Valley",
+   "name": "Okanagan Valley",
+   "labels": [
+    "OKANAGAN VALLEY",
+    "OKAN VLY",
+    "OKA VLY",
+    "O VALLE",
+    "OV"
    ],
    "col": 6,
    "row": 6
@@ -434,11 +486,16 @@
    "name": "Arrow Lakes - Slocan Lake",
    "labels": [
     "ARROW LAKES - SLOCAN LAKE",
-    "ARROW LAKES-SLOCAN LK",
+    "ARROW LAKES SLOCAN LAKE",
+    "ARROW LAKES SLOCAN",
+    "SLOCAN LAKE",
+    "ARROW LAKES",
+    "ARROW LAKES SLOCAN LK",
+    "ARROW LAKES SLOCA LK",
+    "ARRO LAKE SLOC LK",
+    "ARR LAK SLO LK",
     "A L S LAKE",
-    "ALSL",
-    "ARRWLKS-",
-    "ARROW"
+    "ALSL"
    ],
    "col": 7,
    "row": 6
@@ -449,10 +506,9 @@
    "labels": [
     "EAST KOOTENAY",
     "E KOOT",
-    "E KOOTENAY",
-    "EK",
-    "EKT",
-    "EAST K"
+    "E KOO",
+    "E KOOTE",
+    "EK"
    ],
    "col": 8,
    "row": 6
@@ -463,10 +519,11 @@
    "labels": [
     "INLAND VANCOUVER ISLAND",
     "INLAND VAN I",
-    "I V ISLAND",
-    "IVI",
-    "INLNDVNI",
-    "INLAND"
+    "INLAN VAN I",
+    "INLA VAN I",
+    "INL VAN I",
+    "I V ISLAN",
+    "IVI"
    ],
    "col": 2,
    "row": 7
@@ -477,24 +534,21 @@
    "labels": [
     "EAST VANCOUVER ISLAND",
     "E VAN I",
-    "E V ISLAND",
-    "EVI",
-    "EVNI",
-    "EAST V"
+    "E V ISLAN",
+    "EVI"
    ],
    "col": 3,
    "row": 7
   },
   {
-   "id": "Metro Vancouver",
-   "name": "Metro Vancouver",
+   "id": "Howe Sound",
+   "name": "Howe Sound",
    "labels": [
-    "METRO VANCOUVER",
-    "METRO VAN",
-    "M VANCOUVER",
-    "MV",
-    "MTRVN",
-    "METRO"
+    "HOWE SOUND",
+    "HOWE SOUN",
+    "HOW SOU",
+    "H SOUND",
+    "HS"
    ],
    "col": 4,
    "row": 7
@@ -505,24 +559,24 @@
    "labels": [
     "FRASER VALLEY",
     "FRASER VLY",
-    "F VALLEY",
-    "FV",
-    "FRSRVLY",
-    "FRASER"
+    "FRASE VLY",
+    "FRAS VLY",
+    "FRA VLY",
+    "F VALLE",
+    "FV"
    ],
    "col": 5,
    "row": 7
   },
   {
-   "id": "Okanagan Valley",
-   "name": "Okanagan Valley",
+   "id": "Similkameen",
+   "name": "Similkameen",
    "labels": [
-    "OKANAGAN VALLEY",
-    "OKAN VLY",
-    "O VALLEY",
-    "OV",
-    "OKNVLY",
-    "OKANAG"
+    "SIMILKAMEEN",
+    "SIMILK",
+    "SIMIL",
+    "SIMI",
+    "SIM"
    ],
    "col": 6,
    "row": 7
@@ -533,10 +587,9 @@
    "labels": [
     "KOOTENAY LAKE",
     "KOOT LK",
+    "KOO LK",
     "K LAKE",
-    "KL",
-    "KTLK",
-    "KOOTEN"
+    "KL"
    ],
    "col": 7,
    "row": 7
@@ -547,10 +600,8 @@
    "labels": [
     "ELK VALLEY",
     "ELK VLY",
-    "E VALLEY",
-    "EV",
-    "ELKVLY",
-    "ELK VA"
+    "E VALLE",
+    "EV"
    ],
    "col": 8,
    "row": 7
@@ -561,10 +612,8 @@
    "labels": [
     "WEST VANCOUVER ISLAND",
     "W VAN I",
-    "W V ISLAND",
-    "WVI",
-    "WVNI",
-    "WEST V"
+    "W V ISLAN",
+    "WVI"
    ],
    "col": 2,
    "row": 8
@@ -575,10 +624,12 @@
    "labels": [
     "SOUTHERN GULF ISLANDS",
     "SOUTHERN GULF IS",
-    "S G ISLANDS",
-    "SGI",
-    "STHRNGLF",
-    "SOUTHE"
+    "SOUTHE GULF IS",
+    "SOUTH GULF IS",
+    "SOUT GULF IS",
+    "SOU GUL IS",
+    "S G ISLAN",
+    "SGI"
    ],
    "col": 3,
    "row": 8
@@ -588,12 +639,28 @@
    "name": "Greater Victoria",
    "labels": [
     "GREATER VICTORIA",
-    "G VICTORIA",
-    "GV",
-    "GRTRVCTR",
-    "GREATE"
+    "GREATE VICTOR",
+    "GREAT VICTO",
+    "GREA VICT",
+    "GRE VIC",
+    "G VICTO",
+    "GV"
    ],
    "col": 4,
+   "row": 8
+  },
+  {
+   "id": "Metro Vancouver",
+   "name": "Metro Vancouver",
+   "labels": [
+    "METRO VANCOUVER",
+    "METRO VAN",
+    "METR VAN",
+    "MET VAN",
+    "M VANCO",
+    "MV"
+   ],
+   "col": 5,
    "row": 8
   },
   {
@@ -601,22 +668,17 @@
    "name": "Manning - Skagit Valley",
    "labels": [
     "MANNING - SKAGIT VALLEY",
-    "MANNING-SKAGIT VLY",
-    "M S VALLEY",
-    "MSV",
-    "MNNNG-SK",
-    "MANNIN"
-   ],
-   "col": 5,
-   "row": 8
-  },
-  {
-   "id": "Similkameen",
-   "name": "Similkameen",
-   "labels": [
-    "SIMILKAMEEN",
-    "SMLKMN",
-    "SIMILK"
+    "MANNING SKAGIT VALLEY",
+    "MANNING SKAGIT",
+    "SKAGIT VALLEY",
+    "MANNING",
+    "MANNING SKAGIT VLY",
+    "MANNIN SKAGIT VLY",
+    "MANNI SKAGI VLY",
+    "MANN SKAG VLY",
+    "MAN SKA VLY",
+    "M S VALLE",
+    "MSV"
    ],
    "col": 6,
    "row": 8
@@ -626,8 +688,10 @@
    "name": "Boundary",
    "labels": [
     "BOUNDARY",
-    "BNDRY",
-    "BOUNDA"
+    "BOUNDA",
+    "BOUND",
+    "BOUN",
+    "BOU"
    ],
    "col": 7,
    "row": 8
@@ -638,10 +702,9 @@
    "labels": [
     "WEST KOOTENAY",
     "W KOOT",
-    "W KOOTENAY",
-    "WK",
-    "WKT",
-    "WEST K"
+    "W KOO",
+    "W KOOTE",
+    "WK"
    ],
    "col": 8,
    "row": 8

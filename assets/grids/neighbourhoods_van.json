@@ -12,9 +12,7 @@
    "labels": [
     "WEST END",
     "W END",
-    "WE",
-    "WEND",
-    "WEST E"
+    "WE"
    ],
    "col": 2,
    "row": 0
@@ -24,8 +22,10 @@
    "name": "Downtown",
    "labels": [
     "DOWNTOWN",
-    "DWNTWN",
-    "DOWNTO"
+    "DOWNTO",
+    "DOWNT",
+    "DOWN",
+    "DOW"
    ],
    "col": 3,
    "row": 0
@@ -35,8 +35,10 @@
    "name": "Strathcona",
    "labels": [
     "STRATHCONA",
-    "STRTHCN",
-    "STRATH"
+    "STRATH",
+    "STRAT",
+    "STRA",
+    "STR"
    ],
    "col": 4,
    "row": 0
@@ -46,10 +48,13 @@
    "name": "Grandview-Woodland",
    "labels": [
     "GRANDVIEW-WOODLAND",
-    "G WOODLAND",
-    "GW",
-    "GRNDVW-W",
-    "GRANDV"
+    "GRANDVIEW WOODLAND",
+    "GRANDV WOODLA",
+    "GRAND WOODL",
+    "GRAN WOOD",
+    "GRA WOO",
+    "G WOODL",
+    "GW"
    ],
    "col": 5,
    "row": 0
@@ -59,10 +64,13 @@
    "name": "Hastings-Sunrise",
    "labels": [
     "HASTINGS-SUNRISE",
-    "H SUNRISE",
-    "HS",
-    "HSTNGS-S",
-    "HASTIN"
+    "HASTINGS SUNRISE",
+    "HASTIN SUNRIS",
+    "HASTI SUNRI",
+    "HAST SUNR",
+    "HAS SUN",
+    "H SUNRI",
+    "HS"
    ],
    "col": 6,
    "row": 0
@@ -73,10 +81,10 @@
    "labels": [
     "WEST POINT GREY",
     "W POINT GREY",
+    "W POIN GREY",
+    "W POI GRE",
     "W P GREY",
-    "WPG",
-    "WPNTGRY",
-    "WEST P"
+    "WPG"
    ],
    "col": 0,
    "row": 1
@@ -86,8 +94,10 @@
    "name": "Kitsilano",
    "labels": [
     "KITSILANO",
-    "KTSLN",
-    "KITSIL"
+    "KITSIL",
+    "KITSI",
+    "KITS",
+    "KIT"
    ],
    "col": 1,
    "row": 1
@@ -97,8 +107,10 @@
    "name": "Fairview",
    "labels": [
     "FAIRVIEW",
-    "FRVW",
-    "FAIRVI"
+    "FAIRVI",
+    "FAIRV",
+    "FAIR",
+    "FAI"
    ],
    "col": 2,
    "row": 1
@@ -109,9 +121,10 @@
    "labels": [
     "SOUTH CAMBIE",
     "S CAMBIE",
-    "SC",
-    "SCMB",
-    "SOUTH"
+    "S CAMBI",
+    "S CAMB",
+    "S CAM",
+    "SC"
    ],
    "col": 3,
    "row": 2
@@ -122,25 +135,14 @@
    "labels": [
     "MOUNT PLEASANT",
     "MT PLEASANT",
-    "M PLEASANT",
-    "MP",
-    "MTPLSNT",
-    "MOUNT"
+    "MT PLEASA",
+    "MT PLEAS",
+    "MT PLEA",
+    "MT PLE",
+    "M PLEAS",
+    "MP"
    ],
    "col": 4,
-   "row": 2
-  },
-  {
-   "id": "Kensington-Cedar Cottage",
-   "name": "Kensington-Cedar Cottage",
-   "labels": [
-    "KENSINGTON-CEDAR COTTAGE",
-    "K C COTTAGE",
-    "KCC",
-    "KNSNGTN-",
-    "KENSIN"
-   ],
-   "col": 5,
    "row": 2
   },
   {
@@ -148,10 +150,13 @@
    "name": "Renfrew-Collingwood",
    "labels": [
     "RENFREW-COLLINGWOOD",
-    "R COLLINGWOOD",
-    "RC",
-    "RNFRW-CL",
-    "RENFRE"
+    "RENFREW COLLINGWOOD",
+    "RENFRE COLLIN",
+    "RENFR COLLI",
+    "RENF COLL",
+    "REN COL",
+    "R COLLI",
+    "RC"
    ],
    "col": 6,
    "row": 2
@@ -161,10 +166,12 @@
    "name": "Arbutus Ridge",
    "labels": [
     "ARBUTUS RIDGE",
+    "ARBUTU RIDGE",
+    "ARBUT RIDGE",
+    "ARBU RIDG",
+    "ARB RID",
     "A RIDGE",
-    "AR",
-    "ARBTSRDG",
-    "ARBUTU"
+    "AR"
    ],
    "col": 1,
    "row": 3
@@ -174,8 +181,10 @@
    "name": "Shaughnessy",
    "labels": [
     "SHAUGHNESSY",
-    "SHGHNSSY",
-    "SHAUGH"
+    "SHAUGH",
+    "SHAUG",
+    "SHAU",
+    "SHA"
    ],
    "col": 2,
    "row": 3
@@ -185,12 +194,28 @@
    "name": "Riley Park",
    "labels": [
     "RILEY PARK",
+    "RILE PARK",
+    "RIL PAR",
     "R PARK",
-    "RP",
-    "RLYPRK",
-    "RILEY"
+    "RP"
    ],
    "col": 4,
+   "row": 3
+  },
+  {
+   "id": "Kensington-Cedar Cottage",
+   "name": "Kensington-Cedar Cottage",
+   "labels": [
+    "KENSINGTON-CEDAR COTTAGE",
+    "KENSINGTON CEDAR COTTAGE",
+    "KENSIN CEDAR COTTAG",
+    "KENSI CEDAR COTTA",
+    "KENS CEDA COTT",
+    "KEN CED COT",
+    "K C COTTA",
+    "KCC"
+   ],
+   "col": 5,
    "row": 3
   },
   {
@@ -198,10 +223,13 @@
    "name": "Dunbar-Southlands",
    "labels": [
     "DUNBAR-SOUTHLANDS",
-    "D SOUTHLANDS",
-    "DS",
-    "DNBR-STH",
-    "DUNBAR"
+    "DUNBAR SOUTHLANDS",
+    "DUNBAR SOUTHL",
+    "DUNBA SOUTH",
+    "DUNB SOUT",
+    "DUN SOU",
+    "D SOUTH",
+    "DS"
    ],
    "col": 0,
    "row": 4
@@ -211,8 +239,10 @@
    "name": "Kerrisdale",
    "labels": [
     "KERRISDALE",
-    "KRRSDL",
-    "KERRIS"
+    "KERRIS",
+    "KERRI",
+    "KERR",
+    "KER"
    ],
    "col": 1,
    "row": 4
@@ -222,8 +252,10 @@
    "name": "Oakridge",
    "labels": [
     "OAKRIDGE",
-    "OKRDG",
-    "OAKRID"
+    "OAKRID",
+    "OAKRI",
+    "OAKR",
+    "OAK"
    ],
    "col": 3,
    "row": 4
@@ -233,8 +265,10 @@
    "name": "Marpole",
    "labels": [
     "MARPOLE",
-    "MRPL",
-    "MARPOL"
+    "MARPOL",
+    "MARPO",
+    "MARP",
+    "MAR"
    ],
    "col": 2,
    "row": 5
@@ -244,7 +278,9 @@
    "name": "Sunset",
    "labels": [
     "SUNSET",
-    "SNST"
+    "SUNSE",
+    "SUNS",
+    "SUN"
    ],
    "col": 4,
    "row": 5
@@ -254,10 +290,13 @@
    "name": "Victoria-Fraserview",
    "labels": [
     "VICTORIA-FRASERVIEW",
-    "V FRASERVIEW",
-    "VF",
-    "VCTR-FRS",
-    "VICTOR"
+    "VICTORIA FRASERVIEW",
+    "VICTOR FRASER",
+    "VICTO FRASE",
+    "VICT FRAS",
+    "VIC FRA",
+    "V FRASE",
+    "VF"
    ],
    "col": 5,
    "row": 5
@@ -267,8 +306,10 @@
    "name": "Killarney",
    "labels": [
     "KILLARNEY",
-    "KLLRNY",
-    "KILLAR"
+    "KILLAR",
+    "KILLA",
+    "KILL",
+    "KIL"
    ],
    "col": 6,
    "row": 5

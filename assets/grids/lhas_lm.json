@@ -12,10 +12,10 @@
    "labels": [
     "SUNSHINE COAST",
     "SUN COAST",
+    "SUN COAS",
+    "SUN COA",
     "S COAST",
-    "SC",
-    "SNCST",
-    "SUNSHI"
+    "SC"
    ],
    "col": 0,
    "row": 0
@@ -25,10 +25,10 @@
    "name": "Howe Sound",
    "labels": [
     "HOWE SOUND",
+    "HOWE SOUN",
+    "HOW SOU",
     "H SOUND",
-    "HS",
-    "HWSND",
-    "HOWE S"
+    "HS"
    ],
    "col": 4,
    "row": 0
@@ -38,10 +38,12 @@
    "name": "Maple Ridge/Pitt Meadows",
    "labels": [
     "MAPLE RIDGE/PITT MEADOWS",
-    "M R MEADOWS",
-    "MRM",
-    "MPLRDG/P",
-    "MAPLE"
+    "MAPLE RIDGE/ MEADOW",
+    "MAPLE RIDGE MEADO",
+    "MAPL RIDG MEAD",
+    "MAP RID MEA",
+    "M R MEADO",
+    "MRM"
    ],
    "col": 5,
    "row": 1
@@ -51,8 +53,10 @@
    "name": "Agassiz/Harrison",
    "labels": [
     "AGASSIZ/HARRISON",
-    "AGSSZ/HR",
-    "AGASSI"
+    "AGASSI",
+    "AGASS",
+    "AGAS",
+    "AGA"
    ],
    "col": 7,
    "row": 1
@@ -62,7 +66,7 @@
    "name": "Hope",
    "labels": [
     "HOPE",
-    "HP"
+    "HOP"
    ],
    "col": 8,
    "row": 1
@@ -73,24 +77,12 @@
    "labels": [
     "WEST VANCOUVER/BOWEN ISLAND",
     "W VANCOUVER/BOWEN I",
-    "W V ISLAND",
-    "WVI",
-    "WVNCVR/B",
-    "WEST V"
-   ],
-   "col": 0,
-   "row": 2
-  },
-  {
-   "id": "321",
-   "name": "Vancouver - City Centre",
-   "labels": [
-    "VANCOUVER - CITY CENTRE",
-    "VAN-CITY CTR",
-    "V C CENTRE",
-    "VCC",
-    "VN-CTYCT",
-    "VANCOU"
+    "W VANCOU I",
+    "W VANCO I",
+    "W VANC I",
+    "W VAN I",
+    "W V ISLAN",
+    "WVI"
    ],
    "col": 1,
    "row": 2
@@ -100,11 +92,13 @@
    "name": "Vancouver - Centre North",
    "labels": [
     "VANCOUVER - CENTRE NORTH",
-    "VAN-CTR N",
+    "VAN CENTRE NORTH",
+    "VAN CENTRE",
+    "CENTRE NORTH",
+    "VAN",
+    "VAN CTR N",
     "V C NORTH",
-    "VCN",
-    "VN-CTRN",
-    "VANCOU"
+    "VCN"
    ],
    "col": 2,
    "row": 2
@@ -114,11 +108,12 @@
    "name": "Vancouver - Northeast",
    "labels": [
     "VANCOUVER - NORTHEAST",
-    "VAN-NE",
-    "V NORTHEAST",
-    "VN",
-    "VN-NE",
-    "VANCOU"
+    "VAN NORTHEAST",
+    "NORTHEAST",
+    "VAN",
+    "VAN NE",
+    "V NORTH",
+    "VN"
    ],
    "col": 3,
    "row": 2
@@ -129,10 +124,8 @@
    "labels": [
     "NORTH VANCOUVER",
     "N VAN",
-    "N VANCOUVER",
-    "NV",
-    "NVN",
-    "NORTH"
+    "N VANCO",
+    "NV"
    ],
    "col": 4,
    "row": 2
@@ -142,10 +135,12 @@
    "name": "Tri-Cities",
    "labels": [
     "TRI-CITIES",
-    "T CITIES",
-    "TC",
-    "TR-CTS",
-    "TRI-CI"
+    "TRI CITIES",
+    "TRI CITIE",
+    "TRI CITI",
+    "TRI CIT",
+    "T CITIE",
+    "TC"
    ],
    "col": 5,
    "row": 2
@@ -155,8 +150,10 @@
    "name": "Mission",
    "labels": [
     "MISSION",
-    "MSSN",
-    "MISSIO"
+    "MISSIO",
+    "MISSI",
+    "MISS",
+    "MIS"
    ],
    "col": 6,
    "row": 2
@@ -166,11 +163,32 @@
    "name": "Vancouver - Westside",
    "labels": [
     "VANCOUVER - WESTSIDE",
-    "VAN-WESTSIDE",
-    "V WESTSIDE",
-    "VW",
-    "VN-WSTSD",
-    "VANCOU"
+    "VAN WESTSIDE",
+    "WESTSIDE",
+    "VAN",
+    "VAN WESTSI",
+    "VAN WESTS",
+    "VAN WEST",
+    "VAN WES",
+    "V WESTS",
+    "VW"
+   ],
+   "col": 0,
+   "row": 3
+  },
+  {
+   "id": "321",
+   "name": "Vancouver - City Centre",
+   "labels": [
+    "VANCOUVER - CITY CENTRE",
+    "VAN CITY CENTRE",
+    "VAN CITY",
+    "CITY CENTRE",
+    "VAN",
+    "VAN CITY CTR",
+    "VAN CIT CTR",
+    "V C CENTR",
+    "VCC"
    ],
    "col": 1,
    "row": 3
@@ -180,11 +198,15 @@
    "name": "Vancouver - Midtown",
    "labels": [
     "VANCOUVER - MIDTOWN",
-    "VAN-MIDTOWN",
-    "V MIDTOWN",
-    "VM",
-    "VN-MDTWN",
-    "VANCOU"
+    "VAN MIDTOWN",
+    "MIDTOWN",
+    "VAN",
+    "VAN MIDTOW",
+    "VAN MIDTO",
+    "VAN MIDT",
+    "VAN MID",
+    "V MIDTO",
+    "VM"
    ],
    "col": 2,
    "row": 3
@@ -194,11 +216,12 @@
    "name": "Vancouver - South",
    "labels": [
     "VANCOUVER - SOUTH",
-    "VAN-S",
+    "VAN SOUTH",
+    "SOUTH",
+    "VAN",
+    "VAN S",
     "V SOUTH",
-    "VS",
-    "VN-S",
-    "VANCOU"
+    "VS"
    ],
    "col": 3,
    "row": 3
@@ -208,8 +231,7 @@
    "name": "Burnaby",
    "labels": [
     "BURNABY",
-    "BBY",
-    "BURNAB"
+    "BBY"
    ],
    "col": 4,
    "row": 3
@@ -220,10 +242,9 @@
    "labels": [
     "NEW WESTMINSTER",
     "NEW WEST",
-    "N WESTMINSTER",
-    "NW",
-    "NWWST",
-    "NEW WE"
+    "NEW WES",
+    "N WESTM",
+    "NW"
    ],
    "col": 5,
    "row": 3
@@ -234,10 +255,12 @@
    "labels": [
     "COWICHAN VALLEY NORTH",
     "COWICHAN VLY N",
+    "COWICH VLY N",
+    "COWIC VLY N",
+    "COWI VLY N",
+    "COW VLY N",
     "C V NORTH",
-    "CVN",
-    "CWCHNVLY",
-    "COWICH"
+    "CVN"
    ],
    "col": 0,
    "row": 4
@@ -248,8 +271,7 @@
    "labels": [
     "RICHMOND",
     "RICH",
-    "RCH",
-    "RICHMO"
+    "RIC"
    ],
    "col": 2,
    "row": 4
@@ -259,7 +281,8 @@
    "name": "Delta",
    "labels": [
     "DELTA",
-    "DLT"
+    "DELT",
+    "DEL"
    ],
    "col": 3,
    "row": 4
@@ -280,10 +303,12 @@
    "labels": [
     "SOUTH SURREY/WHITE ROCK",
     "S SURREY/WHITE ROCK",
+    "S SURREY ROCK",
+    "S SURRE ROCK",
+    "S SURR ROCK",
+    "S SUR ROC",
     "S S ROCK",
-    "SSR",
-    "SSRRY/WH",
-    "SOUTH"
+    "SSR"
    ],
    "col": 5,
    "row": 4
@@ -294,7 +319,7 @@
    "labels": [
     "LANGLEY",
     "LGLY",
-    "LANGLE"
+    "LGL"
    ],
    "col": 6,
    "row": 4
@@ -305,7 +330,7 @@
    "labels": [
     "ABBOTSFORD",
     "ABBY",
-    "ABBOTS"
+    "ABB"
    ],
    "col": 7,
    "row": 4
@@ -316,7 +341,7 @@
    "labels": [
     "CHILLIWACK",
     "CHWK",
-    "CHILLI"
+    "CHW"
    ],
    "col": 8,
    "row": 4

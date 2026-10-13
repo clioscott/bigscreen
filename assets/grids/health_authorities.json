@@ -11,8 +11,10 @@
    "name": "Northern",
    "labels": [
     "NORTHERN",
-    "NRTHRN",
-    "NORTHE"
+    "NORTHE",
+    "NORTH",
+    "NORT",
+    "NOR"
    ],
    "col": 0,
    "row": 0
@@ -23,10 +25,12 @@
    "labels": [
     "VANCOUVER COASTAL",
     "VAN COASTAL",
-    "V COASTAL",
-    "VC",
-    "VNCSTL",
-    "VANCOU"
+    "VAN COASTA",
+    "VAN COAST",
+    "VAN COAS",
+    "VAN COA",
+    "V COAST",
+    "VC"
    ],
    "col": 0,
    "row": 1
@@ -37,10 +41,8 @@
    "labels": [
     "VANCOUVER ISLAND",
     "VAN I",
-    "V ISLAND",
-    "VI",
-    "VNI",
-    "VANCOU"
+    "V ISLAN",
+    "VI"
    ],
    "col": 0,
    "row": 2
@@ -50,7 +52,9 @@
    "name": "Fraser",
    "labels": [
     "FRASER",
-    "FRSR"
+    "FRASE",
+    "FRAS",
+    "FRA"
    ],
    "col": 1,
    "row": 2
@@ -60,8 +64,10 @@
    "name": "Interior",
    "labels": [
     "INTERIOR",
-    "INTRR",
-    "INTERI"
+    "INTERI",
+    "INTER",
+    "INTE",
+    "INT"
    ],
    "col": 2,
    "row": 2

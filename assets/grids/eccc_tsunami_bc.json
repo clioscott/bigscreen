@@ -11,11 +11,15 @@
    "name": "Zone A - the North Coast and Haida Gwaii",
    "labels": [
     "ZONE A - THE NORTH COAST AND HAIDA GWAII",
-    "ZONE A-THE N COAST AND HAIDA GWAII",
-    "Z A T N C A H GWAII",
-    "ZATNCAHG",
-    "ZNA-THNC",
-    "ZONE A"
+    "ZONE A NORTH COAST",
+    "ZONE A NORTH",
+    "ZONE A",
+    "ZONE A THE N COAST AND HAIDA GWAII",
+    "ZONE A N COAST HAIDA GWAII",
+    "ZONE A N COAS HAID GWAI",
+    "ZON A N COA HAI GWA",
+    "Z A N C H GWAII",
+    "ZANCHG"
    ],
    "col": 0,
    "row": 0
@@ -25,11 +29,15 @@
    "name": "Zone B - the Central Coast and Northeast Vancouver Island coast",
    "labels": [
     "ZONE B - THE CENTRAL COAST AND NORTHEAST VANCOUVER ISLAND COAST",
-    "ZONE B-THE C COAST AND NE VAN I COAST",
-    "Z B T C C A N V I COAST",
-    "ZBTCCANVIC",
-    "ZNB-THCC",
-    "ZONE B"
+    "ZONE B CENTRAL COAST",
+    "ZONE B CENTRAL",
+    "ZONE B",
+    "ZONE B THE C COAST AND NE VAN I COAST",
+    "ZONE B C COAST NE VAN I COAST",
+    "ZONE B C COAS NE VAN I COAS",
+    "ZON B C COA NE VAN I COA",
+    "Z B C C N V I COAST",
+    "ZBCCNVIC"
    ],
    "col": 1,
    "row": 0
@@ -39,11 +47,16 @@
    "name": "Zone E - the Strait of Georgia",
    "labels": [
     "ZONE E - THE STRAIT OF GEORGIA",
-    "ZONE E-THE STRAIT OF GEORGIA",
-    "Z E T S O GEORGIA",
-    "ZETSOG",
-    "ZNE-THST",
-    "ZONE E"
+    "ZONE E STRAIT GEORGIA",
+    "ZONE E STRAIT",
+    "ZONE E",
+    "ZONE E THE STRAIT OF GEORGIA",
+    "ZONE E STRAIT GEORGI",
+    "ZONE E STRAI GEORG",
+    "ZONE E STRA GEOR",
+    "ZON E STR GEO",
+    "Z E S GEORG",
+    "ZESG"
    ],
    "col": 3,
    "row": 1
@@ -53,11 +66,17 @@
    "name": "Zone C - the Outer West Coast of Vancouver Island from Cape Scott to Port Renfrew",
    "labels": [
     "ZONE C - THE OUTER WEST COAST OF VANCOUVER ISLAND FROM CAPE SCOTT TO PORT RENFREW",
-    "ZONE C-THE OUTER W COAST OF VAN I FROM CAPE SCOTT TO PT RENFREW",
-    "Z C T O W C O V I F C S T P RENFREW",
-    "ZCTOWCOVIFCSTPR",
-    "ZNC-THOT",
-    "ZONE C"
+    "ZONE C OUTER WEST",
+    "ZONE C OUTER",
+    "ZONE C",
+    "ZONE C THE OUTER W COAST OF VAN I FROM CAPE SCOTT TO PT RENFREW",
+    "ZONE C OUTER W COAST VAN I FROM CAPE SCOTT PT RENFREW",
+    "ZONE C OUTER W COAST VAN I FROM CAPE SCOTT PT RENFRE",
+    "ZONE C OUTER W COAST VAN I FROM CAPE SCOTT PT RENFR",
+    "ZONE C OUTE W COAS VAN I FROM CAPE SCOT PT RENF",
+    "ZON C OUT W COA VAN I FRO CAP SCO PT REN",
+    "Z C O W C V I F C S P RENFR",
+    "ZCOWCVIFCSPR"
    ],
    "col": 2,
    "row": 2
@@ -67,11 +86,17 @@
    "name": "Zone D - the Juan de Fuca Strait from Jordan River to Greater Victoria",
    "labels": [
     "ZONE D - THE JUAN DE FUCA STRAIT FROM JORDAN RIVER TO GREATER VICTORIA",
-    "ZONE D-THE JUAN DE FUCA STRAIT FROM JORDAN R TO GREATER VICTORIA",
-    "Z D T J D F S F J R T G VICTORIA",
-    "ZDTJDFSFJRTGV",
-    "ZND-THJN",
-    "ZONE D"
+    "ZONE D JUAN FUCA",
+    "ZONE D JUAN",
+    "ZONE D",
+    "ZONE D THE JUAN DE FUCA STRAIT FROM JORDAN R TO GREATER VICTORIA",
+    "ZONE D JUAN FUCA STRAIT FROM JORDAN R GREATER VICTORIA",
+    "ZONE D JUAN FUCA STRAIT FROM JORDAN R GREATE VICTOR",
+    "ZONE D JUAN FUCA STRAI FROM JORDA R GREAT VICTO",
+    "ZONE D JUAN FUCA STRA FROM JORD R GREA VICT",
+    "ZON D JUA FUC STR FRO JOR R GRE VIC",
+    "Z D J F S F J R G VICTO",
+    "ZDJFSFJRGV"
    ],
    "col": 3,
    "row": 2

@@ -11,7 +11,8 @@
    "name": "Yukon",
    "labels": [
     "YUKON",
-    "YKN"
+    "YUKO",
+    "YUK"
    ],
    "col": 0,
    "row": 0
@@ -22,10 +23,12 @@
    "labels": [
     "NORTHWEST TERRITORIES",
     "NW TERRITORIES",
-    "N TERRITORIES",
-    "NT",
-    "NWTRRTRS",
-    "NORTHW"
+    "NW TERRIT",
+    "NW TERRI",
+    "NW TERR",
+    "NW TER",
+    "N TERRI",
+    "NT"
    ],
    "col": 1,
    "row": 0
@@ -35,8 +38,10 @@
    "name": "Nunavut",
    "labels": [
     "NUNAVUT",
-    "NNVT",
-    "NUNAVU"
+    "NUNAVU",
+    "NUNAV",
+    "NUNA",
+    "NUN"
    ],
    "col": 3,
    "row": 0
@@ -47,10 +52,12 @@
    "labels": [
     "BRITISH COLUMBIA",
     "BRITISH COL",
-    "B COLUMBIA",
-    "BC",
-    "BRTSHCL",
-    "BRITIS"
+    "BRITIS COL",
+    "BRITI COL",
+    "BRIT COL",
+    "BRI COL",
+    "B COLUM",
+    "BC"
    ],
    "col": 0,
    "row": 1
@@ -60,8 +67,10 @@
    "name": "Alberta",
    "labels": [
     "ALBERTA",
-    "ALBRT",
-    "ALBERT"
+    "ALBERT",
+    "ALBER",
+    "ALBE",
+    "ALB"
    ],
    "col": 1,
    "row": 1
@@ -71,8 +80,10 @@
    "name": "Saskatchewan",
    "labels": [
     "SASKATCHEWAN",
-    "SSKTCHWN",
-    "SASKAT"
+    "SASKAT",
+    "SASKA",
+    "SASK",
+    "SAS"
    ],
    "col": 2,
    "row": 1
@@ -82,8 +93,10 @@
    "name": "Manitoba",
    "labels": [
     "MANITOBA",
-    "MNTB",
-    "MANITO"
+    "MANITO",
+    "MANIT",
+    "MANI",
+    "MAN"
    ],
    "col": 3,
    "row": 1
@@ -93,7 +106,9 @@
    "name": "Québec",
    "labels": [
     "QUÉBEC",
-    "QÉBC"
+    "QUÉBE",
+    "QUÉB",
+    "QUÉ"
    ],
    "col": 5,
    "row": 1
@@ -103,10 +118,13 @@
    "name": "Newfoundland and Labrador",
    "labels": [
     "NEWFOUNDLAND AND LABRADOR",
-    "N A LABRADOR",
-    "NAL",
-    "NWFNDLND",
-    "NEWFOU"
+    "NEWFOUNDLAND LABRADOR",
+    "NEWFOU LABRAD",
+    "NEWFO LABRA",
+    "NEWF LABR",
+    "NEW LAB",
+    "N LABRA",
+    "NL"
    ],
    "col": 7,
    "row": 1
@@ -116,8 +134,10 @@
    "name": "Ontario",
    "labels": [
     "ONTARIO",
-    "ONTR",
-    "ONTARI"
+    "ONTARI",
+    "ONTAR",
+    "ONTA",
+    "ONT"
    ],
    "col": 4,
    "row": 2
@@ -127,10 +147,12 @@
    "name": "New Brunswick",
    "labels": [
     "NEW BRUNSWICK",
-    "N BRUNSWICK",
-    "NB",
-    "NWBRNSWC",
-    "NEW BR"
+    "NEW BRUNSW",
+    "NEW BRUNS",
+    "NEW BRUN",
+    "NEW BRU",
+    "N BRUNS",
+    "NB"
    ],
    "col": 5,
    "row": 2
@@ -140,10 +162,11 @@
    "name": "Nova Scotia",
    "labels": [
     "NOVA SCOTIA",
-    "N SCOTIA",
-    "NS",
-    "NVSCT",
-    "NOVA S"
+    "NOVA SCOTI",
+    "NOVA SCOT",
+    "NOV SCO",
+    "N SCOTI",
+    "NS"
    ],
    "col": 6,
    "row": 2
@@ -154,10 +177,11 @@
    "labels": [
     "PRINCE EDWARD ISLAND",
     "PRINCE EDWARD I",
-    "P E ISLAND",
-    "PEI",
-    "PRNCEDWR",
-    "PRINCE"
+    "PRINC EDWAR I",
+    "PRIN EDWA I",
+    "PRI EDW I",
+    "P E ISLAN",
+    "PEI"
    ],
    "col": 7,
    "row": 2

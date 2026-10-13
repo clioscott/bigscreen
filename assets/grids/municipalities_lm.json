@@ -11,8 +11,10 @@
    "name": "Whistler",
    "labels": [
     "WHISTLER",
-    "WHSTLR",
-    "WHISTL"
+    "WHISTL",
+    "WHIST",
+    "WHIS",
+    "WHI"
    ],
    "col": 3,
    "row": 0
@@ -22,8 +24,10 @@
    "name": "Pemberton",
    "labels": [
     "PEMBERTON",
-    "PMBRTN",
-    "PEMBER"
+    "PEMBER",
+    "PEMBE",
+    "PEMB",
+    "PEM"
    ],
    "col": 4,
    "row": 0
@@ -33,7 +37,9 @@
    "name": "Lytton",
    "labels": [
     "LYTTON",
-    "LYTTN"
+    "LYTTO",
+    "LYTT",
+    "LYT"
    ],
    "col": 9,
    "row": 0
@@ -44,7 +50,8 @@
    "labels": [
     "SQUAMISH",
     "SQMSH",
-    "SQUAMI"
+    "SQMS",
+    "SQM"
    ],
    "col": 2,
    "row": 1
@@ -54,8 +61,10 @@
    "name": "Sechelt",
    "labels": [
     "SECHELT",
-    "SCHLT",
-    "SECHEL"
+    "SECHEL",
+    "SECHE",
+    "SECH",
+    "SEC"
    ],
    "col": 0,
    "row": 2
@@ -65,8 +74,10 @@
    "name": "Gibsons",
    "labels": [
     "GIBSONS",
-    "GBSNS",
-    "GIBSON"
+    "GIBSON",
+    "GIBSO",
+    "GIBS",
+    "GIB"
    ],
    "col": 1,
    "row": 2
@@ -76,10 +87,10 @@
    "name": "Lions Bay",
    "labels": [
     "LIONS BAY",
+    "LION BAY",
+    "LIO BAY",
     "L BAY",
-    "LB",
-    "LNSBY",
-    "LIONS"
+    "LB"
    ],
    "col": 2,
    "row": 2
@@ -90,10 +101,8 @@
    "labels": [
     "NORTH VANCOUVER",
     "N VAN",
-    "N VANCOUVER",
-    "NV",
-    "NVN",
-    "NORTH"
+    "N VANCO",
+    "NV"
    ],
    "col": 3,
    "row": 2
@@ -103,8 +112,10 @@
    "name": "Belcarra",
    "labels": [
     "BELCARRA",
-    "BLCRR",
-    "BELCAR"
+    "BELCAR",
+    "BELCA",
+    "BELC",
+    "BEL"
    ],
    "col": 4,
    "row": 2
@@ -114,7 +125,9 @@
    "name": "Anmore",
    "labels": [
     "ANMORE",
-    "ANMR"
+    "ANMOR",
+    "ANMO",
+    "ANM"
    ],
    "col": 5,
    "row": 2
@@ -124,7 +137,7 @@
    "name": "Hope",
    "labels": [
     "HOPE",
-    "HP"
+    "HOP"
    ],
    "col": 9,
    "row": 2
@@ -135,10 +148,12 @@
    "labels": [
     "BOWEN ISLAND MUNICIPALITY",
     "BOWEN I MUNICIPALITY",
-    "B I MUNICIPALITY",
-    "BIM",
-    "BWNIMNCP",
-    "BOWEN"
+    "BOWEN I MUNICI",
+    "BOWEN I MUNIC",
+    "BOWE I MUNI",
+    "BOW I MUN",
+    "B I MUNIC",
+    "BIM"
    ],
    "col": 1,
    "row": 3
@@ -149,10 +164,13 @@
    "labels": [
     "DISTRICT MUNICIPALITY OF WEST VANCOUVER",
     "DIST MUNICIPALITY OF W VAN",
-    "D M O W VANCOUVER",
-    "DMOWV",
-    "DSTMNCPL",
-    "DISTRI"
+    "DIST MUNICIPALITY W VAN",
+    "DIST MUNICI W VAN",
+    "DIST MUNIC W VAN",
+    "DIST MUNI W VAN",
+    "DIS MUN W VAN",
+    "D M W VANCO",
+    "DMWV"
    ],
    "col": 2,
    "row": 3
@@ -163,10 +181,8 @@
    "labels": [
     "NORTH VANCOUVER",
     "N VAN",
-    "N VANCOUVER",
-    "NV",
-    "NVN",
-    "NORTH"
+    "N VANCO",
+    "NV"
    ],
    "col": 3,
    "row": 3
@@ -177,10 +193,10 @@
    "labels": [
     "PORT MOODY",
     "PT MOODY",
+    "PT MOOD",
+    "PT MOO",
     "P MOODY",
-    "PM",
-    "PTMDY",
-    "PORT M"
+    "PM"
    ],
    "col": 4,
    "row": 3
@@ -190,9 +206,7 @@
    "name": "Coquitlam",
    "labels": [
     "COQUITLAM",
-    "COQ",
-    "CQ",
-    "COQUIT"
+    "COQ"
    ],
    "col": 5,
    "row": 3
@@ -202,10 +216,12 @@
    "name": "Pitt Meadows",
    "labels": [
     "PITT MEADOWS",
-    "P MEADOWS",
-    "PM",
-    "PTTMDWS",
-    "PITT M"
+    "PITT MEADOW",
+    "PITT MEADO",
+    "PITT MEAD",
+    "PIT MEA",
+    "P MEADO",
+    "PM"
    ],
    "col": 6,
    "row": 3
@@ -215,7 +231,7 @@
    "name": "Kent",
    "labels": [
     "KENT",
-    "KNT"
+    "KEN"
    ],
    "col": 8,
    "row": 3
@@ -225,10 +241,12 @@
    "name": "Harrison Hot Springs",
    "labels": [
     "HARRISON HOT SPRINGS",
-    "H H SPRINGS",
-    "HHS",
-    "HRRSNHTS",
-    "HARRIS"
+    "HARRIS HOT SPRING",
+    "HARRI HOT SPRIN",
+    "HARR HOT SPRI",
+    "HAR HOT SPR",
+    "H H SPRIN",
+    "HHS"
    ],
    "col": 9,
    "row": 3
@@ -238,8 +256,10 @@
    "name": "Nanaimo",
    "labels": [
     "NANAIMO",
-    "NNM",
-    "NANAIM"
+    "NANAIM",
+    "NANAI",
+    "NANA",
+    "NAN"
    ],
    "col": 0,
    "row": 4
@@ -249,9 +269,7 @@
    "name": "Vancouver",
    "labels": [
     "VANCOUVER",
-    "VAN",
-    "VN",
-    "VANCOU"
+    "VAN"
    ],
    "col": 2,
    "row": 4
@@ -261,8 +279,7 @@
    "name": "Burnaby",
    "labels": [
     "BURNABY",
-    "BBY",
-    "BURNAB"
+    "BBY"
    ],
    "col": 3,
    "row": 4
@@ -273,10 +290,9 @@
    "labels": [
     "NEW WESTMINSTER",
     "NEW WEST",
-    "N WESTMINSTER",
-    "NW",
-    "NWWST",
-    "NEW WE"
+    "NEW WES",
+    "N WESTM",
+    "NW"
    ],
    "col": 4,
    "row": 4
@@ -287,10 +303,8 @@
    "labels": [
     "PORT COQUITLAM",
     "PT COQ",
-    "P COQUITLAM",
-    "PC",
-    "PTCQ",
-    "PORT C"
+    "P COQUI",
+    "PC"
    ],
    "col": 5,
    "row": 4
@@ -300,10 +314,10 @@
    "name": "Maple Ridge",
    "labels": [
     "MAPLE RIDGE",
+    "MAPL RIDG",
+    "MAP RID",
     "M RIDGE",
-    "MR",
-    "MPLRDG",
-    "MAPLE"
+    "MR"
    ],
    "col": 6,
    "row": 4
@@ -313,8 +327,10 @@
    "name": "Mission",
    "labels": [
     "MISSION",
-    "MSSN",
-    "MISSIO"
+    "MISSIO",
+    "MISSI",
+    "MISS",
+    "MIS"
    ],
    "col": 7,
    "row": 4
@@ -325,7 +341,7 @@
    "labels": [
     "CHILLIWACK",
     "CHWK",
-    "CHILLI"
+    "CHW"
    ],
    "col": 8,
    "row": 4
@@ -335,8 +351,10 @@
    "name": "Ladysmith",
    "labels": [
     "LADYSMITH",
-    "LDYSMTH",
-    "LADYSM"
+    "LADYSM",
+    "LADYS",
+    "LADY",
+    "LAD"
    ],
    "col": 0,
    "row": 5
@@ -347,8 +365,7 @@
    "labels": [
     "RICHMOND",
     "RICH",
-    "RCH",
-    "RICHMO"
+    "RIC"
    ],
    "col": 2,
    "row": 5
@@ -358,7 +375,8 @@
    "name": "Delta",
    "labels": [
     "DELTA",
-    "DLT"
+    "DELT",
+    "DEL"
    ],
    "col": 3,
    "row": 5
@@ -368,10 +386,10 @@
    "name": "White Rock",
    "labels": [
     "WHITE ROCK",
+    "WHIT ROCK",
+    "WHI ROC",
     "W ROCK",
-    "WR",
-    "WHTRCK",
-    "WHITE"
+    "WR"
    ],
    "col": 4,
    "row": 5
@@ -392,7 +410,7 @@
    "labels": [
     "LANGLEY",
     "LGLY",
-    "LANGLE"
+    "LGL"
    ],
    "col": 6,
    "row": 5
@@ -403,7 +421,7 @@
    "labels": [
     "LANGLEY",
     "LGLY",
-    "LANGLE"
+    "LGL"
    ],
    "col": 7,
    "row": 5
@@ -414,7 +432,7 @@
    "labels": [
     "ABBOTSFORD",
     "ABBY",
-    "ABBOTS"
+    "ABB"
    ],
    "col": 8,
    "row": 5
