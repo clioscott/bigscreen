@@ -140,7 +140,7 @@ LEVELS = {
     "neighbourhood_van": ("Vancouver neighbourhoods", vancouver_local_areas),
     "reserve": ("First Nations reserves", lambda: wfs("WHSE_ADMIN_BOUNDARIES.CLAB_INDIAN_RESERVES", "ENGLISH_NAME", "CLAB_ID", LOWER_MAINLAND)),
     "bc_riding": ("Provincial electoral districts", lambda: wfs("WHSE_ADMIN_BOUNDARIES.EBC_PROV_ELECTORAL_DIST_SVW", "ED_NAME", "ED_ABBREVIATION")),
-    "federal_riding": ("Federal electoral districts", lambda: represent("federal-electoral-districts-2023", "59")),
+    "federal_riding": ("Federal electoral districts", lambda: represent("federal-electoral-districts-2023-representation-order", "59")),
     "health_authority": ("Health authorities", lambda: wfs("WHSE_ADMIN_BOUNDARIES.BCHA_HEALTH_AUTHORITY_BNDRY_SP", "HLTH_AUTHORITY_NAME", "HLTH_AUTHORITY_CODE")),
     "hsda": ("Health service delivery areas", hsda),
     "lha": ("Local health areas", lambda: wfs("WHSE_ADMIN_BOUNDARIES.BCHA_LOCAL_HEALTH_AREA_SP", "LOCAL_HLTH_AREA_NAME", "LOCAL_HLTH_AREA_CODE")),
