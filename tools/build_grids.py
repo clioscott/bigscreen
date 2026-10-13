@@ -198,24 +198,28 @@ def _abbr(words):
 
 
 def labels(name):
-    """Label variants, longest first, built to stay readable: the name; its words abbreviated (N, Pt, Mt…);
-    small words dropped; for "Head - Tail" names (ECCC zones, tsunami zones) head + tail's first words; each word
-    cut to 5, then 4, then 3 letters; initials only as a last resort."""
+    """Label variants, longest first, built to stay readable: the name; "Head - Tail" names (ECCC zones, tsunami
+    zones) as head + tail's first words; words abbreviated (N, Pt, Mt…) and small words dropped; each word cut to
+    6…3 letters; "A/B" names as A; initials only as a last resort."""
     full = clean(name)
     out = [full]
     head, sep, tail = full.partition(" - ")
-    if sep:
-        hw, tw = head.split(), [w for w in tail.split() if w.lower() not in SMALL]
-        if re.match(r"^Zone [A-Z]$", head):               # tsunami: "Zone E - the Strait of Georgia…"
-            out += [f"{head} {' '.join(tw[:2])}", f"{head} {' '.join(tw[:1])}", head]
-        else:
-            out += [f"{' '.join(_abbr(hw))} {' '.join(tw[:2])}", f"{' '.join(_abbr(hw))} {' '.join(tw[:1])}",
-                    " ".join(tw[:2]), " ".join(_abbr(hw))]
-    words = [w for w in full.replace("-", " ").split() if w.lower() not in SMALL]
-    out.append(" ".join(_abbr(full.replace(" - ", " ").split())))
+    tw = [w for w in tail.split() if w.lower() not in SMALL]
+    hw = head.split()
+    if sep and re.match(r"^Zone [A-Z]$", head):            # tsunami: "Zone E - the Strait of Georgia…"
+        out += [f"{head} {' '.join(tw[:2])}", f"{head} {' '.join(tw[:1])}", head]
+    elif sep:
+        out += [f"{' '.join(_abbr(hw))} {' '.join(tw[:2])}", f"{' '.join(_abbr(hw))} {' '.join(tw[:1])}"]
+    words = [w for w in re.split(r"[\s/-]+", full) if w and w.lower() not in SMALL]
+    out.append(" ".join(_abbr(re.split(r"[\s/]+", full.replace(" - ", " ")))))
     out.append(" ".join(_abbr(words)))
     for k in (6, 5, 4, 3):
         out.append(" ".join(w if len(w) <= k else w[:k] for w in _abbr(words)))
+    if "/" in full:
+        first = full.split("/")[0].strip()
+        out += [first, " ".join(_abbr(first.split()))]
+    if sep and not re.match(r"^Zone [A-Z]$", head):
+        out.append(" ".join(_abbr(hw)) + " " + "".join(w[0] for w in tw[:2]))
     if len(words) > 1:
         out.append(" ".join(w[0] for w in words[:-1]) + " " + words[-1][:5])
         out.append("".join(w[0] for w in words))
