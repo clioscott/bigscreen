@@ -852,7 +852,7 @@ class AlertScreen:
                 if v is None:
                     continue
                 s_ = fmt.format(v)
-                home = name.lower() == (ctx.home_name or "").lower()
+                home = ctx.home and name.lower() == (ctx.home_name or "").lower()
                 lab_x = x0 + tx - k_f.width(s_) // 2
                 lab_y = top + ty - k_f.h - 2
                 lab_x = max(x0 + 1, min(x0 + mw - k_f.width(s_) - 1, lab_x))
@@ -917,7 +917,10 @@ class AlertScreen:
             chip(c, x, 2 + (band - k_f.h - 2) // 2, lab, k_f, ctx.level, (0, 0, 0))
         b = ctx.b
         info = U(ctx, " · ".join(v for v in (f"until {b['until']}" if b["until"] else "", b["amount"]) if v))
-        sf.draw(c, 8, band + 1, ctx.pal["strong"], info)
+        ix = 8 + sf.draw(c, 8, band + 1, ctx.pal["strong"], info)
+        if ctx.home and ctx.home_name:                          # only said when it's true
+            hl = U(ctx, f"includes {ctx.home_name}")
+            chip(c, ix + (10 if info else 0), band, hl, sf, (255, 226, 120), (0, 0, 0))
         meter(c, W - 38, 2 + (band - 8) // 2, ctx)
         # legend + map name, bottom left
         lg = U(ctx, f"{b['title'].lower()} area")
@@ -926,10 +929,6 @@ class AlertScreen:
         c.FillRect(8, yb - 1, 14, sf.h + 2, Color(*ctx.sev))
         c.FillRect(9, yb, 12, sf.h, Color(*fill.astype(int).tolist()))
         sf.draw(c, 26, yb, (255, 255, 255), lg)
-        # home: a small house where the wall is
-        hp = meta.get("home_px")
-        if hp:
-            draw_home(c, hp[0], hp[1], 0.75 + 0.25 * math.sin(ctx.t * 4))
         return True
 
     def _draw_tour(self, c, entry, transition, now):
@@ -999,7 +998,7 @@ class AlertScreen:
         local = t - seg["start"]
         p = min(1.0, local / seg["reveal"]) if seg["reveal"] > 0 else 1.0
         if seg.get("kind") in ("forecast", "air", "tides", "about") and self._draw_story(c, seg, ctx, th, local):
-            draw_border(c, th["border"], ctx.sev if ctx.home or not ctx.home_name else _dim(ctx.sev, 0.5), t)
+            draw_border(c, th["border"], ctx.sev, t)
             if self.settings.get("review_label") and not self._tour:
                 self._label(c, f" {self.settings['review_label']} ")
             if t >= plan["total"]:
@@ -1008,7 +1007,7 @@ class AlertScreen:
                 return "done"
             return None
         if seg.get("kind") == "page" and self._draw_page(c, seg, ctx, local):
-            draw_border(c, th["border"], ctx.sev if ctx.home or not ctx.home_name else _dim(ctx.sev, 0.5), t)
+            draw_border(c, th["border"], ctx.sev, t)
             if self.settings.get("review_label") and not self._tour:
                 self._label(c, f" {self.settings['review_label']} ")
             if t >= plan["total"]:
@@ -1017,7 +1016,7 @@ class AlertScreen:
                 return "done"
             return None
         if seg.get("kind") == "map" and self._draw_map(c, seg, ctx, local, p):
-            draw_border(c, th["border"], ctx.sev if ctx.home or not ctx.home_name else _dim(ctx.sev, 0.5), t)
+            draw_border(c, th["border"], ctx.sev, t)
             if self.settings.get("review_label") and not self._tour:
                 self._label(c, f" {self.settings['review_label']} ")
             if t >= plan["total"]:
@@ -1036,7 +1035,7 @@ class AlertScreen:
             if p >= 1.0:
                 self._static = (skey, c.buf.copy())
         struct.dynamic(c, ctx, seg, p)
-        draw_border(c, th["border"], ctx.sev if ctx.home or not ctx.home_name else _dim(ctx.sev, 0.5), t)
+        draw_border(c, th["border"], ctx.sev, t)
         if self.settings.get("review_label") and not self._tour:
             self._label(c, f" {self.settings['review_label']} ")
         if t >= plan["total"]:

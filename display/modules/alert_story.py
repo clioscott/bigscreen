@@ -164,7 +164,7 @@ def region_diagram(c, ctx, x, y, w, h, values, colours, fonts, val_fonts):
         col = colours.get(name) or ctx.pal["panel"]
         c.FillRect(tx, ty, tw, th, Color(*col))
         ink = (0, 0, 0) if sum(col) > 380 else (255, 255, 255)
-        if name in hit or name == home:
+        if name in hit:
             edge = ap.HOME_TINT if name == home else (255, 255, 255)
             for rx, ry, rw, rr in ((tx, ty, tw, 1), (tx, ty + th - 1, tw, 1), (tx, ty, 1, th), (tx + tw - 1, ty, 1, th)):
                 c.FillRect(rx, ry, rw, rr, Color(*edge))
@@ -262,7 +262,7 @@ def metro_diagram(c, ctx, p, x, y, w, h, T, series, vals, unit, colour, k, how):
         col = colour(v) if v is not None else ctx.pal["panel"]
         c.FillRect(tx, ty, tw, th, Color(*_dim(col, 0.5)))
         c.FillRect(tx, ty, 4, th, Color(*col))
-        if name in hit or name == home:
+        if name in hit:
             edge = ap.HOME_TINT if name == home else (255, 255, 255)
             for rx, ry, rw, rr in ((tx, ty, tw, 1), (tx, ty + th - 1, tw, 1), (tx, ty, 1, th), (tx + tw - 1, ty, 1, th)):
                 c.FillRect(rx, ry, rw, rr, Color(*edge))
@@ -408,7 +408,7 @@ def _labels(c, ctx, x, y, w, h, vals, colour, unit, fonts, labels_fmt, hit, k, o
                 col = colour(v)
                 c.FillRect(lx, ly, cw, chh, Color(8, 10, 14))
                 c.FillRect(lx, ly, 3, chh, Color(*col))
-                edge = ap.HOME_TINT if r == getattr(ctx, "home_name", "") else ((255, 255, 255) if r in hit else (70, 76, 86))
+                edge = (ap.HOME_TINT if r == getattr(ctx, "home_name", "") else (255, 255, 255)) if r in hit else (70, 76, 86)
                 c.FillRect(lx, ly, cw, 1, Color(*edge))
                 c.FillRect(lx, ly + chh - 1, cw, 1, Color(*edge))
                 nf.draw(c, lx + 5, ly + 2, ctx.pal["text"], name)
@@ -673,23 +673,13 @@ def page_plan(ctx, has_area_map, data_pages):
     ``data_pages`` = the weather type's data map pages that have something on them."""
     src = (ctx.b.get("source") or "eccc").lower()
     hz = ctx.b["hazard"]
-    plan = []
+    # the message, then where (the area map), then the weather itself on the data maps. No paperwork page
+    # (the times are on the message and the map) and no forecast-by-zone page.
+    plan = [("map", None)] if has_area_map else []
     if src == "eccc":
-        if hz == "smoke" and af.aqhi_areas(ctx, getattr(ctx, "extra", None)):
-            plan.append(("air", None))
-        elif hz == "flood" and (getattr(ctx, "extra", None) or {}).get("tides"):
+        if hz == "flood" and (getattr(ctx, "extra", None) or {}).get("tides"):
             plan.append(("tides", None))
-        elif forecast_series(ctx, getattr(ctx, "data", None)):
-            plan.append(("forecast", None))
-        # when the alert's weather is on the radar / forecast maps, show those before the paperwork
         lead = [p_ for p_ in data_pages if p_ in ("radar", "precip", "snowfall", "tstorm", "smoke", "fog")]
         plan += [("page", p_) for p_ in lead]
-        plan.append(("about", None))
-        if has_area_map:
-            plan.append(("map", None))
         plan += [("page", p_) for p_ in data_pages if p_ not in lead]
-    else:
-        plan.append(("about", None))
-        if has_area_map:
-            plan.append(("map", None))
     return plan

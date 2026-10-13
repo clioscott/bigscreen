@@ -59,7 +59,7 @@ TILES = {
 }
 
 
-HOME_TINT = (255, 226, 120)      # the home region's tile outline / label when the alert doesn't cover it
+HOME_TINT = (255, 226, 120)      # the home region's tile outline / label
 TILE_SHORT = {"Tri-Cities": "TRI-C", "Howe Sound": "HOWE", "Sunshine Coast": "SUN C", "Sea to Sky": "SEA2SKY",
               "North Shore": "N VAN", "Abbotsford": "ABBY", "Chilliwack": "CHWK", "Richmond": "RICH", "Vancouver": "VAN",
               "Surrey": "SURREY"}
@@ -77,37 +77,74 @@ def tile_rects(extent, x, y, w, h, gap=1):
             for n, (col, row, span) in t["tiles"].items()}
 
 
+# the Where grid on the message page: a tidy 3 x 3 of the mainland regions (no holes, every box the same size),
+# roughly where they sit - north shore and the Sea to Sky on top, the Fraser Valley on the right. The Sunshine
+# Coast only appears (as a column down the left) when the alert covers it.
+WHERE_GRID = [["Sea to Sky", "North Shore", "Tri-Cities"],
+              ["Howe Sound", "Vancouver", "Abbotsford"],
+              ["Richmond", "Surrey", "Chilliwack"]]
+WHERE_NAMES = {"Sea to Sky": "SEA TO SKY", "North Shore": "NORTH SHORE", "Tri-Cities": "TRI-CITIES",
+               "Howe Sound": "HOWE SOUND", "Vancouver": "VANCOUVER", "Abbotsford": "ABBOTSFORD",
+               "Richmond": "RICHMOND", "Surrey": "SURREY", "Chilliwack": "CHILLIWACK", "Sunshine Coast": "SUNSHINE|COAST"}
+
+
+def where_rects(ctx, x, y, w, h, gap=1):
+    side = "Sunshine Coast" in affected(ctx)
+    cols = 3 + side
+    cw = (w - gap * (cols - 1)) // cols
+    ch = (h - gap * 2) // 3
+    x += (w - (cols * cw + gap * (cols - 1))) // 2
+    out = {}
+    if side:
+        out["Sunshine Coast"] = (x, y, cw, 3 * ch + 2 * gap)
+        x += cw + gap
+    for r, row in enumerate(WHERE_GRID):
+        for k, name in enumerate(row):
+            out[name] = (x + k * (cw + gap), y + r * (ch + gap), cw, ch)
+    return out
+
+
 def cart_size(font, extent="lm", gap=1):
-    """Natural size of the tile grid: every single tile wide enough for its code in ``font``."""
-    t = TILES[extent]
-    tw = max(font.width(CODES.get(n, n.upper())) for n, (_, _, span) in t["tiles"].items() if span == 1) + 6
+    """Natural size of the Where grid: three boxes wide enough for the full region names in ``font``."""
+    tw = max(font.width(v.split("|")[0]) for v in WHERE_NAMES.values()) + 8
     th = font.h + 5
-    return t["cols"] * tw + gap * (t["cols"] - 1), t["rows"] * th + gap * (t["rows"] - 1)
+    return 3 * tw + gap * 2, 3 * th + gap * 2
 
 
 def cartogram(c, ctx, x, y, font, extent="lm", w=None, h=None, gap=1):
-    """The regions as a geographic grid of labelled tiles: affected tiles filled in the hazard colour, others
-    outlined; the home region in a lighter tint (filled) or a warm outline (clear). Labels shorten to fit.
-    Affected tiles take the weather type's main colour; the home tile its second colour."""
+    """The Where grid (WHERE_GRID): the alert's regions filled in the weather type's colour, the rest outlined;
+    the home region in the second colour with a warm outline when covered, a warm outline when not. Names are
+    written in full and only fall back to the wall's short codes when a box is too narrow."""
     nw, nh = cart_size(font, extent, gap)
     w, h = w or nw, h or nh
     hit = affected(ctx)
     fill = ctx.sev
     home = getattr(ctx, "home_name", "Richmond")
-    for name, (tx, ty, tw, th) in tile_rects(extent, x, y, w, h, gap).items():
+    for name, (tx, ty, tw, th) in where_rects(ctx, x, y, w, h, gap).items():
         on, mine = name in hit, name == home
         if on:
             col = getattr(ctx, "sev2", _mix(fill, (255, 255, 255), 0.45)) if mine else fill
             c.FillRect(tx, ty, tw, th, Color(*col))
             ink = (0, 0, 0) if sum(col) > 300 else (255, 255, 255)
+            if mine:
+                for rx, ry, rw, rr in ((tx, ty, tw, 1), (tx, ty + th - 1, tw, 1), (tx, ty, 1, th), (tx + tw - 1, ty, 1, th)):
+                    c.FillRect(rx, ry, rw, rr, Color(*HOME_TINT))
         else:
             edge = HOME_TINT if mine else _dim(ctx.pal["dim"], 0.7)
             c.FillRect(tx, ty, tw, th, Color(*ctx.pal["panel"]))
             for rx, ry, rw, rh in ((tx, ty, tw, 1), (tx, ty + th - 1, tw, 1), (tx, ty, 1, th), (tx + tw - 1, ty, 1, th)):
                 c.FillRect(rx, ry, rw, rh, Color(*edge))
             ink = HOME_TINT if mine else ctx.pal["dim"]
+        full = WHERE_NAMES.get(name, name.upper())
+        if th >= 2 * font.h + 6 and "|" in full and font.width(full.replace("|", " ")) > tw - 2:
+            ls = full.split("|")                                 # a tall box: the name on two lines
+            if all(font.width(l_) <= tw - 2 for l_ in ls):
+                y0 = ty + (th - 2 * font.h - 2) // 2
+                for i, l_ in enumerate(ls):
+                    font.draw(c, tx + (tw - font.width(l_)) // 2, y0 + i * (font.h + 2), ink, l_)
+                continue
         code = CODES.get(name, name.upper())
-        for cand in (code, TILE_SHORT.get(name, code)):
+        for cand in (full.replace("|", " "), code, TILE_SHORT.get(name, code)):
             if font.width(cand) <= tw - 2:
                 code = cand
                 break
@@ -430,6 +467,9 @@ def unit_grid(c, ctx, grid_id, x, y, w, h, fonts, values=None, colour=None):
         if fill:
             c.FillRect(tx, ty, cw, rh, Color(*fill))
             ink = (0, 0, 0) if sum(fill) > 300 else (255, 255, 255)
+            if mine and (uid in full or uid in part):
+                for rx, ry, rw, rr in ((tx, ty, cw, 1), (tx, ty + rh - 1, cw, 1), (tx, ty, 1, rh), (tx + cw - 1, ty, 1, rh)):
+                    c.FillRect(rx, ry, rw, rr, Color(*HOME_TINT))
             if colour and uid in full:                         # value-coloured boxes: the alert's units outlined
                 for rx, ry, rw, rr in ((tx, ty, cw, 1), (tx, ty + rh - 1, cw, 1), (tx, ty, 1, rh), (tx + cw - 1, ty, 1, rh)):
                     c.FillRect(rx, ry, rw, rr, Color(*(HOME_TINT if mine else (255, 255, 255))))
