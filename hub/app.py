@@ -96,7 +96,7 @@ def restore(payload: dict = Body(...)):
 def alerts_now():
     """Current alerts plus the alert screen's design catalogue (themes, palettes, type pairings, fonts)."""
     from display.gfx import ASSETS_DIR
-    from display.modules.alert_themes import BORDERS, FAMILIES, PALETTES, REVEALS, STRUCTURES
+    from display.modules.alert_themes import BORDERS, FAMILIES, HAZARD_PALETTE, PALETTES, REVEALS, SEVERITY, STRUCTURES
     from display.modules.weather_alert import THEME_LIST
     data = read_json(paths.DATA_DIR / "alerts.json", {}) or {}
     status = ((config.load().get("hub") or {}).get("fonts") or {}).get("status") or {}
@@ -107,7 +107,9 @@ def alerts_now():
             "palettes": {k: {"name": v["name"], "swatch": [hexc(v["bg"]), hexc(v["strong"]), hexc(v["amount"]), hexc(v["advice"])]}
                          for k, v in PALETTES.items()},
             "families": {k: v["name"] for k, v in FAMILIES.items()},
-            "hazards": [{"id": h, "label": l, "hint": e} for h, l, e in __import__("display.modules.alert_brief", fromlist=["x"]).HAZARD_INFO],
+            "hazards": [{"id": h, "label": l, "hint": e, "colour": hexc(HAZARD_PALETTE.get(h, HAZARD_PALETTE["general"])[0])}
+                        for h, l, e in __import__("display.modules.alert_brief", fromlist=["x"]).HAZARD_INFO],
+            "levels": {k: hexc(v) for k, v in SEVERITY.items()},
             "samples": {k: {"name": v["name"], "type": v["type"]} for k, v in
                         __import__("display.modules.alert_samples", fromlist=["x"]).SAMPLES.items()},
             "fonts": fonts}

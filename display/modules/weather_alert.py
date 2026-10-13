@@ -452,6 +452,9 @@ class St:
     """Per-alert context handed to a structure."""
 
 
+_SHOWINGS = [0]           # how many times the alert screen has come round (theme rotation)
+
+
 class AlertScreen:
     def __init__(self, settings=None, loader=None):
         self.loader = loader
@@ -464,13 +467,14 @@ class AlertScreen:
         self._fast = None            # (source identity, plan) so unchanged data skips re-hashing
         self._tour = None            # theme id while touring all themes (entry {"tour": true})
         self._tour_t0 = None
+        self._tour_sample = None     # the test alert of the tour item being shown
         self._reveal_cap = None
 
     # -- data ------------------------------------------------------------------
     def alerts(self, entry=None):
         if entry and entry.get("test"):
             from display.modules.alert_samples import SAMPLES
-            kind = self.settings.get("sample") or "rain"
+            kind = self._tour_sample or self.settings.get("sample") or "rain"
             if self._sample is None or self._sample[0] != kind:
                 now = time.time()
                 base = SAMPLES.get(kind) or SAMPLES["rain"]
@@ -502,11 +506,21 @@ class AlertScreen:
         return data.get("area") or "Metro Vancouver"
 
     # -- theme -----------------------------------------------------------------
+    def theme_id(self):
+        """The chosen theme, or — with theme_mode "rotate" — the next approved theme each time the alert screen
+        comes round (the count lives at module level, so config reloads don't restart it)."""
+        st = self.settings
+        if st.get("theme_mode") == "rotate":
+            pool = [t for t, v in sorted((st.get("theme_status") or {}).items()) if v == "approved" and t in THEMES]
+            if pool:
+                return pool[_SHOWINGS[0] % len(pool)]
+        return st.get("theme") or "t01"
+
     def theme(self):
         st = self.settings
         if self._tour:
             return dict(resolve(self._tour))
-        th = dict(resolve(st.get("theme") or "t01"))
+        th = dict(resolve(self.theme_id()))
         for key, allowed in (("palette", PALETTES), ("family", FAMILIES), ("border", BORDERS), ("reveal", REVEALS),
                              ("structure", STRUCTURES)):
             if st.get(key) in allowed:
@@ -646,10 +660,13 @@ class AlertScreen:
     # -- drawing ---------------------------------------------------------------
     def draw(self, c, zone, entry, transition, now=None):
         now = time.time() if now is None else now
+        if transition and not (entry and (entry.get("tour") or entry.get("test"))):
+            _SHOWINGS[0] += 1                                  # rotate-mode: next approved theme
         if entry and entry.get("tour"):
             return self._draw_tour(c, entry, transition, now)
         if self._tour:
             self._tour, self._reveal_cap, self._fast, self._static = None, None, None, None
+            self._tour_sample, self._sample = None, None
         return self._draw(c, entry, transition, now)
 
     def _sample_map(self):
@@ -703,27 +720,37 @@ class AlertScreen:
         return True
 
     def _draw_tour(self, c, entry, transition, now):
-        """Every theme in turn with the test alert: its reveal, then a few seconds of border animation."""
+        """A tour: each item (theme, test alert) in turn — its reveal, then a few seconds of border animation.
+        ``tour_items`` = [[theme, sample], …]; without it, every theme from ``tour_from`` with the set sample."""
+        from display.modules.alert_samples import SAMPLES
         per = max(4.0, float(entry.get("tour_sec") or 9))
-        ids = sorted(THEMES)
+        items = [(t, s if s in SAMPLES else None) for t, s in (entry.get("tour_items") or []) if t in THEMES]
+        if not items:
+            ids = sorted(THEMES)
+            items = [(t, None) for t in ids[int(entry.get("tour_from") or 0):]]
         if transition or self._tour_t0 is None:
             self._tour_t0 = now
             self._sample = None
         k = int((now - self._tour_t0) // per)
-        tid = ids[(int(entry.get("tour_from") or 0) + k) % len(ids)]
-        if tid != self._tour:
-            self._tour, self._reveal_cap = tid, per * 0.55
-            self._t0, self._static, self._fast = self._tour_t0 + k * per, None, None
+        tid, smp = items[min(k, len(items) - 1)]
+        if (tid, smp) != (self._tour, self._tour_sample):
+            self._tour, self._tour_sample, self._reveal_cap = tid, smp, per * 0.55
+            self._t0, self._static, self._fast, self._sample = self._tour_t0 + k * per, None, None, None
         self._draw(c, {"test": True}, False, now)
         th = THEMES[tid]
+        what = SAMPLES.get(smp or self.settings.get("sample") or "rain", {}).get("name", "")
+        self._label(c, f" {min(k, len(items) - 1) + 1}/{len(items)}  {th['name'].upper()}  ·  {what.upper()} ",
+                    1 - (per - ((now - self._tour_t0) % per)) / per)
+        return "done" if k >= len(items) else None
+
+    def _label(self, c, text, frac=None):
+        """A caption bar along the foot (tours and control-panel reviews say what's on the wall)."""
         f = FI("alert/5x8.bdf")
-        label = f" THEME {tid[1:]}/{len(ids)}  {th['name'].upper()}  ·  {th['description']} "
-        w = min(W - 8, f.width(label))
+        w = min(W - 8, f.width(text))
         c.FillRect(4, H - 13, w + 2, 10, Color(0, 0, 0))
-        f.draw(c, 5, H - 12, (255, 255, 255), label)
-        left = per - ((now - self._tour_t0) % per)
-        c.FillRect(4, H - 3, int((W - 8) * (1 - left / per)), 1, Color(255, 255, 255))
-        return "done" if k >= len(ids) else None
+        f.draw(c, 5, H - 12, (255, 255, 255), text)
+        if frac is not None:
+            c.FillRect(4, H - 3, int((W - 8) * max(0.0, min(1.0, frac))), 1, Color(255, 255, 255))
 
     def _draw(self, c, entry, transition, now):
         alerts = self.alerts(entry)
@@ -773,6 +800,8 @@ class AlertScreen:
                 self._static = (skey, c.buf.copy())
         struct.dynamic(c, ctx, seg, p)
         draw_border(c, th["border"], ctx.sev if ctx.home or not ctx.home_name else _dim(ctx.sev, 0.5), t)
+        if self.settings.get("review_label") and not self._tour:
+            self._label(c, f" {self.settings['review_label']} ")
         if t >= plan["total"]:
             self._t0 = now
             self._static = None
@@ -1139,7 +1168,7 @@ def render_preview(theme, alerts_data=None, at=4.0, settings=None):
         def get_data(self, name):
             return alerts_data if name == "alerts" else None
 
-    s = dict(settings or {}, theme=theme)
+    s = dict(settings or {}, theme=theme, theme_mode="fixed")      # previews show the theme asked for
 
     class _DataLoader(_Loader):
         data_dir = (settings or {}).get("_data_dir")
@@ -1162,7 +1191,7 @@ def timeline(settings=None, alerts_data=None):
 
         def get_data(self, name):
             return alerts_data if name == "alerts" else None
-    scr = AlertScreen(dict(settings or {}), _L())
+    scr = AlertScreen(dict(settings or {}, theme_mode="fixed"), _L())
     th = scr.theme()
     alerts = (alerts_data or {}).get("alerts") or scr.alerts({"test": True})
     plan = scr._plan_for(alerts, th, scr.family(th))

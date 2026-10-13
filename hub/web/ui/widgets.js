@@ -30,7 +30,7 @@ export const ToggleRow = {
   props: { modelValue: Boolean, label: String, hint: String },
   emits: ["update:modelValue"],
   template: `<label class="toggle-row" @click.prevent="$emit('update:modelValue', !modelValue)">
-    <span class="t">{{ label }}<small v-if="hint">{{ hint }}</small></span>
+    <span class="t"><slot name="label">{{ label }}</slot><small v-if="hint">{{ hint }}</small></span>
     <Toggle :modelValue="modelValue" @click.stop.prevent="$emit('update:modelValue', !modelValue)" /></label>`,
 };
 
