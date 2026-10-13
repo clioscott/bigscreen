@@ -337,7 +337,7 @@ def _fit_img(img, w, h, bg=(0, 0, 0)):
     return out, k, ox, oy
 
 
-def zone_map(c, ctx, x, y, w, h, vals, colour, unit, fonts):
+def zone_map(c, ctx, x, y, w, h, vals, colour, unit, fonts, labels_fmt=None):
     """Our own forecast map: the alert map's basemap with every ECCC zone filled in its value's colour (the
     alert's zones outlined white), each region's value printed at its town. False without a map."""
     import numpy as np
@@ -368,26 +368,35 @@ def zone_map(c, ctx, x, y, w, h, vals, colour, unit, fonts):
     img[lit & ~(lp[:-2, 1:-1] & lp[2:, 1:-1] & lp[1:-1, :-2] & lp[1:-1, 2:])] = (255, 255, 255)
     view, k, ox, oy = _fit_img(img, w, h, ctx.pal["bg"])
     c.buf[y:y + h, x:x + w] = view
-    f = fonts[0]
+    vf, nf = fonts[0], fonts[-1]
     placed = []
-    towns = sorted((ctx.amap.get("towns_px") or {}).items(), key=lambda kv: kv[0] not in hit)   # the alert's first
+    towns = sorted((ctx.amap.get("towns_px") or {}).items(), key=lambda kv: (kv[0] not in hit, kv[0] != getattr(ctx, "home_name", "")))
     for r, (px_, py_) in towns:
         v = vals.get(r)
         if v is None:
             continue
         sx, sy = int((px_ - ox) * k) + x, int((py_ - oy) * k) + y
-        s_ = _fmt(v, unit)
-        for lx, ly in ((sx - f.width(s_) // 2, sy - f.h - 1), (sx - f.width(s_) // 2, sy + 2),
-                       (sx + 3, sy - f.h // 2), (sx - f.width(s_) - 3, sy - f.h // 2)):
-            box = (lx - 2, ly - 2, lx + f.width(s_) + 2, ly + f.h + 2)
+        if not (x <= sx < x + w and y <= sy < y + h):
+            continue
+        val = labels_fmt(v) if labels_fmt else _fmt(v, unit)
+        name = _U(ctx, r).upper()
+        cw = max(vf.width(val), nf.width(name)) + 8
+        chh = nf.h + vf.h + 5
+        for lx, ly in ((sx - cw // 2, sy - chh - 3), (sx - cw // 2, sy + 3), (sx + 4, sy - chh // 2), (sx - cw - 4, sy - chh // 2)):
+            box = (lx - 1, ly - 1, lx + cw + 1, ly + chh + 1)
             inside = x + 1 <= box[0] and box[2] < x + w - 1 and y + 1 <= box[1] and box[3] < y + h - 1
             clear = all(box[2] < q[0] or box[0] > q[2] or box[3] < q[1] or box[1] > q[3] for q in placed)
             if inside and clear:
                 placed.append(box)
+                col = colour(v)
+                c.FillRect(lx, ly, cw, chh, Color(8, 10, 14))
+                c.FillRect(lx, ly, 3, chh, Color(*col))
+                edge = ap.HOME_TINT if r == getattr(ctx, "home_name", "") else ((255, 255, 255) if r in hit else (70, 76, 86))
+                c.FillRect(lx, ly, cw, 1, Color(*edge))
+                c.FillRect(lx, ly + chh - 1, cw, 1, Color(*edge))
+                nf.draw(c, lx + 5, ly + 2, ctx.pal["text"], name)
+                vf.draw(c, lx + 5, ly + 3 + nf.h, (255, 255, 255), val)
                 c.FillRect(sx - 1, sy - 1, 3, 3, Color(255, 255, 255))
-                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-                    f.draw(c, lx + dx, ly + dy, (0, 0, 0), s_)
-                f.draw(c, lx, ly, (255, 255, 255), s_)
                 break
     return True
 
@@ -408,15 +417,13 @@ def draw_forecast(c, ctx, inner, local, hold):
         vals, when = {r: vs[k] for r, vs in series.items()}, f"{af.when(T[k])}" + (" · now" if k == 0 else f" · +{k * 3} h")
     metro = metro_only(ctx)
     title = f"{label} · next 36 hours"
-    sub = ("Metro Vancouver, region by region" if metro else "By forecast zone, on the map") + \
+    sub = ("Metro Vancouver" if metro else "Lower Mainland") + ", forecast zone by zone" + \
           (" · sample data: today's forecast has none" if sample else "")
     p = sp.Page(c, ctx, inner, title, sub, "SAMPLE DATA · NOT A FORECAST" if sample else sp._credit(d))
     x, y, w, h = p.body
     foot = p.K.line + 4
     vfonts = [f for f in list(ctx.fam["titles"]) + [p.K] if f.h <= 20] + [p.S]
-    if metro:
-        metro_diagram(c, ctx, p, x, y, w, h - foot, T, series, vals, unit, colour, k, how)
-    elif not zone_map(c, ctx, x, y, w, h - foot, vals, colour, unit, [p.K]):
+    if not zone_map(c, ctx, x, y, w, h - foot, vals, colour, unit, [p.K, p.T]):
         region_diagram(c, ctx, x, y, w, h - foot, {r: _fmt(v, unit) for r, v in vals.items()},
                        {r: colour(v) for r, v in vals.items() if v is not None}, [p.S, p.T], vfonts)
     fy = y + h - foot + 3
@@ -466,14 +473,8 @@ def draw_air(c, ctx, inner, local, hold):
     x, y, w, h = p.body
     foot = p.K.line + 4
     vfonts = [f for f in list(ctx.fam["titles"]) + [p.K] if f.h <= 20] + [p.S]
-    if metro_only(ctx):
-        times = [af.ts(t_) for t_ in periods] or [af.ts(f[0]) for f in (areas[0].get("forecast") or [])][:12]
-        series = {r: [next((f[1] for f in a.get("forecast") or [] if f[0] == t_), None) for t_ in periods] for r, a in by_region.items()}
-        if sample:
-            series = {r: [vals[r] + (1 if i == len(periods) // 2 else 0) for i in range(len(periods))] for r in vals}
-        metro_diagram(c, ctx, p, x, y, w, h - foot, times or [None], series, vals, "aqhi", af.aqhi_colour,
-                      max(0, k - 1), "level")
-    else:
+    if not zone_map(c, ctx, x, y, w, h - foot, {r: v for r, v in vals.items() if v is not None}, af.aqhi_colour,
+                    "aqhi", [p.K, p.T], labels_fmt=lambda v: f"{v:.0f} {af.aqhi_word(v).split()[0]}"):
         region_diagram(c, ctx, x, y, w, h - foot,
                        {r: (f"{v:.0f} · {af.aqhi_word(v).split()[0]}" if v is not None else "no reading") for r, v in vals.items()},
                        {r: af.aqhi_colour(v) for r, v in vals.items() if v is not None}, [p.S, p.T], vfonts)
@@ -549,7 +550,7 @@ def draw_about(c, ctx, inner, local, hold):
     municipalities it covers on the diagram."""
     issued, expires, end = af.alert_times(ctx)
     src = af.source_of(ctx)
-    p = sp.Page(c, ctx, inner, "About this alert", f"{ctx.b['title'].capitalize()} · check it's real and current",
+    p = sp.Page(c, ctx, inner, "About this alert", f"{ctx.b['title'].capitalize()} · {(ctx.b['status'] or 'in effect')}",
                 f"Source: {src['name']}")
     x, y, w, h = p.body
     K, S, T = p.K, p.S, p.T
@@ -570,9 +571,9 @@ def draw_about(c, ctx, inner, local, hold):
     if ctx.home or km == 0:
         where, wcol = f"Includes {home}", ctx.sev
     elif km is not None:
-        where, wcol = f"Not {home} · {km:.0f} km away", ctx.pal["strong"]
+        where, wcol = f"{km:.0f} km from {home}", ctx.pal["strong"]
     else:
-        where, wcol = f"Not {home}", ctx.pal["strong"]
+        where, wcol = f"Nearby: {', '.join(n for n, _ in ap.labels(ctx)[:2])}", ctx.pal["strong"]
     checked = getattr(ctx, "checked", None)
     rows = [("Source", f"{src['short'] or src['name']} weather alert"),
             ("Status", f"{(ctx.b['status'] or 'in effect').capitalize()} · {ctx.b['kind']}"),
