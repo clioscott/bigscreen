@@ -137,6 +137,13 @@ def _words(text, upper, home=""):
     home_words = {w.lower() for w in home.split()} if home else set()
     for chunk, hi in alert_brief.spans(text):
         t = chunk.upper() if upper else chunk
+        if hi is True and t.strip():                        # an amount ("50 to 70 mm") never breaks across lines
+            w = " ".join(t.split())
+            if words and not t[:1].isspace() and w[0] in PUNCT:
+                words[-1].append((w, hi))
+            else:
+                words.append([(w, hi)])
+            continue
         parts = t.split()
         for k, w in enumerate(parts):
             h = "home" if home_words and w.strip(".,;:()").lower() in home_words else hi
@@ -593,7 +600,7 @@ class AlertScreen:
                                       + [th, st], sort_keys=True, default=str).encode()).hexdigest()
         if key == self._plan_key:
             return self._plan
-        struct = STRUCT_IMPL.get(th["structure"]) or STRUCT_IMPL["briefing"]
+        struct = STRUCT_IMPL.get(th["structure"]) or STRUCT_IMPL["console"]
         wps = max(1.0, float(st.get("reading_wpm") or 200)) / 60.0
         min_hold = max(4.0, float(st.get("min_hold_sec") or 12))
         speed = max(0.25, float(st.get("reveal_speed") or 1.0))
@@ -664,11 +671,13 @@ class AlertScreen:
                 lines, _ = struct.flow(ctx, use, boxes, fonts)
                 chosen = (lines, use, fonts)
             lines, use, fonts = chosen
-            for g in (12, 9, 7, 5):                         # spread paragraphs out when there's room
+            for g in (12, 9, 7, 5, 3):                      # spread paragraphs out when there's room
                 more, over = struct.flow(ctx, use, boxes, fonts, gap=g)
                 if not over:
                     lines = more
                     break
+            else:                                           # nothing fits whole: the cut version, laid out last
+                lines, _ = struct.flow(ctx, use, boxes, fonts)
             words = sum(len(p["text"].split()) for p in use) + 8
             chars = sum(ln["chars"] for ln in lines)
             rev = th["reveal"]
@@ -931,7 +940,7 @@ class AlertScreen:
                 self._static = None
                 return "done"
             return None
-        struct = STRUCT_IMPL.get(th["structure"]) or STRUCT_IMPL["briefing"]
+        struct = STRUCT_IMPL.get(th["structure"]) or STRUCT_IMPL["console"]
         skey = (self._plan_key, i)
         if p >= 1.0 and self._static is not None and self._static[0] == skey:
             c.buf[:] = self._static[1]
