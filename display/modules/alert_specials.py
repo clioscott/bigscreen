@@ -207,6 +207,14 @@ def _muni_columns(c, ctx, x, y, w, h, groups, K, S):
 
 
 # ------------------------------------------------------------------------------------------------ special pages
+def _none_panel(p, x, y, w, h, label, msg, sub):
+    """A panel that says plainly there's nothing of this kind in the forecast."""
+    bx, by, bw, bh = p.panel(x, y, w, h, label)
+    f = next((f for f in p.titles if f.width(_U(p.ctx, msg)) <= bw and f.h <= max(p.K.h, bh - p.S.line - 2)), p.K)
+    f.draw(p.c, bx, by + max(0, (bh - f.h - p.S.line) // 2), p.ctx.pal["strong"], ch.fit(f, _U(p.ctx, msg), bw))
+    p.S.draw(p.c, bx, by + max(0, (bh - f.h - p.S.line) // 2) + f.line, p.ctx.pal["text"], ch.fit(p.S, sub, bw))
+
+
 def _rows(ctx, d, var, limit=8, transform=None):
     """[(town, values, emphasise)] for a variable: the alert's towns first, then the others."""
     s = af.series(d, var)
@@ -294,9 +302,13 @@ def _freezing(c, ctx, inner, d):
         return False
     x, y, w, h = p.body
     gh = int(h * 0.55)
-    gx, gy, gw, ghh = p.panel(x, y, w, gh, "Chance of freezing rain · %")
-    col = ch.ramp([(10, (60, 120, 200)), (30, (120, 200, 255)), (50, (230, 240, 255)), (70, (255, 120, 220))])
-    ch.heat_strip(c, gx, gy, gw, ghh, rows, d["_times"], col, p.T, ctx.pal, show_vals=True)
+    if any(v for _, vals, _ in rows for v in vals):
+        gx, gy, gw, ghh = p.panel(x, y, w, gh, "Chance of freezing rain · %")
+        col = ch.ramp([(10, (60, 120, 200)), (30, (120, 200, 255)), (50, (230, 240, 255)), (70, (255, 120, 220))])
+        ch.heat_strip(c, gx, gy, gw, ghh, rows, d["_times"], col, p.T, ctx.pal, show_vals=True)
+    else:
+        _none_panel(p, x, y, w, gh, "Chance of freezing rain", "No freezing rain in the forecast",
+                    "for these towns over the next 36 hours")
     (lx, ly, lw, lh) = (x, y + gh + 4, int(w * 0.55), h - gh - 4)
     tv = _rows(ctx, d, "temp", limit=1)
     tx, ty, tw, tth = p.panel(lx, ly, lw, lh, f"Temperature · {tv[0][0] if tv else ''} · °C")
@@ -338,9 +350,18 @@ def _thunder(c, ctx, inner, d):
         return False
     x, y, w, h = p.body
     gw_ = int(w * 0.66)
-    gx, gy, gw, gh = p.panel(x, y, gw_, h, "Chance of thunderstorms · %")
-    col = ch.ramp([(5, (90, 80, 20)), (20, (200, 170, 0)), (40, (255, 215, 0)), (60, (255, 120, 0)), (80, (255, 40, 40))])
-    ch.heat_strip(c, gx, gy, gw, gh, rows, d["_times"], col, p.T, ctx.pal, show_vals=True)
+    if any(v for _, vals, _ in rows for v in vals):
+        gx, gy, gw, gh = p.panel(x, y, gw_, h, "Chance of thunderstorms · %")
+        col = ch.ramp([(5, (90, 80, 20)), (20, (200, 170, 0)), (40, (255, 215, 0)), (60, (255, 120, 0)), (80, (255, 40, 40))])
+        ch.heat_strip(c, gx, gy, gw, gh, rows, d["_times"], col, p.T, ctx.pal, show_vals=True)
+    else:                                              # no storms forecast: say so, and show the chance of rain
+        mh = p.K.line + p.S.line + p.T.h + 12
+        _none_panel(p, x, y, gw_, mh, "Chance of thunderstorms", "No thunderstorms in the forecast", "for the next 36 hours")
+        pr = _rows(ctx, d, "pop", limit=6)
+        if pr:
+            gx, gy, gw, gh = p.panel(x, y + mh + 4, gw_, h - mh - 4, "Chance of rain or showers · %")
+            col = ch.ramp([(10, (30, 70, 130)), (30, (40, 110, 200)), (50, (70, 150, 255)), (70, (140, 200, 255))])
+            ch.heat_strip(c, gx, gy, gw, gh, pr, d["_times"], col, p.T, ctx.pal, show_vals=True)
     rx = x + gw_ + 4
     facts = af.key_facts(ctx, d)[:2]
     pop = _rows(ctx, d, "pop", limit=1)
@@ -493,9 +514,19 @@ def _fog(c, ctx, inner, d):
         return False
     x, y, w, h = p.body
     gw_ = int(w * 0.68)
-    gx, gy, gw, gh = p.panel(x, y, gw_, h, "Visibility in fog · km")
-    col = ch.ramp([(-1, (255, 60, 60)), (0.2, (255, 150, 0)), (0.5, (230, 200, 60)), (1.0, None)])
-    ch.heat_strip(c, gx, gy, gw, gh, rows, d["_times"], lambda v: col(v) if v is not None and v < 1.0 else None, p.T, ctx.pal)
+    if any(v is not None and v < 1.0 for _, vals, _ in rows for v in vals):
+        gx, gy, gw, gh = p.panel(x, y, gw_, h, "Visibility in fog · km")
+        col = ch.ramp([(-1, (255, 60, 60)), (0.2, (255, 150, 0)), (0.5, (230, 200, 60)), (1.0, None)])
+        ch.heat_strip(c, gx, gy, gw, gh, rows, d["_times"], lambda v: col(v) if v is not None and v < 1.0 else None, p.T, ctx.pal)
+    else:                                              # no fog forecast: how close the air is to fog instead
+        mh = p.K.line + p.S.line + p.T.h + 12
+        _none_panel(p, x, y, gw_, mh, "Visibility in fog", "No fog in the forecast", "visibility stays above 1 km")
+        tv, dv = _rows(ctx, d, "temp", limit=3), _rows(ctx, d, "dew", limit=3)
+        if tv and dv:
+            gx, gy, gw, gh = p.panel(x, y + mh + 4, gw_, h - mh - 4, "Temperature minus dew point · fog forms near 0°")
+            lines = [([None if a is None or b is None else a - b for a, b in zip(t_[1], d_[1])], LINE_COLS[k], t_[0])
+                     for k, (t_, d_) in enumerate(zip(tv, dv))]
+            ch.line_chart(c, gx, gy, gw, gh, d["_times"], lines, p.T, ctx.pal, "°", lo=0, label_max=False)
     facts = af.key_facts(ctx, d)[:1]
     tv, dv = _rows(ctx, d, "temp", limit=1), _rows(ctx, d, "dew", limit=1)
     if tv and dv:

@@ -494,6 +494,17 @@ def _page_pack(data_dir, pid, check_only=False):
     return meta, frames
 
 
+def _page_has_data(data_dir, pid, min_frac=0.003):
+    """False for a data map page with essentially nothing on it (no rain on the radar, no snow in the forecast…):
+    the wall skips it rather than show an empty map."""
+    try:
+        with open(os.path.join(data_dir, "alertpages", f"{pid}.json"), encoding="utf-8") as f:
+            meta = json.load(f)
+    except (OSError, ValueError):
+        return False
+    return float(meta.get("data_frac", 1.0)) >= min_frac
+
+
 def _alert_data(data_dir):
     from display.modules import alert_facts
     return alert_facts.data(data_dir)
@@ -729,7 +740,7 @@ class AlertScreen:
             if st.get("show_pages", True) is not False:           # the weather type's ECCC data pages
                 psec = max(5.0, float(st.get("page_sec") or 9))
                 for pid in alert_brief.HAZARD_PAGES.get(b["hazard"], []):
-                    if _page_pack(self._data_dir(), pid, check_only=True):
+                    if _page_pack(self._data_dir(), pid, check_only=True) and _page_has_data(self._data_dir(), pid):
                         segs.append({"alert": ai, "ctx": ctx, "kind": "page", "page": pid, "lines": [], "paras": [],
                                      "fonts": fonts, "start": t, "reveal": 0.6, "hold": psec - 0.6})
                         t += psec

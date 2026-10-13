@@ -104,13 +104,14 @@ def _render_forecast(pid, spec, cfg, log):
     over = carto.render_overlay(view, area.get("carto") or {}, mfp, group="over")
     towns = _town_px(view)
     coords = {n: (lo, la) for n, lo, la in TOWNS}
-    frames, values, kept = [], [], []
+    frames, values, kept, fill = [], [], [], 0.0
     for t in times:
         try:
             rgba = tracks._wms_frame(spec["layer"], view, t, spec.get("style", ""), 2)
         except Exception as e:
             log(f"  {pid} @ {t}: {e}")
             continue
+        fill = max(fill, float((rgba[..., 3] > 0).mean()))    # how much of the map the field paints
         img = alpha_over(base, rgba, 0.85)
         if over is not None:
             img = alpha_over(img, over)
@@ -120,7 +121,8 @@ def _render_forecast(pid, spec, cfg, log):
         values.append([_value(spec, vl, *coords[n], t) for n, _, _ in towns])
     if not frames:
         return {"ok": False, "message": "every frame failed"}
-    return _write(pid, spec, frames, kept, view, towns, values, kind="forecast")
+    nonzero = any(v not in (None, 0, 0.0) for row in values for v in row)
+    return _write(pid, spec, frames, kept, view, towns, values, kind="forecast", data_frac=fill if (nonzero or fill) else 0.0)
 
 
 def _render_loop(pid, spec, cfg, log):
@@ -140,11 +142,17 @@ def _render_loop(pid, spec, cfg, log):
     src_bin.replace(OUT / f"{pid}.bin")
     src_json.unlink(missing_ok=True)
     meta.update(id=pid, title=spec["title"], page_kind=spec["kind"], towns=[], values=[], unit="")
+    if spec["kind"] == "radar":                                   # radar / lightning: pixels that change across the loop
+        n, h, w = meta["n"], meta["h"], meta["w"]
+        fr = np.fromfile(OUT / f"{pid}.bin", dtype=np.uint8).reshape(n, h, w, 3).astype(np.int16)
+        meta["data_frac"] = float((np.abs(fr - fr[:1]).max(axis=(0, 3)) > 40).mean()) if n > 1 else 0.0
+    else:
+        meta["data_frac"] = 1.0
     atomic_write_json(OUT / f"{pid}.json", meta)
     return res
 
 
-def _write(pid, spec, frames, times, view, towns, values, kind):
+def _write(pid, spec, frames, times, view, towns, values, kind, data_frac=1.0):
     OUT.mkdir(parents=True, exist_ok=True)
     pack = np.ascontiguousarray(np.stack(frames))
     tmp = OUT / f".{pid}.bin.tmp"
@@ -153,7 +161,8 @@ def _write(pid, spec, frames, times, view, towns, values, kind):
     meta = {"id": pid, "title": spec["title"], "page_kind": kind, "w": view.w, "h": view.h, "n": len(frames),
             "times": [t.strftime("%Y-%m-%dT%H:%M:%SZ") for t in times], "unit": spec.get("unit", ""),
             "fmt": spec.get("fmt", "{:.0f}"), "value_title": spec.get("value_title", ""),
-            "towns": towns, "values": values, "generated_at": time.time(), "attribution": "ECCC"}
+            "towns": towns, "values": values, "generated_at": time.time(), "attribution": "ECCC",
+            "data_frac": round(data_frac, 4)}
     atomic_write_json(OUT / f"{pid}.json", meta)
     return {"ok": True, "message": f"{len(frames)} frames", "frames": len(frames)}
 
