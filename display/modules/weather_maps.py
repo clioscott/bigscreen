@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 import numpy as np
 
 from display.gfx import Color, graphics
-from display.modules.date_display import _WEEKDAY_COLORS
+from display.modules.date_display import _WEEKDAY_COLORS, _WEEKDAY_JIS
 
 
 def _lum(rgb):
@@ -90,6 +90,11 @@ class MapPanel:
         p = cfg.get_font_path("small")
         if p:
             self.font.LoadFont(p)
+        self.kanji = graphics.Font()                   # the status bar's weekday kanji font (12 px glyphs)
+        try:
+            self.kanji.LoadFont(cfg.get_font_path("mplus12bold") or "fonts/mplus_j12b.bdf")
+        except Exception:
+            self.kanji = None
         self.white = Color(255, 255, 255)
         self.shadow = Color(0, 0, 0)
         self.dim = Color(170, 170, 170)
@@ -162,6 +167,9 @@ class MapPanel:
             day = f"{t:%a}".upper()
             c.FillRect(x + 1, y + h - 11, self._tw(day) + 3, 8, _DAY_BG[wd])
             graphics.DrawText(c, self.font, x + 3, y + h - 4, _DAY_FG[wd], day)
+            if self.kanji:                                     # and its kanji above, coloured on black, same width
+                c.FillRect(x + 1, y + h - 25, self._tw(day) + 3, 14, self.shadow)
+                graphics.DrawText(c, self.kanji, x + 3, y + h - 13, _DAY_BG[wd], chr(_WEEKDAY_JIS[wd]))
             lx = x + 4 + self._tw(day) + 2
             lx += self._text(c, lx, y + h - 4, f"{t.hour % 12 or 12}:{t:%M}{'A' if t.hour < 12 else 'P'}") + 4
             if t.timestamp() > now + 120:                      # model forecast / radar nowcast frame
