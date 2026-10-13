@@ -180,30 +180,48 @@ ABBR = {"North": "N", "South": "S", "East": "E", "West": "W", "Northeast": "NE",
         "Squamish": "Sqmsh", "Richmond": "Rich", "Burnaby": "Bby", "Surrey": "Sry", "Peninsula": "Pen"}
 
 
+SMALL = {"of", "the", "and", "to", "de", "du", "la", "-", "–"}
+
+
 def clean(name):
     n = DROP.sub("", name.strip())
-    n = re.sub(r"\s*\((?:Part|part)\)", "", n)
+    n = re.sub(r"\s*\([^)]*\)", "", n)                    # "(Part)", "(Unincorporated)"…
     n = re.sub(r"\s+Indian Reserve No\.?\s*", " ", n)
-    n = re.sub(r"Metro Vancouver - ", "", n) if n.startswith("Metro Vancouver - ") else n
-    n = n.replace(" including ", " – ").split(" – ")[0]
+    if n.startswith("Metro Vancouver - "):
+        n = n[len("Metro Vancouver - "):]
+    n = n.split(" including ")[0]
     return re.sub(r"\s+", " ", n).strip()
 
 
+def _abbr(words):
+    return [ABBR.get(w, w) for w in words]
+
+
 def labels(name):
-    """Label variants, longest first: the cleaned name, abbreviated words, initials + last word, a short cut."""
+    """Label variants, longest first, built to stay readable: the name; its words abbreviated (N, Pt, Mt…);
+    small words dropped; for "Head - Tail" names (ECCC zones, tsunami zones) head + tail's first words; each word
+    cut to 5, then 4, then 3 letters; initials only as a last resort."""
     full = clean(name)
-    words = full.replace("-", " - ").split()
-    out = [full.upper()]
-    ab = " ".join(ABBR.get(w, w) for w in words).replace(" - ", "-")
-    out.append(ab.upper())
+    out = [full]
+    head, sep, tail = full.partition(" - ")
+    if sep:
+        hw, tw = head.split(), [w for w in tail.split() if w.lower() not in SMALL]
+        if re.match(r"^Zone [A-Z]$", head):               # tsunami: "Zone E - the Strait of Georgia…"
+            out += [f"{head} {' '.join(tw[:2])}", f"{head} {' '.join(tw[:1])}", head]
+        else:
+            out += [f"{' '.join(_abbr(hw))} {' '.join(tw[:2])}", f"{' '.join(_abbr(hw))} {' '.join(tw[:1])}",
+                    " ".join(tw[:2]), " ".join(_abbr(hw))]
+    words = [w for w in full.replace("-", " ").split() if w.lower() not in SMALL]
+    out.append(" ".join(_abbr(full.replace(" - ", " ").split())))
+    out.append(" ".join(_abbr(words)))
+    for k in (6, 5, 4, 3):
+        out.append(" ".join(w if len(w) <= k else w[:k] for w in _abbr(words)))
     if len(words) > 1:
-        out.append((" ".join(w[0] for w in words[:-1] if w not in "-") + " " + words[-1]).upper())
-        out.append("".join(w[0] for w in words if w not in "-").upper())
-    nov = re.sub(r"(?<=\w)[aeiou]", "", ab.replace(" ", ""))
-    out += [nov.upper()[:8], full.upper()[:6]]
+        out.append(" ".join(w[0] for w in words[:-1]) + " " + words[-1][:5])
+        out.append("".join(w[0] for w in words))
     seen, res = set(), []
     for x in out:
-        x = x.strip()
+        x = re.sub(r"\s+", " ", x).strip().upper()
         if x and x not in seen:
             seen.add(x)
             res.append(x)
@@ -240,6 +258,10 @@ def layout(units, max_cols):
 
 def build(grid_id, cache):
     level, aoi, label, max_cols = GRIDS[grid_id]
+    if level not in cache and (GEOM / f"{level}.geojson").exists() and "--refresh" not in sys.argv:
+        fc = json.loads((GEOM / f"{level}.geojson").read_text())
+        cache[level] = [{"id": f["properties"]["id"], "name": f["properties"]["name"], "geom": shape(f["geometry"])}
+                        for f in fc["features"]]
     if level not in cache:
         print(f"  downloading {level} …", flush=True)
         cache[level] = LEVELS[level][1]()
@@ -272,7 +294,7 @@ def build(grid_id, cache):
 
 
 if __name__ == "__main__":
-    want = sys.argv[1:] or list(GRIDS)
+    want = [a for a in sys.argv[1:] if not a.startswith("--")] or list(GRIDS)
     cache = {}
     for g in want:
         try:

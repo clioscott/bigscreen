@@ -71,10 +71,11 @@ def covered(area, grid):
         if g.geom_type not in ("Polygon", "MultiPolygon"):
             hits.append(uid)
             continue
-        frac = area.intersection(g).area / g.area if g.area else 0
+        inter = area.intersection(g).area
+        frac = inter / g.area if g.area else 0
         if frac >= COVER or area.contains(g.representative_point()):
             hits.append(uid)
-        elif frac > 0.01:
+        elif frac > 0.01 or inter > 0.002:                 # ~20 km² of a big unit (a province) still counts as part
             part.append(uid)
     return hits, part
 
