@@ -348,3 +348,101 @@ def city_grid(c, ctx, x, y, w, h, font, gap=1):
         while lab and font.width(lab) > cw - 2:
             lab = lab[:-1]
         font.draw(c, tx + (cw - font.width(lab)) // 2, ty + (rh - font.h) // 2, ink, lab)
+
+
+# ------------------------------------------------------------------------------------------------ any-level grids
+_GRIDS = {}
+
+
+def grid_def(grid_id):
+    """A tile grid built by tools/build_grids.py (assets/grids/<id>.json), or None."""
+    if grid_id not in _GRIDS:
+        import json
+        from display.gfx import resolve_asset
+        try:
+            with open(resolve_asset(f"grids/{grid_id}.json"), encoding="utf-8") as f:
+                _GRIDS[grid_id] = json.load(f)
+        except (OSError, ValueError):
+            _GRIDS[grid_id] = None
+    return _GRIDS[grid_id]
+
+
+def grid_cover(ctx, grid_id):
+    """(full ids, partly covered ids, home id) for an alert on a grid, from the hub's coverage."""
+    cov = getattr(ctx, "coverage", None) or {}
+    full = set(map(str, (cov.get("full") or {}).get(grid_id) or []))
+    part = set(map(str, (cov.get("part") or {}).get(grid_id) or [])) - full
+    home = (getattr(ctx, "home_units", None) or {}).get(grid_id)
+    return full, part, (str(home) if home is not None else None)
+
+
+def unit_grid(c, ctx, grid_id, x, y, w, h, fonts):
+    """Draw a tile grid: one box per unit at its place on the coarse map grid, the alert's units filled in the
+    weather colour, partly covered ones half-filled, home in the second colour (or a warm outline), the rest
+    outlined. Each box takes the longest label variant that fits (two lines if it must); the largest of
+    ``fonts`` in which nearly all labels fit is used. Returns False if the grid isn't available."""
+    g = grid_def(grid_id)
+    if not g:
+        return False
+    full, part, home = grid_cover(ctx, grid_id)
+    cols, rows, gap = g["cols"], g["rows"], 1
+    cw = (w - gap * (cols - 1)) // cols
+    rh = (h - gap * (rows - 1)) // rows
+
+    def best(lbls, f):
+        for s in lbls:
+            if f.width(s) <= cw - 3:
+                return [s]
+        if rh >= 2 * f.h + 3:                         # two lines of the full name
+            words, l1 = lbls[0].split(), ""
+            for i in range(len(words), 0, -1):
+                l1 = " ".join(words[:i])
+                if f.width(l1) <= cw - 3 and f.width(" ".join(words[i:])) <= cw - 3:
+                    return [l1, " ".join(words[i:])] if words[i:] else [l1]
+        return None
+
+    font = fonts[-1]
+    for f in fonts:
+        if f.h + 3 <= rh and sum(1 for u in g["units"] if best(u["labels"], f)) >= 0.9 * len(g["units"]):
+            font = f
+            break
+    for u in g["units"]:
+        uid = str(u["id"])
+        tx, ty = x + u["col"] * (cw + gap), y + u["row"] * (rh + gap)
+        mine = uid == home
+        if uid in full:
+            fill = getattr(ctx, "sev2", ctx.sev) if mine else ctx.sev
+        elif uid in part:
+            fill = _dim(ctx.sev, 0.42)
+        else:
+            fill = None
+        if fill:
+            c.FillRect(tx, ty, cw, rh, Color(*fill))
+            ink = (0, 0, 0) if sum(fill) > 300 else (255, 255, 255)
+        else:
+            edge = HOME_TINT if mine else _dim(ctx.pal["dim"], 0.55)
+            c.FillRect(tx, ty, cw, rh, Color(*ctx.pal["panel"]))
+            for rx, ry, rw, rr in ((tx, ty, cw, 1), (tx, ty + rh - 1, cw, 1), (tx, ty, 1, rh), (tx + cw - 1, ty, 1, rh)):
+                c.FillRect(rx, ry, rw, rr, Color(*edge))
+            ink = HOME_TINT if mine else ctx.pal["dim"]
+        lines = best(u["labels"], font) or [u["labels"][-1][: max(1, (cw - 3) // max(1, font.width("M")))]]
+        th = len(lines) * font.h + (len(lines) - 1)
+        for k, s in enumerate(lines):
+            while s and font.width(s) > cw - 2:
+                s = s[:-1]
+            font.draw(c, tx + (cw - font.width(s)) // 2, ty + (rh - th) // 2 + k * (font.h + 1), ink, s)
+    return True
+
+
+def pick_grid(ctx, prefer=None):
+    """The level that tells this alert best: the finest grid where it lights a handful-to-dozens of units."""
+    if prefer and grid_def(prefer):
+        return prefer
+    count = lambda gid: len(grid_cover(ctx, gid)[0])
+    if 0 < count("municipalities_lm") <= 3 and count("communities_metro") > 0:
+        return "communities_metro"
+    if count("municipalities_lm") > 0:
+        return "municipalities_lm"
+    if count("regional_districts") or grid_cover(ctx, "regional_districts")[1]:
+        return "regional_districts"
+    return "provinces"

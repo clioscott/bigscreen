@@ -632,6 +632,14 @@ class AlertScreen:
             ctx.data = _alert_data(self._data_dir())          # forecast numbers for the key facts / special page
             from display.modules import alert_facts as _af
             ctx.extra = _af.extra(self._data_dir())            # DFO tides, ECCC AQHI
+            adata = (self.loader.get_data("alerts") if self.loader else None) or {}
+            if b["test"]:                                      # tile-grid coverage, worked out by the hub
+                kind = self._tour_sample or st.get("sample") or "rain"
+                ctx.coverage = (adata.get("sample_coverage") or {}).get(kind) or {}
+            else:
+                ctx.coverage = a.get("coverage") or {}
+            ctx.home_units = adata.get("home_units") or {}
+            ctx.detail_grid = st.get("detail_grid") or None
             ctx.title_f = struct.title_font(ctx)
             b["_issued_ts"], b["_expires_ts"], b["_event_end"] = a.get("published"), a.get("expires"), a.get("event_end")
             b["source"] = a.get("source") or "eccc"

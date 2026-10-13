@@ -145,10 +145,19 @@ def details(c, ctx, inner):
         if ex_x + S.width(ex) + 4 < bx + bw:
             S.draw(c, max(bx + S.width(nowlab) + 8, ex_x - S.width(ex) // 2), lane + 6, pal["dim"], ex)
     y2 = y + th + 4
-    # every community as a box on the rough map grid, the alert's towns lit
-    n_on = sum(1 for _, _, zone, _, _ in ap.CITY_TILES if ap.city_hit(ctx, zone))
-    gx, gy, gw, gh = p.panel(x, y2, w, y + h - y2, f"Communities in the alert · {n_on} of {len(ap.CITY_TILES)}")
-    ap.city_grid(c, ctx, gx, gy, gw, gh, T)
+    # the alert on a tile grid at the level that tells it best (or the one chosen in settings)
+    gid = ap.pick_grid(ctx, (ctx.th.get("opts") or {}).get("grid") or getattr(ctx, "detail_grid", None))
+    g = ap.grid_def(gid)
+    if g:
+        full, part, _ = ap.grid_cover(ctx, gid)
+        n = len(g["units"])
+        lab = f"{g['label']} · {len(full)} of {n} in the alert" + (f" · {len(part)} partly" if part else "")
+        gx, gy, gw, gh = p.panel(x, y2, w, y + h - y2, lab)
+        ap.unit_grid(c, ctx, gid, gx, gy, gw, gh, [S, T])
+    else:
+        n_on = sum(1 for _, _, zone, _, _ in ap.CITY_TILES if ap.city_hit(ctx, zone))
+        gx, gy, gw, gh = p.panel(x, y2, w, y + h - y2, f"Communities in the alert · {n_on} of {len(ap.CITY_TILES)}")
+        ap.city_grid(c, ctx, gx, gy, gw, gh, T)
 
 
 def _wrap(f, text, w):

@@ -3,7 +3,7 @@ own shapes. Any alert source that gives polygons (or names a set of ECCC zones) 
 
 A unit is covered when the alert's area takes in at least COVER of it, or its representative point; line
 features (tsunami coastlines) count when they touch. Results go into alerts.json:
-    alert["coverage"] = {grid_id: [unit ids]}, and alerts.json["home_units"] = {grid_id: unit id}.
+    alert["coverage"] = {"full": {grid_id: [unit ids]}, "part": {…}}, alerts.json["home_units"] = {grid_id: unit id}.
 """
 
 from __future__ import annotations
@@ -62,24 +62,31 @@ def _unit_geoms(grid):
 
 
 def covered(area, grid):
-    """Unit ids of ``grid`` that ``area`` (a shapely geometry) covers."""
-    hits = []
+    """(covered unit ids, partly covered unit ids) of ``grid`` for ``area`` (a shapely geometry). Partly: the
+    area takes in some of the unit (over 1 %) but under COVER of it — a regional alert inside a big unit."""
+    hits, part = [], []
     for uid, g in _unit_geoms(grid).items():
         if not area.intersects(g):
             continue
         if g.geom_type not in ("Polygon", "MultiPolygon"):
             hits.append(uid)
             continue
-        inter = area.intersection(g).area
-        if g.area and (inter / g.area >= COVER or area.contains(g.representative_point())):
+        frac = area.intersection(g).area / g.area if g.area else 0
+        if frac >= COVER or area.contains(g.representative_point()):
             hits.append(uid)
-    return hits
+        elif frac > 0.01:
+            part.append(uid)
+    return hits, part
 
 
 def coverage(area):
+    """{"full": {grid: [ids]}, "part": {grid: [ids]}}"""
     if area is None or area.is_empty:
-        return {}
-    return {gid: covered(area, g) for gid, g in grids().items()}
+        return {"full": {}, "part": {}}
+    full, part = {}, {}
+    for gid, g in grids().items():
+        full[gid], part[gid] = covered(area, g)
+    return {"full": full, "part": part}
 
 
 def home_units(lon, lat):
