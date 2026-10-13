@@ -262,7 +262,8 @@
     "NAN"
    ],
    "col": 0,
-   "row": 4
+   "row": 4,
+   "optional": "island"
   },
   {
    "id": "120",
@@ -357,7 +358,8 @@
     "LAD"
    ],
    "col": 0,
-   "row": 5
+   "row": 5,
+   "optional": "island"
   },
   {
    "id": "118",

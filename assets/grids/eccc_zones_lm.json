@@ -13,14 +13,13 @@
     "SUNSHINE COAST - GIBSONS TO EARLS COVE",
     "SUN COAST GIBSONS EARLS",
     "SUN COAST GIBSONS",
-    "GIBSONS EARLS",
-    "SUN COAST",
     "SUN COAST GIBSONS TO EARLS COVE",
     "SUN COAST GIBSONS EARLS COVE",
     "SUN COAST GIBSON EARLS COVE",
     "SUN COAST GIBSO EARLS COVE",
     "SUN COAS GIBS EARL COVE",
     "SUN COA GIB EAR COV",
+    "SUN COAST GE",
     "S C G E COVE",
     "SCGEC"
    ],
@@ -59,11 +58,10 @@
    "labels": [
     "FRASER CANYON - SOUTH",
     "FRASER CANYON SOUTH",
-    "SOUTH",
-    "FRASER CANYON",
     "FRASE CANYO SOUTH",
     "FRAS CANY SOUT",
     "FRA CAN SOU",
+    "FRASER CANYON S",
     "F C SOUTH",
     "FCS"
    ],
@@ -102,12 +100,11 @@
    "labels": [
     "FRASER VALLEY - CENTRAL",
     "FRASER VLY CENTRAL",
-    "CENTRAL",
-    "FRASER VLY",
     "FRASER VLY CENTRA",
     "FRASE VLY CENTR",
     "FRAS VLY CENT",
     "FRA VLY CEN",
+    "FRASER VLY C",
     "F V CENTR",
     "FVC"
    ],
@@ -120,11 +117,10 @@
    "labels": [
     "FRASER VALLEY - EAST",
     "FRASER VLY EAST",
-    "EAST",
-    "FRASER VLY",
     "FRASE VLY EAST",
     "FRAS VLY EAST",
     "FRA VLY EAS",
+    "FRASER VLY E",
     "F V EAST",
     "FVE"
    ],
@@ -192,11 +188,10 @@
    "labels": [
     "FRASER VALLEY - WEST",
     "FRASER VLY WEST",
-    "WEST",
-    "FRASER VLY",
     "FRASE VLY WEST",
     "FRAS VLY WEST",
     "FRA VLY WES",
+    "FRASER VLY W",
     "F V WEST",
     "FVW"
    ],

@@ -11,12 +11,13 @@
    "name": "Bowen Island/Lions Bay",
    "labels": [
     "BOWEN ISLAND/LIONS BAY",
-    "BOWEN ISLAND BAY",
-    "BOWEN ISLAN BAY",
-    "BOWE ISLA BAY",
-    "BOW ISL BAY",
-    "B I BAY",
-    "BIB"
+    "BOWEN I LIONS BAY",
+    "BOWE I LION BAY",
+    "BOW I LIO BAY",
+    "BOWEN ISLAND",
+    "BOWEN I",
+    "B I L BAY",
+    "BILB"
    ],
    "col": 0,
    "row": 0
@@ -27,8 +28,6 @@
    "labels": [
     "NORTH VANCOUVER DM - WEST",
     "N VAN DM WEST",
-    "WEST",
-    "N VAN DM",
     "N VAN DM W",
     "N V D WEST",
     "NVDW"
@@ -42,8 +41,6 @@
    "labels": [
     "NORTH VANCOUVER DM - EAST",
     "N VAN DM EAST",
-    "EAST",
-    "N VAN DM",
     "N VAN DM E",
     "N V D EAST",
     "NVDE"
@@ -69,10 +66,9 @@
    "labels": [
     "WEST VANCOUVER - UPPER",
     "W VAN UPPER",
-    "UPPER",
-    "W VAN",
     "W VAN UPPE",
     "W VAN UPP",
+    "W VAN U",
     "W V UPPER",
     "WVU"
    ],
@@ -85,10 +81,9 @@
    "labels": [
     "WEST VANCOUVER - LOWER",
     "W VAN LOWER",
-    "LOWER",
-    "W VAN",
     "W VAN LOWE",
     "W VAN LOW",
+    "W VAN L",
     "W V LOWER",
     "WVL"
    ],
@@ -101,8 +96,6 @@
    "labels": [
     "NORTH VANCOUVER CITY - WEST",
     "N VAN CITY WEST",
-    "WEST",
-    "N VAN CITY",
     "N VAN CITY W",
     "N VAN CIT W",
     "N V C WEST",
@@ -117,8 +110,6 @@
    "labels": [
     "NORTH VANCOUVER DM - CENTRAL",
     "N VAN DM CENTRAL",
-    "CENTRAL",
-    "N VAN DM",
     "N VAN DM C",
     "N V D CENTR",
     "NVDC"
@@ -174,8 +165,6 @@
    "labels": [
     "NORTH VANCOUVER CITY - EAST",
     "N VAN CITY EAST",
-    "EAST",
-    "N VAN CITY",
     "N VAN CITY E",
     "N VAN CIT E",
     "N V C EAST",
@@ -189,13 +178,15 @@
    "name": "Burnaby Heights/Capital Hill",
    "labels": [
     "BURNABY HEIGHTS/CAPITAL HILL",
-    "BBY HEIGHTS/CAPITAL HILL",
-    "BBY HEIGHT HILL",
-    "BBY HEIGH HILL",
-    "BBY HEIG HILL",
-    "BBY HEI HIL",
-    "B H HILL",
-    "BHH"
+    "BBY HTS CAPITAL HILL",
+    "BBY HTS CAPITA HILL",
+    "BBY HTS CAPIT HILL",
+    "BBY HTS CAPI HILL",
+    "BBY HTS CAP HIL",
+    "BURNABY HEIGHTS",
+    "BBY HTS",
+    "B H C HILL",
+    "BHCH"
    ],
    "col": 4,
    "row": 2
@@ -205,13 +196,15 @@
    "name": "Port Moody North/Anmore/Belcarra",
    "labels": [
     "PORT MOODY NORTH/ANMORE/BELCARRA",
-    "PT MOODY NORTH/ANMORE/BELCARRA",
-    "PT MOODY NORTH/",
-    "PT MOODY NORTH",
-    "PT MOOD NORT",
-    "PT MOO NOR",
-    "P M NORTH",
-    "PMN"
+    "PT MOODY N ANMORE BELCARRA",
+    "PT MOODY N ANMORE BELCAR",
+    "PT MOODY N ANMOR BELCA",
+    "PT MOOD N ANMO BELC",
+    "PT MOO N ANM BEL",
+    "PORT MOODY NORTH",
+    "PT MOODY N",
+    "P M N A BELCA",
+    "PMNAB"
    ],
    "col": 6,
    "row": 2
@@ -280,10 +273,14 @@
    "name": "Brentwood/Willingdon/Parkcrest",
    "labels": [
     "BRENTWOOD/WILLINGDON/PARKCREST",
-    "BRENTW",
-    "BRENT",
-    "BREN",
-    "BRE"
+    "BRENTWOOD WILLINGDON PARKCREST",
+    "BRENTW WILLIN PARKCR",
+    "BRENT WILLI PARKC",
+    "BREN WILL PARK",
+    "BRE WIL PAR",
+    "BRENTWOOD",
+    "B W PARKC",
+    "BWP"
    ],
    "col": 4,
    "row": 3
@@ -293,12 +290,14 @@
    "name": "Westridge/Sperling/Gov't Road",
    "labels": [
     "WESTRIDGE/SPERLING/GOV'T ROAD",
-    "WESTRI ROAD",
-    "WESTR ROAD",
-    "WEST ROAD",
-    "WES ROA",
-    "W ROAD",
-    "WR"
+    "WESTRIDGE SPERLING GOV'T ROAD",
+    "WESTRI SPERLI GOV'T ROAD",
+    "WESTR SPERL GOV'T ROAD",
+    "WEST SPER GOV' ROAD",
+    "WES SPE GOV ROA",
+    "WESTRIDGE",
+    "W S G ROAD",
+    "WSGR"
    ],
    "col": 5,
    "row": 3
@@ -399,12 +398,14 @@
    "name": "Garden Village/Cascade/Douglas/Gilpin",
    "labels": [
     "GARDEN VILLAGE/CASCADE/DOUGLAS/GILPIN",
-    "GARDEN VILLAG",
-    "GARDE VILLA",
-    "GARD VILL",
-    "GAR VIL",
-    "G VILLA",
-    "GV"
+    "GARDEN VILLAGE CASCADE DOUGLAS GILPIN",
+    "GARDEN VILLAG CASCAD DOUGLA GILPIN",
+    "GARDE VILLA CASCA DOUGL GILPI",
+    "GARD VILL CASC DOUG GILP",
+    "GAR VIL CAS DOU GIL",
+    "GARDEN VILLAGE",
+    "G V C D GILPI",
+    "GVCDG"
    ],
    "col": 4,
    "row": 4
@@ -414,13 +415,15 @@
    "name": "Burnaby Mountain/Lougheed",
    "labels": [
     "BURNABY MOUNTAIN/LOUGHEED",
-    "BBY MOUNTAIN/LOUGHEED",
-    "BBY MOUNTA",
-    "BBY MOUNT",
-    "BBY MOUN",
-    "BBY MOU",
-    "B MOUNT",
-    "BM"
+    "BBY MTN LOUGHEED",
+    "BBY MTN LOUGHE",
+    "BBY MTN LOUGH",
+    "BBY MTN LOUG",
+    "BBY MTN LOU",
+    "BURNABY MOUNTAIN",
+    "BBY MTN",
+    "B M LOUGH",
+    "BML"
    ],
    "col": 5,
    "row": 4
@@ -454,14 +457,16 @@
    "name": "West Point Grey/Dunbar-Southlands",
    "labels": [
     "WEST POINT GREY/DUNBAR-SOUTHLANDS",
-    "W POINT GREY/DUNBAR-SOUTHLANDS",
-    "W POINT GREY/DUNBAR SOUTHLANDS",
-    "W POINT GREY/D SOUTHL",
-    "W POINT GREY/ SOUTH",
-    "W POIN GREY SOUT",
-    "W POI GRE SOU",
-    "W P G SOUTH",
-    "WPGS"
+    "W POINT GREY DUNBAR-SOUTHLANDS",
+    "W POINT GREY DUNBAR SOUTHLANDS",
+    "W POINT GREY DUNBAR SOUTHL",
+    "W POINT GREY DUNBA SOUTH",
+    "W POIN GREY DUNB SOUT",
+    "W POI GRE DUN SOU",
+    "WEST POINT GREY",
+    "W POINT GREY",
+    "W P G D SOUTH",
+    "WPGDS"
    ],
    "col": 0,
    "row": 5
@@ -471,13 +476,14 @@
    "name": "South Cambie/Riley Park",
    "labels": [
     "SOUTH CAMBIE/RILEY PARK",
-    "S CAMBIE/RILEY PARK",
-    "S CAMBIE PARK",
-    "S CAMBI PARK",
-    "S CAMB PARK",
-    "S CAM PAR",
-    "S C PARK",
-    "SCP"
+    "S CAMBIE RILEY PARK",
+    "S CAMBI RILEY PARK",
+    "S CAMB RILE PARK",
+    "S CAM RIL PAR",
+    "SOUTH CAMBIE",
+    "S CAMBIE",
+    "S C R PARK",
+    "SCRP"
    ],
    "col": 1,
    "row": 5
@@ -515,10 +521,14 @@
    "name": "Metrotown/Marlborough/Windsor",
    "labels": [
     "METROTOWN/MARLBOROUGH/WINDSOR",
-    "METROT",
-    "METRO",
-    "METR",
-    "MET"
+    "METROTOWN MARLBOROUGH WINDSOR",
+    "METROT MARLBO WINDSO",
+    "METRO MARLB WINDS",
+    "METR MARL WIND",
+    "MET MAR WIN",
+    "METROTOWN",
+    "M M WINDS",
+    "MMW"
    ],
    "col": 4,
    "row": 5
@@ -528,12 +538,14 @@
    "name": "Buckingham/Lakeview/Cariboo/Second Street",
    "labels": [
     "BUCKINGHAM/LAKEVIEW/CARIBOO/SECOND STREET",
-    "BUCKIN STREET",
-    "BUCKI STREE",
-    "BUCK STRE",
-    "BUC STR",
-    "B STREE",
-    "BS"
+    "BUCKINGHAM LAKEVIEW CARIBOO SECOND STREET",
+    "BUCKIN LAKEVI CARIBO SECOND STREET",
+    "BUCKI LAKEV CARIB SECON STREE",
+    "BUCK LAKE CARI SECO STRE",
+    "BUC LAK CAR SEC STR",
+    "BUCKINGHAM",
+    "B L C S STREE",
+    "BLCSS"
    ],
    "col": 5,
    "row": 5
@@ -555,12 +567,14 @@
    "name": "Shaughnessy/Arbutus Ridge/Kerrisdale",
    "labels": [
     "SHAUGHNESSY/ARBUTUS RIDGE/KERRISDALE",
-    "SHAUGH RIDGE/",
-    "SHAUG RIDGE",
-    "SHAU RIDG",
-    "SHA RID",
-    "S RIDGE",
-    "SR"
+    "SHAUGHNESSY ARBUTUS RIDGE KERRISDALE",
+    "SHAUGH ARBUTU RIDGE KERRIS",
+    "SHAUG ARBUT RIDGE KERRI",
+    "SHAU ARBU RIDG KERR",
+    "SHA ARB RID KER",
+    "SHAUGHNESSY",
+    "S A R KERRI",
+    "SARK"
    ],
    "col": 0,
    "row": 6
@@ -570,10 +584,14 @@
    "name": "Oakridge/Marpole",
    "labels": [
     "OAKRIDGE/MARPOLE",
-    "OAKRID",
-    "OAKRI",
-    "OAKR",
-    "OAK"
+    "OAKRIDGE MARPOLE",
+    "OAKRID MARPOL",
+    "OAKRI MARPO",
+    "OAKR MARP",
+    "OAK MAR",
+    "OAKRIDGE",
+    "O MARPO",
+    "OM"
    ],
    "col": 1,
    "row": 6
@@ -611,10 +629,14 @@
    "name": "Kingsway/Edmonds",
    "labels": [
     "KINGSWAY/EDMONDS",
-    "KINGSW",
-    "KINGS",
-    "KING",
-    "KIN"
+    "KINGSWAY EDMONDS",
+    "KINGSW EDMOND",
+    "KINGS EDMON",
+    "KING EDMO",
+    "KIN EDM",
+    "KINGSWAY",
+    "K EDMON",
+    "KE"
    ],
    "col": 4,
    "row": 6
@@ -625,8 +647,6 @@
    "labels": [
     "NEW WESTMINSTER - CENTRAL",
     "NEW WEST CENTRAL",
-    "CENTRAL",
-    "NEW WEST",
     "NEW WEST C",
     "NEW WES C",
     "N W CENTR",
@@ -641,8 +661,6 @@
    "labels": [
     "NEW WESTMINSTER - EAST",
     "NEW WEST EAST",
-    "EAST",
-    "NEW WEST",
     "NEW WEST E",
     "NEW WES E",
     "N W EAST",
@@ -667,10 +685,14 @@
    "name": "Thompson/Seafair",
    "labels": [
     "THOMPSON/SEAFAIR",
-    "THOMPS",
-    "THOMP",
-    "THOM",
-    "THO"
+    "THOMPSON SEAFAIR",
+    "THOMPS SEAFAI",
+    "THOMP SEAFA",
+    "THOM SEAF",
+    "THO SEA",
+    "THOMPSON",
+    "T SEAFA",
+    "TS"
    ],
    "col": 0,
    "row": 7
@@ -693,13 +715,16 @@
    "name": "East and West Cambie/Bridgeport",
    "labels": [
     "EAST AND WEST CAMBIE/BRIDGEPORT",
-    "E AND W CAMBIE/BRIDGEPORT",
-    "E W CAMBIE/BRIDGEPORT",
-    "E W CAMBIE",
-    "E W CAMBI",
-    "E W CAMB",
-    "E W CAM",
-    "EWC"
+    "E AND W CAMBIE BRIDGEPORT",
+    "E W CAMBIE BRIDGEPORT",
+    "E W CAMBIE BRIDGE",
+    "E W CAMBI BRIDG",
+    "E W CAMB BRID",
+    "E W CAM BRI",
+    "EAST AND WEST CAMBIE",
+    "E AND W CAMBIE",
+    "E W C BRIDG",
+    "EWCB"
    ],
    "col": 2,
    "row": 7
@@ -722,13 +747,13 @@
    "name": "South Slope/Big Bend",
    "labels": [
     "SOUTH SLOPE/BIG BEND",
-    "S SLOPE/BIG BEND",
-    "S SLOPE/ BEND",
-    "S SLOPE BEND",
-    "S SLOP BEND",
-    "S SLO BEN",
-    "S S BEND",
-    "SSB"
+    "S SLOPE BIG BEND",
+    "S SLOP BIG BEND",
+    "S SLO BIG BEN",
+    "SOUTH SLOPE",
+    "S SLOPE",
+    "S S B BEND",
+    "SSBB"
    ],
    "col": 4,
    "row": 7
@@ -739,12 +764,11 @@
    "labels": [
     "NEW WESTMINSTER - DOWNTOWN",
     "NEW WEST DOWNTOWN",
-    "DOWNTOWN",
-    "NEW WEST",
     "NEW WEST DOWNTO",
     "NEW WEST DOWNT",
     "NEW WEST DOWN",
     "NEW WES DOW",
+    "NEW WEST D",
     "N W DOWNT",
     "NWD"
    ],
@@ -781,13 +805,13 @@
    "name": "Walnut Grove/Fort Langley",
    "labels": [
     "WALNUT GROVE/FORT LANGLEY",
-    "WALNUT GROVE/FORT LGLY",
-    "WALNUT GROVE/ LGLY",
-    "WALNU GROVE LGLY",
-    "WALN GROV LGLY",
-    "WAL GRO LGL",
-    "W G LANGL",
-    "WGL"
+    "WALNUT GROVE FT LGLY",
+    "WALNU GROVE FT LGLY",
+    "WALN GROV FT LGLY",
+    "WAL GRO FT LGL",
+    "WALNUT GROVE",
+    "W G F LANGL",
+    "WGFL"
    ],
    "col": 9,
    "row": 7
@@ -823,10 +847,14 @@
    "name": "Gilmore/Shellmont/East/Hamilton",
    "labels": [
     "GILMORE/SHELLMONT/EAST/HAMILTON",
-    "GILMOR",
-    "GILMO",
-    "GILM",
-    "GIL"
+    "GILMORE SHELLMONT E HAMILTON",
+    "GILMOR SHELLM E HAMILT",
+    "GILMO SHELL E HAMIL",
+    "GILM SHEL E HAMI",
+    "GIL SHE E HAM",
+    "GILMORE",
+    "G S E HAMIL",
+    "GSEH"
    ],
    "col": 3,
    "row": 8
@@ -837,14 +865,16 @@
    "labels": [
     "NEW WESTMINSTER - WEST/QUEENSBOROUGH",
     "NEW WEST WEST/QUEENSBOROUGH",
-    "WEST/QUEENSBOROUGH",
-    "NEW WEST",
-    "NEW WEST WEST/Q",
-    "NEW WEST WEST/",
-    "NEW WEST WEST",
-    "NEW WES WES",
-    "N W WEST/",
-    "NWW"
+    "NEW WEST W QUEENSBOROUGH",
+    "NEW WEST W QUEENS",
+    "NEW WEST W QUEEN",
+    "NEW WEST W QUEE",
+    "NEW WES W QUE",
+    "NEW WESTMINSTER - WEST",
+    "NEW WEST - W",
+    "NEW WEST W",
+    "N W W QUEEN",
+    "NWWQ"
    ],
    "col": 4,
    "row": 8
@@ -1041,10 +1071,14 @@
    "name": "Brookswood/Murrayville",
    "labels": [
     "BROOKSWOOD/MURRAYVILLE",
-    "BROOKS",
-    "BROOK",
-    "BROO",
-    "BRO"
+    "BROOKSWOOD MURRAYVILLE",
+    "BROOKS MURRAY",
+    "BROOK MURRA",
+    "BROO MURR",
+    "BRO MUR",
+    "BROOKSWOOD",
+    "B MURRA",
+    "BM"
    ],
    "col": 8,
    "row": 10
@@ -1054,10 +1088,14 @@
    "name": "Aldergrove/Otter",
    "labels": [
     "ALDERGROVE/OTTER",
-    "ALDERG",
-    "ALDER",
-    "ALDE",
-    "ALD"
+    "ALDERGROVE OTTER",
+    "ALDERG OTTER",
+    "ALDER OTTER",
+    "ALDE OTTE",
+    "ALD OTT",
+    "ALDERGROVE",
+    "A OTTER",
+    "AO"
    ],
    "col": 10,
    "row": 10

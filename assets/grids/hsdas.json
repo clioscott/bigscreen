@@ -46,13 +46,15 @@
    "name": "North Shore/Coast Garibaldi",
    "labels": [
     "NORTH SHORE/COAST GARIBALDI",
-    "N SHORE/COAST GARIBALDI",
-    "N SHORE/ GARIBA",
-    "N SHORE GARIB",
-    "N SHOR GARI",
-    "N SHO GAR",
-    "N S GARIB",
-    "NSG"
+    "N SHORE COAST GARIBALDI",
+    "N SHORE COAST GARIBA",
+    "N SHORE COAST GARIB",
+    "N SHOR COAS GARI",
+    "N SHO COA GAR",
+    "NORTH SHORE",
+    "N SHORE",
+    "N S C GARIB",
+    "NSCG"
    ],
    "col": 0,
    "row": 1

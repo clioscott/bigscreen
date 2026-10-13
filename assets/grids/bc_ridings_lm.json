@@ -156,7 +156,8 @@
     "NL"
    ],
    "col": 0,
-   "row": 3
+   "row": 3,
+   "optional": "island"
   },
   {
    "id": "VNS",
@@ -410,7 +411,8 @@
     "NGI"
    ],
    "col": 0,
-   "row": 5
+   "row": 5,
+   "optional": "island"
   },
   {
    "id": "RCB",

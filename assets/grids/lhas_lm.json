@@ -38,12 +38,14 @@
    "name": "Maple Ridge/Pitt Meadows",
    "labels": [
     "MAPLE RIDGE/PITT MEADOWS",
-    "MAPLE RIDGE/ MEADOW",
-    "MAPLE RIDGE MEADO",
-    "MAPL RIDG MEAD",
-    "MAP RID MEA",
-    "M R MEADO",
-    "MRM"
+    "MAPLE RIDGE PITT MEADOWS",
+    "MAPLE RIDGE PITT MEADOW",
+    "MAPLE RIDGE PITT MEADO",
+    "MAPL RIDG PITT MEAD",
+    "MAP RID PIT MEA",
+    "MAPLE RIDGE",
+    "M R P MEADO",
+    "MRPM"
    ],
    "col": 5,
    "row": 1
@@ -53,10 +55,14 @@
    "name": "Agassiz/Harrison",
    "labels": [
     "AGASSIZ/HARRISON",
-    "AGASSI",
-    "AGASS",
-    "AGAS",
-    "AGA"
+    "AGASSIZ HARRISON",
+    "AGASSI HARRIS",
+    "AGASS HARRI",
+    "AGAS HARR",
+    "AGA HAR",
+    "AGASSIZ",
+    "A HARRI",
+    "AH"
    ],
    "col": 7,
    "row": 1
@@ -76,13 +82,13 @@
    "name": "West Vancouver/Bowen Island",
    "labels": [
     "WEST VANCOUVER/BOWEN ISLAND",
-    "W VANCOUVER/BOWEN I",
-    "W VANCOU I",
-    "W VANCO I",
-    "W VANC I",
-    "W VAN I",
-    "W V ISLAN",
-    "WVI"
+    "W VAN BOWEN I",
+    "W VAN BOWE I",
+    "W VAN BOW I",
+    "WEST VANCOUVER",
+    "W VAN",
+    "W V B ISLAN",
+    "WVBI"
    ],
    "col": 1,
    "row": 2
@@ -94,9 +100,8 @@
     "VANCOUVER - CENTRE NORTH",
     "VAN CENTRE NORTH",
     "VAN CENTRE",
-    "CENTRE NORTH",
-    "VAN",
     "VAN CTR N",
+    "VAN CN",
     "V C NORTH",
     "VCN"
    ],
@@ -109,9 +114,8 @@
    "labels": [
     "VANCOUVER - NORTHEAST",
     "VAN NORTHEAST",
-    "NORTHEAST",
-    "VAN",
     "VAN NE",
+    "VAN N",
     "V NORTH",
     "VN"
    ],
@@ -164,12 +168,11 @@
    "labels": [
     "VANCOUVER - WESTSIDE",
     "VAN WESTSIDE",
-    "WESTSIDE",
-    "VAN",
     "VAN WESTSI",
     "VAN WESTS",
     "VAN WEST",
     "VAN WES",
+    "VAN W",
     "V WESTS",
     "VW"
    ],
@@ -183,10 +186,9 @@
     "VANCOUVER - CITY CENTRE",
     "VAN CITY CENTRE",
     "VAN CITY",
-    "CITY CENTRE",
-    "VAN",
     "VAN CITY CTR",
     "VAN CIT CTR",
+    "VAN CC",
     "V C CENTR",
     "VCC"
    ],
@@ -199,12 +201,11 @@
    "labels": [
     "VANCOUVER - MIDTOWN",
     "VAN MIDTOWN",
-    "MIDTOWN",
-    "VAN",
     "VAN MIDTOW",
     "VAN MIDTO",
     "VAN MIDT",
     "VAN MID",
+    "VAN M",
     "V MIDTO",
     "VM"
    ],
@@ -217,8 +218,6 @@
    "labels": [
     "VANCOUVER - SOUTH",
     "VAN SOUTH",
-    "SOUTH",
-    "VAN",
     "VAN S",
     "V SOUTH",
     "VS"
@@ -263,7 +262,8 @@
     "CVN"
    ],
    "col": 0,
-   "row": 4
+   "row": 4,
+   "optional": "island"
   },
   {
    "id": "311",
@@ -302,13 +302,13 @@
    "name": "South Surrey/White Rock",
    "labels": [
     "SOUTH SURREY/WHITE ROCK",
-    "S SURREY/WHITE ROCK",
-    "S SURREY ROCK",
-    "S SURRE ROCK",
-    "S SURR ROCK",
-    "S SUR ROC",
-    "S S ROCK",
-    "SSR"
+    "S SRY WHITE ROCK",
+    "S SRY WHIT ROCK",
+    "S SRY WHI ROC",
+    "SOUTH SURREY",
+    "S SRY",
+    "S S W ROCK",
+    "SSWR"
    ],
    "col": 5,
    "row": 4
