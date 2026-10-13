@@ -131,3 +131,18 @@ def alert_area(alert):
     if polys:
         return unary_union(polys)
     return zones_area(alert.get("regions"))
+
+
+def home_km(area, lon, lat):
+    """Distance in km from home to the alert's area (0 inside it); None if unknown."""
+    if area is None or area.is_empty:
+        return None
+    import math
+    pt = Point(lon, lat)
+    if area.contains(pt):
+        return 0.0
+    from shapely.ops import nearest_points
+    q = nearest_points(area, pt)[0]
+    dx = (q.x - lon) * 111.32 * math.cos(math.radians(lat))
+    dy = (q.y - lat) * 110.57
+    return round(math.hypot(dx, dy), 1)

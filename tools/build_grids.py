@@ -260,6 +260,17 @@ def layout(units, max_cols):
     return len(used_c), len(used_r)
 
 
+ISLAND_RDS = ("Nanaimo", "Cowichan", "Capital", "Comox", "Strathcona", "Alberni", "Mount Waddington", "Islands Trust")
+
+
+def _load_cached(level):
+    p = GEOM / f"{level}.geojson"
+    if not p.exists():
+        return None
+    fc = json.loads(p.read_text())
+    return [{"id": f["properties"]["id"], "name": f["properties"]["name"], "geom": shape(f["geometry"])} for f in fc["features"]]
+
+
 def build(grid_id, cache):
     level, aoi, label, max_cols = GRIDS[grid_id]
     if level not in cache and (GEOM / f"{level}.geojson").exists() and "--refresh" not in sys.argv:
@@ -288,9 +299,18 @@ def build(grid_id, cache):
         return g if b.is_empty else b
     units = [{"id": us[0]["id"], "name": clean(n), "geom": unary_union([fix(x["geom"]) for x in us])} for n, us in by.items()]
     units = [u for u in units if not u["geom"].is_empty]
+    # Vancouver Island and Gulf Islands units on a mainland grid: kept, but shown only when an alert covers them
+    island = set()
+    if aoi in (LOWER_MAINLAND, METRO) and level not in ("eccc_zone", "eccc_region", "eccc_aq", "eccc_tsunami"):
+        rd = cache.get("regional_district") or _load_cached("regional_district")
+        isl = [u["geom"] for u in rd or [] if any(k in u["name"] for k in ISLAND_RDS)]
+        if isl:
+            ig = unary_union([g.buffer(0) for g in isl])
+            island = {u["id"] for u in units if u["geom"].representative_point().within(ig)}
     cols, rows = layout(units, max_cols)
     out = {"id": grid_id, "label": label, "level": level, "source": LEVELS[level][0], "cols": cols, "rows": rows,
-           "units": [{"id": u["id"], "name": u["name"], "labels": labels(u["name"]), "col": u["col"], "row": u["row"]}
+           "units": [{"id": u["id"], "name": u["name"], "labels": labels(u["name"]), "col": u["col"], "row": u["row"],
+                      **({"optional": "island"} if u["id"] in island else {})}
                      for u in sorted(units, key=lambda u: (u["row"], u["col"]))]}
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / f"{grid_id}.json").write_text(json.dumps(out, indent=1, ensure_ascii=False), encoding="utf-8")

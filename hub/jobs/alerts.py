@@ -113,7 +113,10 @@ def run(cfg):
             meta = None
         try:                                                   # which tile-grid units it covers, every level
             from hub import geo_cover
-            a["coverage"] = geo_cover.coverage(geo_cover.alert_area(a))
+            area_ = geo_cover.alert_area(a)
+            a["coverage"] = geo_cover.coverage(area_)
+            hl = acfg.get("home_lonlat") or (-123.0918, 49.1442)
+            a["home_km"] = geo_cover.home_km(area_, hl[0], hl[1])
         except Exception as e:
             print(f"coverage for {a['name']}: {e}", flush=True)
         a.pop("geometries", None)
@@ -138,7 +141,9 @@ def run(cfg):
         from hub import geo_cover
         from display.modules.alert_samples import SAMPLES
         for kind, smp in SAMPLES.items():
-            sample_coverage[kind] = geo_cover.coverage(geo_cover.zones_area(smp.get("regions")))
+            za = geo_cover.zones_area(smp.get("regions"))
+            hl = acfg.get("home_lonlat") or (-123.0918, 49.1442)
+            sample_coverage[kind] = dict(geo_cover.coverage(za), home_km=geo_cover.home_km(za, hl[0], hl[1]))
         hl = acfg.get("home_lonlat") or (-123.0918, 49.1442)
         home_units = geo_cover.home_units(hl[0], hl[1])
     except Exception as e:
