@@ -462,7 +462,22 @@ def key_facts(ctx):
     """The weather type's key numbers for this alert (alert_facts.key_facts), cached on the alert."""
     if not hasattr(ctx, "_kf"):
         from display.modules import alert_facts as af
-        ctx._kf = af.key_facts(ctx, getattr(ctx, "data", None))
+        from display.modules import alert_story as st
+        facts = af.key_facts(ctx, getattr(ctx, "data", None))
+        got = st.forecast_series(ctx, getattr(ctx, "data", None)) if ctx.b.get("test") else None
+        if got and got[3]:                                   # sample numbers: the same ones the forecast page shows
+            _, _, summ, _ = got
+            var, how, label, unit, _, _, _ = st.FORECAST[ctx.b["hazard"]]
+            hit = ap.affected(ctx)
+            pool = {r: v for r, v in summ.items() if r in hit and v is not None} or {r: v for r, v in summ.items() if v is not None}
+            low = how in ("chill", "low") or var == "vis"
+            r, v = (min if low else max)(pool.items(), key=lambda kv: kv[1])
+            word = {"accum": "Most", "accum3": "Most", "chill": "Coldest", "low": "Lowest"}.get(how, "Peak")
+            sh = {"Chance of freezing rain": "Freezing rain", "Chance of thunderstorms": "Storm chance", "Visibility in fog": "Visibility",
+                     "Rain so far": "Rain", "Snow so far": "Snow", "Wind chill": "Wind chill", "Humidex": "Humidex"}.get(label, label)
+            facts = [f for f in facts if f[2] == "in the alert"] + [(f"{word} {label.lower()}|{word} {sh.lower()}|{sh}",
+                                                                     st._fmt(v, unit), f"{r} · sample|{r}")]
+        ctx._kf = facts
     return ctx._kf
 
 
@@ -750,8 +765,10 @@ class Sign(Design):
                 wf, ws = f, s_
                 break
         kf = key_facts(ctx)[:1]
-        l3 = (f"{kf[0][0]}: {kf[0][1]}" if kf else "").upper()
-        lf, ls = pick(ctx, l3, w, cap=k.h)
+        from display.modules import alert_charts as ch
+        l3 = "|".join(f"{alt}: {kf[0][1]}" for alt in kf[0][0].split("|")).upper() if kf else ""
+        lf = next((f for f in faces(ctx, cap=k.h) if f.width(ch.choose(f, l3, w)) <= w and ch.choose(f, l3, w)), faces(ctx)[-1])
+        ls = ch.choose(lf, l3, w)
         sh = tf.line + wf.line + (lf.line if ls else 0) + 10
         return {"tf": tf, "ts": ts, "wf": wf, "ws": ws, "lf": lf, "ls": ls, "sh": sh, "bf": bf}
 
@@ -900,7 +917,8 @@ class Poster(Design):
             y += f.line
         if kf:
             lab, val, sub = kf[0]
-            sf.draw(c, x, y1 - k.line - sf.line - 5, ink, fit(sf, U(ctx, lab).upper(), iw))
+            from display.modules import alert_charts as ch
+            sf.draw(c, x, y1 - k.line - sf.line - 5, ink, ch.choose(sf, U(ctx, lab).upper(), iw))
             f, s_ = pick(ctx, U(ctx, val), iw, cap=k.h)
             f.draw(c, x, y1 - k.line - 3, ink, s_)
 

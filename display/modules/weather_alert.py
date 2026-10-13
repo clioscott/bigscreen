@@ -723,29 +723,34 @@ class AlertScreen:
             segs.append({"alert": ai, "ctx": ctx, "lines": lines, "paras": use, "fonts": fonts, "start": t,
                          "reveal": reveal_t, "hold": hold})
             t += reveal_t + hold
-            # page 2: the alert's own details; page 3: the weather type's special page
+            # the pages after the message: chosen for this alert's source, weather and data (alert_story.page_plan)
+            from display.modules import alert_story
             isec = max(6.0, float(st.get("info_sec") or 12))
-            if st.get("show_details", True) is not False:
-                segs.append({"alert": ai, "ctx": ctx, "kind": "details", "lines": [], "paras": [], "fonts": fonts,
-                             "start": t, "reveal": 0.5, "hold": isec - 0.5})
-                t += isec
-            if st.get("show_special", True) is not False and b["source"] == "eccc" and (ctx.data or ctx.extra):
-                segs.append({"alert": ai, "ctx": ctx, "kind": "special", "lines": [], "paras": [], "fonts": fonts,
-                             "start": t, "reveal": 0.5, "hold": isec - 0.5})
-                t += isec
+            msec = max(4.0, float(st.get("map_sec") or 9))
+            psec = max(5.0, float(st.get("page_sec") or 9))
             amap = a.get("map") or (self._sample_map() if b["test"] else None)
-            if amap and st.get("show_map", True) is not False:
-                msec = max(4.0, float(st.get("map_sec") or 9))
-                segs.append({"alert": ai, "ctx": ctx, "kind": "map", "map": amap, "lines": [], "paras": [],
-                             "fonts": fonts, "start": t, "reveal": 1.4, "hold": msec - 1.4})
-                t += msec
-            if st.get("show_pages", True) is not False:           # the weather type's ECCC data pages
-                psec = max(5.0, float(st.get("page_sec") or 9))
-                for pid in alert_brief.HAZARD_PAGES.get(b["hazard"], []):
-                    if _page_pack(self._data_dir(), pid, check_only=True) and _page_has_data(self._data_dir(), pid):
-                        segs.append({"alert": ai, "ctx": ctx, "kind": "page", "page": pid, "lines": [], "paras": [],
-                                     "fonts": fonts, "start": t, "reveal": 0.6, "hold": psec - 0.6})
-                        t += psec
+            has_map = bool(amap) and st.get("show_map", True) is not False
+            pages = [pid for pid in alert_brief.HAZARD_PAGES.get(b["hazard"], [])
+                     if st.get("show_pages", True) is not False
+                     and _page_pack(self._data_dir(), pid, check_only=True) and _page_has_data(self._data_dir(), pid)]
+            ctx.checked = adata.get("updated_utc")
+            ctx.home_km = a.get("home_km")
+            for kind, extra in alert_story.page_plan(ctx, has_map, pages):
+                if kind in ("about",) and st.get("show_details", True) is False:
+                    continue
+                if kind in ("forecast", "air", "tides") and st.get("show_special", True) is False:
+                    continue
+                seg = {"alert": ai, "ctx": ctx, "kind": kind, "lines": [], "paras": [], "fonts": fonts, "start": t}
+                if kind == "map":
+                    seg.update(map=amap, reveal=1.4, hold=msec - 1.4)
+                    t += msec
+                elif kind == "page":
+                    seg.update(page=extra, reveal=0.6, hold=psec - 0.6)
+                    t += psec
+                else:
+                    seg.update(reveal=0.4, hold=isec - 0.4)
+                    t += isec
+                segs.append(seg)
         self._plan_key, self._plan = key, {"segs": segs, "total": t}
         self._static = None
         return self._plan
@@ -765,6 +770,21 @@ class AlertScreen:
     def _sample_map(self):
         data = (self.loader.get_data("alerts") if self.loader else None) or {}
         return (data.get("sample_maps") or {}).get(self.settings.get("sample") or "rain") or data.get("sample_map")
+
+    def _draw_story(self, c, seg, ctx, th, local):
+        """One of alert_story's pages (the about page is cached; the time-stepping ones are drawn each frame)."""
+        from display.modules import alert_story
+        static = seg["kind"] == "about"                    # the others step through time: drawn each frame
+        key = (self._plan_key, id(seg), int(time.time() // 30))
+        cache = getattr(self, "_story_cache", None)
+        if static and cache and cache[0] == key:
+            c.buf[:] = cache[1]
+            return True
+        struct = STRUCT_IMPL.get(th["structure"]) or STRUCT_IMPL["console"]
+        ok = alert_story.DRAW[seg["kind"]](c, ctx, struct.inner(ctx), local, seg["hold"])
+        if ok and static:
+            self._story_cache = (key, c.buf.copy())
+        return ok
 
     def _draw_info(self, c, seg, ctx, th):
         """The details / special page, drawn once per showing (they don't move) and reused."""
@@ -977,7 +997,7 @@ class AlertScreen:
         ctx.index, ctx.count = seg["alert"], len({x["alert"] for x in segs})
         local = t - seg["start"]
         p = min(1.0, local / seg["reveal"]) if seg["reveal"] > 0 else 1.0
-        if seg.get("kind") in ("details", "special") and self._draw_info(c, seg, ctx, th):
+        if seg.get("kind") in ("forecast", "air", "tides", "about") and self._draw_story(c, seg, ctx, th, local):
             draw_border(c, th["border"], ctx.sev if ctx.home or not ctx.home_name else _dim(ctx.sev, 0.5), t)
             if self.settings.get("review_label") and not self._tour:
                 self._label(c, f" {self.settings['review_label']} ")
@@ -1413,7 +1433,8 @@ def timeline(settings=None, alerts_data=None):
     plan = scr._plan_for(alerts, th, scr.family(th))
     return {"total": round(plan["total"], 2),
             "pages": [{"start": round(x["start"], 2), "reveal": round(x["reveal"], 2), "hold": round(x["hold"], 2),
-                       "label": ({"map": "MAP · ", "details": "DETAILS · ", "special": "DATA · ",
+                       "label": ({"map": "MAP · ", "about": "ABOUT · ", "forecast": "FORECAST · ", "air": "AIR · ",
+                                  "tides": "TIDES · ",
                                   "page": f"{x.get('page', '').upper()} · "}.get(x.get("kind"), "")) + x["ctx"].b["title"],
                        "alert": x["alert"], "kind": x.get("kind") or "text", "page": x.get("page"),
                        "font_px": x["fonts"]["reg"].h}

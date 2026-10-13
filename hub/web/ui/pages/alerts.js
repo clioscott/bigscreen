@@ -185,7 +185,8 @@ export const Alerts = {
       try { const r = await api(`/api/alerts/timeline?${q}`); if (mine === tlReq) itemTl.value = r; } catch (e) { /* ignore */ }
     });
     const itemPage = computed(() => [...(itemTl.value.pages || [])].reverse().find((x) => rt.value >= x.start) || itemTl.value.pages?.[0]);
-    const pageName = (x) => ({ map: "Area map", details: "Details", special: "Data page" }[x.kind]
+    const pageName = (x) => ({ map: "Area map", about: "About", forecast: "Forecast map", air: "Air quality", tides: "Tides",
+      details: "Details", special: "Data page" }[x.kind]
       || (x.kind === "page" ? (PAGE_NAMES[x.page] || x.page) : "Message"));
     const revLabel = computed(() => {
       if (!item.value) return "";

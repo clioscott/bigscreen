@@ -42,14 +42,23 @@ class Page:
         lev = ctx.b["kind"].upper()
         lw = self.K.width(lev) + 8
         tw = x1 - x0 - 30 - lw - 8
-        tf = next((f for f in self.titles if f.width(_U(ctx, title)) <= tw and f.h <= 20), self.K)
-        hh = max(24, tf.h + self.S.line + 1)
+        cands = self.titles + [ctx.fam["small"], _tiny()]
+        tf = next((f for f in cands if f.width(_U(ctx, title)) <= tw and f.h <= 20), cands[-1])
+        # the sub-line: one line in the small face, else the tiny face, else two lines — never cut
+        if self.S.width(sub) <= tw:
+            sf, sub_l = self.S, [sub]
+        elif self.T.width(sub) <= tw:
+            sf, sub_l = self.T, [sub]
+        else:
+            sf, sub_l = self.T, _wrap(self.T, sub, tw)[:2]
+        hh = max(24, tf.line + len(sub_l) * sf.line)
         px.draw(c, px.hazard(ctx.b["hazard"]), x0, y0 + (hh - 24) // 2, ctx.sev)
-        tf.draw(c, x0 + 30, y0, ctx.sev, ch.fit(tf, _U(ctx, title), tw))
-        self.S.draw(c, x0 + 30, y0 + tf.line, pal["text"], ch.fit(self.S, sub, tw))
+        tf.draw(c, x0 + 30, y0, ctx.sev, _U(ctx, title))
+        for k, ln in enumerate(sub_l):
+            sf.draw(c, x0 + 30, y0 + tf.line + k * sf.line, pal["text"], ln)
         c.FillRect(x1 - lw, y0 + 1, lw, self.K.h + 4, Color(*ctx.level))
         self.K.draw(c, x1 - lw + 4, y0 + 3, (0, 0, 0), lev)
-        cr = ch.fit(self.T, credit.upper(), x1 - x0)
+        cr = credit.upper()
         self.T.draw(c, x1 - self.T.width(cr), y1 - self.T.h, pal["dim"], cr)
         c.FillRect(x0, y0 + hh + 1, x1 - x0, 1, Color(*_dim(ctx.sev, 0.45)))
         self.body = (x0, y0 + hh + 4, x1 - x0, y1 - self.T.h - 3 - (y0 + hh + 4))
@@ -59,7 +68,7 @@ class Page:
         c.FillRect(x, y, w, h, Color(*ctx.pal["panel"]))
         c.FillRect(x, y, w, 1, Color(*ctx.sev))
         if label:
-            self.T.draw(c, x + 3, y + 3, ctx.pal["dim"], ch.fit(self.T, label.upper(), w - 6))
+            self.T.draw(c, x + 3, y + 3, ctx.pal["dim"], label.upper())
             return (x + 3, y + self.T.h + 6, w - 6, h - self.T.h - 8)
         return (x + 3, y + 3, w - 6, h - 6)
 

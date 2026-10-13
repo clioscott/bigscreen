@@ -376,61 +376,96 @@ def grid_cover(ctx, grid_id):
     return full, part, (str(home) if home is not None else None)
 
 
-def unit_grid(c, ctx, grid_id, x, y, w, h, fonts):
+def _wrap2(f, name, w):
+    """The name on one line, else split over two (at the best word break); None if neither fits ``w``."""
+    if f.width(name) <= w:
+        return [name]
+    words = name.split()
+    best = None
+    for i in range(1, len(words)):
+        a, b = " ".join(words[:i]), " ".join(words[i:])
+        if f.width(a) <= w and f.width(b) <= w:
+            score = max(f.width(a), f.width(b))
+            if best is None or score < best[0]:
+                best = (score, [a, b])
+    return best[1] if best else None
+
+
+def grid_units(ctx, grid_id):
+    """The grid's units to draw: optional ones (Vancouver Island on a mainland grid) only when the alert covers
+    them; columns and rows left empty close up."""
+    g = grid_def(grid_id)
+    full, part, _ = grid_cover(ctx, grid_id)
+    units = [u for u in g["units"] if not u.get("optional") or str(u["id"]) in full or str(u["id"]) in part]
+    cols = sorted({u["col"] for u in units})
+    rows = sorted({u["row"] for u in units})
+    return [dict(u, col=cols.index(u["col"]), row=rows.index(u["row"])) for u in units], len(cols), len(rows)
+
+
+def unit_grid(c, ctx, grid_id, x, y, w, h, fonts, values=None, colour=None):
     """Draw a tile grid: one box per unit at its place on the coarse map grid, the alert's units filled in the
     weather colour, partly covered ones half-filled, home in the second colour (or a warm outline), the rest
-    outlined. Each box takes the longest label variant that fits (two lines if it must); the largest of
-    ``fonts`` in which nearly all labels fit is used. Returns False if the grid isn't available."""
+    outlined. Labels are the unit's full name — one line, else two — in the largest of ``fonts`` that fits that
+    box; an abbreviation only when even the smallest font can't hold the name.
+    ``values`` {unit id: text} adds a value line; ``colour`` {unit id: rgb} fills by value instead."""
     g = grid_def(grid_id)
     if not g:
         return False
     full, part, home = grid_cover(ctx, grid_id)
-    cols, rows, gap = g["cols"], g["rows"], 1
+    units, cols, rows = grid_units(ctx, grid_id)
+    gap = 1
     cw = (w - gap * (cols - 1)) // cols
     rh = (h - gap * (rows - 1)) // rows
-
-    def best(lbls, f):
-        for s in lbls:
-            if f.width(s) <= cw - 3:
-                return [s]
-        if rh >= 2 * f.h + 3:                         # two lines of the full name
-            words, l1 = lbls[0].split(), ""
-            for i in range(len(words), 0, -1):
-                l1 = " ".join(words[:i])
-                if f.width(l1) <= cw - 3 and f.width(" ".join(words[i:])) <= cw - 3:
-                    return [l1, " ".join(words[i:])] if words[i:] else [l1]
-        return None
-
-    font = fonts[-1]
-    for f in fonts:
-        if f.h + 3 <= rh and sum(1 for u in g["units"] if best(u["labels"], f)) >= 0.9 * len(g["units"]):
-            font = f
-            break
-    for u in g["units"]:
+    for u in units:
         uid = str(u["id"])
         tx, ty = x + u["col"] * (cw + gap), y + u["row"] * (rh + gap)
         mine = uid == home
-        if uid in full:
+        fill = None
+        if colour and uid in colour:
+            fill = colour[uid]
+        elif uid in full:
             fill = getattr(ctx, "sev2", ctx.sev) if mine else ctx.sev
         elif uid in part:
             fill = _dim(ctx.sev, 0.42)
-        else:
-            fill = None
         if fill:
             c.FillRect(tx, ty, cw, rh, Color(*fill))
             ink = (0, 0, 0) if sum(fill) > 300 else (255, 255, 255)
+            if colour and uid in full:                         # value-coloured boxes: the alert's units outlined
+                for rx, ry, rw, rr in ((tx, ty, cw, 1), (tx, ty + rh - 1, cw, 1), (tx, ty, 1, rh), (tx + cw - 1, ty, 1, rh)):
+                    c.FillRect(rx, ry, rw, rr, Color(*(HOME_TINT if mine else (255, 255, 255))))
         else:
             edge = HOME_TINT if mine else _dim(ctx.pal["dim"], 0.55)
             c.FillRect(tx, ty, cw, rh, Color(*ctx.pal["panel"]))
             for rx, ry, rw, rr in ((tx, ty, cw, 1), (tx, ty + rh - 1, cw, 1), (tx, ty, 1, rh), (tx + cw - 1, ty, 1, rh)):
                 c.FillRect(rx, ry, rw, rr, Color(*edge))
             ink = HOME_TINT if mine else ctx.pal["dim"]
-        lines = best(u["labels"], font) or [u["labels"][-1][: max(1, (cw - 3) // max(1, font.width("M")))]]
-        th = len(lines) * font.h + (len(lines) - 1)
-        for k, s in enumerate(lines):
-            while s and font.width(s) > cw - 2:
-                s = s[:-1]
-            font.draw(c, tx + (cw - font.width(s)) // 2, ty + (rh - th) // 2 + k * (font.h + 1), ink, s)
+        val = (values or {}).get(uid)
+        name = u["labels"][0]
+        lines, font = None, fonts[-1]
+        for f in fonts:
+            room = rh - 2 - ((f.h + 1) if val else 0)
+            ls = _wrap2(f, name, cw - 3)
+            if ls and len(ls) * (f.h + 1) - 1 <= room:
+                lines, font = ls, f
+                break
+        if lines is None:                                       # last resort: the shortest variant that fits
+            f = fonts[-1]
+            room = rh - 2 - ((f.h + 1) if val else 0)
+            for lab in u["labels"]:
+                ls = _wrap2(f, lab, cw - 3)
+                if ls and len(ls) * (f.h + 1) - 1 <= room:
+                    lines = ls
+                    break
+            lines = lines or [u["labels"][-1]]
+        n = len(lines) + (1 if val else 0)
+        th = n * (font.h + 1) - 1
+        yy = ty + (rh - th) // 2
+        for s_ in lines:
+            font.draw(c, tx + (cw - font.width(s_)) // 2, yy, ink, s_)
+            yy += font.h + 1
+        if val:
+            vf = font
+            font.draw(c, tx + (cw - vf.width(val)) // 2, yy, ink, val)
     return True
 
 

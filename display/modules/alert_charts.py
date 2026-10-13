@@ -190,25 +190,40 @@ def ramp(stops):
     return f
 
 
+def choose(font, text, w):
+    """The first wording of ``text`` that fits ``w``: alternatives are separated by "|" (longest first); then
+    the " · " parts on their own; then trailing words dropped. Never cut mid-word, never an ellipsis."""
+    opts = [t.strip() for t in str(text).split("|") if t.strip()]
+    for t in opts:
+        if font.width(t) <= w:
+            return t
+    last = opts[-1] if opts else ""
+    for part in reversed(last.split(" · ")):
+        if font.width(part) <= w:
+            return part
+    words = last.split()
+    while words and font.width(" ".join(words)) > w:
+        words.pop()
+    return " ".join(words)
+
+
 def tile(c, x, y, w, h, label, value, unit, sub, pal, fonts, colour, label_font):
-    """A big-number tile: small label, the value in the largest face that fits (unit beside it), a sub-line."""
+    """A big-number tile: small label, the value in the largest face that fits (unit beside it), a sub-line.
+    Label and sub-line take the longest of their wordings that fit (see ``choose``)."""
     c.FillRect(x, y, w, h, Color(*pal["panel"]))
     c.FillRect(x, y, w, 1, Color(*colour))
-    label_font.draw(c, x + 3, y + 3, pal["dim"], fit(label_font, label.upper(), w - 6))
+    label_font.draw(c, x + 3, y + 3, pal["dim"], choose(label_font, label.upper(), w - 6))
     body_top = y + label_font.h + 5
     room = h - (label_font.h + 5) - (fonts[-1].h + 3 if sub else 2)
     s = value
-    for f in fonts:
-        uw = (fonts[-1].width(" " + unit) if unit else 0)
-        if f.h <= room and f.width(s) + uw <= w - 6:
-            break
-    else:
-        f = fonts[-1]
-        s = fit(f, s, w - 6)
+    uw = (fonts[-1].width(" " + unit) if unit else 0)
+    f = next((f for f in fonts if f.h <= room and f.width(s) + uw <= w - 6), None)
+    if f is None:
+        f = next((f for f in fonts if f.width(s) + uw <= w - 6), fonts[-1])
     f.draw(c, x + 3, body_top + max(0, (room - f.h) // 2), colour, s)
     if unit:
         uf = fonts[-1]
         uf.draw(c, x + 3 + f.width(s) + 2, body_top + max(0, (room - f.h) // 2) + f.h - uf.h, pal["dim"], unit)
     if sub:
         sf = fonts[-1]
-        sf.draw(c, x + 3, y + h - sf.h - 2, pal["text"], fit(sf, sub, w - 6))
+        sf.draw(c, x + 3, y + h - sf.h - 2, pal["text"], choose(sf, sub, w - 6))
