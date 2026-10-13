@@ -128,8 +128,13 @@ def run(cfg):
         from display.modules.alert_samples import SAMPLES
         for kind, smp in SAMPLES.items():
             try:
-                m = alertmap.render_sample(cfg, smp["map_cities"], home, home_hit=mentions(smp, home),
-                                           home_ll=acfg.get("home_lonlat"))
+                from shapely.geometry import mapping
+                from hub import geo_cover
+                za = geo_cover.zones_area(smp.get("regions"))
+                m = (alertmap.render({"geometries": [mapping(za)], "home": mentions(smp, home)}, cfg, home,
+                                     acfg.get("home_lonlat")) if za is not None else
+                     alertmap.render_sample(cfg, smp["map_cities"], home, home_hit=mentions(smp, home),
+                                            home_ll=acfg.get("home_lonlat")))
                 if m:
                     sample_maps[kind] = m
                     metas.append(m)

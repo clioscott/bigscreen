@@ -13,6 +13,7 @@ from the MSC GeoMet weather-alerts API (one feature per forecast region).
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 import json
 
 import numpy as np
@@ -102,6 +103,17 @@ def render(alert, cfg, home_city="Richmond", home_ll=None):
         hx, hy = view.project(*home)
         if 0 <= hx < W and 0 <= hy < H:
             meta["home_px"] = [int(hx), int(hy)]
+    # where the forecast towns fall on this map (value labels) and which ECCC zone each pixel is in (colouring)
+    from hub.weather.alert_data import TOWNS
+    meta["towns_px"] = {r: [int(v) for v in view.project(lo, la)] for _, r, lo, la in TOWNS
+                        if 0 <= view.project(lo, la)[0] < W and 0 <= view.project(lo, la)[1] < H}
+    meta["zones_file"] = f"alertmaps/{key}.zones"
+    if not (OUT / f"{key}.zones").exists() or not (OUT / f"{key}.zones.json").exists():
+        _zone_raster(view, OUT / f"{key}.zones")
+    try:
+        meta["zones"] = json.loads((OUT / f"{key}.zones.json").read_text())
+    except (OSError, ValueError):
+        meta["zones"] = []
     if (OUT / f"{key}.bin").exists() and (OUT / f"{key}.mask").exists():
         return meta
     base = render_basemap(view, {"source": "esri_dark", "brightness": 1.0, "contrast": 1.15})
@@ -128,7 +140,8 @@ def prune(keep):
     """Remove map files no current alert uses."""
     if not OUT.exists():
         return
-    names = {m.split("/")[-1] for meta in keep for m in (meta["file"], meta["mask"])}
+    names = {m.split("/")[-1] for meta in keep for m in (meta["file"], meta["mask"], meta.get("zones_file") or "")}
+    names |= {n + ".json" for n in list(names) if n.endswith(".zones")}
     for p in OUT.iterdir():
         if p.name not in names:
             p.unlink(missing_ok=True)
@@ -173,6 +186,36 @@ def _match_city(name, polys):
         if kk == n or kk in (f"city of {n}", f"district of {n}", f"township of {n}", f"{n} municipality"):
             return k
     return next((k for k in polys if n in k.lower()), None)
+
+
+def _zone_raster(view, path):
+    """uint8 raster: 0 outside, k+1 inside ECCC alert zone k (names in <path>.json), land only."""
+    from shapely.geometry import shape
+    from hub import paths as _p
+    fc = json.loads((_p.CACHE_DIR / "grids" / "eccc_zone.geojson").read_text())
+    img = Image.new("L", (W, H), 0)
+    d = ImageDraw.Draw(img)
+    names = []
+    lo0, la0, lo1, la1 = view.lonlat
+    for f in fc["features"]:
+        g = shape(f["geometry"])
+        b = g.bounds
+        if b[2] < min(lo0, lo1) or b[0] > max(lo0, lo1) or b[3] < min(la0, la1) or b[1] > max(la0, la1):
+            continue
+        names.append(f["properties"]["name"])
+        k = len(names)
+        polys = [g] if g.geom_type == "Polygon" else list(getattr(g, "geoms", []))
+        for pg in polys:
+            if pg.geom_type != "Polygon":
+                continue
+            lon = np.array([q[0] for q in pg.exterior.coords]); lat = np.array([q[1] for q in pg.exterior.coords])
+            px, py = view.project_many(lon, lat)
+            if len(px) >= 3:
+                d.polygon(list(zip(px.tolist(), py.tolist())), fill=k)
+    z = np.asarray(img, dtype=np.uint8).copy()
+    z[~carto.land_mask(view, 3.0)] = 0
+    np.ascontiguousarray(z).tofile(path)
+    Path(str(path) + ".json").write_text(json.dumps(names))
 
 
 def render_sample(cfg, cities, home_city="Richmond", home_hit=True, home_ll=None):

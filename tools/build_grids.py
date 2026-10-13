@@ -155,6 +155,7 @@ GRIDS = {
     "provinces":          ("province", None, "Provinces and territories", 8),
     "regional_districts": ("regional_district", BC, "BC regional districts", 8),
     "municipalities_lm":  ("municipality", LOWER_MAINLAND, "Municipalities", 10),
+    "municipalities_metro": ("municipality", METRO, "Metro Vancouver municipalities", 8),
     "communities_metro":  ("community", METRO, "Communities", 12),
     "neighbourhoods_van": ("neighbourhood_van", None, "Vancouver neighbourhoods", 7),
     "bc_ridings_lm":      ("bc_riding", LOWER_MAINLAND, "Provincial ridings", 11),
@@ -307,6 +308,8 @@ def build(grid_id, cache):
         if isl:
             ig = unary_union([g.buffer(0) for g in isl])
             island = {u["id"] for u in units if u["geom"].representative_point().within(ig)}
+        # and anything west of Bowen Island: the Sunshine Coast and the islands are a ferry away
+        island |= {u["id"] for u in units if u["geom"].representative_point().x < -123.42}
     cols, rows = layout(units, max_cols)
     out = {"id": grid_id, "label": label, "level": level, "source": LEVELS[level][0], "cols": cols, "rows": rows,
            "units": [{"id": u["id"], "name": u["name"], "labels": labels(u["name"]), "col": u["col"], "row": u["row"],

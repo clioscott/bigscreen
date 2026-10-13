@@ -48,7 +48,7 @@ def _push_once():
         cmd = ["rsync", "-a", "--timeout=20",
                "--include=*.json", "--include=icons/", "--include=icons/*.png",
                "--include=stock-icons/", "--include=stock-icons/*.png",
-               "--include=alertmaps/", "--include=alertmaps/*.bin", "--include=alertmaps/*.mask",
+               "--include=alertmaps/", "--include=alertmaps/*.bin", "--include=alertmaps/*.mask", "--include=alertmaps/*.zones",
                "--include=quake/", "--include=quake/*.bin", "--include=alertpages/", "--include=alertpages/*.bin",
                "--exclude=*",
                "--rsync-path", f"mkdir -p {remote_dir} && rsync",
