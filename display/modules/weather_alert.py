@@ -929,6 +929,10 @@ class AlertScreen:
         c.FillRect(8, yb - 1, 14, sf.h + 2, Color(*ctx.sev))
         c.FillRect(9, yb, 12, sf.h, Color(*fill.astype(int).tolist()))
         sf.draw(c, 26, yb, (255, 255, 255), lg)
+        # home: a small house where the wall is
+        hp = meta.get("home_px")
+        if hp:
+            draw_home(c, hp[0], hp[1], 0.75 + 0.25 * math.sin(ctx.t * 4))
         return True
 
     def _draw_tour(self, c, entry, transition, now):
