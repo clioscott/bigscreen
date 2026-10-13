@@ -192,7 +192,7 @@ export const Rotation = {
               <span class="kind"><Icon :name="PANEL_TYPES[e.panel]?.icon || 'Square'" :size="18"/></span>
               <div class="meta" style="cursor:pointer" @click="open = open === side + ':' + i ? null : side + ':' + i">
                 <b>{{ entryTitle(e) }}</b>
-                <span>{{ [entrySub(e), e.enabled === false ? 'off' : waiting(side, i) ? 'skipped right now: rules don\\'t hold' : ''].filter(Boolean).join(' · ') || 'every time round' }}</span>
+                <span>{{ [entrySub(e), e.enabled === false ? 'off' : waiting(side, i) ? 'skipped right now: rules don\\'t hold' : ''].filter(Boolean).join(' · ') || (e.rules?.length ? '' : 'every time round') }}</span>
                 <div class="rule-summary" v-if="e.rules?.length"><span class="pill" v-for="(r, k) in e.rules" :key="k">{{ ruleText(r) }}</span></div>
               </div>
               <span class="pill" :class="{accent: e.advance === 'cycles'}"><Icon :name="e.advance === 'cycles' ? 'Repeat' : 'Timer'" :size="12"/>{{ advanceText(e) }}</span>

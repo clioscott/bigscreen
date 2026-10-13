@@ -42,8 +42,12 @@ happens on a separate server; the Pi only renders. Research and history: `RESEAR
 - Modules in `display/modules/` are ported from v1; never reintroduce per-frame data reprocessing.
 - Reads `/dev/shm/bigscreen/config.json` (published by the hub) and hot-reloads it; panel timing keys
   (`gpio_slowdown`, `pwm_*`, `limit_refresh_rate_hz`) make it exit so systemd restarts it.
-- Control server :8765 — `/status`, `/frame.png` (live mirror), `/override`, `/preview` (temporary
-  config overlay with TTL). The hub proxies these under `/api/display/*`.
+- Control server :8765 — `/status`, `/frame.png` (live mirror), `/play` + `/rotation` (play an entry once or
+  held; next/prev/hold/stop), `/override` (older form of `/play`), `/preview` (temporary config overlay with TTL).
+  The hub proxies these under `/api/display/*`.
+- Rotation: `display/rotation.py` (one per side; screens always play to their end, rules checked only when picking
+  the next one, previews resume the rotation) and `display/rules.py` (the conditions). Entries live in
+  `modules.layout_cycle.{left,right}` with `rules`; legacy `when` still works.
 - Emulate anywhere: `BIGSCREEN_DATA_DIR=… python -m display.main --emulate --port 8799`.
 - Update the Pi: `ssh scott@192.168.1.100 'cd ~/bigscreen && git pull && sudo systemctl restart bigscreen-display'`.
 
