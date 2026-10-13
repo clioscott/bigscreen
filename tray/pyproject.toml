@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bigscreen-tray"
+version = "1.0.0"
+description = "Control the BigScreen LED wall from the Windows system tray and global hotkeys"
+requires-python = ">=3.9"
+dependencies = [
+    "pystray==0.19.5",   # trayicon.py overrides a private method; check it before bumping
+    "Pillow>=10",
+]
+
+[tool.setuptools]
+packages = ["bigscreen_tray"]

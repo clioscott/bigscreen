@@ -62,6 +62,12 @@ and `config/app-config.json.pre-v2` (v1's server was neutralised: fetchers off, 
 
 Profiling on the Pi: `sudo /tmp/pyspy/bin/py-spy record --pid <pid> --duration 20 --format raw -o out`.
 
+## Windows tray app
+
+`tray/`: a tray icon and global hotkeys on the PC, a thin client of the hub's `/api/display/*`. Installed by
+`tray/Install BigScreen Tray.cmd` into `%LOCALAPPDATA%\BigScreenTray`. See `tray/README.md`. Plays are always
+once (`hold: false`), so the rotation resumes by itself.
+
 ## Weather maps
 
 - `hub/weather/`: `geo.py` (areas = centre + km/px → mercator view; XYZ tile basemaps), `carto.py`
