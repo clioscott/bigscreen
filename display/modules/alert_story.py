@@ -346,11 +346,19 @@ def zone_map(c, ctx, x, y, w, h, vals, colour, unit, fonts, labels_fmt=None):
     if not got:
         return False
     base, zones, names = got
+    hit = ap.affected(ctx)
+    ckey = (id(base), w, h, tuple(sorted((r, round(v, 1)) for r, v in vals.items() if v is not None)),
+            tuple(sorted(hit)), tuple(ctx.pal["bg"]))
+    cached = _VIEW.get("key") == ckey
     region_of = {}
     for i, n in enumerate(names, 1):
         labs = alert_brief.region_labels([n], getattr(ctx, "home_name", "Richmond"))
         if labs and labs[0][0] in vals:
             region_of[i] = labs[0][0]
+    if cached:
+        view, k, ox, oy = _VIEW["view"]
+        c.buf[y:y + h, x:x + w] = view
+        return _labels(c, ctx, x, y, w, h, vals, colour, unit, fonts, labels_fmt, hit, k, ox, oy)
     out = base.astype(np.float32) * 0.45
     for i, r in region_of.items():
         v = vals.get(r)
@@ -367,7 +375,16 @@ def zone_map(c, ctx, x, y, w, h, vals, colour, unit, fonts, labels_fmt=None):
     lp = np.pad(lit, 1)
     img[lit & ~(lp[:-2, 1:-1] & lp[2:, 1:-1] & lp[1:-1, :-2] & lp[1:-1, 2:])] = (255, 255, 255)
     view, k, ox, oy = _fit_img(img, w, h, ctx.pal["bg"])
+    _VIEW.update(key=ckey, view=(view, k, ox, oy))
     c.buf[y:y + h, x:x + w] = view
+    return _labels(c, ctx, x, y, w, h, vals, colour, unit, fonts, labels_fmt, hit, k, ox, oy)
+
+
+_VIEW = {}
+
+
+def _labels(c, ctx, x, y, w, h, vals, colour, unit, fonts, labels_fmt, hit, k, ox, oy):
+    """The town cards on the zone map: place name over its value, a colour stripe, no overlaps."""
     vf, nf = fonts[0], fonts[-1]
     placed = []
     towns = sorted((ctx.amap.get("towns_px") or {}).items(), key=lambda kv: (kv[0] not in hit, kv[0] != getattr(ctx, "home_name", "")))
