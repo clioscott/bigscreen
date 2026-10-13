@@ -169,7 +169,7 @@ class MapPanel:
             graphics.DrawText(c, self.font, x + 3, y + h - 4, _DAY_FG[wd], day)
             if self.kanji:                                     # and its kanji above, coloured on black, same width
                 c.FillRect(x + 1, y + h - 25, self._tw(day) + 3, 14, self.shadow)
-                graphics.DrawText(c, self.kanji, x + 3, y + h - 13, _DAY_BG[wd], chr(_WEEKDAY_JIS[wd]))
+                graphics.DrawText(c, self.kanji, x + 2, y + h - 13, _DAY_BG[wd], chr(_WEEKDAY_JIS[wd]))  # ink centred
             lx = x + 4 + self._tw(day) + 2
             lx += self._text(c, lx, y + h - 4, f"{t.hour % 12 or 12}:{t:%M}{'A' if t.hour < 12 else 'P'}") + 4
             if t.timestamp() > now + 120:                      # model forecast / radar nowcast frame
