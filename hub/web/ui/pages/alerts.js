@@ -29,6 +29,10 @@ const PER_LEVEL = ["rain", "thunder", "fog", "smoke"];
 // settings that change how a theme looks; they travel to previews and the wall as overrides
 const LOOK_KEYS = ["header", "palette", "family", "structure", "border", "reveal", "reveal_speed", "title_font",
   "body_font", "reading_wpm", "min_hold_sec", "detail", "upper", "pulse", "density", "sample"];
+const PAGE_NAMES = { radar: "Radar + lightning", precip: "Precipitation forecast", snowfall: "Snowfall forecast",
+  snowlevel: "Snow level", fzra: "Freezing rain chance", temp: "Temperature", humidex: "Humidex", gust: "Wind gusts",
+  wind: "Wind speed", tstorm: "Thunderstorm chance", fog: "Fog visibility", smoke: "Wildfire smoke", sealevel: "Sea level",
+  satellite: "Satellite" };
 const STYLE_KEYS = ["header", "palette", "family", "structure", "border", "reveal", "title_font", "body_font", "upper", "pulse"];
 
 export const Alerts = {
@@ -167,9 +171,21 @@ export const Alerts = {
     const auto = ref(false);
     const autoSec = ref(8);
     const rt = ref(0);                   // seconds into the current item (browser preview clock)
-    const revImg = computed(() => item.value
-      ? `/api/alerts/preview/${item.value[0]}.png?at=${rt.value.toFixed(2)}&scale=2&s=${encodeURIComponent(JSON.stringify({ sample: item.value[1], density: a.value.density || "balanced", detail: a.value.detail || "all", reveal_speed: 1.6 }))}`
-      : "");
+    // the item's whole sequence — text, area map, the weather type's data pages — each page held autoSec
+    const revSettings = computed(() => (item.value ? { theme: item.value[0], sample: item.value[1], theme_mode: "fixed",
+      density: a.value.density || "balanced", detail: a.value.detail || "all", reveal_speed: 1.6,
+      min_hold_sec: autoSec.value, reading_wpm: 100000, map_sec: autoSec.value, page_sec: autoSec.value } : null));
+    const revQs = computed(() => (revSettings.value ? `s=${encodeURIComponent(JSON.stringify(revSettings.value))}` : ""));
+    const revImg = computed(() => item.value ? `/api/alerts/preview/${item.value[0]}.png?at=${rt.value.toFixed(2)}&scale=2&${revQs.value}` : "");
+    const itemTl = ref({ total: 0, pages: [] });
+    let tlReq = 0;
+    watch(revQs, async (q) => {
+      if (!q) return;
+      const mine = ++tlReq;
+      try { const r = await api(`/api/alerts/timeline?${q}`); if (mine === tlReq) itemTl.value = r; } catch (e) { /* ignore */ }
+    });
+    const itemPage = computed(() => [...(itemTl.value.pages || [])].reverse().find((x) => rt.value >= x.start) || itemTl.value.pages?.[0]);
+    const pageName = (x) => (x.kind === "map" ? "Area map" : x.kind === "page" ? (PAGE_NAMES[x.page] || x.page) : "Message");
     const revLabel = computed(() => {
       if (!item.value) return "";
       const th = themeById(item.value[0]);
@@ -181,13 +197,13 @@ export const Alerts = {
       pushTimer = setTimeout(async () => {
         if (!item.value || !mirror.value) return;
         try {
-          await overlay({ ...nullLook(), theme: item.value[0], sample: item.value[1], theme_mode: "fixed",
-            density: a.value.density || null, detail: a.value.detail || null, review_label: revLabel.value }, 2 * 3600);
+          await overlay({ ...nullLook(), ...revSettings.value, review_label: revLabel.value }, 2 * 3600);
           if (wall.value !== "review") { await pin({ test: true }, 2 * 3600); wall.value = "review"; }
         } catch (e) { fail(e); }
       }, 150);
     };
     watch(item, () => { rt.value = 0; pushReview(); });
+    watch(autoSec, () => { rt.value = 0; pushReview(); });
     watch(mirror, (on) => { if (on) pushReview(); });
     const startReview = (from = 0) => {
       if (!items.value.length) return toast("Nothing to review with these choices");
@@ -302,8 +318,10 @@ export const Alerts = {
       tick = setInterval(() => {
         if (idx.value >= 0) {
           rt.value += 0.5;
-          if (auto.value && rt.value >= autoSec.value) autoNext();
-          else if (rt.value > 24) rt.value = 0;
+          const total = itemTl.value.total || autoSec.value;
+          if (rt.value >= total) {                // the whole sequence has played
+            if (auto.value) autoNext(); else rt.value = 0;
+          }
         }
         if (playing.value && tab.value === "design") t.value = (t.value + 0.5) % Math.max(4, tl.value.total || 30);
       }, 500);
@@ -316,7 +334,7 @@ export const Alerts = {
       optImg, borderAt, revealAt, opts, fontName,
       wall, showLive, showReal, backToRotation,
       revThemes, revLayout, revAlerts, revOrder, revThemeList, items, toggleRevAlert, queue, idx, item, mirror, auto, autoSec, rt, revImg,
-      startReview, stopReview, everyTypeEachTheme, everyTypeItems, loopTheme, position, step, nextTheme, judge, tourSec, tourWall, allSamples, themeById,
+      itemTl, itemPage, pageName, startReview, stopReview, everyTypeEachTheme, everyTypeItems, loopTheme, position, step, nextTheme, judge, tourSec, tourWall, allSamples, themeById,
       types, toggleType, hazards, toggleHazard, areas, areaId, entry, addToRotation, when, ago };
   },
   template: `<div class="page">
@@ -494,6 +512,13 @@ export const Alerts = {
           <button class="btn sm ghost" @click="stopReview"><Icon name="X" :size="13"/>Close</button></div>
         <div class="card-body stack">
           <div style="background:#000; border-radius:8px; overflow:hidden"><img :src="revImg" style="width:100%; image-rendering:pixelated; display:block" alt=""></div>
+          <div class="scrub" v-if="itemTl.pages?.length">
+            <div class="scrub-track">
+              <button v-for="(x, i) in itemTl.pages" :key="i" class="scrub-seg" :class="{on: itemPage === x}" :style="{flex: x.hold + x.reveal}"
+                @click="rt = x.start + 0.05" :title="pageName(x)">{{ pageName(x) }}</button>
+            </div>
+            <span class="mono faint" style="font-size:12px; width:70px; text-align:right">{{ rt.toFixed(0) }} / {{ Math.round(itemTl.total) }} s</span>
+          </div>
           <div class="row" style="gap:8px">
             <span class="pill" :style="{color: levelColour(sampleLevel(item[1]))}"><i :style="{display:'inline-block', width:'9px', height:'9px', borderRadius:'2px', background: hazardOf(item[1]).colour}"></i>{{ sampleLabel(item[1]) }} · {{ sampleLevel(item[1]) }}</span>
             <div style="flex:1; height:4px; background:var(--surface-3); border-radius:2px; overflow:hidden"><div :style="{width: (100 * (idx + 1) / queue.length) + '%', height:'100%', background:'var(--accent)'}"></div></div>
@@ -508,10 +533,10 @@ export const Alerts = {
             <label class="row" style="gap:6px; font-size:12.5px" v-if="revOrder === 'theme'" title="Keep cycling this theme's weather types until you approve or drop it">
               <input type="checkbox" v-model="loopTheme">loop this theme</label>
             <button class="btn sm" :class="{primary: auto}" @click="auto = !auto"><Icon :name="auto ? 'Pause' : 'Play'" :size="13"/>{{ auto ? 'Auto' : 'Auto-advance' }}</button>
-            <Stepper v-model="autoSec" :min="4" :max="30" unit="s"/>
+            <span class="faint" style="font-size:12px">each page</span><Stepper v-model="autoSec" :min="4" :max="30" unit="s"/>
             <label class="row" style="gap:6px; font-size:12.5px"><input type="checkbox" v-model="mirror">on the wall</label>
           </div>
-          <div class="faint" style="font-size:12px"><template v-if="loopTheme && revOrder === 'theme'">Looping this theme's weather types every {{ autoSec }} s until you decide. </template>Keys: <b>A</b> approve · <b>D</b> drop (both jump to the next theme) · <b>←</b> / <b>→</b> or space step · <b>↓</b> skip theme · <b>Esc</b> close. Verdicts are part of the page's changes — Save to keep them.</div>
+          <div class="faint" style="font-size:12px"><template v-if="loopTheme && revOrder === 'theme'">Each weather type plays its message, area map and data pages ({{ autoSec }} s each), then the next, looping this theme until you decide. </template>Keys: <b>A</b> approve · <b>D</b> drop (both jump to the next theme) · <b>←</b> / <b>→</b> or space step · <b>↓</b> skip theme · <b>Esc</b> close. Verdicts are part of the page's changes — Save to keep them.</div>
         </div></div>
 
       <div class="card"><div class="card-head"><Icon name="Clapperboard" :size="15"/><h3>Unattended tours on the wall</h3>

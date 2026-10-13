@@ -915,6 +915,8 @@ class AlertScreen:
         p = min(1.0, local / seg["reveal"]) if seg["reveal"] > 0 else 1.0
         if seg.get("kind") == "page" and self._draw_page(c, seg, ctx, local):
             draw_border(c, th["border"], ctx.sev if ctx.home or not ctx.home_name else _dim(ctx.sev, 0.5), t)
+            if self.settings.get("review_label") and not self._tour:
+                self._label(c, f" {self.settings['review_label']} ")
             if t >= plan["total"]:
                 self._t0 = now
                 self._static = None
@@ -922,6 +924,8 @@ class AlertScreen:
             return None
         if seg.get("kind") == "map" and self._draw_map(c, seg, ctx, local, p):
             draw_border(c, th["border"], ctx.sev if ctx.home or not ctx.home_name else _dim(ctx.sev, 0.5), t)
+            if self.settings.get("review_label") and not self._tour:
+                self._label(c, f" {self.settings['review_label']} ")
             if t >= plan["total"]:
                 self._t0 = now
                 self._static = None
