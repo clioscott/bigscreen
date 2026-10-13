@@ -502,6 +502,8 @@ def _page_has_data(data_dir, pid, min_frac=0.003):
             meta = json.load(f)
     except (OSError, ValueError):
         return False
+    if "has_data" in meta:
+        return bool(meta["has_data"])
     return float(meta.get("data_frac", 1.0)) >= min_frac
 
 

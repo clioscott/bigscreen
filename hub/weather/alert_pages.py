@@ -46,7 +46,7 @@ PAGES = {
     "temp":       {"title": "Temperature forecast", "layer": "HRDPS-WEonG_2.5km_AirTemp", "style": "TEMPERATURE-LINEAR",
                    "unit": "°C", "fmt": "{:.0f}"},
     "humidex":    {"title": "Humidex forecast", "layer": "HRDPS.CONTINENTAL_HMX", "style": "Humidex_20to54_Dis",
-                   "value": "HRDPS-WEonG_2.5km_AirTemp", "value_title": "temperature", "unit": "°C", "fmt": "{:.0f}"},
+                   "value": "HRDPS-WEonG_2.5km_AirTemp", "value_title": "temperature", "unit": "°C", "fmt": "{:.0f}", "present": "fill"},
     "gust":       {"title": "Wind gust forecast", "layer": "HRDPS-WEonG_2.5km_WindGust", "style": "GUST_MS2KMH",
                    "value": "HRDPS.CONTINENTAL_WSPD", "value_title": "wind", "unit": "km/h", "k": 3.6, "fmt": "{:.0f}"},
     "wind":       {"title": "Wind speed forecast", "layer": "HRDPS.CONTINENTAL_WSPD", "style": "WINDSPEEDKMH",
@@ -54,7 +54,7 @@ PAGES = {
     "tstorm":     {"title": "Chance of thunderstorms", "layer": "HRDPS-WEonG_2.5km_Thunderstorm-Prob", "style": "",
                    "unit": "%", "none": 0.0, "fmt": "{:.0f}"},
     "fog":        {"title": "Visibility in fog", "layer": "HRDPS-WEonG_2.5km_LiquidFogVisibility", "style": "",
-                   "unit": "km", "k": 0.001, "fmt": "{:.1f}"},
+                   "unit": "km", "k": 0.001, "fmt": "{:.1f}", "present": "below1"},
     "smoke":      {"title": "Wildfire smoke forecast (FireWork)", "layer": "RAQDPS.Sfc_PM2.5-WildfireSmokePlume",
                    "style": "", "unit": "µg/m³", "k": 1e9, "none": 0.0, "fmt": "{:.0f}"},
     "sealevel":   {"title": "Sea level forecast", "layer": "CIOPS-West_2km_SeaSfcHeight", "style": "",
@@ -121,8 +121,15 @@ def _render_forecast(pid, spec, cfg, log):
         values.append([_value(spec, vl, *coords[n], t) for n, _, _ in towns])
     if not frames:
         return {"ok": False, "message": "every frame failed"}
-    nonzero = any(v not in (None, 0, 0.0) for row in values for v in row)
-    return _write(pid, spec, frames, kept, view, towns, values, kind="forecast", data_frac=fill if (nonzero or fill) else 0.0)
+    vals = [v for row in values for v in row if v is not None]
+    mode = spec.get("present", "values")
+    if mode == "below1":                                          # fog: visibility under 1 km somewhere
+        has = any(v < 1.0 for v in vals)
+    elif mode == "fill":                                          # humidex: the field only paints when it's hot
+        has = fill >= 0.03
+    else:
+        has = any(v > 0 for v in vals) or fill >= 0.05
+    return _write(pid, spec, frames, kept, view, towns, values, kind="forecast", data_frac=fill, has_data=has)
 
 
 def _render_loop(pid, spec, cfg, log):
@@ -142,17 +149,29 @@ def _render_loop(pid, spec, cfg, log):
     src_bin.replace(OUT / f"{pid}.bin")
     src_json.unlink(missing_ok=True)
     meta.update(id=pid, title=spec["title"], page_kind=spec["kind"], towns=[], values=[], unit="")
-    if spec["kind"] == "radar":                                   # radar / lightning: pixels that change across the loop
-        n, h, w = meta["n"], meta["h"], meta["w"]
-        fr = np.fromfile(OUT / f"{pid}.bin", dtype=np.uint8).reshape(n, h, w, 3).astype(np.int16)
-        meta["data_frac"] = float((np.abs(fr - fr[:1]).max(axis=(0, 3)) > 40).mean()) if n > 1 else 0.0
-    else:
-        meta["data_frac"] = 1.0
+    meta["has_data"] = _radar_has_echoes(cfg) if spec["kind"] == "radar" else True
     atomic_write_json(OUT / f"{pid}.json", meta)
     return res
 
 
-def _write(pid, spec, frames, times, view, towns, values, kind, data_frac=1.0):
+def _radar_has_echoes(cfg, min_frac=0.002):
+    """Any rain or snow on the radar over the last 3 hours (from the archive the maps keep)?"""
+    from hub.weather import radar
+    wm = cfg["modules"].get("weather_maps", {})
+    area = dict(wm.get("areas", {})[AREA], id=AREA)
+    _, arch, crop = tracks.views_for(area, "full", cfg)
+    times = radar.archive_times(arch)[-18:]
+    for t in times[::3]:
+        try:
+            rain, snow, _ = radar.load_frame(arch, t, crop)
+        except Exception:
+            continue
+        if float(((rain > 0.2) | (snow > 0.1)).mean()) >= min_frac:
+            return True
+    return False
+
+
+def _write(pid, spec, frames, times, view, towns, values, kind, data_frac=1.0, has_data=True):
     OUT.mkdir(parents=True, exist_ok=True)
     pack = np.ascontiguousarray(np.stack(frames))
     tmp = OUT / f".{pid}.bin.tmp"
@@ -162,7 +181,7 @@ def _write(pid, spec, frames, times, view, towns, values, kind, data_frac=1.0):
             "times": [t.strftime("%Y-%m-%dT%H:%M:%SZ") for t in times], "unit": spec.get("unit", ""),
             "fmt": spec.get("fmt", "{:.0f}"), "value_title": spec.get("value_title", ""),
             "towns": towns, "values": values, "generated_at": time.time(), "attribution": "ECCC",
-            "data_frac": round(data_frac, 4)}
+            "data_frac": round(data_frac, 4), "has_data": bool(has_data)}
     atomic_write_json(OUT / f"{pid}.json", meta)
     return {"ok": True, "message": f"{len(frames)} frames", "frames": len(frames)}
 
