@@ -77,49 +77,98 @@ def tile_rects(extent, x, y, w, h, gap=1):
             for n, (col, row, span) in t["tiles"].items()}
 
 
-# the Where grid on the message page: columns west to east, each split evenly - the City-side column (North
-# Shore, Vancouver, Richmond), the Tri-Cities over Surrey, then the Fraser Valley. Regions off the main grid
-# (Sunshine Coast, Howe Sound, Sea to Sky) only appear, as a column down the left, when the alert covers them.
-WHERE_COLS = [["North Shore", "Vancouver", "Richmond"], ["Tri-Cities", "Surrey"], ["Abbotsford", "Chilliwack"]]
-WHERE_EXTRA = ["Sea to Sky", "Howe Sound", "Sunshine Coast"]
-WHERE_NAMES = {"Sea to Sky": "SEA TO|SKY", "North Shore": "NORTH SHORE", "Tri-Cities": "TRI-CITIES",
-               "Howe Sound": "HOWE|SOUND", "Vancouver": "VANCOUVER", "Abbotsford": "ABBOTSFORD",
-               "Richmond": "RICHMOND", "Surrey": "SURREY", "Chilliwack": "CHILLIWACK", "Sunshine Coast": "SUNSHINE|COAST"}
+# The Where grid, in three sizes. Each is columns west to east, each column split evenly (no holes, no one box
+# singled out by size). A box is (name, wall region it belongs to, label - "|" marks a two-line break, short label).
+# The grid picks the biggest size whose boxes all fit their full names. Regions off the main grids (Sunshine
+# Coast, Howe Sound, Sea to Sky) only appear, as a column down the left, when the alert covers them.
+def _b(name, region, label, short=None):
+    return (name, region, label, short or label.replace("|", " "))
 
 
-def where_rects(ctx, x, y, w, h, gap=1):
+WHERE_TIERS = {
+    "small": [[_b("North Shore", "North Shore", "NORTH SHORE", "N VAN"), _b("Vancouver", "Vancouver", "VANCOUVER", "VAN"),
+               _b("Richmond", "Richmond", "RICHMOND", "RICH")],
+              [_b("Tri-Cities", "Tri-Cities", "TRI-CITIES", "TRI-C"), _b("Surrey", "Surrey", "SURREY")],
+              [_b("Abbotsford", "Abbotsford", "ABBOTSFORD", "ABBY"), _b("Chilliwack", "Chilliwack", "CHILLIWACK", "CHWK")]],
+    "medium": [[_b("West Vancouver", "North Shore", "WEST|VANCOUVER", "W VAN"), _b("Vancouver", "Vancouver", "VANCOUVER", "VAN"),
+                _b("Richmond", "Richmond", "RICHMOND", "RICH")],
+               [_b("North Vancouver", "North Shore", "NORTH|VANCOUVER", "N VAN"), _b("Burnaby", "Vancouver", "BURNABY"),
+                _b("Delta", "Richmond", "DELTA")],
+               [_b("Tri-Cities", "Tri-Cities", "TRI-CITIES", "TRI-C"), _b("Surrey", "Surrey", "SURREY|WHITE ROCK", "SURREY")],
+               [_b("Maple Ridge", "Tri-Cities", "MAPLE RIDGE|PITT MEADOWS", "MAPLE R"), _b("Langley", "Surrey", "LANGLEY")]],
+    "large": [[_b("West Vancouver", "North Shore", "WEST|VANCOUVER", "W VAN"), _b("Vancouver", "Vancouver", "VANCOUVER", "VAN"),
+               _b("Richmond", "Richmond", "RICHMOND", "RICH")],
+              [_b("North Vancouver", "North Shore", "NORTH|VANCOUVER", "N VAN"), _b("Burnaby", "Vancouver", "BURNABY"),
+               _b("Delta", "Richmond", "DELTA")],
+              [_b("Port Moody", "Tri-Cities", "PORT|MOODY"), _b("New Westminster", "Vancouver", "NEW|WESTMINSTER", "NEW WEST"),
+               _b("Surrey", "Surrey", "SURREY|WHITE ROCK", "SURREY")],
+              [_b("Coquitlam", "Tri-Cities", "COQUITLAM"), _b("Port Coquitlam", "Tri-Cities", "PORT|COQUITLAM", "POCO"),
+               _b("Langley", "Surrey", "LANGLEY")],
+              [_b("Maple Ridge", "Tri-Cities", "MAPLE RIDGE|PITT MEADOWS", "MAPLE R"), _b("Abbotsford", "Abbotsford", "ABBOTSFORD", "ABBY")],
+              [_b("Mission", "Abbotsford", "MISSION"), _b("Chilliwack", "Chilliwack", "CHILLIWACK", "CHWK")]],
+}
+WHERE_EXTRA = [_b("Sea to Sky", "Sea to Sky", "SEA TO|SKY", "S2S"), _b("Howe Sound", "Howe Sound", "HOWE|SOUND", "HOWE"),
+               _b("Sunshine Coast", "Sunshine Coast", "SUNSHINE|COAST", "SUN C")]
+
+
+def _layout(ctx, tier, x, y, w, h, gap):
     hit = affected(ctx)
-    cols = ([[n for n in WHERE_EXTRA if n in hit]] if hit & set(WHERE_EXTRA) else []) + WHERE_COLS
+    extra = [bx for bx in WHERE_EXTRA if bx[1] in hit]
+    cols = ([extra] if extra else []) + WHERE_TIERS[tier]
     cw = (w - gap * (len(cols) - 1)) // len(cols)
     x += (w - (len(cols) * cw + gap * (len(cols) - 1))) // 2
-    out = {}
+    out = []
     for k, col in enumerate(cols):
         n = len(col)
-        for r, name in enumerate(col):
+        for r, bx in enumerate(col):
             ty0 = y + (h + gap) * r // n
             ty1 = y + (h + gap) * (r + 1) // n - gap
-            out[name] = (x + k * (cw + gap), ty0, cw, ty1 - ty0)
+            out.append((bx, (x + k * (cw + gap), ty0, cw, ty1 - ty0)))
     return out
 
 
+def _label_lines(font, bx, tw, th):
+    """The lines to write in a box: the full name on one line, else on two, else the short label; None if
+    even that doesn't fit."""
+    full = bx[2]
+    if font.width(full.replace("|", " ")) <= tw - 4 and th >= font.h + 3:
+        return [full.replace("|", " ")], True
+    if "|" in full and th >= 2 * font.h + 5:
+        ls = full.split("|")
+        if all(font.width(l_) <= tw - 4 for l_ in ls):
+            return ls, True
+    if font.width(bx[3]) <= tw - 2 and th >= font.h + 2:
+        return [bx[3]], False
+    return None, False
+
+
+def where_tier(ctx, font, w, h, gap=1):
+    """The biggest Where grid whose boxes all show their full names at this size."""
+    for tier in ("large", "medium"):
+        if all(_label_lines(font, bx, r[2], r[3])[1] for bx, r in _layout(ctx, tier, 0, 0, w, h, gap)):
+            return tier
+    return "small"
+
+
 def cart_size(font, extent="lm", gap=1):
-    """Natural size of the Where grid: three boxes wide enough for the full region names in ``font``."""
-    tw = max(font.width(v.split("|")[0]) for v in WHERE_NAMES.values()) + 8
+    """Natural size of the small Where grid: three boxes wide enough for the full region names in ``font``."""
+    tw = max(font.width(bx[2].split("|")[0]) for col in WHERE_TIERS["small"] for bx in col) + 8
     th = font.h + 5
     return 3 * tw + gap * 2, 3 * th + gap * 2
 
 
-def cartogram(c, ctx, x, y, font, extent="lm", w=None, h=None, gap=1):
-    """The Where grid (WHERE_GRID): the alert's regions filled in the weather type's colour, the rest outlined;
-    the home region in the second colour with a warm outline when covered, a warm outline when not. Names are
-    written in full and only fall back to the wall's short codes when a box is too narrow."""
+def cartogram(c, ctx, x, y, font, extent="lm", w=None, h=None, gap=1, tier=None):
+    """The Where grid (WHERE_TIERS): boxes in the alert's regions filled in the weather type's colour, the rest
+    outlined; the home box in the second colour (outlined in its tint), or just the tint outline when not covered.
+    Names are written in full and only fall back to short labels when a box is too small."""
     nw, nh = cart_size(font, extent, gap)
     w, h = w or nw, h or nh
+    tier = tier or where_tier(ctx, font, w, h, gap)
     hit = affected(ctx)
     fill = ctx.sev
     home = getattr(ctx, "home_name", "Richmond")
-    for name, (tx, ty, tw, th) in where_rects(ctx, x, y, w, h, gap).items():
-        on, mine = name in hit, name == home
+    for bx, (tx, ty, tw, th) in _layout(ctx, tier, x, y, w, h, gap):
+        on, mine = bx[1] in hit, bx[0] == home
         if on:
             col = getattr(ctx, "sev2", _mix(fill, (255, 255, 255), 0.45)) if mine else fill
             c.FillRect(tx, ty, tw, th, Color(*col))
@@ -133,25 +182,16 @@ def cartogram(c, ctx, x, y, font, extent="lm", w=None, h=None, gap=1):
             for rx, ry, rw, rh in ((tx, ty, tw, 1), (tx, ty + th - 1, tw, 1), (tx, ty, 1, th), (tx + tw - 1, ty, 1, th)):
                 c.FillRect(rx, ry, rw, rh, Color(*edge))
             ink = HOME_TINT if mine else ctx.pal["dim"]
-        full = WHERE_NAMES.get(name, name.upper())
-        if th >= 2 * font.h + 6 and "|" in full and font.width(full.replace("|", " ")) > tw - 2:
-            ls = full.split("|")                                 # a tall box: the name on two lines
-            if all(font.width(l_) <= tw - 2 for l_ in ls):
-                y0 = ty + (th - 2 * font.h - 2) // 2
-                for i, l_ in enumerate(ls):
-                    font.draw(c, tx + (tw - font.width(l_)) // 2, y0 + i * (font.h + 2), ink, l_)
-                continue
-        code = CODES.get(name, name.upper())
-        for cand in (full.replace("|", " "), code, TILE_SHORT.get(name, code)):
-            if font.width(cand) <= tw - 2:
-                code = cand
-                break
-        else:
-            while code and font.width(code) > tw - 2:
-                code = code[:-1]
-        font.draw(c, tx + (tw - font.width(code)) // 2, ty + (th - font.h) // 2, ink, code)
+        lines, _ = _label_lines(font, bx, tw, th)
+        if not lines:
+            lab = bx[3]
+            while lab and font.width(lab) > tw - 2:
+                lab = lab[:-1]
+            lines = [lab]
+        y0 = ty + (th - len(lines) * font.h - (len(lines) - 1) * 2) // 2
+        for i, l_ in enumerate(lines):
+            font.draw(c, tx + (tw - font.width(l_)) // 2, y0 + i * (font.h + 2), ink, l_)
     return w, h
-
 
 ALL_METRO = "Metro Vancouver (All Regions)"
 
