@@ -10,6 +10,7 @@ ticker on top, two content zones driven by cycle engines, clock / weekday kanji
 """
 
 import argparse
+import json
 import os
 import sys
 import threading
@@ -21,8 +22,9 @@ from datetime import datetime
 import numpy as np
 
 from display.config import ConfigSource
-from display.cycle_engine import CycleEngine
 from display.data_loader import DataLoader
+from display.rotation import Rotation
+from display.rules import Env
 from display.gfx import Canvas, Color, graphics
 
 DATA_DIR = os.environ.get("BIGSCREEN_DATA_DIR", "/dev/shm/bigscreen")
@@ -137,33 +139,40 @@ class Screen:
         self.show_seconds = cfg.modules.get("clock", {}).get("show_seconds", True)
         self.border = Color(*cfg.get_color("zone_border"))
 
-        self.clock = ClockRenderer(cfg)
-        self.date = DateRenderer(cfg)
-        self.status = StatusBarRenderer(cfg)
-        self.finance = FinanceTicker(cfg, loader)
-        self.calendar = CalendarRenderer(cfg, loader)
-        self.headlines = HeadlinesRenderer(cfg, loader)
-        self.client_calls = ClientCallsRenderer(cfg, loader)
         self.loader = loader
+        self.maps = maps
+        # Modules whose settings didn't change carry over from the previous config, state and all (a scrolling
+        # headline, a map animation mid-loop): previews and saves elsewhere must not restart what's on screen.
+        self._sigs = {}
+        keep = lambda name, sections, make: self._reuse(prev, name, sections, make)
+        self.clock = keep("clock", ("clock",), lambda: ClockRenderer(cfg))
+        self.date = keep("date", (), lambda: DateRenderer(cfg))
+        self.status = keep("status", ("status_bar",), lambda: StatusBarRenderer(cfg))
+        self.finance = keep("finance", ("finance",), lambda: FinanceTicker(cfg, loader))
+        self.calendar = keep("calendar", ("calendar",), lambda: CalendarRenderer(cfg, loader))
+        self.headlines = keep("headlines", ("headlines",), lambda: HeadlinesRenderer(cfg, loader))
+        self.client_calls = keep("client_calls", ("calendar", "client_calls_panel"), lambda: ClientCallsRenderer(cfg, loader))
+        if prev is not None and self.finance is not prev.finance:
+            self.finance.scroll_x = prev.finance.scroll_x
+            self.finance.last_scroll_time = prev.finance.last_scroll_time
 
         cyc = cfg.modules.get("layout_cycle", {}) or {}
         self.cycle_raw = {side: cyc.get(side, []) for side in ("left", "right")}
+        env = Env(self)
         if prev is None:
-            self.engines = {side: CycleEngine(side, self.cycle_raw[side]) for side in ("left", "right")}
+            self.engines = {side: Rotation(side, self.cycle_raw[side]) for side in ("left", "right")}
+            self.prev_play = {}
             self.prev = {"left": None, "right": None}
-            self.prev_key = {}
-            self.passes = {}
         else:
-            # Keep rotation position + overrides across config changes (saves, previews).
+            # Keep rotation position, the screen that's playing, and previews across config changes.
             self.engines = prev.engines
             for side in ("left", "right"):
                 if self.cycle_raw[side] != prev.cycle_raw.get(side):
-                    self.engines[side].reload_cycle(self.cycle_raw[side])
+                    self.engines[side].reload(self.cycle_raw[side])
+            self.prev_play = dict(prev.prev_play)
             self.prev = dict(prev.prev)
-            self.prev_key = dict(getattr(prev, "prev_key", {}))
-            self.passes = dict(getattr(prev, "passes", {}))
-            self.finance.scroll_x = prev.finance.scroll_x
-            self.finance.last_scroll_time = prev.finance.last_scroll_time
+        for eng in self.engines.values():
+            eng.env, eng.passes_for = env, self._default_passes
         # panel name -> draw(canvas, zone, entry, transition) -> "done" | None
         self.panels = {
             "calendar": self._draw_calendar,
@@ -175,7 +184,8 @@ class Screen:
         self.full_panels = {}     # name -> draw(canvas, zone, entry, transition); takes both zones
         self.takeover_panels = {}  # like full_panels, but the whole wall (ticker and clock too)
         from display.modules.weather_alert import AlertScreen
-        self.alert_screen = AlertScreen(cfg.modules.get("weather_alerts", {}) or {}, loader)
+        self.alert_screen = keep("alert_screen", ("weather_alerts",),
+                                 lambda: AlertScreen(cfg.modules.get("weather_alerts", {}) or {}, loader))
         self.takeover_panels["weather_alert"] = self.alert_screen.draw
         from display.modules.quake import QuakeScreen
         self.quake = QuakeScreen(getattr(loader, "data_dir", None), cfg.modules.get("japan_eew", {}) or {})
@@ -186,15 +196,30 @@ class Screen:
         self.takeover_panels["font_specimen"] = FontSpecimen().draw          # control panel → Fonts
 
         from display.modules.weather_info import WeatherInfoPanel
-        self.weather_half = WeatherInfoPanel(cfg, loader, full=False)
-        self.weather_full = WeatherInfoPanel(cfg, loader, full=True)
+        self.weather_half = keep("weather_half", (), lambda: WeatherInfoPanel(cfg, loader, full=False))
+        self.weather_full = keep("weather_full", (), lambda: WeatherInfoPanel(cfg, loader, full=True))
         self.panels["weather"] = self.weather_half.draw
         self.full_panels["weather_full"] = self.weather_full.draw
         if maps is not None:
             from display.modules.weather_maps import MapPanel
-            self.map_panel = MapPanel(cfg, maps)
+            self.map_panel = keep("map_panel", (), lambda: MapPanel(cfg, maps))
             self.panels["map"] = self.map_panel.draw
             self.full_panels["map_full"] = self.map_panel.draw
+
+    def _reuse(self, prev, name, sections, make):
+        """``make()`` a module, or hand over the previous one when nothing it reads (fonts, colours, layout,
+        its own modules.* sections) changed."""
+        c = self.cfg
+        sig = json.dumps([c.fonts, c.colors, c.layout] + [c.modules.get(s) for s in sections], sort_keys=True, default=str)
+        self._sigs[name] = sig
+        if prev is not None and getattr(prev, "_sigs", {}).get(name) == sig and getattr(prev, name, None) is not None:
+            return getattr(prev, name)
+        return make()
+
+    def _default_passes(self, entry):
+        if entry.get("panel", "").startswith("map") and hasattr(self, "map_panel"):
+            return self.map_panel.default_loops(entry.get("track"))
+        return 1
 
     # -- panels ---------------------------------------------------------------
     def _draw_calendar(self, c, zone, entry, transition):
@@ -229,9 +254,6 @@ class Screen:
     def draw(self, c, now):
         c.Clear()
         self.update_data()
-        ctx = {"calendar_has_events": bool(getattr(self.calendar, "has_visible_events", True)),
-               "weather_has_alert": self.weather_half.has_alert(),
-               "weather_alert_active": self.alert_screen.active()}
         zones = {"left": (0, self.main_y, self.cal_w, self.main_h),
                  "right": (self.right_x, self.main_y, self.right_w, self.main_h)}
 
@@ -240,49 +262,44 @@ class Screen:
             eng = self.engines[side]
             entry = None
             for _ in range(12):       # skip entries whose panel isn't available (yet)
-                entry = eng.current_entry(now, ctx) or {}
+                entry = eng.current(now)
+                if entry is None:
+                    break
                 name = entry.get("panel", "blank")
                 if name in self.panels or name in self.full_panels or name in self.takeover_panels:
                     break
-                eng.force_advance()
+                eng.skip_unavailable()
+                entry = None
             chosen[side] = entry or {"panel": "blank"}
 
+        def run(side, table, zone):
+            """Draw one side's entry; True when this play just started (the panel resets on it)."""
+            entry = chosen[side]
+            transition = entry.get("_play") != self.prev_play.get(side)
+            return table[entry.get("panel", "blank")](c, zone, entry, transition)
+
+        results, visible = {}, {"left": False, "right": False}
         takeover = next((s for s in ("right", "left") if chosen[s].get("panel") in self.takeover_panels), None)
+        full = None if takeover else next((s for s in ("right", "left") if chosen[s].get("panel") in self.full_panels), None)
         if takeover:
-            entry = chosen[takeover]
-            name = entry["panel"]
-            transition = self._entry_key(entry) != self.prev_key.get(takeover)
-            result = self.takeover_panels[name](c, (0, 0, self.w, self.h), entry, transition)
-            if self._finished(takeover, entry, result, transition):
-                for s in ("left", "right"):
-                    if chosen[s].get("panel") == name:
-                        self.engines[s].force_advance()
-            for side in ("left", "right"):
-                self.prev[side] = chosen[side].get("panel")
-                self.prev_key[side] = self._entry_key(chosen[side])
-            return                                  # no ticker / clock while an alert has the wall
-        full = next((s for s in ("left", "right") if chosen[s].get("panel") in self.full_panels), None)
-        if full:
-            entry = chosen[full]
-            name = entry["panel"]
-            zone = (0, self.main_y, self.w, self.main_h)
-            transition = self._entry_key(entry) != self.prev_key.get(full)
-            if self._finished(full, entry, self.full_panels[name](c, zone, entry, transition), transition):
-                for s in ("left", "right"):
-                    if chosen[s].get("panel") == name:
-                        self.engines[s].force_advance()
+            results[takeover] = run(takeover, self.takeover_panels, (0, 0, self.w, self.h))
+            visible[takeover] = True
+        elif full:
+            results[full] = run(full, self.full_panels, (0, self.main_y, self.w, self.main_h))
+            visible[full] = True
         else:
             for side in ("left", "right"):
-                entry = chosen[side]
-                name = entry.get("panel", "blank")
-                zone = zones[side]
-                transition = self._entry_key(entry) != self.prev_key.get(side)
-                if self._finished(side, entry, self.panels[name](c, zone, entry, transition), transition):
-                    self.engines[side].force_advance()
+                results[side] = run(side, self.panels, zones[side])
+                visible[side] = True
             graphics.DrawLine(c, self.cal_w, self.main_y, self.cal_w, self.status_top, self.border)
         for side in ("left", "right"):
+            # a side covered by the other side's full-width / full-wall screen is paused, not running out unseen
+            self.engines[side].report(results.get(side), visible[side], now)
+            if visible[side]:
+                self.prev_play[side] = chosen[side].get("_play")
             self.prev[side] = chosen[side].get("panel")
-            self.prev_key[side] = self._entry_key(chosen[side])
+        if takeover:
+            return                                  # no ticker / clock while an alert has the wall
 
         # top bar (finance) over a black mask
         graphics.DrawLine(c, 0, self.top_h, self.w, self.top_h, self.border)
@@ -306,27 +323,6 @@ class Screen:
         self.date.render(c, self.w - date_w, self.h - 14, date_w, 14)
         graphics.DrawLine(c, 0, self.status_top, self.w, self.status_top, self.border)
 
-    @staticmethod
-    def _entry_key(entry):
-        """Identity of a rotation entry (two map entries with different tracks are different screens)."""
-        return (entry.get("panel"), entry.get("track"), entry.get("weather_screen"))
-
-    def _finished(self, side, entry, result, transition):
-        """True when an ``advance: "cycles"`` entry has completed its passes.
-
-        Panels return "done" each time they finish one pass. Time-based entries ignore that and
-        run for dwell_sec; overrides (no advance key) stay until they expire.
-        """
-        if transition:
-            self.passes[side] = 0
-        if result != "done" or entry.get("advance") != "cycles":
-            return False
-        self.passes[side] = self.passes.get(side, 0) + 1
-        need = entry.get("cycles")
-        if need is None and entry.get("panel", "").startswith("map") and hasattr(self, "map_panel"):
-            need = self.map_panel.default_loops(entry.get("track"))
-        return self.passes[side] >= max(1, int(need or 1))
-
     def headlines_jump(self, index=None, delta=0, hold_sec=300):
         """Show a headline category now. If headlines aren't on screen, pin them on the side the
         rotation normally uses (right by default) for ``hold_sec``."""
@@ -338,16 +334,15 @@ class Screen:
         side = next((s for s in ("left", "right") if self.prev.get(s) == "headlines"), None)
         if side is None:
             side = next((s for s in ("right", "left")
-                         if any(e.get("panel") == "headlines" for e in getattr(self.engines[s], "_cycle", []))), "right")
-            self.engines[side].set_override("headlines", hold_sec, {})
+                         if any(e.get("panel") == "headlines" for e in self.engines[s].entries)), "right")
+            self.engines[side].play({"panel": "headlines"}, hold=True, ttl_sec=hold_sec)
         h.request_jump(index=index, delta=delta)
         target = (int(index) if index is not None else (h.current_sub_index + int(delta))) % len(h.subreddits)
         return {"ok": True, "side": side, "category": h.subreddits[target], "index": target,
                 "pinned_sec": None if self.prev.get(side) == "headlines" else hold_sec}
 
     def describe(self):
-        return {side: {"panel": self.prev[side], **(self.engines[side].describe() or {})}
-                for side in ("left", "right")}
+        return {side: {"panel": self.prev[side], **self.engines[side].describe()} for side in ("left", "right")}
 
 
 # ---------------------------------------------------------------------------

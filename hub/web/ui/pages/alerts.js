@@ -276,7 +276,7 @@ export const Alerts = {
       if (!list.length) return toast("Nothing to tour");
       try {
         await api("/api/display/preview/clear", { method: "POST" });
-        await pin({ test: true, tour: true, tour_items: list, tour_sec: tourSec.value }, Math.round(list.length * tourSec.value + 3));
+        await pin({ test: true, tour: true, tour_items: list, tour_sec: tourSec.value, once: true, advance: "cycles", cycles: 1 }, Math.round(list.length * tourSec.value * 3 + 60));
         wall.value = "tour";
         stopReview();
         toast(`The wall is touring ${list.length} ${what}, ${tourSec.value} s each (about ${Math.max(1, Math.round(list.length * tourSec.value / 60))} min)`);

@@ -357,6 +357,18 @@ def display_override_clear(payload: dict = Body(default={})):
     return _display_call("/override/clear", payload)
 
 
+@app.post("/api/display/play")
+def display_play(payload: dict = Body(...)):
+    """{"side", "entry": {rotation entry}, "hold": false, "ttl_sec"}: show an entry now, once or held."""
+    return _display_call("/play", payload)
+
+
+@app.post("/api/display/rotation")
+def display_rotation(payload: dict = Body(...)):
+    """{"side"?, "action": "next"|"prev"|"stop"|"hold"|"release"}"""
+    return _display_call("/rotation", payload)
+
+
 @app.post("/api/display/preview")
 def display_preview(payload: dict = Body(...)):
     """{"overlay": {partial config}, "ttl_sec": 120} — shown on the display until kept, reverted, or expired."""

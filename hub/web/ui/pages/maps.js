@@ -1,5 +1,5 @@
 import { ref, computed, watch, onBeforeUnmount } from "vue";
-import { store, api, fail, toast, go, ago, dur, areaLabel, refreshMaps, clone, seed } from "../core.js";
+import { store, api, fail, toast, go, ago, dur, areaLabel, refreshMaps, clone, seed, playOnDisplay } from "../core.js";
 
 const STEP_OPTIONS = [5, 6, 10, 15, 20, 30, 60, 120];
 
@@ -14,10 +14,8 @@ function trackSummary(t) {
 function hasRadar(t) { return t.kind === "accumulation" || (t.layers || []).some((l) => l.type === "radar"); }
 
 async function showNow(tid, t) {
-  try {
-    await api("/api/display/override", { json: { side: "right", panel: t.size === "full" ? "map_full" : "map", track: tid, duration_sec: 120 } });
-    toast("On the display for 2 minutes");
-  } catch (e) { fail(e); }
+  // plays it in full (its own loop count) like the rotation would, then the rotation resumes
+  await playOnDisplay({ panel: t.size === "full" ? "map_full" : "map", track: tid, advance: "cycles", max_sec: 900 });
 }
 async function rerender(tid) {
   try { await api(`/api/maps/render/${encodeURIComponent(tid)}`, { method: "POST" }); toast("Re-rendering — usually under a minute"); setTimeout(refreshMaps, 20000); }

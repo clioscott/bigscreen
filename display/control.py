@@ -4,8 +4,12 @@
     GET  /frame.png?scale=2      the current frame (nearest-neighbour upscaled)
     GET  /logs?after=N           console lines after cursor N (in-memory ring, see common/logring.py)
     GET  /panels                 panel names the cycle can use right now
-    POST /override               {"side": "left"|"right", "panel": "...", "duration_sec": 60, ...entry fields}
-    POST /override/clear         {"side": "left"|"right"} or {} for both
+    POST /play                   {"side": "left"|"right", "entry": {...rotation entry}, "hold": false, "ttl_sec": 3600}
+                                 show an entry now: once (by its own rules, then the rotation resumes) or held
+    POST /rotation               {"side": "left"|"right" (omit: both), "action": "next"|"prev"|"stop"|"hold"|"release"}
+    POST /override               {"side": …, "panel": "...", "duration_sec": 60, "once": false, ...entry fields}
+                                 older form of /play: held for duration_sec (or played once with "once")
+    POST /override/clear         {"side": "left"|"right"} or {} for both: stop previews
     POST /preview                {"overlay": {...partial config...}, "ttl_sec": 120}
     POST /preview/clear
     POST /headlines/jump         {"delta": 1|-1} or {"index": n}; pins headlines if not showing
@@ -110,13 +114,36 @@ def _make_handler(app):
                             font_specimen.font(rel)
                         except Exception as e:
                             return self._json({"error": f"{rel}: {e}"}, 400)
-                eng.set_override(body["panel"], body.get("duration_sec"), extra)
+                extra.pop("once", None)
+                eng.play({**extra, "panel": body["panel"]}, hold=not body.get("once"), ttl_sec=body.get("duration_sec"))
                 return self._json({"ok": True})
             if u.path == "/override/clear":
                 sides = [body["side"]] if body.get("side") else ["left", "right"]
                 for s in sides:
-                    app.screen.engines[s].clear_override()
+                    app.screen.engines[s].stop()
                 return self._json({"ok": True})
+            if u.path == "/play":
+                side = body.get("side", "right")
+                eng = app.screen.engines.get(side)
+                entry = body.get("entry") or {}
+                s = app.screen
+                if not eng or not isinstance(entry, dict) or not entry.get("panel"):
+                    return self._json({"error": "need side (left|right) and entry.panel"}, 400)
+                if entry["panel"] not in s.panels and entry["panel"] not in s.full_panels and entry["panel"] not in s.takeover_panels:
+                    return self._json({"error": f"panel {entry['panel']!r} isn't available on this display"}, 400)
+                ttl = body.get("ttl_sec")
+                eng.play(entry, hold=bool(body.get("hold")), ttl_sec=ttl if ttl else (3600 if body.get("hold") else None))
+                return self._json({"ok": True})
+            if u.path == "/rotation":
+                act = body.get("action")
+                sides = [body["side"]] if body.get("side") else ["left", "right"]
+                if act not in ("next", "prev", "stop", "hold", "release") or any(x not in app.screen.engines for x in sides):
+                    return self._json({"error": "need action next|prev|stop|hold|release and side left|right"}, 400)
+                for x in sides:
+                    eng = app.screen.engines[x]
+                    {"next": eng.next, "prev": eng.prev, "stop": eng.stop,
+                     "hold": lambda: eng.hold(True, float(body.get("ttl_sec") or 3600)), "release": lambda: eng.hold(False)}[act]()
+                return self._json({"ok": True, "panels": app.screen.describe()})
             if u.path == "/preview":
                 overlay = body.get("overlay")
                 if not isinstance(overlay, dict):
@@ -135,9 +162,9 @@ def _make_handler(app):
                     return self._json({"error": "event must be an object"}, 400)
                 app.screen.quake.set_event(ev)
                 if ev.get("cancel"):
-                    app.screen.engines["right"].set_override("quake", 20, {})
+                    app.screen.engines["right"].play({"panel": "quake"}, hold=True, ttl_sec=20)
                 else:
-                    app.screen.engines["right"].set_override("quake", float(body.get("duration_sec") or 150), {})
+                    app.screen.engines["right"].play({"panel": "quake"}, hold=True, ttl_sec=float(body.get("duration_sec") or 150))
                 return self._json({"ok": True})
             if u.path == "/quake_obs":
                 app.screen.quake.set_obs(body.get("v") or "", float(body.get("t") or 0))

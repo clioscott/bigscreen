@@ -124,6 +124,7 @@ export async function loadAll() {
   const [cfg, catalog] = await Promise.all([api("/api/config"), api("/api/maps/catalog").catch(() => null)]);
   store.saved = cfg;
   store.draft = clone(cfg);
+  migrateRotation();
   store.catalog = catalog;
   refreshStatus();
   refreshDisplay();
@@ -178,7 +179,86 @@ export const PANEL_TYPES = {
   blank: { label: "Blank", icon: "Square", passes: false },
 };
 export const WEATHER_SCREENS = { current: "Current conditions", hourly: "Hourly forecast", forecast: "7-day forecast", warning: "Warnings" };
-export const CONDITIONS = { always: "Always", calendar_has_events: "When the calendar has events", no_events: "When the calendar is empty", weather_has_alert: "When the city forecast lists a warning", weather_alert_active: "When an ECCC alert is in effect" };
+
+// ---- rotation rules (display/rules.py evaluates them) ------------------------------
+export const ALERT_LEVELS = { statement: "Statement", advisory: "Advisory", watch: "Watch", warning: "Warning" };
+export const HAZARDS = { rain: "Rain", snow: "Snow", freezing: "Freezing rain", wind: "Wind", thunder: "Thunderstorms", tornado: "Tornado",
+  flood: "Flooding", heat: "Heat", cold: "Cold", frost: "Frost", fog: "Fog", smoke: "Smoke / air quality", general: "Other" };
+export const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+// label: how the condition reads after "Only when" / "Not when"; make(): a new rule's defaults
+export const RULES = {
+  calendar_events: { label: "the calendar has events on screen", icon: "CalendarDays", make: () => ({}) },
+  alert: { label: "a weather alert is in effect", icon: "Siren", make: () => ({}) },
+  forecast_warning: { label: "the city forecast lists a warning", icon: "TriangleAlert", make: () => ({}) },
+  precip: { label: "it's raining or snowing", icon: "CloudRain", make: () => ({ within_h: 0, pop: 40 }) },
+  dark: { label: "the sun is down", icon: "Moon", make: () => ({}) },
+  night_mode: { label: "it's night-mode hours", icon: "MoonStar", make: () => ({}) },
+  hours: { label: "it's between certain hours", icon: "Clock", make: () => ({ from: "07:00", to: "22:00" }) },
+  days: { label: "it's certain days", icon: "CalendarRange", make: () => ({ days: [0, 1, 2, 3, 4] }) },
+  fresh: { label: "its data is fresh", icon: "RefreshCw", make: () => ({ max_age_min: 30 }) },
+};
+const LEGACY_WHEN = { calendar_has_events: [{ if: "calendar_events" }], no_events: [{ if: "calendar_events", not: true }],
+  weather_has_alert: [{ if: "forecast_warning" }], weather_alert_active: [{ if: "alert" }] };
+
+export function ruleText(r) {
+  const t = RULES[r.if];
+  if (!t) return r.if;
+  let s = t.label;
+  if (r.if === "alert") {
+    const bits = [];
+    if (r.min_level && r.min_level !== "statement") bits.push(`${ALERT_LEVELS[r.min_level].toLowerCase()} or worse`);
+    if (r.hazards?.length) bits.push(r.hazards.map((h) => (HAZARDS[h] || h).toLowerCase()).join("/"));
+    if (r.home) bits.push("for home");
+    s = bits.length ? `a ${bits.join(", ")} alert is in effect` : s;
+  } else if (r.if === "precip") s = r.within_h > 0 ? `rain or snow is likely within ${r.within_h} h (${r.pop ?? 40}%+)` : s;
+  else if (r.if === "hours") s = `it's ${r.from}–${r.to}`;
+  else if (r.if === "days") s = `it's ${(r.days || []).map((d) => DAYS[d]).join(", ") || "no day"}`;
+  else if (r.if === "fresh") s = `its data is under ${r.max_age_min ?? 30} min old`;
+  return (r.not ? "not when " : "when ") + s;
+}
+
+/** Rotation entries written before rules existed carry "when"; give them rules (in saved and draft alike, so
+ *  the conversion alone isn't an unsaved change). */
+export function migrateRotation() {
+  for (const root of [store.saved, store.draft]) {
+    const lc = root?.modules?.layout_cycle;
+    if (!lc) continue;
+    for (const side of ["left", "right"]) for (const e of lc[side] || []) {
+      if (!Array.isArray(e.rules)) e.rules = clone(LEGACY_WHEN[e.when] || []);
+      delete e.when;
+      if (e.panel === "weather_alert" && e.priority === undefined) e.priority = "next";
+    }
+  }
+}
+
+// ---- the wall: play an entry now, rotation controls ---------------------------------
+export async function playOnDisplay(entry, { side = "right", hold = false, ttl } = {}) {
+  const e = clone(entry);
+  delete e.enabled;
+  try {
+    await api("/api/display/play", { json: { side, entry: e, hold, ttl_sec: ttl } });
+    toast(hold ? "Holding it on the wall" : "Playing it once on the wall, then back to the rotation");
+    setTimeout(refreshDisplay, 400);
+  } catch (err) { fail(err); }
+}
+export async function rotationAction(action, side) {
+  try {
+    await api("/api/display/rotation", { json: side ? { action, side } : { action } });
+    setTimeout(refreshDisplay, 300);
+  } catch (err) { fail(err); }
+}
+export function entryTitle(e) {
+  if (!e) return "";
+  const t = PANEL_TYPES[e.panel];
+  if (e.panel?.startsWith("map")) {
+    const tr = store.draft?.modules?.weather_maps?.tracks?.[e.track];
+    return tr ? tr.label : `Map: ${e.track || "?"}`;
+  }
+  if (e.panel === "weather" || e.panel === "weather_full") return WEATHER_SCREENS[e.weather_screen || "current"] || t?.label;
+  if (e.panel === "quake") return "Earthquake warning";
+  if (e.panel === "font_specimen") return "Font specimen";
+  return t?.label || e.panel;
+}
 
 export function areaLabel(id, short = false) {
   const a = store.draft?.modules?.weather_maps?.areas?.[id];

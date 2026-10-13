@@ -1,6 +1,7 @@
 import { createApp, computed, ref, onMounted, onBeforeUnmount } from "vue";
 import { store, loadAll, dirty, discard, save, previewOnDisplay, endPreview, go } from "./core.js";
 import { common, vSortable } from "./widgets.js";
+import { PlayingBar } from "./nowplaying.js";
 import { Overview } from "./pages/overview.js";
 import { Rotation } from "./pages/rotation.js";
 import { Ticker } from "./pages/ticker.js";
@@ -34,7 +35,7 @@ const NAV = [
 ];
 
 const App = {
-  components: { ...common, Overview, Rotation, Ticker, Headlines, Maps, MapEditor, Areas, AreaEditor, Colours, DisplaySettings, System, Consoles, Alerts, Quake, Fonts },
+  components: { ...common, PlayingBar, Overview, Rotation, Ticker, Headlines, Maps, MapEditor, Areas, AreaEditor, Colours, DisplaySettings, System, Consoles, Alerts, Quake, Fonts },
   setup() {
     const ready = ref(false);
     const err = ref("");
@@ -99,6 +100,8 @@ const App = {
       <button class="btn sm primary" @click="endPreview(true)"><Icon name="Check" :size="14"/>Keep & save</button>
       <button class="btn sm" @click="endPreview(false)"><Icon name="Undo2" :size="14"/>Revert</button>
     </div>
+
+    <PlayingBar/>
 
     <div class="savebar" v-if="dirty.length">
       <Icon name="CircleDot" :size="16" style="color: var(--warn)"/>
