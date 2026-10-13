@@ -1,0 +1,69 @@
+{
+ "source": "Statistics Canada census subdivisions inside ECCC public forecast regions (point in polygon), 2026",
+ "regions": {
+  "Metro Vancouver - southwest": [
+   "Delta",
+   "Richmond",
+   "Tsawwassen"
+  ],
+  "Metro Vancouver - central": [
+   "Burnaby",
+   "New Westminster",
+   "Vancouver"
+  ],
+  "Metro Vancouver - North Shore": [
+   "North Vancouver",
+   "West Vancouver"
+  ],
+  "Metro Vancouver - northeast": [
+   "Anmore",
+   "Belcarra",
+   "Coquitlam",
+   "Maple Ridge",
+   "Pitt Meadows",
+   "Port Coquitlam",
+   "Port Moody"
+  ],
+  "Metro Vancouver - southeast": [
+   "Langley",
+   "Semiahmoo",
+   "Surrey",
+   "White Rock"
+  ],
+  "Howe Sound": [
+   "Bowen Island",
+   "Lions Bay",
+   "Squamish"
+  ],
+  "Whistler": [
+   "Mount Currie",
+   "Paqulh",
+   "Pemberton",
+   "Sachteen",
+   "Whistler"
+  ],
+  "Fraser Valley - west": [
+   "Abbotsford",
+   "Mission"
+  ],
+  "Sunshine Coast - Gibsons to Earls Cove": [
+   "Gibsons",
+   "Sechelt"
+  ],
+  "Sunshine Coast - Saltery Bay to Powell River": [
+   "Powell River",
+   "Sechelt"
+  ],
+  "Fraser Valley - central": [
+   "Chilliwack",
+   "Harrison Hot Springs",
+   "Kent",
+   "Seabird Island",
+   "Skowkale",
+   "Squiaala"
+  ],
+  "Fraser Valley - east": [
+   "Hope"
+  ]
+ }
+}

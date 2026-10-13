@@ -145,11 +145,10 @@ FAMILIES = {
                               (A + "nokia-small.bdf", A + "nokia-small-bold.bdf", 1)]},
 }
 
-STRUCTURES = {"console": "Fact column + sections", "console_cols": "Fact column + section columns",
-              "console_right": "Sections + fact column", "console_right_cols": "Section columns + fact column",
-              "deck": "Fact row + section columns", "newsroom": "Title + sections + fact column",
-              "newsroom_cols": "Title + two-column sections + facts", "board": "Card board", "strip": "Title & grid + sections + status bar",
-              "wire": "Wire bulletin + fact column"}
+STRUCTURES = {"console": "Fact column", "headline": "Where-first headline", "ticket": "Ticket stub", "checklist": "Checklist",
+              "infographic": "Big numbers", "sign": "Overhead sign", "wire": "Wire bulletin", "poster": "Colour block",
+              "kanban": "Now / Expect / Do", "strip": "Grid header + number bar", "rail": "Level rail", "deck": "Instrument deck",
+              "dossier": "Case file"}
 BORDERS = {"chase": "Marching dashes", "pulse": "Slow pulse", "hazard": "Hazard tape", "double": "Double rule",
            "lights": "Chasing lights", "comet": "Comet", "corners": "Corner brackets", "glow": "Glow", "rails": "Chevron rails",
            "bevel": "Bevel", "notch": "Notched tech frame", "textloop": "Text loop", "scanbars": "Scan bars"}
@@ -158,44 +157,23 @@ REVEALS = {"type": "Typewriter", "lines": "Line by line", "wipe": "Wipe", "scan"
            "sweep": "Highlight sweep"}
 DENSITIES = {"dense": "Dense", "balanced": "Balanced", "minimal": "Minimal"}
 
-# (name, design, family, palette, border, reveal, header, upper, pulse, opts) — curated, not generated.
+# (name, design, family, palette, border, reveal, header, upper, pulse, opts) — one theme per layout: each is
+# its own design, not a recolour. Every theme's pages after the first (details, the weather type's data page,
+# maps) share the theme's palette and fonts.
 _T = [
     ("Console", "console", "helvetica", "blackout", "pulse", "lines", "WEATHER ALERT", False, True, {}),
-    ("Ops Desk", "console", "terminus", "graphite", "notch", "sections", "STORM DESK", True, True, {}),
-    ("Night Shift", "console", "kakwa", "midnight", "glow", "fade", "WEATHER ALERT", False, False, {}),
-    ("Field Kit", "console", "dina", "oxide", "corners", "cascade", "FIELD NOTES", False, True, {}),
-    ("Control Room", "console_cols", "helvetica", "graphite", "double", "sections", "WEATHER ALERT", False, True, {}),
-    ("Situation Board", "console_cols", "clean", "slate", "bevel", "lines", "SITUATION", False, False, {}),
-    ("Instrument Panel", "console_cols", "envy", "midnight", "notch", "cascade", "INSTRUMENTS", True, True, {}),
-    ("Briefing", "console_right", "crox", "blackout", "double", "wipe", "BRIEFING", False, True, {}),
-    ("Spec Sheet", "console_right", "mplus", "slate", "corners", "fade", "SPEC SHEET", False, False, {}),
-    ("Inspector", "console_right", "gohu", "graphite", "bevel", "lines", "INSPECTOR", False, True, {}),
-    ("Ledger", "console_right_cols", "cherry", "violet", "corners", "sections", "LEDGER", False, False, {}),
-    ("Three Up", "console_right_cols", "profont", "blackout", "pulse", "cascade", "WEATHER", False, True, {}),
-    ("Dashboard", "deck", "terminus", "blackout", "notch", "cascade", "WEATHER", True, True, {}),
-    ("Cockpit", "deck", "envy", "midnight", "bevel", "lines", "COCKPIT", True, False, {}),
-    ("Mission Control", "deck", "helvetica", "graphite", "glow", "sections", "MISSION CONTROL", False, True, {}),
-    ("Status Wall", "deck", "kakwa", "cyanotype", "corners", "fade", "STATUS", False, False, {}),
-    ("Newsroom", "newsroom", "crox", "graphite", "double", "wipe", "NEWSROOM", False, True, {}),
-    ("Front Page", "newsroom", "helvetica", "blackout", "chase", "lines", "WEATHER ALERT", False, False, {}),
-    ("Bulletin", "newsroom", "typewriter", "oxide", "double", "type", "BULLETIN", False, False, {}),
-    ("Late Edition", "newsroom", "mplus", "midnight", "comet", "cascade", "LATE EDITION", False, True, {}),
-    ("Broadsheet", "newsroom_cols", "clean", "graphite", "corners", "fade", "BROADSHEET", False, False, {}),
-    ("Column Inches", "newsroom_cols", "dina", "slate", "double", "sections", "WEATHER", False, True, {}),
-    ("Gazette", "newsroom_cols", "typewriter", "sodium", "double", "type", "THE WEATHER GAZETTE", False, False, {}),
-    ("Card Board", "board", "helvetica", "blackout", "pulse", "sections", "WEATHER ALERT", False, True, {}),
-    ("Index Cards", "board", "cherry", "violet", "corners", "cascade", "ALERT", False, True, {}),
-    ("Pinboard", "board", "kakwa", "graphite", "bevel", "fade", "PINBOARD", False, False, {}),
-    ("Kanban", "board", "gohu", "slate", "notch", "lines", "KANBAN", True, False, {}),
-    ("Strip", "strip", "helvetica", "graphite", "glow", "lines", "WEATHER ALERT", False, True, {}),
-    ("Lower Third", "strip", "crox", "midnight", "rails", "wipe", "WEATHER", False, False, {}),
-    ("Status Bar", "strip", "terminus", "blackout", "scanbars", "scan", "STATUS", True, True, {}),
-    ("Signal", "strip", "neep", "signal", "lights", "blinds", "ROAD WEATHER", True, False, {}),
-    ("Paint Chip", "strip", "cherry", "oxide", "corners", "blinds", "WEATHER", False, False, {}),
+    ("Headline", "headline", "crox", "graphite", "double", "wipe", "WEATHER ALERT", False, True, {}),
+    ("Ticket", "ticket", "kakwa", "midnight", "corners", "sections", "WEATHER ALERT", False, False, {}),
+    ("Checklist", "checklist", "clean", "slate", "bevel", "cascade", "WEATHER ALERT", False, True, {}),
+    ("Big Numbers", "infographic", "terminus", "blackout", "notch", "cascade", "WEATHER", True, True, {}),
+    ("Overhead Sign", "sign", "neep", "blackout", "lights", "blinds", "ROAD WEATHER", True, False, {}),
     ("Teletype", "wire", "fixed", "phosphor", "scanbars", "type", "WWCN", True, False, {}),
-    ("Telex", "wire", "typewriter", "sodium", "double", "type", "TELEX", True, True, {}),
-    ("Wire Room", "wire", "terminus", "graphite", "corners", "type", "WIRE", True, False, {}),
-    ("Ember Wire", "wire", "spectrum", "ember", "comet", "decode", "WIRE", True, True, {}),
+    ("Colour Block", "poster", "helvetica", "graphite", "glow", "fade", "WEATHER", False, True, {}),
+    ("Now Expect Do", "kanban", "mplus", "cyanotype", "corners", "sections", "WEATHER ALERT", False, True, {}),
+    ("Strip", "strip", "dina", "oxide", "comet", "lines", "WEATHER ALERT", False, False, {}),
+    ("Level Rail", "rail", "gohu", "violet", "double", "lines", "WEATHER ALERT", False, True, {}),
+    ("Instrument Deck", "deck", "envy", "midnight", "notch", "scan", "INSTRUMENTS", True, True, {}),
+    ("Case File", "dossier", "typewriter", "sodium", "double", "type", "CASE FILE", False, False, {}),
 ]
 THEMES = {}
 for i, (name, design, fam, pal, border, rev, header, upper, pulse, opts) in enumerate(_T):

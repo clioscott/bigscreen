@@ -456,69 +456,258 @@ class Design(wa.Structure):
             sf.draw(c, cx, cy, (0, 0, 0), s)
 
 
-# ============================================================================================ console
+
+# ------------------------------------------------------------------------------------------------ key facts
+def key_facts(ctx):
+    """The weather type's key numbers for this alert (alert_facts.key_facts), cached on the alert."""
+    if not hasattr(ctx, "_kf"):
+        from display.modules import alert_facts as af
+        ctx._kf = af.key_facts(ctx, getattr(ctx, "data", None))
+    return ctx._kf
+
+
+def fact_tile(c, ctx, x, y, w, h, fact, accent=None):
+    """One fact as a tile: small label, the value on one line in the largest face that fits, a sub-line."""
+    from display.modules import alert_charts as ch
+    lab, val, sub = fact
+    val = str(val).replace(" degrees", "°").replace(" degree", "°")
+    v, unit = val, ""
+    for u in (" µg/m³", " km/h", " mm", " cm", " km", " m", " %"):
+        if str(val).endswith(u):
+            v, unit = str(val)[: -len(u)], u.strip()
+    fs = [f for f in faces(ctx, big=True) if f.h <= 24] or [ctx.fam["key"]]
+    ch.tile(c, x, y, w, h, lab, U(ctx, v), unit, U(ctx, sub or ""), ctx.pal, fs + [ctx.fam["small"]], accent or ctx.sev, tiny())
+
+
+def facts_row(c, ctx, x, y, w, h, facts, gap=4):
+    if not facts:
+        return
+    n = len(facts)
+    tw = (w - gap * (n - 1)) // n
+    for k, f in enumerate(facts):
+        fact_tile(c, ctx, x + k * (tw + gap), y, tw, h, f, (255, 255, 255) if k == 0 else None)
+
+
+def facts_col(c, ctx, x, y, w, h, facts, gap=4):
+    if not facts:
+        return
+    n = len(facts)
+    th = (h - gap * (n - 1)) // n
+    for k, f in enumerate(facts):
+        fact_tile(c, ctx, x, y + k * (th + gap), w, th, f, (255, 255, 255) if k == 0 else None)
+
+
+def tile_h(ctx):
+    return tiny().h + 5 + min(24, max(f.h for f in faces(ctx, big=True) if f.h <= 24)) + ctx.fam["small"].h + 6
+
+
+def chip_row(c, ctx, x, y, w, font=None):
+    return ap.chips(c, ctx, x, y, w, font or ctx.fam["key"], lines=1)
+
+
+# ============================================================================================ 1 console
 class Console(Design):
-    """A fact column — the alert and its level, WHERE (region grid), VALID UNTIL, AMOUNT — beside the message in
-    section panels."""
-    side = "left"
+    """A fact column — the alert and its level, WHERE (region grid), the weather type's key numbers — beside the
+    message in section panels."""
     CW = 156
 
     def metrics(self, ctx):
         x0, y0, x1, y1 = self.inner(ctx)
-        hh = y1 - y0
-        wh, uh = where_h(), when_h(ctx)
-        amin = LH() + ctx.fam["key"].h + 8
-        room = hh - wh - uh - amin - 12 - 30 - 3
-        tf, tl = title_lines(ctx, self.CW - 8, 3, max_h=max(ctx.fam["small"].line, room))
-        ah = alert_block_h(ctx, tf, tl)
-        return {"tf": tf, "tl": tl, "ah": ah, "wh": wh, "uh": uh}
-
-    def col_x(self, ctx):
-        x0, y0, x1, y1 = self.inner(ctx)
-        return x0 if self.side == "left" else x1 - self.CW
+        tf, tl = title_lines(ctx, self.CW - 8, 3, max_h=48)
+        return {"tf": tf, "tl": tl, "ah": alert_block_h(ctx, tf, tl), "wh": where_h()}
 
     def text_rect(self, ctx):
         x0, y0, x1, y1 = self.inner(ctx)
-        if self.side == "left":
-            return (x0 + self.CW + 6, y0, x1 - x0 - self.CW - 6, y1 - y0)
-        return (x0, y0, x1 - x0 - self.CW - 6, y1 - y0)
+        return (x0 + self.CW + 6, y0, x1 - x0 - self.CW - 6, y1 - y0)
 
     def facts(self, c, ctx):
         x0, y0, x1, y1 = self.inner(ctx)
         m = self.m(ctx)
-        x, w, y = self.col_x(ctx), self.CW, y0
-        alert_block(c, ctx, x, y, w, m["ah"], m["tf"], m["tl"])
-        y += m["ah"] + 4
-        where_block(c, ctx, x, y, w, m["wh"])
+        alert_block(c, ctx, x0, y0, self.CW, m["ah"], m["tf"], m["tl"])
+        y = y0 + m["ah"] + 4
+        where_block(c, ctx, x0, y, self.CW, m["wh"])
         y += m["wh"] + 4
-        when_block(c, ctx, x, y, w, m["uh"])
-        y += m["uh"] + 4
-        amount_block(c, ctx, x, y, w, y1 - y)
+        kf = key_facts(ctx)[:2]
+        if kf and y1 - y >= tile_h(ctx) - 6:
+            facts_col(c, ctx, x0, y, self.CW, y1 - y, kf[: max(1, (y1 - y) // tile_h(ctx))])
+        elif y1 - y > LH() + 8:
+            amount_block(c, ctx, x0, y, self.CW, y1 - y)
 
 
-class ConsoleCols(Console):
+# ============================================================================================ 2 headline
+class Headline(Design):
+    """Where first: the affected regions as the headline, then the alert's name with its level box, the key
+    numbers as a row of tiles, and the message in section columns."""
     arrange = "cols"
-
-
-class ConsoleRight(Console):
-    side = "right"
-
-
-class ConsoleRightCols(Console):
-    side = "right"
-    arrange = "cols"
-
-
-# ============================================================================================ deck
-class Deck(Design):
-    """Title strip; a row of fact panels — WHERE, VALID UNTIL, AMOUNT, ALERT LEVEL; the message in section
-    columns below."""
-    arrange = "cols"
+    fallbacks = ("cols", "flow", "stack")
 
     def metrics(self, ctx):
         x0, y0, x1, y1 = self.inner(ctx)
-        m = title_strip_metrics(ctx, x1 - x0)
-        m["rh"] = max(where_h(), when_h(ctx))
+        w = x1 - x0
+        k = ctx.fam["key"]
+        wf, ws = k, where_text(ctx, k, w)
+        for f in faces(ctx, big=True):
+            s = where_text(ctx, f, w)
+            if f.width(s) <= w and f.h <= 24:
+                wf, ws = f, s
+                break
+        bf = badge_font(ctx)
+        tf, ts = pick(ctx, wa.title_text(ctx), w - badge_w(ctx, bf) - 36, cap=k.h)
+        b = ctx.b
+        size = len(b.get("summary") or "") + sum(len(x) for x in (b.get("details") or []) + (b.get("impacts") or []) + (b.get("advice") or []))
+        kf = key_facts(ctx)[:3] if size < 480 else []          # long messages keep the room (the numbers are on page 3)
+        th = tile_h(ctx) if kf else 0
+        top = wf.line + 2 + max(24, tf.h) + 3 + (th + 4 if kf else 0)
+        return {"wf": wf, "ws": ws, "bf": bf, "tf": tf, "ts": ts, "kf": kf, "th": th, "top": top}
+
+    def text_rect(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        t = y0 + self.m(ctx)["top"]
+        return (x0, t, x1 - x0, y1 - t)
+
+    def facts(self, c, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        m = self.m(ctx)
+        wa.draw_home_text(c, ctx, m["wf"], x0, y0, m["ws"], ctx.pal["strong"])
+        y = y0 + m["wf"].line + 2
+        px.draw(c, px.hazard(ctx.b["hazard"]), x0, y, ctx.sev)
+        bw = level_badge(c, ctx, x0 + 30, y + (24 - m["bf"].h - 4) // 2, m["bf"])
+        m["tf"].draw(c, x0 + 36 + bw, y + (24 - m["tf"].h) // 2, ctx.sev, m["ts"])
+        y += max(24, m["tf"].h) + 3
+        if m["kf"]:
+            facts_row(c, ctx, x0, y, x1 - x0, m["th"], m["kf"])
+
+
+# ============================================================================================ 3 ticket
+class Ticket(Design):
+    """A ticket: a perforated stub on the left with the level, the weather icon and the alert's regions (one
+    per line); the body carries the alert's name and the message."""
+    SW = 118
+
+    def metrics(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        bw = x1 - x0 - self.SW - 8
+        tf, tl = title_lines(ctx, bw, 1, max_h=24)
+        return {"tf": tf, "tl": tl, "bw": bw}
+
+    def text_rect(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        m = self.m(ctx)
+        t = y0 + m["tf"].line + 6
+        return (x0 + self.SW + 8, t, m["bw"], y1 - t)
+
+    def facts(self, c, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        m = self.m(ctx)
+        k, sf = ctx.fam["key"], ctx.fam["small"]
+        sw = self.SW
+        c.FillRect(x0, y0, sw, y1 - y0, Color(*ctx.pal["panel"]))
+        c.FillRect(x0, y0, sw, 2, Color(*ctx.sev))
+        for yy in range(y0 + 4, y1 - 2, 4):                       # perforation
+            c.FillRect(x0 + sw + 3, yy, 1, 2, Color(*_dim(ctx.pal["dim"], 0.8)))
+        for cy in (y0, y1 - 1):
+            c.FillRect(x0 + sw + 1, cy - 2 if cy == y0 else cy - 2, 5, 3, Color(*ctx.pal["bg"]))
+        bf = badge_font(ctx, cap=max(k.h, 16))
+        level_badge(c, ctx, x0 + (sw - badge_w(ctx, bf)) // 2, y0 + 6, bf, h=bf.h + 6)
+        px.draw(c, px.hazard(ctx.b["hazard"]), x0 + (sw - 24) // 2, y0 + bf.h + 16, ctx.sev)
+        y = y0 + bf.h + 46
+        tiny().draw(c, x0 + 5, y, ctx.pal["dim"], "AREAS")
+        y += tiny().h + 3
+        lines = region_lines(ctx, sf, sw - 10)
+        for i, (name, t) in enumerate(lines):
+            if y + sf.h > y1 - 3:
+                tiny().draw(c, x0 + 5, y - 1, ctx.pal["dim"], f"+{len(lines) - i} MORE")
+                break
+            home = ap.is_home(ctx, name)
+            if home:
+                c.FillRect(x0 + 3, y - 1, sf.width(t) + 4, sf.h + 2, Color(*ctx.sev))
+            sf.draw(c, x0 + 5, y, (0, 0, 0) if home else ctx.pal["strong"], t)
+            y += sf.line
+        bx = x0 + sw + 8
+        m["tf"].draw(c, bx, y0, ctx.sev, m["tl"][0] if m["tl"] else "")
+        c.FillRect(bx, y0 + m["tf"].line + 2, m["bw"], 1, Color(*_dim(ctx.sev, 0.5)))
+
+
+# ============================================================================================ 4 checklist
+class Checklist(Design):
+    """What to do as a checklist: the situation and impacts on the left, the advice on the right as tick-box
+    items, the regions as chips above them."""
+
+    def metrics(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        m = title_strip_metrics(ctx, x1 - x0, with_until=False)
+        m["cw"] = int((x1 - x0) * 0.42)
+        m["chip_h"] = ctx.fam["key"].h + 4
+        return m
+
+    def text_rect(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        t = y0 + self.m(ctx)["hh"] + 4
+        return (x0, t, x1 - x0, y1 - t)
+
+    def flow(self, ctx, paras, boxes, fonts, gap=3):
+        x, y, w, h = self.text_area(ctx)
+        m = self.m(ctx)
+        cw = m["cw"]
+        adv = [i for i, p in enumerate(paras) if p["style"] == "advice"]
+        rest = [g for g in section_groups(paras) if g[0] != "What to do"]
+        lw = w - (cw + 6 if adv else 0)
+        lines, panels, over = arrange_stack(ctx, paras, rest, (x, y, lw, h), fonts, gap) if rest else ([], [], False)
+        ctx.checks = []
+        if adv:
+            rx = x + lw + 6
+            top = y + m["chip_h"] + 4
+            panels.append((rx, top, cw, y + h - top, "What to do", "check"))
+            # one tick box per advice sentence
+            yy = top + LH() + 3
+            items = []
+            for i in adv:
+                for s in alert_brief_sentences(paras[i]["text"]):
+                    items.append(dict(paras[i], text=s))
+            for it in items:
+                ls, o = wa.layout([it], [(rx + 14, yy, cw - 18, y + h - yy - 2)], fonts, ctx.pal, ctx.upper, prefix="none",
+                                  gap=gap, home=ctx.home_name)
+                for ln in ls:
+                    ln["para"] = adv[0]
+                if ls:
+                    ctx.checks.append((rx + 4, ls[0]["y"] + (ls[0]["h"] - 7) // 2))
+                    yy = ls[-1]["y"] + ls[-1]["h"] + gap + 1
+                lines += ls
+                over = over or o
+        ctx.panels = panels
+        return lines, over
+
+    def facts(self, c, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        m = self.m(ctx)
+        title_strip(c, ctx, x0, y0, x1 - x0, m)
+        x, y, w, h = self.text_area(ctx)
+        if any(p[4] == "What to do" for p in getattr(ctx, "panels", [])):
+            rx = x + w - m["cw"]
+            chip_row(c, ctx, rx, y, m["cw"])
+        for cx, cy in getattr(ctx, "checks", []):
+            frame(c, cx, cy, 7, 7, ctx.pal["advice"])
+            c.FillRect(cx + 2, cy + 3, 1, 2, Color(*ctx.pal["advice"]))
+            c.FillRect(cx + 3, cy + 4, 1, 1, Color(*ctx.pal["advice"]))
+            c.FillRect(cx + 4, cy + 2, 1, 2, Color(*ctx.pal["advice"]))
+
+
+def alert_brief_sentences(text):
+    from display.modules import alert_brief
+    return alert_brief._sentences(text) or [text]
+
+
+# ============================================================================================ 5 infographic
+class Infographic(Design):
+    """Numbers first: the weather type's key numbers as big tiles beside the region grid, the alert's name above
+    them, the message in columns below."""
+    arrange = "cols"
+    fallbacks = ("cols", "flow", "stack")
+
+    def metrics(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        m = title_strip_metrics(ctx, x1 - x0, with_until=False)
+        m["rh"] = max(where_h(), tile_h(ctx))
         return m
 
     def text_rect(self, ctx):
@@ -530,148 +719,73 @@ class Deck(Design):
     def facts(self, c, ctx):
         x0, y0, x1, y1 = self.inner(ctx)
         m = self.m(ctx)
-        title_strip(c, ctx, x0, y0, x1 - x0, dict(m, us=""))
-        y = y0 + m["hh"] + 3
-        cw = min(ap.cart_size(tiny())[0], 170) + 6
-        rest = (x1 - x0 - cw - 12) // 3
-        where_block(c, ctx, x0, y, cw, m["rh"])
-        when_block(c, ctx, x0 + cw + 4, y, rest, m["rh"])
-        amt = bool(ctx.b["amount"])
-        x = x0 + cw + 8 + rest
-        if amt:
-            amount_block(c, ctx, x, y, rest, m["rh"])
-            x += rest + 4
-            lw = x1 - x
-        else:
-            lw = x1 - x
-        panel(c, ctx, x, y, lw, m["rh"], "Alert level")
-        lh = min(m["rh"] - LH() - 4, tiny().h + 7)
-        ap.severity_ladder(c, ctx, x + 3, y + LH() + 2 + (m["rh"] - LH() - 4 - lh) // 2, lw - 6, lh, tiny(), ctx.t, vertical=False)
-
-
-# ============================================================================================ newsroom
-class Newsroom(Design):
-    """Title strip; the message in section panels on the left, a fact column (WHERE, VALID UNTIL, AMOUNT) on
-    the right."""
-    RW = 160
-
-    def metrics(self, ctx):
-        x0, y0, x1, y1 = self.inner(ctx)
-        return title_strip_metrics(ctx, x1 - x0, with_until=False)
-
-    def text_rect(self, ctx):
-        x0, y0, x1, y1 = self.inner(ctx)
-        t = y0 + self.m(ctx)["hh"] + 3
-        return (x0, t, x1 - x0 - self.RW - 6, y1 - t)
-
-    def facts(self, c, ctx):
-        x0, y0, x1, y1 = self.inner(ctx)
-        m = self.m(ctx)
         title_strip(c, ctx, x0, y0, x1 - x0, m)
-        x, y = x1 - self.RW, y0 + m["hh"] + 3
-        wh, uh = where_h(), when_h(ctx)
-        where_block(c, ctx, x, y, self.RW, wh)
-        y += wh + 4
-        when_block(c, ctx, x, y, self.RW, uh)
-        y += uh + 4
-        amount_block(c, ctx, x, y, self.RW, y1 - y)
+        y = y0 + m["hh"] + 3
+        gw = min(ap.cart_size(tiny())[0], 170) + 6
+        where_block(c, ctx, x1 - gw, y, gw, m["rh"])
+        kf = key_facts(ctx)[:3]
+        if kf:
+            facts_row(c, ctx, x0, y, x1 - x0 - gw - 4, m["rh"], kf)
+        else:
+            amount_block(c, ctx, x0, y, x1 - x0 - gw - 4, m["rh"])
 
 
-class NewsroomCols(Newsroom):
-    arrange = "flow"
-
-
-# ============================================================================================ board
-class Board(Design):
-    """A board of cards: the alert, WHERE and WHEN / AMOUNT along the top; the message sections as cards along
-    the bottom."""
+# ============================================================================================ 6 sign
+class Sign(Design):
+    """An overhead variable-message sign: what · where · the key number, lit in the weather's colour between a
+    flashing beacon (in the level's colour); the message in panels below."""
     arrange = "cols"
+    fallbacks = ("cols", "flow", "stack")
 
     def metrics(self, ctx):
         x0, y0, x1, y1 = self.inner(ctx)
         k = ctx.fam["key"]
-        rh = max(where_h(), 30 + 2 * k.line + 3)
-        aw = 150
-        tf, tl = title_lines(ctx, aw - 8, 2, max_h=rh - 31)
-        return {"rh": rh, "aw": aw, "tf": tf, "tl": tl}
+        bf = badge_font(ctx)
+        w = x1 - x0 - 2 * (badge_w(ctx, bf) + 14)
+        tf, ts = pick(ctx, wa.title_text(ctx).upper(), w, big=True, cap=20)
+        wf, ws = k, where_text(ctx, k, w).upper()
+        for f in faces(ctx, cap=k.h):
+            s_ = where_text(ctx, f, w).upper()
+            if f.width(s_) <= w:
+                wf, ws = f, s_
+                break
+        kf = key_facts(ctx)[:1]
+        l3 = (f"{kf[0][0]}: {kf[0][1]}" if kf else "").upper()
+        lf, ls = pick(ctx, l3, w, cap=k.h)
+        sh = tf.line + wf.line + (lf.line if ls else 0) + 10
+        return {"tf": tf, "ts": ts, "wf": wf, "ws": ws, "lf": lf, "ls": ls, "sh": sh, "bf": bf}
 
     def text_rect(self, ctx):
         x0, y0, x1, y1 = self.inner(ctx)
-        t = y0 + self.m(ctx)["rh"] + 4
+        t = y0 + self.m(ctx)["sh"] + 5
         return (x0, t, x1 - x0, y1 - t)
 
     def facts(self, c, ctx):
         x0, y0, x1, y1 = self.inner(ctx)
         m = self.m(ctx)
-        rh, aw = m["rh"], m["aw"]
-        alert_block(c, ctx, x0, y0, aw, rh, m["tf"], m["tl"])
-        cw = min(ap.cart_size(tiny())[0], 150) + 6
-        where_block(c, ctx, x0 + aw + 4, y0, cw, rh)
-        x = x0 + aw + cw + 8
-        w = x1 - x
-        if ctx.b["amount"]:
-            half = (rh - 4) // 2 + 2
-            when_block(c, ctx, x, y0, w, rh - half)
-            amount_block(c, ctx, x, y0 + rh - half + 4, w, half - 4)
-        else:
-            when_block(c, ctx, x, y0, w, rh)
+        sh = m["sh"]
+        c.FillRect(x0, y0, x1 - x0, sh, Color(58, 60, 66))
+        c.FillRect(x0 + 3, y0 + 3, x1 - x0 - 6, sh - 6, Color(0, 0, 0))
+        level_badge(c, ctx, x0 + 8, y0 + (sh - m["bf"].h - 4) // 2, m["bf"])
+        lit = ap._mix(ctx.sev, (255, 255, 255), 0.15)
+        cx, y = (x0 + x1) // 2, y0 + 5
+        for f, s_, col in ((m["tf"], m["ts"], lit), (m["wf"], m["ws"], lit), (m["lf"], m["ls"], ctx.pal["amount"])):
+            if s_:
+                f.draw(c, cx - f.width(s_) // 2, y, col, s_)
+                y += f.line
 
-
-# ============================================================================================ strip
-class Strip(Design):
-    """The alert's name with the region grid beside it; the message in full-width section panels; a status bar
-    along the foot — VALID UNTIL, TIME LEFT, AMOUNT."""
-
-    def metrics(self, ctx):
+    def moving(self, c, ctx, seg, p):
         x0, y0, x1, y1 = self.inner(ctx)
-        cw, ch = ap.cart_size(tiny())
-        cw = min(cw, 200)
-        lw = x1 - x0 - cw - 8
-        bf = badge_font(ctx)
-        top = bf.h + 6                                            # level box + status on the first row
-        tf, tl = title_lines(ctx, lw - 30, 2, max_h=max(ch + 8 - top, ctx.fam["small"].line))
-        th = max(ch, top + len(tl) * tf.line, 24) + 2
-        sb = LH() + ctx.fam["key"].line + 2
-        return {"cw": cw, "ch": ch, "lw": lw, "bf": bf, "top": top, "tf": tf, "tl": tl, "th": th, "sb": sb}
-
-    def text_rect(self, ctx):
-        x0, y0, x1, y1 = self.inner(ctx)
-        m = self.m(ctx)
-        t = y0 + m["th"] + 4
-        return (x0, t, x1 - x0, y1 - t - m["sb"] - 4)
-
-    def facts(self, c, ctx):
-        x0, y0, x1, y1 = self.inner(ctx)
-        m = self.m(ctx)
-        k, sf = ctx.fam["key"], ctx.fam["small"]
-        px.draw(c, px.hazard(ctx.b["hazard"]), x0, y0 + (m["th"] - 24) // 2, ctx.sev)
-        bw = level_badge(c, ctx, x0 + 30, y0, m["bf"])
-        sf.draw(c, x0 + 36 + bw, y0 + (m["bf"].h + 4 - sf.h) // 2, ctx.pal["dim"], fit(sf, status_word(ctx), m["lw"] - 40 - bw))
-        for i, ln in enumerate(m["tl"]):
-            m["tf"].draw(c, x0 + 30, y0 + m["top"] + i * m["tf"].line, ctx.sev, ln)
-        ap.cartogram(c, ctx, x1 - m["cw"], y0 + (m["th"] - m["ch"]) // 2, tiny(), w=m["cw"], h=m["ch"])
-        # status bar
-        y = y1 - m["sb"]
-        b = ctx.b
-        cells = [("Valid until", U(ctx, b["until"] or "further notice"), ctx.pal["strong"])]
-        r = ap.remaining_text(ctx)
-        if r:
-            cells.append(("Time left", r, ctx.pal["strong"]))
-        cells.append(("Amount", U(ctx, b["amount"]), ctx.pal["amount"]) if b["amount"] else ("Level", kind_word(ctx), ctx.level))
-        if b["issued"]:
-            cells.append(("Issued", U(ctx, b["issued"]), ctx.pal["text"]))
-        cw = (x1 - x0 - 4 * (len(cells) - 1)) // len(cells)
-        for i, (lab, val, col) in enumerate(cells):
-            x = x0 + i * (cw + 4)
-            panel(c, ctx, x, y, cw, m["sb"], lab)
-            f, s = pick(ctx, val, cw - 8, cap=k.h)
-            f.draw(c, x + 4, y + LH() + 1, col, s)
+        sh = self.m(ctx)["sh"]
+        on = int(ctx.t * 1.6) % 2
+        sz = min(14, sh - 12)
+        c.FillRect(x1 - 8 - sz, y0 + (sh - sz) // 2, sz, sz, Color(*(ctx.level if on else _dim(ctx.level, 0.15))))
 
 
-# ============================================================================================ wire
+# ============================================================================================ 7 wire
 class Wire(Design):
-    """The bulletin as it comes off the wire (tagged WHAT / INFO / EXPECT / DO), with a fact column: the level,
-    AREAS (affected only, home in its tint), VALID UNTIL and AMOUNT."""
+    """The bulletin as it comes off the wire (tagged WHAT / INFO / EXPECT / DO), with a column for the level, the
+    affected AREAS (home in its tint) and the key numbers."""
     CODES = {"rain": 11, "snow": 12, "freezing": 13, "wind": 14, "thunder": 15, "tornado": 16, "flood": 17, "heat": 18,
              "cold": 19, "frost": 20, "fog": 21, "smoke": 22, "general": 23}
     RW = 124
@@ -695,12 +809,13 @@ class Wire(Design):
 
     def flow(self, ctx, paras, boxes, fonts, gap=3):
         ctx.panels = []
-        return wa.layout(paras, [self.text_area(ctx)], fonts, ctx.pal, True, prefix="tag", gap=gap, home=ctx.home_name)
+        lines, over = wa.layout(paras, [self.text_area(ctx)], fonts, ctx.pal, True, prefix="tag", gap=gap, home=ctx.home_name)
+        return lines, over
 
     def facts(self, c, ctx):
         x0, y0, x1, y1 = self.inner(ctx)
         m = self.m(ctx)
-        sf, k = ctx.fam["small"], ctx.fam["key"]
+        sf = ctx.fam["small"]
         (f1, s1), (f2, s2) = m["h1"], m["h2"]
         f1.draw(c, x0, y0, ctx.pal["dim"], s1)
         f2.draw(c, x0, y0 + f1.line, ctx.sev, s2)
@@ -711,23 +826,19 @@ class Wire(Design):
         level_badge(c, ctx, x, y, bf, h=bf.h + 6)
         y += bf.h + 10
         labs = ap.labels(ctx)
-        ah = LH() + len(labs) * sf.line + 4
-        uh = when_h(ctx)
-        amt_h = LH() + k.h + 6 if ctx.b["amount"] else 0
-        ah = min(ah, y1 - y - uh - amt_h - 8)
+        kf = key_facts(ctx)[:2]
+        th = tile_h(ctx)
+        ah = min(LH() + len(labs) * sf.line + 4, y1 - y - len(kf) * (th + 4))
         panel(c, ctx, x, y, w, ah, "Areas")
         yy = y + LH() + 2
         for i, (name, code) in enumerate(labs):
             if yy + sf.h > y + ah - 2:
-                sf.draw(c, x + 4, yy - sf.line, ctx.pal["dim"], f"+{len(labs) - i} more")
                 break
             sf.draw(c, x + 4, yy, ap.HOME_TINT if ap.is_home(ctx, name) else ctx.pal["strong"], code)
             yy += sf.line
         y += ah + 4
-        when_block(c, ctx, x, y, w, uh)
-        y += uh + 4
-        if amt_h:
-            amount_block(c, ctx, x, y, w, min(amt_h, y1 - y))
+        if kf:
+            facts_col(c, ctx, x, y, w, y1 - y, kf)
 
     def moving(self, c, ctx, seg, p):
         lines = seg["lines"]
@@ -741,6 +852,250 @@ class Wire(Design):
                     c.FillRect(x, ln["y"], max(4, last[2].width("M") - 1), ln["h"], Color(*ctx.pal["strong"]))
 
 
-STRUCT_IMPL = {"console": Console(), "console_cols": ConsoleCols(), "console_right": ConsoleRight(),
-               "console_right_cols": ConsoleRightCols(), "deck": Deck(), "newsroom": Newsroom(), "newsroom_cols": NewsroomCols(),
-               "board": Board(), "strip": Strip(), "wire": Wire(), "briefing": Console()}   # "briefing": fallback id
+# ============================================================================================ 8 poster
+class Poster(Design):
+    """A colour block in the weather's own colour with the icon, level box, name and regions in large type; the
+    message in panels to its right."""
+
+    def metrics(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        lw = 150
+        tf, tl = title_lines(ctx, lw - 12, 3, max_h=72)
+        return {"lw": lw, "tf": tf, "tl": tl}
+
+    def text_rect(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        lw = self.m(ctx)["lw"]
+        return (x0 + lw + 6, y0, x1 - x0 - lw - 6, y1 - y0)
+
+    def facts(self, c, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        m = self.m(ctx)
+        k, sf = ctx.fam["key"], ctx.fam["small"]
+        lw, iw = m["lw"], m["lw"] - 12
+        col = ctx.sev
+        ink = (0, 0, 0) if sum(col) > 330 else (255, 255, 255)
+        c.FillRect(x0, y0, lw, y1 - y0, Color(*col))
+        x, y = x0 + 6, y0 + 5
+        px.draw(c, px.hazard(ctx.b["hazard"]), x, y, ink)
+        bf = badge_font(ctx)
+        c.FillRect(x + 29, y + (24 - bf.h - 4) // 2 - 1, badge_w(ctx, bf) + 2, bf.h + 6, Color(0, 0, 0))
+        level_badge(c, ctx, x + 30, y + (24 - bf.h - 4) // 2, bf)
+        y += 28
+        for ln in m["tl"]:
+            m["tf"].draw(c, x, y, ink, ln)
+            y += m["tf"].line
+        y += 4
+        kf = key_facts(ctx)[:1]
+        bottom = y1 - (k.line + sf.line + 8 if kf else 2)
+        for i, (name, t) in enumerate(region_lines(ctx, k, iw)):
+            f, s_ = pick(ctx, t, iw, cap=k.h)
+            if y + f.h > bottom:
+                break
+            if ap.is_home(ctx, name):
+                c.FillRect(x - 2, y - 1, f.width(s_) + 4, f.h + 2, Color(*ink))
+                f.draw(c, x, y, col, s_)
+            else:
+                f.draw(c, x, y, ink, s_)
+            y += f.line
+        if kf:
+            lab, val, sub = kf[0]
+            sf.draw(c, x, y1 - k.line - sf.line - 5, ink, fit(sf, U(ctx, lab).upper(), iw))
+            f, s_ = pick(ctx, U(ctx, val), iw, cap=k.h)
+            f.draw(c, x, y1 - k.line - 3, ink, s_)
+
+
+# ============================================================================================ 9 kanban
+class Kanban(Design):
+    """Three columns — NOW, EXPECT, DO — under a header with the name, the regions as chips and the level; the
+    columns are as wide as their text needs."""
+    arrange = "cols"
+    fallbacks = ("cols",)
+
+    def metrics(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        m = title_strip_metrics(ctx, x1 - x0, with_until=False)
+        m["chip_h"] = ctx.fam["key"].h + 4
+        return m
+
+    def text_rect(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        m = self.m(ctx)
+        t = y0 + m["hh"] + 3 + m["chip_h"] + 5
+        return (x0, t, x1 - x0, y1 - t)
+
+    def flow(self, ctx, paras, boxes, fonts, gap=3):
+        lines, over = super().flow(ctx, paras, boxes, fonts, gap)
+        names = {"Situation": "Now", "Impacts": "Expect", "What to do": "Do"}
+        ctx.panels = [(a, b_, w, h, names.get(lab, lab), ic) for a, b_, w, h, lab, ic in ctx.panels]
+        return lines, over
+
+    def facts(self, c, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        m = self.m(ctx)
+        title_strip(c, ctx, x0, y0, x1 - x0, m)
+        chip_row(c, ctx, x0, y0 + m["hh"] + 3, x1 - x0)
+
+
+# ============================================================================================ 10 strip
+class Strip(Design):
+    """The alert's name with the region grid beside it; the message in full-width section panels; the key numbers
+    along the foot."""
+
+    def metrics(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        cw, ch_ = ap.cart_size(tiny())
+        cw = min(cw, 200)
+        lw = x1 - x0 - cw - 8
+        bf = badge_font(ctx)
+        top = bf.h + 6
+        tf, tl = title_lines(ctx, lw - 30, 2, max_h=max(ch_ + 8 - top, ctx.fam["small"].line))
+        th = max(ch_, top + len(tl) * tf.line, 24) + 2
+        kf = key_facts(ctx)[:3]
+        sb = tile_h(ctx) if kf else 0
+        return {"cw": cw, "ch": ch_, "lw": lw, "bf": bf, "top": top, "tf": tf, "tl": tl, "th": th, "sb": sb, "kf": kf}
+
+    def text_rect(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        m = self.m(ctx)
+        t = y0 + m["th"] + 4
+        return (x0, t, x1 - x0, y1 - t - (m["sb"] + 4 if m["sb"] else 0))
+
+    def facts(self, c, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        m = self.m(ctx)
+        sf = ctx.fam["small"]
+        px.draw(c, px.hazard(ctx.b["hazard"]), x0, y0 + (m["th"] - 24) // 2, ctx.sev)
+        bw = level_badge(c, ctx, x0 + 30, y0, m["bf"])
+        sf.draw(c, x0 + 36 + bw, y0 + (m["bf"].h + 4 - sf.h) // 2, ctx.pal["dim"], fit(sf, status_word(ctx), m["lw"] - 40 - bw))
+        for i, ln in enumerate(m["tl"]):
+            m["tf"].draw(c, x0 + 30, y0 + m["top"] + i * m["tf"].line, ctx.sev, ln)
+        ap.cartogram(c, ctx, x1 - m["cw"], y0 + (m["th"] - m["ch"]) // 2, tiny(), w=m["cw"], h=m["ch"])
+        if m["kf"]:
+            facts_row(c, ctx, x0, y1 - m["sb"], x1 - x0, m["sb"], m["kf"])
+
+
+# ============================================================================================ 11 rail
+class Rail(Design):
+    """The four alert levels as a rail down the left edge (this one lit); the name and regions across the top;
+    the message beside the rail, with a key number tile at the top right."""
+
+    def metrics(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        sf = ctx.fam["small"]
+        rf = sf if sf.width("STATEMENT") + 8 <= 64 else tiny()
+        rw = max(rf.width(lab) for _, lab in ap.LEVELS) + 8
+        rx = x0 + rw + 6
+        kf = key_facts(ctx)[:1]
+        kw = 120 if kf else 0
+        tf, ts = pick(ctx, wa.title_text(ctx), x1 - rx - 30 - kw - 6, big=True, cap=24)
+        hh = max(24, tf.h) + 2
+        top = max(hh + ctx.fam["key"].h + 8, tile_h(ctx) if kf else 0) + 3
+        return {"rf": rf, "rw": rw, "rx": rx, "kf": kf, "kw": kw, "tf": tf, "ts": ts, "hh": hh, "top": top}
+
+    def text_rect(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        m = self.m(ctx)
+        return (m["rx"], y0 + m["top"], x1 - m["rx"], y1 - y0 - m["top"])
+
+    def facts(self, c, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        m = self.m(ctx)
+        rx = m["rx"]
+        px.draw(c, px.hazard(ctx.b["hazard"]), rx, y0 + (m["hh"] - 24) // 2, ctx.sev)
+        m["tf"].draw(c, rx + 30, y0 + (m["hh"] - m["tf"].h) // 2, ctx.sev, m["ts"])
+        chip_row(c, ctx, rx, y0 + m["hh"] + 2, x1 - rx - m["kw"] - 6)
+        if m["kf"]:
+            fact_tile(c, ctx, x1 - m["kw"], y0, m["kw"], m["top"] - 4, m["kf"][0], (255, 255, 255))
+
+    def moving(self, c, ctx, seg, p):
+        x0, y0, x1, y1 = self.inner(ctx)
+        m = self.m(ctx)
+        ap.severity_ladder(c, ctx, x0, y0, m["rw"], y1 - y0, m["rf"], ctx.t)
+
+
+# ============================================================================================ 12 deck
+class Deck(Design):
+    """A strip of instruments under the title — WHERE (region grid), the key numbers, the level scale — and the
+    message in section columns below."""
+    arrange = "cols"
+    fallbacks = ("cols", "flow", "stack")
+
+    def metrics(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        m = title_strip_metrics(ctx, x1 - x0, with_until=False)
+        m["rh"] = max(where_h(), tile_h(ctx))
+        return m
+
+    def text_rect(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        m = self.m(ctx)
+        t = y0 + m["hh"] + 3 + m["rh"] + 4
+        return (x0, t, x1 - x0, y1 - t)
+
+    def facts(self, c, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        m = self.m(ctx)
+        title_strip(c, ctx, x0, y0, x1 - x0, m)
+        y = y0 + m["hh"] + 3
+        gw = min(ap.cart_size(tiny())[0], 166) + 6
+        where_block(c, ctx, x0, y, gw, m["rh"])
+        lvw = 92
+        kf = key_facts(ctx)[:2]
+        fx = x0 + gw + 4
+        fw = x1 - fx - lvw - 4
+        if kf:
+            facts_row(c, ctx, fx, y, fw, m["rh"], kf)
+        else:
+            amount_block(c, ctx, fx, y, fw, m["rh"])
+        lx = x1 - lvw
+        panel(c, ctx, lx, y, lvw, m["rh"], "Alert level")
+        ap.severity_ladder(c, ctx, lx + 3, y + LH() + 2, lvw - 6, m["rh"] - LH() - 5, tiny(), ctx.t)
+
+
+# ============================================================================================ 13 dossier
+class Dossier(Design):
+    """A case file: a tab with the level on top of a folder; the name and regions on the folder's label; the
+    message in two columns of section panels; the key numbers in a margin column."""
+    arrange = "flow"
+    fallbacks = ("flow", "stack", "cols")
+    MW = 112
+
+    def metrics(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        bf = badge_font(ctx)
+        tab = bf.h + 6
+        tf, ts = pick(ctx, wa.title_text(ctx), x1 - x0 - 40, big=True, cap=20)
+        lh = max(24, tf.h) + 2
+        return {"bf": bf, "tab": tab, "tf": tf, "ts": ts, "lh": lh, "kf": key_facts(ctx)[:3]}
+
+    def text_rect(self, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        m = self.m(ctx)
+        t = y0 + m["tab"] + m["lh"] + 6
+        mw = self.MW + 6 if m["kf"] else 0
+        return (x0 + 3, t, x1 - x0 - 6 - mw, y1 - t - 3)
+
+    def facts(self, c, ctx):
+        x0, y0, x1, y1 = self.inner(ctx)
+        m = self.m(ctx)
+        tab = m["tab"]
+        bw = badge_w(ctx, m["bf"]) + 16
+        c.FillRect(x0, y0, bw, tab, Color(*ctx.pal["panel"]))
+        level_badge(c, ctx, x0 + 8, y0 + 1, m["bf"])
+        frame(c, x0, y0 + tab, x1 - x0, y1 - y0 - tab, _dim(ctx.sev, 0.5))
+        c.FillRect(x0, y0 + tab, x1 - x0, 1, Color(*ctx.sev))
+        ly = y0 + tab + 3
+        px.draw(c, px.hazard(ctx.b["hazard"]), x0 + 4, ly, ctx.sev)
+        m["tf"].draw(c, x0 + 34, ly + (m["lh"] - 2 - m["tf"].h) // 2, ctx.sev, m["ts"])
+        sf = ctx.fam["small"]
+        ws = where_text(ctx, sf, x1 - x0 - 40 - bw)
+        sf.draw(c, x0 + bw + 8, y0 + (tab - sf.h) // 2, ctx.pal["strong"], ws)
+        if m["kf"]:
+            x, y, w, h = self.text_rect(ctx)
+            facts_col(c, ctx, x1 - 3 - self.MW, y, self.MW, h, m["kf"])
+
+
+STRUCT_IMPL = {"console": Console(), "headline": Headline(), "ticket": Ticket(), "checklist": Checklist(),
+               "infographic": Infographic(), "sign": Sign(), "wire": Wire(), "poster": Poster(), "kanban": Kanban(),
+               "strip": Strip(), "rail": Rail(), "deck": Deck(), "dossier": Dossier()}

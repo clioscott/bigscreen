@@ -494,6 +494,11 @@ def _page_pack(data_dir, pid, check_only=False):
     return meta, frames
 
 
+def _alert_data(data_dir):
+    from display.modules import alert_facts
+    return alert_facts.data(data_dir)
+
+
 _SHOWINGS = [0]           # how many times the alert screen has come round (theme rotation)
 
 
@@ -624,8 +629,10 @@ class AlertScreen:
             ctx.pal["home_bg"] = sev
             ctx.area = "Metro Vancouver" if b["test"] else self.area()
             ctx.index, ctx.count = ai, len(alerts)
+            ctx.data = _alert_data(self._data_dir())          # forecast numbers for the key facts / special page
             ctx.title_f = struct.title_font(ctx)
-            b["_issued_ts"], b["_expires_ts"] = a.get("published"), a.get("expires")
+            b["_issued_ts"], b["_expires_ts"], b["_event_end"] = a.get("published"), a.get("expires"), a.get("event_end")
+            b["source"] = a.get("source") or "eccc"
             # density is a global choice (Dense / Balanced / Minimal) applied to whichever design is shown
             density = density_of(st)
             if density == "minimal":
@@ -693,6 +700,16 @@ class AlertScreen:
             segs.append({"alert": ai, "ctx": ctx, "lines": lines, "paras": use, "fonts": fonts, "start": t,
                          "reveal": reveal_t, "hold": hold})
             t += reveal_t + hold
+            # page 2: the alert's own details; page 3: the weather type's special page
+            isec = max(6.0, float(st.get("info_sec") or 12))
+            if st.get("show_details", True) is not False:
+                segs.append({"alert": ai, "ctx": ctx, "kind": "details", "lines": [], "paras": [], "fonts": fonts,
+                             "start": t, "reveal": 0.5, "hold": isec - 0.5})
+                t += isec
+            if st.get("show_special", True) is not False and b["source"] == "eccc" and _alert_data(self._data_dir()):
+                segs.append({"alert": ai, "ctx": ctx, "kind": "special", "lines": [], "paras": [], "fonts": fonts,
+                             "start": t, "reveal": 0.5, "hold": isec - 0.5})
+                t += isec
             amap = a.get("map") or (self._sample_map() if b["test"] else None)
             if amap and st.get("show_map", True) is not False:
                 msec = max(4.0, float(st.get("map_sec") or 9))
@@ -725,6 +742,25 @@ class AlertScreen:
     def _sample_map(self):
         data = (self.loader.get_data("alerts") if self.loader else None) or {}
         return (data.get("sample_maps") or {}).get(self.settings.get("sample") or "rain") or data.get("sample_map")
+
+    def _draw_info(self, c, seg, ctx, th):
+        """The details / special page, drawn once per showing (they don't move) and reused."""
+        from display.modules import alert_specials
+        key = (self._plan_key, id(seg), seg["kind"], int(time.time() // 60))
+        cache = getattr(self, "_info_cache", None)
+        if cache and cache[0] == key:
+            c.buf[:] = cache[1]
+            return True
+        struct = STRUCT_IMPL.get(th["structure"]) or STRUCT_IMPL["console"]
+        inner = struct.inner(ctx)
+        if seg["kind"] == "details":
+            alert_specials.details(c, ctx, inner)
+            ok = True
+        else:
+            ok = alert_specials.special(c, ctx, inner, _alert_data(self._data_dir()))
+        if ok:
+            self._info_cache = (key, c.buf.copy())
+        return ok
 
     def _data_dir(self):
         return getattr(self.loader, "data_dir", None) or self.settings.get("_data_dir")
@@ -885,13 +921,9 @@ class AlertScreen:
         return None
 
     def _label(self, c, text, frac=None):
-        """A caption bar along the foot (tours and control-panel reviews say what's on the wall)."""
-        f = FI("alert/5x8.bdf")
-        w = min(W - 8, f.width(text))
-        c.FillRect(4, H - 13, w + 2, 10, Color(0, 0, 0))
-        f.draw(c, 5, H - 12, (255, 255, 255), text)
-        if frac is not None:
-            c.FillRect(4, H - 3, int((W - 8) * max(0.0, min(1.0, frac))), 1, Color(255, 255, 255))
+        """Tours and reviews used to caption the wall; the control panel says what's playing, and a caption hid
+        the bottom of the screen, so nothing is drawn."""
+        return
 
     def _draw(self, c, entry, transition, now):
         alerts = self.alerts(entry)
@@ -922,6 +954,15 @@ class AlertScreen:
         ctx.index, ctx.count = seg["alert"], len({x["alert"] for x in segs})
         local = t - seg["start"]
         p = min(1.0, local / seg["reveal"]) if seg["reveal"] > 0 else 1.0
+        if seg.get("kind") in ("details", "special") and self._draw_info(c, seg, ctx, th):
+            draw_border(c, th["border"], ctx.sev if ctx.home or not ctx.home_name else _dim(ctx.sev, 0.5), t)
+            if self.settings.get("review_label") and not self._tour:
+                self._label(c, f" {self.settings['review_label']} ")
+            if t >= plan["total"]:
+                self._t0 = now
+                self._static = None
+                return "done"
+            return None
         if seg.get("kind") == "page" and self._draw_page(c, seg, ctx, local):
             draw_border(c, th["border"], ctx.sev if ctx.home or not ctx.home_name else _dim(ctx.sev, 0.5), t)
             if self.settings.get("review_label") and not self._tour:
@@ -1349,7 +1390,8 @@ def timeline(settings=None, alerts_data=None):
     plan = scr._plan_for(alerts, th, scr.family(th))
     return {"total": round(plan["total"], 2),
             "pages": [{"start": round(x["start"], 2), "reveal": round(x["reveal"], 2), "hold": round(x["hold"], 2),
-                       "label": ({"map": "MAP · ", "page": f"{x.get('page', '').upper()} · "}.get(x.get("kind"), "")) + x["ctx"].b["title"],
+                       "label": ({"map": "MAP · ", "details": "DETAILS · ", "special": "DATA · ",
+                                  "page": f"{x.get('page', '').upper()} · "}.get(x.get("kind"), "")) + x["ctx"].b["title"],
                        "alert": x["alert"], "kind": x.get("kind") or "text", "page": x.get("page"),
                        "font_px": x["fonts"]["reg"].h}
                       for x in plan["segs"]]}
