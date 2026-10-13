@@ -917,10 +917,7 @@ class AlertScreen:
             chip(c, x, 2 + (band - k_f.h - 2) // 2, lab, k_f, ctx.level, (0, 0, 0))
         b = ctx.b
         info = U(ctx, " · ".join(v for v in (f"until {b['until']}" if b["until"] else "", b["amount"]) if v))
-        ix = 8 + sf.draw(c, 8, band + 1, ctx.pal["strong"], info)
-        if ctx.home and ctx.home_name:                          # only said when it's true
-            hl = U(ctx, f"includes {ctx.home_name}")
-            chip(c, ix + (10 if info else 0), band, hl, sf, (255, 226, 120), (0, 0, 0))
+        sf.draw(c, 8, band + 1, ctx.pal["strong"], info)
         meter(c, W - 38, 2 + (band - 8) // 2, ctx)
         # legend + map name, bottom left
         lg = U(ctx, f"{b['title'].lower()} area")
