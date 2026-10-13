@@ -26,6 +26,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import time
 
 import numpy as np
@@ -452,6 +453,40 @@ class St:
     """Per-alert context handed to a structure."""
 
 
+_PAGE_PACKS = {}           # page id → (mtime, meta, frames): the alert data pages, read once per render
+
+
+def _page_pack(data_dir, pid, check_only=False):
+    """(meta, frames) of an alert data page from <data_dir>/alertpages, or None (cached; re-read on change)."""
+    if not data_dir:
+        return None
+    jp = os.path.join(data_dir, "alertpages", f"{pid}.json")
+    bp = os.path.join(data_dir, "alertpages", f"{pid}.bin")
+    try:
+        mt = (os.stat(jp).st_mtime, os.stat(bp).st_mtime)
+    except OSError:
+        return None
+    if check_only:
+        return True
+    hit = _PAGE_PACKS.get(pid)
+    if hit and hit[0] == mt:
+        return hit[1], hit[2]
+    try:
+        with open(jp, encoding="utf-8") as f:
+            meta = json.load(f)
+        raw = np.fromfile(bp, dtype=np.uint8)
+        n, h, w = meta["n"], meta["h"], meta["w"]
+        if raw.size != n * h * w * 3:
+            return None
+        frames = raw.reshape(n, h, w, 3)
+    except (OSError, ValueError, KeyError):
+        return None
+    if len(_PAGE_PACKS) > 4:                  # a few at a time (an alert uses two or three)
+        _PAGE_PACKS.pop(next(iter(_PAGE_PACKS)))
+    _PAGE_PACKS[pid] = (mt, meta, frames)
+    return meta, frames
+
+
 _SHOWINGS = [0]           # how many times the alert screen has come round (theme rotation)
 
 
@@ -468,6 +503,8 @@ class AlertScreen:
         self._tour = None            # theme id while touring all themes (entry {"tour": true})
         self._tour_t0 = None
         self._tour_sample = None     # the test alert of the tour item being shown
+        self._tour_k = 0
+        self._hold_cap = None        # tours: how long each text page holds
         self._reveal_cap = None
 
     # -- data ------------------------------------------------------------------
@@ -643,16 +680,23 @@ class AlertScreen:
                 reveal_t = 1.4 / speed
             if self._reveal_cap:
                 reveal_t = min(reveal_t, self._reveal_cap)
-            hold = max(min_hold, 2.0 + words / wps)
+            hold = self._hold_cap or max(min_hold, 2.0 + words / wps)
             segs.append({"alert": ai, "ctx": ctx, "lines": lines, "paras": use, "fonts": fonts, "start": t,
                          "reveal": reveal_t, "hold": hold})
             t += reveal_t + hold
             amap = a.get("map") or (self._sample_map() if b["test"] else None)
-            if amap and st.get("show_map", True) is not False and self._reveal_cap is None:
+            if amap and st.get("show_map", True) is not False:
                 msec = max(4.0, float(st.get("map_sec") or 9))
                 segs.append({"alert": ai, "ctx": ctx, "kind": "map", "map": amap, "lines": [], "paras": [],
                              "fonts": fonts, "start": t, "reveal": 1.4, "hold": msec - 1.4})
                 t += msec
+            if st.get("show_pages", True) is not False:           # the weather type's ECCC data pages
+                psec = max(5.0, float(st.get("page_sec") or 9))
+                for pid in alert_brief.HAZARD_PAGES.get(b["hazard"], []):
+                    if _page_pack(self._data_dir(), pid, check_only=True):
+                        segs.append({"alert": ai, "ctx": ctx, "kind": "page", "page": pid, "lines": [], "paras": [],
+                                     "fonts": fonts, "start": t, "reveal": 0.6, "hold": psec - 0.6})
+                        t += psec
         self._plan_key, self._plan = key, {"segs": segs, "total": t}
         self._static = None
         return self._plan
@@ -666,12 +710,92 @@ class AlertScreen:
             return self._draw_tour(c, entry, transition, now)
         if self._tour:
             self._tour, self._reveal_cap, self._fast, self._static = None, None, None, None
-            self._tour_sample, self._sample = None, None
+            self._tour_sample, self._sample, self._hold_cap, self._tour_k = None, None, None, 0
         return self._draw(c, entry, transition, now)
 
     def _sample_map(self):
         data = (self.loader.get_data("alerts") if self.loader else None) or {}
         return (data.get("sample_maps") or {}).get(self.settings.get("sample") or "rain") or data.get("sample_map")
+
+    def _data_dir(self):
+        return getattr(self.loader, "data_dir", None) or self.settings.get("_data_dir")
+
+    def _draw_page(self, c, seg, ctx, local):
+        """One of the weather type's ECCC data pages: a header (icon, page title, the alert and its level box),
+        the map animation with the model's values printed at a few towns, and a footer with the frame's time."""
+        got = _page_pack(self._data_dir(), seg["page"])
+        if not got:
+            return False
+        meta, frames = got
+        n, mh, mw = frames.shape[0], frames.shape[1], frames.shape[2]
+        k_f, sf = ctx.fam["key"], ctx.fam["small"]
+        c.FillRect(0, 0, W, H, Color(*ctx.pal["bg"]))
+        foot = sf.h + 9
+        top = H - foot - mh
+        dur = max(1.0, seg["hold"] + seg["reveal"])
+        i = min(n - 1, int(local / max(0.2, dur * 0.82 / n))) if n > 1 else 0
+        x0 = (W - mw) // 2
+        c.buf[top:top + mh, x0:x0 + mw] = frames[i]
+        # header: icon, page title, level box; then the alert and where
+        m = 6
+        px.draw(c, px.hazard(ctx.b["hazard"]), m, max(1, (top - 24) // 2), ctx.sev)
+        lev = ctx.b["kind"].upper()
+        lw = k_f.width(lev) + 8
+        title = U(ctx, meta.get("title") or "")
+        for f in ctx.fam["titles"] + [k_f]:
+            if f.width(title) <= W - 2 * m - 34 - lw - 8 and f.h <= top - sf.h - 4:
+                break
+        else:
+            f = k_f
+        y1 = max(2, (top - f.h - sf.line) // 2)
+        f.draw(c, m + 30, y1, ctx.sev, title)
+        sub = U(ctx, f"{ctx.b['title'].capitalize()} · " + (ctx.header or ""))
+        while sub and sf.width(sub) > W - 2 * m - 34 - lw - 8:
+            sub = sub[:-1]
+        sf.draw(c, m + 30, y1 + f.line, ctx.pal["text"], sub)
+        c.FillRect(W - m - lw, (top - k_f.h - 4) // 2, lw, k_f.h + 4, Color(*ctx.level))
+        k_f.draw(c, W - m - lw + 4, (top - k_f.h - 4) // 2 + 2, (0, 0, 0), lev)
+        # values at the towns (home in its tint)
+        vals = (meta.get("values") or [None] * n)[i] if meta.get("values") else None
+        if vals:
+            fmt = meta.get("fmt") or "{:.0f}"
+            for (name, tx, ty), v in zip(meta.get("towns") or [], vals):
+                if v is None:
+                    continue
+                s_ = fmt.format(v)
+                home = name.lower() == (ctx.home_name or "").lower()
+                lab_x = x0 + tx - k_f.width(s_) // 2
+                lab_y = top + ty - k_f.h - 2
+                lab_x = max(x0 + 1, min(x0 + mw - k_f.width(s_) - 1, lab_x))
+                lab_y = max(top + 1, min(top + mh - k_f.h - 1, lab_y))
+                c.FillRect(x0 + tx - 1, top + ty - 1, 3, 3, Color(255, 255, 255))
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    k_f.draw(c, lab_x + dx, lab_y + dy, (0, 0, 0), s_)
+                k_f.draw(c, lab_x, lab_y, ctx.sev2 if home else (255, 255, 255), s_)
+        # footer: frame time, progress through the frames, unit, credit
+        fy = H - foot + 3
+        times = meta.get("times") or []
+        when = ""
+        if i < len(times):
+            try:
+                from datetime import datetime, timezone
+                tt = datetime.strptime(times[i], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).astimezone()
+                when = tt.strftime("%a %-I %p").upper() if os.name != "nt" else tt.strftime("%a %I %p").upper()
+            except ValueError:
+                when = ""
+        kind = meta.get("page_kind")
+        tag = "FORECAST" if kind == "forecast" else "OBSERVED"
+        sf.draw(c, m, fy, ctx.pal["strong"], f"{when}  {tag}")
+        unit = meta.get("unit") or ""
+        right = (f"{meta.get('value_title') or ''} {unit}".strip() + "  · ECCC") if unit else "ECCC"
+        sf.draw(c, W - m - sf.width(right), fy, ctx.pal["dim"], right)
+        bx0 = m + sf.width(f"{when}  {tag}") + 10
+        bx1 = W - m - sf.width(right) - 10
+        if bx1 - bx0 > 20 and n > 1:
+            by = fy + sf.h // 2
+            c.FillRect(bx0, by, bx1 - bx0, 1, Color(*_dim(ctx.sev, 0.35)))
+            c.FillRect(bx0, by - 1, int((bx1 - bx0) * (i + 1) / n), 3, Color(*ctx.sev))
+        return True
 
     def _draw_map(self, c, seg, ctx, local, p):
         """The affected zones pulsing in the severity colour over the map; the home city marked."""
@@ -720,7 +844,8 @@ class AlertScreen:
         return True
 
     def _draw_tour(self, c, entry, transition, now):
-        """A tour: each item (theme, test alert) in turn — its reveal, then a few seconds of border animation.
+        """A tour: each item (theme, test alert) in turn, playing its whole sequence — the text (held
+        ``tour_sec``), the area map, then the weather type's data pages — before the next.
         ``tour_items`` = [[theme, sample], …]; without it, every theme from ``tour_from`` with the set sample."""
         from display.modules.alert_samples import SAMPLES
         per = max(4.0, float(entry.get("tour_sec") or 9))
@@ -729,19 +854,26 @@ class AlertScreen:
             ids = sorted(THEMES)
             items = [(t, None) for t in ids[int(entry.get("tour_from") or 0):]]
         if transition or self._tour_t0 is None:
-            self._tour_t0 = now
+            self._tour_t0, self._tour_k = now, 0
             self._sample = None
-        k = int((now - self._tour_t0) // per)
-        tid, smp = items[min(k, len(items) - 1)]
+        if self._tour_k >= len(items):
+            return "done"
+        tid, smp = items[self._tour_k]
         if (tid, smp) != (self._tour, self._tour_sample):
-            self._tour, self._tour_sample, self._reveal_cap = tid, smp, per * 0.55
-            self._t0, self._static, self._fast, self._sample = self._tour_t0 + k * per, None, None, None
-        self._draw(c, {"test": True}, False, now)
+            self._tour, self._tour_sample, self._reveal_cap, self._hold_cap = tid, smp, 3.0, per
+            self._t0, self._static, self._fast, self._sample = now, None, None, None
+        r = self._draw(c, {"test": True}, False, now)
         th = THEMES[tid]
         what = SAMPLES.get(smp or self.settings.get("sample") or "rain", {}).get("name", "")
-        self._label(c, f" {min(k, len(items) - 1) + 1}/{len(items)}  {th['name'].upper()}  ·  {what.upper()} ",
-                    1 - (per - ((now - self._tour_t0) % per)) / per)
-        return "done" if k >= len(items) else None
+        total = (self._plan or {}).get("total") or 1.0
+        self._label(c, f" {self._tour_k + 1}/{len(items)}  {th['name'].upper()}  ·  {what.upper()} ",
+                    (now - (self._t0 or now)) / total)
+        if r == "done":
+            self._tour_k += 1
+            self._tour = None                        # next frame starts the next item
+            if self._tour_k >= len(items):
+                return "done"
+        return None
 
     def _label(self, c, text, frac=None):
         """A caption bar along the foot (tours and control-panel reviews say what's on the wall)."""
@@ -781,6 +913,13 @@ class AlertScreen:
         ctx.index, ctx.count = seg["alert"], len({x["alert"] for x in segs})
         local = t - seg["start"]
         p = min(1.0, local / seg["reveal"]) if seg["reveal"] > 0 else 1.0
+        if seg.get("kind") == "page" and self._draw_page(c, seg, ctx, local):
+            draw_border(c, th["border"], ctx.sev if ctx.home or not ctx.home_name else _dim(ctx.sev, 0.5), t)
+            if t >= plan["total"]:
+                self._t0 = now
+                self._static = None
+                return "done"
+            return None
         if seg.get("kind") == "map" and self._draw_map(c, seg, ctx, local, p):
             draw_border(c, th["border"], ctx.sev if ctx.home or not ctx.home_name else _dim(ctx.sev, 0.5), t)
             if t >= plan["total"]:
@@ -1197,7 +1336,8 @@ def timeline(settings=None, alerts_data=None):
     plan = scr._plan_for(alerts, th, scr.family(th))
     return {"total": round(plan["total"], 2),
             "pages": [{"start": round(x["start"], 2), "reveal": round(x["reveal"], 2), "hold": round(x["hold"], 2),
-                       "label": ("MAP · " if x.get("kind") == "map" else "") + x["ctx"].b["title"], "alert": x["alert"],
+                       "label": ({"map": "MAP · ", "page": f"{x.get('page', '').upper()} · "}.get(x.get("kind"), "")) + x["ctx"].b["title"],
+                       "alert": x["alert"], "kind": x.get("kind") or "text", "page": x.get("page"),
                        "font_px": x["fonts"]["reg"].h}
                       for x in plan["segs"]]}
 

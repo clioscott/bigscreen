@@ -91,6 +91,18 @@ def run(cfg):
         print(f"  {tid}: {'ok' if res.get('ok') else 'FAILED'} in {res['seconds']}s — {res['message']}", flush=True)
         atomic_write_json(STATE, state, indent=1)
 
+    # 3. the alert screen's weather-specific data pages (hub/weather/alert_pages.py)
+    try:
+        from display.modules import alert_brief
+        from hub.weather import alert_pages
+        live = read_json(paths.DATA_DIR / "alerts.json", {}) or {}
+        hazards = {alert_brief.hazard_of(a) for a in live.get("alerts") or []}
+        done, errs = alert_pages.update(cfg, hazards, log=lambda m: print(m, flush=True))
+        rendered += [f"alert page {p}" for p in done]
+        errors += errs[:4]
+    except Exception as e:
+        errors.append(f"alert pages: {type(e).__name__}: {e}"[:160])
+
     _harness.progress(steps, steps, "cleaning up")
     # drop packs for tracks that no longer exist
     for p in list(tracks.ANIM_DIR.glob("*.json")):

@@ -307,6 +307,14 @@ def mentions(alert, place):
 
 
 # Hazard groups for the control panel's toggles, with the ECCC alerts each one covers.
+# The ECCC data pages (hub/weather/alert_pages.py) shown after an alert's text and area map, by weather type.
+HAZARD_PAGES = {
+    "rain": ["radar", "precip"], "snow": ["radar", "snowfall", "snowlevel"], "freezing": ["radar", "fzra", "temp"],
+    "wind": ["gust", "wind"], "thunder": ["radar", "tstorm"], "tornado": ["radar", "tstorm"],
+    "flood": ["sealevel", "gust"], "heat": ["humidex", "temp"], "cold": ["temp", "wind"], "frost": ["temp"],
+    "fog": ["fog", "satellite"], "smoke": ["smoke", "satellite"], "general": ["satellite", "radar"],
+}
+
 HAZARD_INFO = [
     ("rain", "Rain", "rainfall warning, atmospheric river"),
     ("snow", "Snow & winter storms", "snowfall, snow squall, blowing snow, winter storm, blizzard warnings"),
