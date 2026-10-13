@@ -261,6 +261,15 @@ def layout(units, max_cols):
     return len(used_c), len(used_r)
 
 
+# The Metro Vancouver diagram: these places only (City + District of North Vancouver as one, City + Township of
+# Langley as one); villages and islands (Belcarra, Anmore, Lions Bay, Bowen Island) left off.
+METRO_CURATED = [("West Vancouver", ["West Vancouver"]), ("North Vancouver", ["North Vancouver"]),
+                 ("Vancouver", ["Vancouver"]), ("Burnaby", ["Burnaby"]), ("New Westminster", ["New Westminster"]),
+                 ("Port Moody", ["Port Moody"]), ("Coquitlam", ["Coquitlam"]), ("Port Coquitlam", ["Port Coquitlam"]),
+                 ("Pitt Meadows", ["Pitt Meadows"]), ("Maple Ridge", ["Maple Ridge"]), ("Richmond", ["Richmond"]),
+                 ("Delta", ["Delta"]), ("Surrey", ["Surrey"]), ("White Rock", ["White Rock"]), ("Langley", ["Langley"])]
+
+
 ISLAND_RDS = ("Nanaimo", "Cowichan", "Capital", "Comox", "Strathcona", "Alberni", "Mount Waddington", "Islands Trust")
 
 
@@ -291,12 +300,24 @@ def build(grid_id, cache):
         from shapely.geometry import box
         b = box(*aoi)
         units = [u for u in units if u["geom"].representative_point().within(b)]
-    if grid_id == "municipalities_metro":                     # members of the Metro Vancouver Regional District only
+    if grid_id == "municipalities_metro":                     # a curated Metro Vancouver: merged pairs, no hamlets
         rd = cache.get("regional_district") or _load_cached("regional_district")
         mv = [x["geom"] for x in rd or [] if "Metro Vancouver" in x["name"] or "Greater Vancouver" in x["name"]]
         if mv:
             mvg = unary_union([g.buffer(0) for g in mv])
             units = [u for u in units if u["geom"].representative_point().within(mvg)]
+        merged = {}
+        for u in units:
+            n = clean(u["name"])
+            name = next((k for k, pats in METRO_CURATED if any(p == n or n.startswith(p + " ") for p in pats)), None)
+            if name:
+                merged.setdefault(name, []).append(u["geom"].buffer(0))
+        level = "municipality_metro"
+        units = [{"id": re.sub(r"[^a-z]+", "_", k.lower()), "name": k, "geom": unary_union(gs)} for k, gs in merged.items()]
+        GEOM.mkdir(parents=True, exist_ok=True)
+        (GEOM / f"{level}.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": [
+            {"type": "Feature", "properties": {"id": u["id"], "name": u["name"]},
+             "geometry": mapping(u["geom"].simplify(0.001, preserve_topology=True))} for u in units]}))
     # same cleaned name, different municipality (City / District of North Vancouver, City / Township of
     # Langley): keep the kind so the boxes can be told apart
     names = {}
