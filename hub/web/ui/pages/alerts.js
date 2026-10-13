@@ -314,7 +314,7 @@ export const Alerts = {
     <div class="row" style="gap:8px; margin:4px 0 14px" role="tablist">
       <button v-for="x in TABS" :key="x.value" role="tab" :aria-selected="tab === x.value" class="btn" :class="{primary: tab === x.value}" @click="tab = x.value">
         <Icon :name="x.icon" :size="15"/>{{ x.label }}
-        <span v-if="x.value === 'review'" class="pill" style="margin-left:4px">{{ counts.unreviewed }} to review</span></button>
+        <span v-if="x.value === 'review'" class="pill" :style="tab === x.value ? {marginLeft: '4px', background: 'rgba(0,0,0,.28)', color: '#fff', borderColor: 'transparent'} : {marginLeft: '4px'}">{{ counts.unreviewed }} to review</span></button>
     </div>
 
     <!-- ================================================================ DESIGN -->
@@ -339,7 +339,7 @@ export const Alerts = {
                 <button v-for="h in cat.hazards" :key="h.id" class="btn sm" :class="{primary: !useReal && (a.sample || 'rain') === h.id}" @click="pickSample(h.id)"
                   :title="sampleLabel(h.id) + ' (' + sampleLevel(h.id) + ')'">
                   <i :style="{display:'inline-block', width:'9px', height:'9px', borderRadius:'2px', background: h.colour}"></i>{{ h.label.split(' ')[0] }}
-                  <span class="faint" style="font-size:10.5px; text-transform:uppercase" :style="{color: levelColour(sampleLevel(h.id))}">{{ sampleLevel(h.id) }}</span></button>
+                  <span class="lvl" :style="{background: levelColour(sampleLevel(h.id))}">{{ sampleLevel(h.id) }}</span></button>
               </div></Field>
             <Field label="Text density" :hint="DENSITY.find(d => d.value === (a.density || 'balanced')).hint + ' — applies to every theme'">
               <Seg :modelValue="a.density || 'balanced'" @update:modelValue="v => a.density = v" :options="DENSITY"/></Field>
@@ -443,11 +443,11 @@ export const Alerts = {
             <div class="row" style="gap:6px">
               <button v-for="h in cat.hazards" :key="h.id" class="btn sm" :class="{primary: revAlerts.includes(h.id)}" @click="toggleRevAlert(h.id)">
                 <i :style="{display:'inline-block', width:'9px', height:'9px', borderRadius:'2px', background: h.colour}"></i>{{ sampleLabel(h.id) }}
-                <span style="font-size:10.5px; text-transform:uppercase" :style="{color: levelColour(sampleLevel(h.id))}">{{ sampleLevel(h.id) }}</span></button>
+                  <span class="lvl" :style="{background: levelColour(sampleLevel(h.id))}">{{ sampleLevel(h.id) }}</span></button>
             </div></Field>
           <Field label="Order"><Seg v-model="revOrder" :options="[{value:'theme', label:'Theme by theme'}, {value:'alert', label:'Alert by alert'}]"/></Field>
           <div class="row">
-            <button class="btn primary" @click="startReview(0)" :disabled="!items.length"><Icon name="Play" :size="15"/>Review {{ revThemeList.length }} themes × {{ revAlerts.length || 1 }} alerts ({{ items.length }} screens)</button>
+            <button class="btn primary start-review" @click="startReview(0)" :disabled="!items.length"><Icon name="Play" :size="15"/>Review {{ revThemeList.length }} themes × {{ revAlerts.length || 1 }} alerts ({{ items.length }} screens)</button>
             <label class="row" style="gap:6px; font-size:12.5px"><input type="checkbox" v-model="mirror">mirror on the wall</label>
           </div>
         </div></div>
