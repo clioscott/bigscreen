@@ -291,6 +291,23 @@ def build(grid_id, cache):
         from shapely.geometry import box
         b = box(*aoi)
         units = [u for u in units if u["geom"].representative_point().within(b)]
+    if grid_id == "municipalities_metro":                     # members of the Metro Vancouver Regional District only
+        rd = cache.get("regional_district") or _load_cached("regional_district")
+        mv = [x["geom"] for x in rd or [] if "Metro Vancouver" in x["name"] or "Greater Vancouver" in x["name"]]
+        if mv:
+            mvg = unary_union([g.buffer(0) for g in mv])
+            units = [u for u in units if u["geom"].representative_point().within(mvg)]
+    # same cleaned name, different municipality (City / District of North Vancouver, City / Township of
+    # Langley): keep the kind so the boxes can be told apart
+    names = {}
+    for u in units:
+        names.setdefault(clean(u["name"]), set()).add(u["name"])
+    for u in units:
+        n = clean(u["name"])
+        if len(names[n]) > 1:
+            kind = re.match(r"^(?:The )?(?:Corporation of the )?(City|District|Township|Village|Town)\b", u["name"], re.I)
+            if kind:
+                u["name"] = f"{n} {kind.group(1).title()}"
     # merge units that share a name (multi-part municipalities etc.)
     by = {}
     for u in units:
