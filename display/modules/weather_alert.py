@@ -630,6 +630,8 @@ class AlertScreen:
             ctx.area = "Metro Vancouver" if b["test"] else self.area()
             ctx.index, ctx.count = ai, len(alerts)
             ctx.data = _alert_data(self._data_dir())          # forecast numbers for the key facts / special page
+            from display.modules import alert_facts as _af
+            ctx.extra = _af.extra(self._data_dir())            # DFO tides, ECCC AQHI
             ctx.title_f = struct.title_font(ctx)
             b["_issued_ts"], b["_expires_ts"], b["_event_end"] = a.get("published"), a.get("expires"), a.get("event_end")
             b["source"] = a.get("source") or "eccc"
@@ -706,7 +708,7 @@ class AlertScreen:
                 segs.append({"alert": ai, "ctx": ctx, "kind": "details", "lines": [], "paras": [], "fonts": fonts,
                              "start": t, "reveal": 0.5, "hold": isec - 0.5})
                 t += isec
-            if st.get("show_special", True) is not False and b["source"] == "eccc" and _alert_data(self._data_dir()):
+            if st.get("show_special", True) is not False and b["source"] == "eccc" and (ctx.data or ctx.extra):
                 segs.append({"alert": ai, "ctx": ctx, "kind": "special", "lines": [], "paras": [], "fonts": fonts,
                              "start": t, "reveal": 0.5, "hold": isec - 0.5})
                 t += isec

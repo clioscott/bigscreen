@@ -167,9 +167,28 @@ def key_facts(ctx, d):
     out = []
     if ctx.b.get("amount"):
         out.append(("Expected", ctx.b["amount"], "in the alert"))
-    if not d or (ctx.b.get("source") or "eccc").lower() != "eccc":
+    if (ctx.b.get("source") or "eccc").lower() != "eccc":
         return out
     hz = ctx.b["hazard"]
+    x_ = getattr(ctx, "extra", None) or {}
+    if hz == "flood" and x_.get("tides"):
+        st = next((t for t in x_["tides"] if t.get("name") == "Point Atkinson"), x_["tides"][0])
+        hs = next_high(st)
+        if hs:
+            out.append(("Next high tide", num(hs[0][1], "m", 1), f"{st['name']} · {when(hs[0][0])}"))
+        return out
+    if hz == "smoke" and x_.get("aqhi"):
+        areas = aqhi_areas(ctx, x_)
+        if areas:
+            a0 = areas[0]
+            if a0.get("obs") is not None:
+                out.append(("AQHI now", f"{a0['obs']:.0f}", f"{aqhi_word(a0['obs'])} · {AQHI_SHORT.get(a0['name'], a0['name'])}"))
+            pk = max(a0.get("forecast") or [[None, None]], key=lambda f: f[1] or 0)
+            if pk[1] is not None:
+                out.append(("AQHI peak", f"{pk[1]:.0f}", f"{aqhi_word(pk[1])} · {when(ts(pk[0]))}"))
+        return out
+    if not d:
+        return out
     T = d["_times"]
     names = towns(d)
     mine, rest = town_order(ctx, d)
@@ -277,3 +296,83 @@ def aq_word(pm):
         if pm < lim:
             return word
     return "hazardous"
+
+
+# ------------------------------------------------------------------------------------------------ tides + AQHI
+_EXTRA = {}
+# AQHI forecast area → the wall region it covers
+AQHI_REGION = {"Metro Vancouver - SW": "Richmond", "Metro Vancouver - NW": "Vancouver", "Metro Vancouver - NE": "Tri-Cities",
+               "Metro Vancouver - SE": "Surrey", "Central Fraser Valley": "Abbotsford", "Eastern Fraser Valley": "Chilliwack",
+               "Squamish": "Howe Sound", "Whistler": "Sea to Sky"}
+AQHI_SHORT = {"Metro Vancouver - SW": "Richmond", "Metro Vancouver - NW": "Van / N Shore", "Metro Vancouver - NE": "Tri-Cities",
+              "Metro Vancouver - SE": "Surrey", "Central Fraser Valley": "Abbotsford", "Eastern Fraser Valley": "Chilliwack",
+              "Squamish": "Squamish", "Whistler": "Whistler"}
+
+
+def extra(data_dir):
+    """The hub's DFO tides + ECCC AQHI (data/alertextra.json), cached."""
+    if not data_dir:
+        return None
+    p = os.path.join(data_dir, "alertextra.json")
+    try:
+        mt = os.stat(p).st_mtime
+    except OSError:
+        return None
+    hit = _EXTRA.get(p)
+    if hit and hit[0] == mt:
+        return hit[1]
+    try:
+        with open(p, encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return None
+    _EXTRA[p] = (mt, d)
+    return d
+
+
+def ts(s):
+    return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).astimezone()
+
+
+def aqhi_word(v):
+    if v is None:
+        return ""
+    v = round(v)
+    return "low risk" if v <= 3 else "moderate risk" if v <= 6 else "high risk" if v <= 10 else "very high risk"
+
+
+AQHI_COLOURS = [(0, (0, 204, 255)), (2, (0, 153, 204)), (3, (0, 102, 153)), (4, (255, 255, 0)), (5, (255, 204, 0)),
+                (6, (255, 153, 0)), (7, (255, 102, 102)), (8, (255, 0, 0)), (9, (204, 0, 0)), (10, (153, 0, 0)),
+                (11, (102, 0, 0))]
+
+
+def aqhi_colour(v):
+    """The official AQHI colour scale (1 → 10+)."""
+    out = AQHI_COLOURS[0][1]
+    for t, c in AQHI_COLOURS:
+        if v is not None and round(v) >= t:
+            out = c
+    return out
+
+
+def aqhi_areas(ctx, x):
+    """AQHI areas in display order: the alert's regions first (home first), then the rest."""
+    hit = ap.affected(ctx)
+    home = getattr(ctx, "home_name", "Richmond")
+    locs = [l for l in (x or {}).get("aqhi") or [] if l.get("name") in AQHI_REGION]
+    locs.sort(key=lambda l: (AQHI_REGION[l["name"]] not in hit, AQHI_REGION[l["name"]] != home, l["name"]))
+    return locs
+
+
+def next_high(st, after=None):
+    after = after or datetime.now().astimezone()
+    pred = {t: v for t, v in st.get("pred") or []}
+    highs = []
+    for t, v in st.get("hilo") or []:
+        when_ = ts(t)
+        # a high is higher than the predicted level an hour either side
+        near = [pv for pt, pv in (st.get("pred") or []) if abs((ts(pt) - when_).total_seconds()) < 4000]
+        if near and v >= max(near) - 0.05 and when_ >= after:
+            highs.append((when_, v))
+    _ = pred
+    return highs

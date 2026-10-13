@@ -133,8 +133,8 @@ def bars(c, x, y, w, h, items, font, pal, unit="", lo=0.0, hi=None, val_font=Non
     vf = val_font or font
     n = len(items)
     row = max(vf.h + 2, min(h // n, vf.h + 8))
-    lab_w = max(font.width(lab) for lab, _, _, _ in items) + 4
-    vals = [v for _, v, _, _ in items if v is not None]
+    lab_w = max(font.width(it[0]) for it in items) + 4
+    vals = [it[1] for it in items if it[1] is not None]
     hi = hi if hi is not None else (max(vals) if vals else 1)
     hi = hi if hi > lo else lo + 1
     text = lambda it: it[4] if len(it) > 4 else fmt(it[1], unit)

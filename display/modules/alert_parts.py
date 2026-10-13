@@ -271,3 +271,80 @@ def severity_ladder(c, ctx, x, y, w, h, font, t=0.0, vertical=True):
         if font.width(lab) > rw - 2:
             lab = SHORT_LEVEL[kind] if font.width(SHORT_LEVEL[kind]) <= rw - 2 else lab[0]
         font.draw(c, rx + (rw - font.width(lab)) // 2, ry + (rhh - font.h) // 2, tc, lab)
+
+
+# ------------------------------------------------------------------------------------------------ city grid
+# One box per community, on a rough west→east / north→south grid (not to scale), each tied to the ECCC forecast
+# zone it's in so an alert lights exactly the towns its zones cover: (name, short label, zone prefix, col, row).
+CITY_COLS, CITY_ROWS = 12, 8
+CITY_TILES = [
+    ("Powell River", "POWELL R", "Sunshine Coast - Saltery Bay", 0, 0),
+    ("Pemberton", "PEMBRTN", "Whistler", 6, 0),
+    ("Whistler", "WHISTLER", "Whistler", 6, 1),
+    ("Squamish", "SQUAMISH", "Howe Sound", 5, 2),
+    ("Sechelt", "SECHELT", "Sunshine Coast - Gibsons", 0, 3),
+    ("Gibsons", "GIBSONS", "Sunshine Coast - Gibsons", 1, 3),
+    ("Bowen Island", "BOWEN", "Howe Sound", 3, 3),
+    ("Lions Bay", "LIONS BY", "Howe Sound", 4, 3),
+    ("West Vancouver", "W VAN", "Metro Vancouver - North Shore", 3, 4),
+    ("North Vancouver", "N VAN", "Metro Vancouver - North Shore", 4, 4),
+    ("Port Moody", "PT MOODY", "Metro Vancouver - northeast", 6, 4),
+    ("Coquitlam", "COQUITLM", "Metro Vancouver - northeast", 7, 4),
+    ("Pitt Meadows", "PITT MDW", "Metro Vancouver - northeast", 8, 4),
+    ("Maple Ridge", "MAPLE RG", "Metro Vancouver - northeast", 9, 4),
+    ("Mission", "MISSION", "Fraser Valley - west", 10, 4),
+    ("Harrison", "HARRISON", "Fraser Valley - central", 11, 4),
+    ("Vancouver", "VAN", "Metro Vancouver - central", 3, 5),
+    ("Burnaby", "BURNABY", "Metro Vancouver - central", 4, 5),
+    ("New Westminster", "NEW WEST", "Metro Vancouver - central", 5, 5),
+    ("Port Coquitlam", "PT COQ", "Metro Vancouver - northeast", 7, 5),
+    ("Hope", "HOPE", "Fraser Valley - east", 11, 5),
+    ("Richmond", "RICHMOND", "Metro Vancouver - southwest", 3, 6),
+    ("Delta", "DELTA", "Metro Vancouver - southwest", 4, 6),
+    ("Surrey", "SURREY", "Metro Vancouver - southeast", 5, 6),
+    ("Langley", "LANGLEY", "Metro Vancouver - southeast", 7, 6),
+    ("Abbotsford", "ABBOTSFD", "Fraser Valley - west", 9, 6),
+    ("Chilliwack", "CHILLWK", "Fraser Valley - central", 10, 6),
+    ("Tsawwassen", "TSAWWSN", "Metro Vancouver - southwest", 3, 7),
+    ("White Rock", "WHT ROCK", "Metro Vancouver - southeast", 5, 7),
+]
+
+
+def city_hit(ctx, zone):
+    return any(r.startswith(zone) for r in ctx.b.get("regions") or [])
+
+
+def city_grid_size(font, gap=1):
+    """Smallest (w, h) where every short label fits its box."""
+    cw = max(font.width(s) for _, s, _, _, _ in CITY_TILES) + 4
+    ch = font.h + 4
+    return CITY_COLS * cw + gap * (CITY_COLS - 1), CITY_ROWS * ch + gap * (CITY_ROWS - 1)
+
+
+def city_grid(c, ctx, x, y, w, h, font, gap=1):
+    """Every community as a labelled box on the rough map grid: the alert's towns filled in the weather colour
+    (home in the second colour), the rest outlined. The full name is used when it fits the box. Columns or
+    rows with no towns shrink to nothing, so the grid uses the space it's given."""
+    used_c = sorted({t[3] for t in CITY_TILES})
+    used_r = sorted({t[4] for t in CITY_TILES})
+    cw = (w - gap * (len(used_c) - 1)) // len(used_c)
+    rh = (h - gap * (len(used_r) - 1)) // len(used_r)
+    home = (getattr(ctx, "home_name", "") or "").lower()
+    for name, short, zone, col, row in CITY_TILES:
+        tx = x + used_c.index(col) * (cw + gap)
+        ty = y + used_r.index(row) * (rh + gap)
+        on, mine = city_hit(ctx, zone), name.lower() == home
+        if on:
+            fill = getattr(ctx, "sev2", ctx.sev) if mine else ctx.sev
+            c.FillRect(tx, ty, cw, rh, Color(*fill))
+            ink = (0, 0, 0) if sum(fill) > 300 else (255, 255, 255)
+        else:
+            edge = HOME_TINT if mine else _dim(ctx.pal["dim"], 0.6)
+            c.FillRect(tx, ty, cw, rh, Color(*ctx.pal["panel"]))
+            for rx, ry, rw, rhh in ((tx, ty, cw, 1), (tx, ty + rh - 1, cw, 1), (tx, ty, 1, rh), (tx + cw - 1, ty, 1, rh)):
+                c.FillRect(rx, ry, rw, rhh, Color(*edge))
+            ink = HOME_TINT if mine else ctx.pal["dim"]
+        lab = name.upper() if font.width(name.upper()) <= cw - 3 else short
+        while lab and font.width(lab) > cw - 2:
+            lab = lab[:-1]
+        font.draw(c, tx + (cw - font.width(lab)) // 2, ty + (rh - font.h) // 2, ink, lab)

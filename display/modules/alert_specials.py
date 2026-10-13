@@ -145,22 +145,10 @@ def details(c, ctx, inner):
         if ex_x + S.width(ex) + 4 < bx + bw:
             S.draw(c, max(bx + S.width(nowlab) + 8, ex_x - S.width(ex) // 2), lane + 6, pal["dim"], ex)
     y2 = y + th + 4
-    # region grid + the ECCC regions; municipalities beside
-    cw, chh = ap.cart_size(T)
-    gw = min(cw, 200)
-    gx, gy, gww, ghh = p.panel(x, y2, gw + 6, y + h - y2, "Regions")
-    ap.cartogram(c, ctx, gx, gy, T, w=gw, h=chh)
-    ry = gy + chh + 4
-    for r in ctx.b.get("regions") or []:
-        for ln in _wrap(S, r, gww):
-            if ry + S.h > y + h - 2:
-                break
-            S.draw(c, gx, ry, pal["text"], ln)
-            ry += S.line
-    mx = x + gw + 10
-    m_x, m_y, m_w, m_h = p.panel(mx, y2, x + w - mx, y + h - y2, "Municipalities")
-    groups = af.municipalities(ctx)
-    _muni_columns(c, ctx, m_x, m_y, m_w, m_h, groups, K, S)
+    # every community as a box on the rough map grid, the alert's towns lit
+    n_on = sum(1 for _, _, zone, _, _ in ap.CITY_TILES if ap.city_hit(ctx, zone))
+    gx, gy, gw, gh = p.panel(x, y2, w, y + h - y2, f"Communities in the alert · {n_on} of {len(ap.CITY_TILES)}")
+    ap.city_grid(c, ctx, gx, gy, gw, gh, T)
 
 
 def _wrap(f, text, w):
@@ -226,7 +214,9 @@ def _rows(ctx, d, var, limit=8, transform=None):
 
 def special(c, ctx, inner, d):
     """Page 3 for the alert's weather type; False when there's nothing to show."""
-    if not d or (ctx.b.get("source") or "eccc").lower() != "eccc":
+    if (ctx.b.get("source") or "eccc").lower() != "eccc":
+        return False
+    if not d and not (ctx.b["hazard"] in ("flood", "smoke") and getattr(ctx, "extra", None)):
         return False
     fn = SPECIAL.get(ctx.b["hazard"], _general)
     return fn(c, ctx, inner, d) is not False
@@ -355,30 +345,70 @@ def _thunder(c, ctx, inner, d):
 
 
 def _flood(c, ctx, inner, d):
+    """Tides and surge from DFO: the predicted tide through the next 36 h with the observed level over the last
+    12 h, the high tides marked; tiles for the next high tide, the surge now, and the other gauges' next highs."""
+    x_ = getattr(ctx, "extra", None) or {}
+    sts = [st for st in x_.get("tides") or [] if st.get("pred")]
+    if not sts:
+        return _flood_model(c, ctx, inner, d) if d else False
+    p = Page(c, ctx, inner, "Tides and storm surge", "Predicted tide, the level the gauges measure, and the next high tides",
+             "Fisheries and Oceans Canada · Canadian Hydrographic Service")
+    st = next((s_ for s_ in sts if s_["name"] == "Point Atkinson"), sts[0])
+    times = [af.ts(t) for t, _ in st["pred"]]
+    pred = [v for _, v in st["pred"]]
+    ob = [(af.ts(t).timestamp(), v) for t, v in st.get("obs") or []]
+    obs = []
+    for t in times:                                   # measured level nearest each predicted time (within 10 min)
+        near = min(ob, key=lambda o: abs(o[0] - t.timestamp()), default=None)
+        obs.append(near[1] if near and abs(near[0] - t.timestamp()) <= 600 else None)
+    x, y, w, h = p.body
+    gw_ = int(w * 0.64)
+    gx, gy, gw, gh = p.panel(x, y, gw_, h, f"{st['name']} · metres above chart datum")
+    highs = af.next_high(st)
+    guides = [(highs[0][1], _dim(ctx.sev2, 0.8), f"next high {af.num(highs[0][1], 'm', 1)}")] if highs else []
+    ch.line_chart(c, gx, gy, gw, gh - p.T.line, times, [(pred, ctx.sev, "predicted"), (obs, (255, 255, 255), "measured")],
+                  p.T, ctx.pal, "m", guides=guides, label_max=False)
+    lx2 = gx
+    for colr, name in ((ctx.sev, "PREDICTED"), ((255, 255, 255), "MEASURED")):
+        c.FillRect(lx2, gy + gh - p.T.h, 5, p.T.h - 1, Color(*colr))
+        p.T.draw(c, lx2 + 7, gy + gh - p.T.h, ctx.pal["text"], name)
+        lx2 += p.T.width(name) + 14
+    facts = []
+    if highs:
+        facts.append(("Next high tide", af.num(highs[0][1], "m", 1), f"{st['name']} · {af.when(highs[0][0])}"))
+    pairs = [(o, pv) for o, pv in zip(obs, pred) if o is not None]
+    if pairs:
+        sg = pairs[-1][0] - pairs[-1][1]
+        facts.append(("Surge now", f"{sg:+.2f} m", "measured minus predicted"))
+    rx = x + gw_ + 4
+    th = p.T.h + p.K.line + p.S.line + 12
+    p.tiles(rx, y, w - gw_ - 4, th, facts[:2] if len(facts) < 2 else facts[:1])
+    if len(facts) > 1:
+        p.tiles(rx, y + th + 4, w - gw_ - 4, th, facts[1:2])
+    ty = y + (th + 4) * min(2, len(facts))
+    tx, tty, tw, tth = p.panel(rx, ty, w - gw_ - 4, y + h - ty, "Next high tide")
+    short = {"Point Atkinson": "Pt Atkinson", "New Westminster": "New West"}
+    rows = [(short.get(s_["name"], s_["name"]), f"{af.when(hs[0][0])} {hs[0][1]:.1f}m") for s_ in sts for hs in [af.next_high(s_)] if hs]
+    f = next((f for f in (p.S, p.T) if all(f.width(a) + f.width(b) + 6 <= tw for a, b in rows)), p.T)
+    yy = tty
+    for name, v in rows:
+        if yy + f.h > tty + tth:
+            break
+        f.draw(c, tx, yy, ctx.pal["strong"], name)
+        f.draw(c, tx + tw - f.width(v), yy, ctx.sev, v)
+        yy += f.line
+
+
+def _flood_model(c, ctx, inner, d):
     p = Page(c, ctx, inner, "Sea level outlook", "Forecast water level along the coast (tide plus surge)", "ECCC CIOPS-West forecast")
     s = af.series(d, "sealevel")
     if not s:
         return False
     T = d["_times"]
     x, y, w, h = p.body
-    gw_ = int(w * 0.66)
-    gx, gy, gw, gh = p.panel(x, y, gw_, h, "Water level above mean sea level · m")
+    gx, gy, gw, gh = p.panel(x, y, w, h, "Water level above mean sea level · m")
     lines = [(vals, LINE_COLS[k % 4], d["sea"][k]["name"]) for k, vals in enumerate(s["values"]) if any(v is not None for v in vals)]
-    ch.line_chart(c, gx, gy, gw, gh - p.T.line, T, lines[:3], p.T, ctx.pal, "m")
-    lx2 = gx
-    for vals, colr, name in lines[:3]:
-        c.FillRect(lx2, gy + gh - p.T.h, 5, p.T.h - 1, Color(*colr))
-        p.T.draw(c, lx2 + 7, gy + gh - p.T.h, ctx.pal["text"], name.upper())
-        lx2 += p.T.width(name.upper()) + 14
-    facts = af.key_facts(ctx, d)[:1]
-    wv = _rows(ctx, d, "wind", limit=1)
-    if wv:
-        v, t = af.peak(wv[0][1], T)
-        facts.append(("Wind", af.num(v, "km/h"), f"{wv[0][0]} · {af.when(t)}"))
-    n = max(1, len(facts))
-    th = (h - 4 * (n - 1)) // n
-    for k, f in enumerate(facts):
-        p.tiles(x + gw_ + 4, y + k * (th + 4), w - gw_ - 4, th, [f])
+    ch.line_chart(c, gx, gy, gw, gh, T, lines[:3], p.T, ctx.pal, "m")
 
 
 def _heat(c, ctx, inner, d):
@@ -470,27 +500,48 @@ def _fog(c, ctx, inner, d):
 
 
 def _smoke(c, ctx, inner, d):
+    """Air quality: the AQHI (ECCC's 1–10+ health index) by area now, as bars in the official colours; the alert's
+    area now and its forecast peak as tiles; the forecast by area, period by period."""
+    x_ = getattr(ctx, "extra", None) or {}
+    areas = [a for a in af.aqhi_areas(ctx, x_) if a.get("obs") is not None or a.get("forecast")]
+    if not areas:
+        return _smoke_pm(c, ctx, inner, d) if d else False
+    p = Page(c, ctx, inner, "Air quality", "Air Quality Health Index by area: now, and the forecast",
+             "ECCC Air Quality Health Index (AQHI)")
+    x, y, w, h = p.body
+    hit = ap.affected(ctx)
+    lw = int(w * 0.44)
+    bx, by, bw, bh = p.panel(x, y, lw, h, "AQHI now · 1 low  4 moderate  7 high  10+ very high")
+    items = [(af.AQHI_SHORT.get(a["name"], a["name"]), a.get("obs"), af.aqhi_colour(a.get("obs")),
+              af.AQHI_REGION.get(a["name"]) in hit, f"{(a.get('obs') or 0):.0f}") for a in areas[:8]]
+    ch.bars(c, bx, by, bw, bh, items, p.S, ctx.pal, "", lo=0, hi=max(10, max((i[1] or 0) for i in items)), val_font=p.K)
+    rx, rw = x + lw + 4, w - lw - 4
+    a0 = areas[0]
+    peak = max(a0.get("forecast") or [[None, None]], key=lambda f: f[1] or 0)
+    facts = [(f"{af.AQHI_SHORT.get(a0['name'], a0['name'])} now", f"{(a0.get('obs') or 0):.0f}", af.aqhi_word(a0.get("obs")))]
+    if peak[1] is not None:
+        facts.append(("Forecast peak", f"{peak[1]:.0f}", f"{af.aqhi_word(peak[1])} · {af.when(af.ts(peak[0]))}"))
+    th = p.T.h + p.K.line + p.S.line + 12
+    p.tiles(rx, y, rw, th, facts)
+    gx, gy, gw, gh = p.panel(rx, y + th + 4, rw, h - th - 4, "AQHI forecast")
+    now = time.time()
+    fcs = [[f for f in (a.get("forecast") or []) if f[0] and af.ts(f[0]).timestamp() >= now - 3600][:12] for a in areas[:6]]
+    times = [af.ts(f[0]) for f in max(fcs, key=len)] if any(fcs) else []
+    if times:
+        rows = [(af.AQHI_SHORT.get(a["name"], a["name"]), [f[1] for f in fc] + [None] * (len(times) - len(fc)),
+                 af.AQHI_REGION.get(a["name"]) in hit) for a, fc in zip(areas[:6], fcs)]
+        ch.heat_strip(c, gx, gy, gw, gh, rows, times, af.aqhi_colour, p.T, ctx.pal, show_vals=True)
+
+
+def _smoke_pm(c, ctx, inner, d):
     p = Page(c, ctx, inner, "Smoke and air quality", "Fine particles (PM2.5) by town, hour by hour", "ECCC RAQDPS / FireWork forecast")
     rows = _rows(ctx, d, "pm25", limit=7)
     if not rows:
         return False
     x, y, w, h = p.body
-    gw_ = int(w * 0.66)
-    gx, gy, gw, gh = p.panel(x, y, gw_, h, "PM2.5 · µg/m³ · good / moderate / poor / very poor")
+    gx, gy, gw, gh = p.panel(x, y, w, h, "PM2.5 · µg/m³")
     col = ch.ramp([(0, (40, 120, 60)), (12, (230, 200, 40)), (35, (255, 120, 0)), (55, (230, 30, 30)), (150, (150, 40, 160))])
     ch.heat_strip(c, gx, gy, gw, gh, rows, d["_times"], col, p.T, ctx.pal, show_vals=True)
-    facts = af.key_facts(ctx, d)[:1]
-    sm, al = af.series(d, "smoke"), af.series(d, "pm25")
-    if sm and al:
-        mine, rest = af.town_order(ctx, d)
-        i = (mine or rest)[0]
-        tot_s = sum(v or 0 for v in sm["values"][i])
-        tot_a = sum(v or 0 for v in al["values"][i]) or 1
-        facts.append(("From wildfires", f"{min(100, round(100 * tot_s / tot_a))} %", f"of the PM2.5 · {af.towns(d)[i]}"))
-    n = max(1, len(facts))
-    th = (h - 4 * (n - 1)) // n
-    for k, f in enumerate(facts):
-        p.tiles(x + gw_ + 4, y + k * (th + 4), w - gw_ - 4, th, [f])
 
 
 def _general(c, ctx, inner, d):
