@@ -1,0 +1,1045 @@
+{
+ "id": "communities_metro",
+ "label": "Communities",
+ "level": "community",
+ "source": "Communities (health service areas)",
+ "cols": 12,
+ "rows": 12,
+ "units": [
+  {
+   "id": "3323",
+   "name": "Bowen Island/Lions Bay",
+   "labels": [
+    "BOWEN ISLAND/LIONS BAY",
+    "B I BAY",
+    "BIB",
+    "BWNISLND",
+    "BOWEN"
+   ],
+   "col": 0,
+   "row": 0
+  },
+  {
+   "id": "3314",
+   "name": "North Vancouver DM - East",
+   "labels": [
+    "NORTH VANCOUVER DM - EAST",
+    "N VAN DM-E",
+    "N V D EAST",
+    "NVDE",
+    "NVNDM-E",
+    "NORTH"
+   ],
+   "col": 4,
+   "row": 0
+  },
+  {
+   "id": "2241",
+   "name": "North Coquitlam",
+   "labels": [
+    "NORTH COQUITLAM",
+    "N COQ",
+    "N COQUITLAM",
+    "NC",
+    "NCQ",
+    "NORTH"
+   ],
+   "col": 8,
+   "row": 0
+  },
+  {
+   "id": "3322",
+   "name": "West Vancouver - Upper",
+   "labels": [
+    "WEST VANCOUVER - UPPER",
+    "W VAN-UPPER",
+    "W V UPPER",
+    "WVU",
+    "WVN-UPPR",
+    "WEST V"
+   ],
+   "col": 0,
+   "row": 1
+  },
+  {
+   "id": "3321",
+   "name": "West Vancouver - Lower",
+   "labels": [
+    "WEST VANCOUVER - LOWER",
+    "W VAN-LOWER",
+    "W V LOWER",
+    "WVL",
+    "WVN-LWR",
+    "WEST V"
+   ],
+   "col": 1,
+   "row": 1
+  },
+  {
+   "id": "3315",
+   "name": "North Vancouver DM - West",
+   "labels": [
+    "NORTH VANCOUVER DM - WEST",
+    "N VAN DM-W",
+    "N V D WEST",
+    "NVDW",
+    "NVNDM-W",
+    "NORTH"
+   ],
+   "col": 2,
+   "row": 1
+  },
+  {
+   "id": "3313",
+   "name": "North Vancouver DM - Central",
+   "labels": [
+    "NORTH VANCOUVER DM - CENTRAL",
+    "N VAN DM-C",
+    "N V D CENTRAL",
+    "NVDC",
+    "NVNDM-C",
+    "NORTH"
+   ],
+   "col": 3,
+   "row": 1
+  },
+  {
+   "id": "3212",
+   "name": "West End",
+   "labels": [
+    "WEST END",
+    "W END",
+    "WE",
+    "WEND",
+    "WEST E"
+   ],
+   "col": 0,
+   "row": 2
+  },
+  {
+   "id": "3211",
+   "name": "Downtown Vancouver",
+   "labels": [
+    "DOWNTOWN VANCOUVER",
+    "DOWNTOWN VAN",
+    "D VANCOUVER",
+    "DV",
+    "DWNTWNVN",
+    "DOWNTO"
+   ],
+   "col": 1,
+   "row": 2
+  },
+  {
+   "id": "3312",
+   "name": "North Vancouver City - West",
+   "labels": [
+    "NORTH VANCOUVER CITY - WEST",
+    "N VAN CITY-W",
+    "N V C WEST",
+    "NVCW",
+    "NVNCTY-W",
+    "NORTH"
+   ],
+   "col": 2,
+   "row": 2
+  },
+  {
+   "id": "3311",
+   "name": "North Vancouver City - East",
+   "labels": [
+    "NORTH VANCOUVER CITY - EAST",
+    "N VAN CITY-E",
+    "N V C EAST",
+    "NVCE",
+    "NVNCTY-E",
+    "NORTH"
+   ],
+   "col": 3,
+   "row": 2
+  },
+  {
+   "id": "2221",
+   "name": "Burnaby Heights/Capital Hill",
+   "labels": [
+    "BURNABY HEIGHTS/CAPITAL HILL",
+    "BBY HEIGHTS/CAPITAL HILL",
+    "B H HILL",
+    "BHH",
+    "BBYHGHTS",
+    "BURNAB"
+   ],
+   "col": 4,
+   "row": 2
+  },
+  {
+   "id": "2246",
+   "name": "Port Moody North/Anmore/Belcarra",
+   "labels": [
+    "PORT MOODY NORTH/ANMORE/BELCARRA",
+    "PT MOODY NORTH/ANMORE/BELCARRA",
+    "P M NORTH/ANMORE/BELCARRA",
+    "PMN",
+    "PTMDYNRT",
+    "PORT M"
+   ],
+   "col": 6,
+   "row": 2
+  },
+  {
+   "id": "3244",
+   "name": "Kitsilano",
+   "labels": [
+    "KITSILANO",
+    "KTSLN",
+    "KITSIL"
+   ],
+   "col": 0,
+   "row": 3
+  },
+  {
+   "id": "3222",
+   "name": "Northeast False Creek",
+   "labels": [
+    "NORTHEAST FALSE CREEK",
+    "NE FALSE CREEK",
+    "N F CREEK",
+    "NFC",
+    "NEFLSCRK",
+    "NORTHE"
+   ],
+   "col": 1,
+   "row": 3
+  },
+  {
+   "id": "3221",
+   "name": "Downtown Eastside",
+   "labels": [
+    "DOWNTOWN EASTSIDE",
+    "D EASTSIDE",
+    "DE",
+    "DWNTWNES",
+    "DOWNTO"
+   ],
+   "col": 2,
+   "row": 3
+  },
+  {
+   "id": "3223",
+   "name": "Grandview-Woodland",
+   "labels": [
+    "GRANDVIEW-WOODLAND",
+    "G WOODLAND",
+    "GW",
+    "GRNDVW-W",
+    "GRANDV"
+   ],
+   "col": 3,
+   "row": 3
+  },
+  {
+   "id": "3232",
+   "name": "Hastings-Sunrise",
+   "labels": [
+    "HASTINGS-SUNRISE",
+    "H SUNRISE",
+    "HS",
+    "HSTNGS-S",
+    "HASTIN"
+   ],
+   "col": 4,
+   "row": 3
+  },
+  {
+   "id": "2224",
+   "name": "Burnaby Mountain/Lougheed",
+   "labels": [
+    "BURNABY MOUNTAIN/LOUGHEED",
+    "BBY MOUNTAIN/LOUGHEED",
+    "B MOUNTAIN/LOUGHEED",
+    "BM",
+    "BBYMNTN/",
+    "BURNAB"
+   ],
+   "col": 5,
+   "row": 3
+  },
+  {
+   "id": "2245",
+   "name": "Port Moody South",
+   "labels": [
+    "PORT MOODY SOUTH",
+    "PT MOODY S",
+    "P M SOUTH",
+    "PMS",
+    "PTMDYS",
+    "PORT M"
+   ],
+   "col": 6,
+   "row": 3
+  },
+  {
+   "id": "2232",
+   "name": "Pitt Meadows",
+   "labels": [
+    "PITT MEADOWS",
+    "P MEADOWS",
+    "PM",
+    "PTTMDWS",
+    "PITT M"
+   ],
+   "col": 8,
+   "row": 3
+  },
+  {
+   "id": "3243",
+   "name": "University of British Columbia",
+   "labels": [
+    "UNIVERSITY OF BRITISH COLUMBIA",
+    "UNIVERSITY OF BRITISH COL",
+    "U O B COLUMBIA",
+    "UOBC",
+    "UNVRSTYF",
+    "UNIVER"
+   ],
+   "col": 0,
+   "row": 4
+  },
+  {
+   "id": "3213",
+   "name": "Fairview",
+   "labels": [
+    "FAIRVIEW",
+    "FRVW",
+    "FAIRVI"
+   ],
+   "col": 1,
+   "row": 4
+  },
+  {
+   "id": "3252",
+   "name": "Mount Pleasant",
+   "labels": [
+    "MOUNT PLEASANT",
+    "MT PLEASANT",
+    "M PLEASANT",
+    "MP",
+    "MTPLSNT",
+    "MOUNT"
+   ],
+   "col": 2,
+   "row": 4
+  },
+  {
+   "id": "3231",
+   "name": "Cedar Cottage",
+   "labels": [
+    "CEDAR COTTAGE",
+    "C COTTAGE",
+    "CC",
+    "CDRCTTG",
+    "CEDAR"
+   ],
+   "col": 3,
+   "row": 4
+  },
+  {
+   "id": "2222",
+   "name": "Brentwood/Willingdon/Parkcrest",
+   "labels": [
+    "BRENTWOOD/WILLINGDON/PARKCREST",
+    "BRNTWD/W",
+    "BRENTW"
+   ],
+   "col": 4,
+   "row": 4
+  },
+  {
+   "id": "2223",
+   "name": "Westridge/Sperling/Gov't Road",
+   "labels": [
+    "WESTRIDGE/SPERLING/GOV'T ROAD",
+    "W ROAD",
+    "WR",
+    "WSTRDG/S",
+    "WESTRI"
+   ],
+   "col": 5,
+   "row": 4
+  },
+  {
+   "id": "2242",
+   "name": "Southwest Coquitlam",
+   "labels": [
+    "SOUTHWEST COQUITLAM",
+    "SW COQ",
+    "S COQUITLAM",
+    "SC",
+    "SWCQ",
+    "SOUTHW"
+   ],
+   "col": 6,
+   "row": 4
+  },
+  {
+   "id": "2244",
+   "name": "Port Coquitlam",
+   "labels": [
+    "PORT COQUITLAM",
+    "PT COQ",
+    "P COQUITLAM",
+    "PC",
+    "PTCQ",
+    "PORT C"
+   ],
+   "col": 7,
+   "row": 4
+  },
+  {
+   "id": "3242",
+   "name": "West Point Grey/Dunbar-Southlands",
+   "labels": [
+    "WEST POINT GREY/DUNBAR-SOUTHLANDS",
+    "W POINT GREY/DUNBAR-SOUTHLANDS",
+    "W P G SOUTHLANDS",
+    "WPGS",
+    "WPNTGRY/",
+    "WEST P"
+   ],
+   "col": 0,
+   "row": 5
+  },
+  {
+   "id": "3253",
+   "name": "South Cambie/Riley Park",
+   "labels": [
+    "SOUTH CAMBIE/RILEY PARK",
+    "S CAMBIE/RILEY PARK",
+    "S C PARK",
+    "SCP",
+    "SCMB/RLY",
+    "SOUTH"
+   ],
+   "col": 1,
+   "row": 5
+  },
+  {
+   "id": "3251",
+   "name": "Kensington",
+   "labels": [
+    "KENSINGTON",
+    "KNSNGTN",
+    "KENSIN"
+   ],
+   "col": 2,
+   "row": 5
+  },
+  {
+   "id": "3233",
+   "name": "Renfrew-Collingwood",
+   "labels": [
+    "RENFREW-COLLINGWOOD",
+    "R COLLINGWOOD",
+    "RC",
+    "RNFRW-CL",
+    "RENFRE"
+   ],
+   "col": 3,
+   "row": 5
+  },
+  {
+   "id": "2225",
+   "name": "Garden Village/Cascade/Douglas/Gilpin",
+   "labels": [
+    "GARDEN VILLAGE/CASCADE/DOUGLAS/GILPIN",
+    "G VILLAGE/CASCADE/DOUGLAS/GILPIN",
+    "GV",
+    "GRDNVLLG",
+    "GARDEN"
+   ],
+   "col": 4,
+   "row": 5
+  },
+  {
+   "id": "2228",
+   "name": "Buckingham/Lakeview/Cariboo/Second Street",
+   "labels": [
+    "BUCKINGHAM/LAKEVIEW/CARIBOO/SECOND STREET",
+    "B STREET",
+    "BS",
+    "BCKNGHM/",
+    "BUCKIN"
+   ],
+   "col": 5,
+   "row": 5
+  },
+  {
+   "id": "2243",
+   "name": "Southeast Coquitlam",
+   "labels": [
+    "SOUTHEAST COQUITLAM",
+    "SE COQ",
+    "S COQUITLAM",
+    "SC",
+    "SECQ",
+    "SOUTHE"
+   ],
+   "col": 6,
+   "row": 5
+  },
+  {
+   "id": "3241",
+   "name": "Shaughnessy/Arbutus Ridge/Kerrisdale",
+   "labels": [
+    "SHAUGHNESSY/ARBUTUS RIDGE/KERRISDALE",
+    "S RIDGE/KERRISDALE",
+    "SR",
+    "SHGHNSSY",
+    "SHAUGH"
+   ],
+   "col": 0,
+   "row": 6
+  },
+  {
+   "id": "3263",
+   "name": "Sunset",
+   "labels": [
+    "SUNSET",
+    "SNST"
+   ],
+   "col": 1,
+   "row": 6
+  },
+  {
+   "id": "3264",
+   "name": "Victoria-Fraserview",
+   "labels": [
+    "VICTORIA-FRASERVIEW",
+    "V FRASERVIEW",
+    "VF",
+    "VCTR-FRS",
+    "VICTOR"
+   ],
+   "col": 2,
+   "row": 6
+  },
+  {
+   "id": "2226",
+   "name": "Metrotown/Marlborough/Windsor",
+   "labels": [
+    "METROTOWN/MARLBOROUGH/WINDSOR",
+    "MTRTWN/M",
+    "METROT"
+   ],
+   "col": 3,
+   "row": 6
+  },
+  {
+   "id": "2229",
+   "name": "Kingsway/Edmonds",
+   "labels": [
+    "KINGSWAY/EDMONDS",
+    "KNGSWY/E",
+    "KINGSW"
+   ],
+   "col": 4,
+   "row": 6
+  },
+  {
+   "id": "2212",
+   "name": "New Westminster - Central",
+   "labels": [
+    "NEW WESTMINSTER - CENTRAL",
+    "NEW WEST-C",
+    "N W CENTRAL",
+    "NWC",
+    "NWWST-C",
+    "NEW WE"
+   ],
+   "col": 5,
+   "row": 6
+  },
+  {
+   "id": "2211",
+   "name": "New Westminster - East",
+   "labels": [
+    "NEW WESTMINSTER - EAST",
+    "NEW WEST-E",
+    "N W EAST",
+    "NWE",
+    "NWWST-E",
+    "NEW WE"
+   ],
+   "col": 6,
+   "row": 6
+  },
+  {
+   "id": "2231",
+   "name": "Haney",
+   "labels": [
+    "HANEY",
+    "HNY"
+   ],
+   "col": 9,
+   "row": 6
+  },
+  {
+   "id": "3114",
+   "name": "Thompson/Seafair",
+   "labels": [
+    "THOMPSON/SEAFAIR",
+    "THMPSN/S",
+    "THOMPS"
+   ],
+   "col": 0,
+   "row": 7
+  },
+  {
+   "id": "3262",
+   "name": "Oakridge/Marpole",
+   "labels": [
+    "OAKRIDGE/MARPOLE",
+    "OKRDG/MR",
+    "OAKRID"
+   ],
+   "col": 1,
+   "row": 7
+  },
+  {
+   "id": "3116",
+   "name": "East and West Cambie/Bridgeport",
+   "labels": [
+    "EAST AND WEST CAMBIE/BRIDGEPORT",
+    "E AND W CAMBIE/BRIDGEPORT",
+    "E A W CAMBIE/BRIDGEPORT",
+    "EAWC",
+    "ENDWCMB/",
+    "EAST A"
+   ],
+   "col": 2,
+   "row": 7
+  },
+  {
+   "id": "3261",
+   "name": "Killarney",
+   "labels": [
+    "KILLARNEY",
+    "KLLRNY",
+    "KILLAR"
+   ],
+   "col": 3,
+   "row": 7
+  },
+  {
+   "id": "2227",
+   "name": "South Slope/Big Bend",
+   "labels": [
+    "SOUTH SLOPE/BIG BEND",
+    "S SLOPE/BIG BEND",
+    "S S BEND",
+    "SSB",
+    "SSLP/BGB",
+    "SOUTH"
+   ],
+   "col": 4,
+   "row": 7
+  },
+  {
+   "id": "2213",
+   "name": "New Westminster - Downtown",
+   "labels": [
+    "NEW WESTMINSTER - DOWNTOWN",
+    "NEW WEST-DOWNTOWN",
+    "N W DOWNTOWN",
+    "NWD",
+    "NWWST-DW",
+    "NEW WE"
+   ],
+   "col": 5,
+   "row": 7
+  },
+  {
+   "id": "2331",
+   "name": "Whalley",
+   "labels": [
+    "WHALLEY",
+    "WHLLY",
+    "WHALLE"
+   ],
+   "col": 6,
+   "row": 7
+  },
+  {
+   "id": "2337",
+   "name": "Guildford",
+   "labels": [
+    "GUILDFORD",
+    "GLDFRD",
+    "GUILDF"
+   ],
+   "col": 7,
+   "row": 7
+  },
+  {
+   "id": "2312",
+   "name": "Walnut Grove/Fort Langley",
+   "labels": [
+    "WALNUT GROVE/FORT LANGLEY",
+    "WALNUT GROVE/FORT LGLY",
+    "W G LANGLEY",
+    "WGL",
+    "WLNTGRV/",
+    "WALNUT"
+   ],
+   "col": 9,
+   "row": 7
+  },
+  {
+   "id": "3112",
+   "name": "Blundell",
+   "labels": [
+    "BLUNDELL",
+    "BLNDLL",
+    "BLUNDE"
+   ],
+   "col": 0,
+   "row": 8
+  },
+  {
+   "id": "3111",
+   "name": "Richmond City Centre",
+   "labels": [
+    "RICHMOND CITY CENTRE",
+    "RICH CITY CTR",
+    "R C CENTRE",
+    "RCC",
+    "RCHCTYCT",
+    "RICHMO"
+   ],
+   "col": 1,
+   "row": 8
+  },
+  {
+   "id": "3117",
+   "name": "Gilmore/Shellmont/East/Hamilton",
+   "labels": [
+    "GILMORE/SHELLMONT/EAST/HAMILTON",
+    "GLMR/SHL",
+    "GILMOR"
+   ],
+   "col": 2,
+   "row": 8
+  },
+  {
+   "id": "2214",
+   "name": "New Westminster - West/Queensborough",
+   "labels": [
+    "NEW WESTMINSTER - WEST/QUEENSBOROUGH",
+    "NEW WEST-WEST/QUEENSBOROUGH",
+    "N W WEST/QUEENSBOROUGH",
+    "NWW",
+    "NWWST-WS",
+    "NEW WE"
+   ],
+   "col": 4,
+   "row": 8
+  },
+  {
+   "id": "2332",
+   "name": "North Surrey",
+   "labels": [
+    "NORTH SURREY",
+    "N SRY",
+    "N SURREY",
+    "NS",
+    "NSRY",
+    "NORTH"
+   ],
+   "col": 5,
+   "row": 8
+  },
+  {
+   "id": "2338",
+   "name": "West Newton",
+   "labels": [
+    "WEST NEWTON",
+    "W NEWTON",
+    "WN",
+    "WNWTN",
+    "WEST N"
+   ],
+   "col": 6,
+   "row": 8
+  },
+  {
+   "id": "2336",
+   "name": "Fleetwood",
+   "labels": [
+    "FLEETWOOD",
+    "FLTWD",
+    "FLEETW"
+   ],
+   "col": 7,
+   "row": 8
+  },
+  {
+   "id": "2313",
+   "name": "Willoughby",
+   "labels": [
+    "WILLOUGHBY",
+    "WLLGHBY",
+    "WILLOU"
+   ],
+   "col": 8,
+   "row": 8
+  },
+  {
+   "id": "3115",
+   "name": "Steveston",
+   "labels": [
+    "STEVESTON",
+    "STVSTN",
+    "STEVES"
+   ],
+   "col": 0,
+   "row": 9
+  },
+  {
+   "id": "3113",
+   "name": "Broadmoor",
+   "labels": [
+    "BROADMOOR",
+    "BRDMR",
+    "BROADM"
+   ],
+   "col": 1,
+   "row": 9
+  },
+  {
+   "id": "2322",
+   "name": "Ladner",
+   "labels": [
+    "LADNER",
+    "LDNR"
+   ],
+   "col": 4,
+   "row": 9
+  },
+  {
+   "id": "2321",
+   "name": "North Delta",
+   "labels": [
+    "NORTH DELTA",
+    "N DELTA",
+    "ND",
+    "NDLT",
+    "NORTH"
+   ],
+   "col": 5,
+   "row": 9
+  },
+  {
+   "id": "2335",
+   "name": "East Newton",
+   "labels": [
+    "EAST NEWTON",
+    "E NEWTON",
+    "EN",
+    "ENWTN",
+    "EAST N"
+   ],
+   "col": 6,
+   "row": 9
+  },
+  {
+   "id": "2333",
+   "name": "Cloverdale",
+   "labels": [
+    "CLOVERDALE",
+    "CLVRDL",
+    "CLOVER"
+   ],
+   "col": 7,
+   "row": 9
+  },
+  {
+   "id": "2311",
+   "name": "Langley",
+   "labels": [
+    "LANGLEY",
+    "LGLY",
+    "LANGLE"
+   ],
+   "col": 8,
+   "row": 9
+  },
+  {
+   "id": "2316",
+   "name": "North Langley Township",
+   "labels": [
+    "NORTH LANGLEY TOWNSHIP",
+    "N LGLY TOWNSHIP",
+    "N L TOWNSHIP",
+    "NLT",
+    "NLGLYTWN",
+    "NORTH"
+   ],
+   "col": 9,
+   "row": 9
+  },
+  {
+   "id": "2141",
+   "name": "South Mission",
+   "labels": [
+    "SOUTH MISSION",
+    "S MISSION",
+    "SM",
+    "SMSSN",
+    "SOUTH"
+   ],
+   "col": 11,
+   "row": 9
+  },
+  {
+   "id": "2334",
+   "name": "Panorama",
+   "labels": [
+    "PANORAMA",
+    "PNRM",
+    "PANORA"
+   ],
+   "col": 6,
+   "row": 10
+  },
+  {
+   "id": "2314",
+   "name": "Brookswood/Murrayville",
+   "labels": [
+    "BROOKSWOOD/MURRAYVILLE",
+    "BRKSWD/M",
+    "BROOKS"
+   ],
+   "col": 8,
+   "row": 10
+  },
+  {
+   "id": "2315",
+   "name": "Aldergrove/Otter",
+   "labels": [
+    "ALDERGROVE/OTTER",
+    "ALDRGRV/",
+    "ALDERG"
+   ],
+   "col": 10,
+   "row": 10
+  },
+  {
+   "id": "2134",
+   "name": "Abbotsford Rural",
+   "labels": [
+    "ABBOTSFORD RURAL",
+    "ABBY RURAL",
+    "A RURAL",
+    "AR",
+    "ABBYRRL",
+    "ABBOTS"
+   ],
+   "col": 11,
+   "row": 10
+  },
+  {
+   "id": "2323",
+   "name": "Tsawwassen",
+   "labels": [
+    "TSAWWASSEN",
+    "TSWWSSN",
+    "TSAWWA"
+   ],
+   "col": 2,
+   "row": 11
+  },
+  {
+   "id": "2341",
+   "name": "South Surrey West",
+   "labels": [
+    "SOUTH SURREY WEST",
+    "S SRY W",
+    "S S WEST",
+    "SSW",
+    "SSRYW",
+    "SOUTH"
+   ],
+   "col": 6,
+   "row": 11
+  },
+  {
+   "id": "2342",
+   "name": "White Rock",
+   "labels": [
+    "WHITE ROCK",
+    "W ROCK",
+    "WR",
+    "WHTRCK",
+    "WHITE"
+   ],
+   "col": 7,
+   "row": 11
+  },
+  {
+   "id": "2343",
+   "name": "South Surrey East",
+   "labels": [
+    "SOUTH SURREY EAST",
+    "S SRY E",
+    "S S EAST",
+    "SSE",
+    "SSRYE",
+    "SOUTH"
+   ],
+   "col": 8,
+   "row": 11
+  },
+  {
+   "id": "2317",
+   "name": "South Langley Township",
+   "labels": [
+    "SOUTH LANGLEY TOWNSHIP",
+    "S LGLY TOWNSHIP",
+    "S L TOWNSHIP",
+    "SLT",
+    "SLGLYTWN",
+    "SOUTH"
+   ],
+   "col": 9,
+   "row": 11
+  },
+  {
+   "id": "2133",
+   "name": "West Abbotsford",
+   "labels": [
+    "WEST ABBOTSFORD",
+    "W ABBY",
+    "W ABBOTSFORD",
+    "WA",
+    "WABBY",
+    "WEST A"
+   ],
+   "col": 10,
+   "row": 11
+  },
+  {
+   "id": "2131",
+   "name": "Central Abbotsford",
+   "labels": [
+    "CENTRAL ABBOTSFORD",
+    "C ABBY",
+    "C ABBOTSFORD",
+    "CA",
+    "CABBY",
+    "CENTRA"
+   ],
+   "col": 11,
+   "row": 11
+  }
+ ]
+}

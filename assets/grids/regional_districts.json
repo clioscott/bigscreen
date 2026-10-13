@@ -1,0 +1,395 @@
+{
+ "id": "regional_districts",
+ "label": "BC regional districts",
+ "level": "regional_district",
+ "source": "Regional districts",
+ "cols": 8,
+ "rows": 6,
+ "units": [
+  {
+   "id": "361",
+   "name": "Stikine Region (Unincorporated)",
+   "labels": [
+    "STIKINE REGION (UNINCORPORATED)",
+    "S R (UNINCORPORATED)",
+    "SR(",
+    "STKNRGN(",
+    "STIKIN"
+   ],
+   "col": 1,
+   "row": 0
+  },
+  {
+   "id": "60",
+   "name": "Peace River Regional District",
+   "labels": [
+    "PEACE RIVER REGIONAL DISTRICT",
+    "PEACE R REG DIST",
+    "P R R DISTRICT",
+    "PRRD",
+    "PCRRGDST",
+    "PEACE"
+   ],
+   "col": 5,
+   "row": 0
+  },
+  {
+   "id": "47",
+   "name": "Kitimat-Stikine",
+   "labels": [
+    "KITIMAT-STIKINE",
+    "K STIKINE",
+    "KS",
+    "KTMT-STK",
+    "KITIMA"
+   ],
+   "col": 0,
+   "row": 1
+  },
+  {
+   "id": "2",
+   "name": "Bulkley-Nechako",
+   "labels": [
+    "BULKLEY-NECHAKO",
+    "B NECHAKO",
+    "BN",
+    "BLKLY-NC",
+    "BULKLE"
+   ],
+   "col": 2,
+   "row": 1
+  },
+  {
+   "id": "35",
+   "name": "Fraser-Fort George",
+   "labels": [
+    "FRASER-FORT GEORGE",
+    "FRASER-FT GEORGE",
+    "F F GEORGE",
+    "FFG",
+    "FRSR-FTG",
+    "FRASER"
+   ],
+   "col": 5,
+   "row": 1
+  },
+  {
+   "id": "72",
+   "name": "North Coast Regional District",
+   "labels": [
+    "NORTH COAST REGIONAL DISTRICT",
+    "N COAST REG DIST",
+    "N C R DISTRICT",
+    "NCRD",
+    "NCSTRGDS",
+    "NORTH"
+   ],
+   "col": 0,
+   "row": 2
+  },
+  {
+   "id": "274",
+   "name": "Central Coast Regional District",
+   "labels": [
+    "CENTRAL COAST REGIONAL DISTRICT",
+    "C COAST REG DIST",
+    "C C R DISTRICT",
+    "CCRD",
+    "CCSTRGDS",
+    "CENTRA"
+   ],
+   "col": 1,
+   "row": 2
+  },
+  {
+   "id": "18",
+   "name": "Cariboo Regional District",
+   "labels": [
+    "CARIBOO REGIONAL DISTRICT",
+    "CARIBOO REG DIST",
+    "C R DISTRICT",
+    "CRD",
+    "CRBRGDST",
+    "CARIBO"
+   ],
+   "col": 4,
+   "row": 2
+  },
+  {
+   "id": "194",
+   "name": "Columbia Shuswap Regional District",
+   "labels": [
+    "COLUMBIA SHUSWAP REGIONAL DISTRICT",
+    "COL SHUSWAP REG DIST",
+    "C S R DISTRICT",
+    "CSRD",
+    "CLSHSWPR",
+    "COLUMB"
+   ],
+   "col": 7,
+   "row": 2
+  },
+  {
+   "id": "301",
+   "name": "Mount Waddington",
+   "labels": [
+    "MOUNT WADDINGTON",
+    "MT WADDINGTON",
+    "M WADDINGTON",
+    "MW",
+    "MTWDDNGT",
+    "MOUNT"
+   ],
+   "col": 1,
+   "row": 3
+  },
+  {
+   "id": "337",
+   "name": "Strathcona Regional District",
+   "labels": [
+    "STRATHCONA REGIONAL DISTRICT",
+    "STRATHCONA REG DIST",
+    "S R DISTRICT",
+    "SRD",
+    "STRTHCNR",
+    "STRATH"
+   ],
+   "col": 2,
+   "row": 3
+  },
+  {
+   "id": "322",
+   "name": "qathet Regional District",
+   "labels": [
+    "QATHET REGIONAL DISTRICT",
+    "QATHET REG DIST",
+    "Q R DISTRICT",
+    "QRD",
+    "QTHTRGDS",
+    "QATHET"
+   ],
+   "col": 3,
+   "row": 3
+  },
+  {
+   "id": "142",
+   "name": "Squamish-Lillooet Regional District",
+   "labels": [
+    "SQUAMISH-LILLOOET REGIONAL DISTRICT",
+    "SQMSH-LILLOOET REG DIST",
+    "S L R DISTRICT",
+    "SLRD",
+    "SQMSH-LL",
+    "SQUAMI"
+   ],
+   "col": 4,
+   "row": 3
+  },
+  {
+   "id": "151",
+   "name": "Thompson-Nicola Regional District",
+   "labels": [
+    "THOMPSON-NICOLA REGIONAL DISTRICT",
+    "THOMPSON-NICOLA REG DIST",
+    "T N R DISTRICT",
+    "TNRD",
+    "THMPSN-N",
+    "THOMPS"
+   ],
+   "col": 5,
+   "row": 3
+  },
+  {
+   "id": "235",
+   "name": "North Okanagan",
+   "labels": [
+    "NORTH OKANAGAN",
+    "N OKAN",
+    "N OKANAGAN",
+    "NO",
+    "NOKN",
+    "NORTH"
+   ],
+   "col": 6,
+   "row": 3
+  },
+  {
+   "id": "205",
+   "name": "East Kootenay",
+   "labels": [
+    "EAST KOOTENAY",
+    "E KOOT",
+    "E KOOTENAY",
+    "EK",
+    "EKT",
+    "EAST K"
+   ],
+   "col": 7,
+   "row": 3
+  },
+  {
+   "id": "280",
+   "name": "Comox Valley Regional District",
+   "labels": [
+    "COMOX VALLEY REGIONAL DISTRICT",
+    "COMOX VLY REG DIST",
+    "C V R DISTRICT",
+    "CVRD",
+    "CMXVLYRG",
+    "COMOX"
+   ],
+   "col": 2,
+   "row": 4
+  },
+  {
+   "id": "310",
+   "name": "Nanaimo",
+   "labels": [
+    "NANAIMO",
+    "NNM",
+    "NANAIM"
+   ],
+   "col": 3,
+   "row": 4
+  },
+  {
+   "id": "329",
+   "name": "Sunshine Coast Regional District",
+   "labels": [
+    "SUNSHINE COAST REGIONAL DISTRICT",
+    "SUN COAST REG DIST",
+    "S C R DISTRICT",
+    "SCRD",
+    "SNCSTRGD",
+    "SUNSHI"
+   ],
+   "col": 4,
+   "row": 4
+  },
+  {
+   "id": "89",
+   "name": "Fraser Valley Regional District",
+   "labels": [
+    "FRASER VALLEY REGIONAL DISTRICT",
+    "FRASER VLY REG DIST",
+    "F V R DISTRICT",
+    "FVRD",
+    "FRSRVLYR",
+    "FRASER"
+   ],
+   "col": 5,
+   "row": 4
+  },
+  {
+   "id": "82",
+   "name": "Central Okanagan",
+   "labels": [
+    "CENTRAL OKANAGAN",
+    "C OKAN",
+    "C OKANAGAN",
+    "CO",
+    "COKN",
+    "CENTRA"
+   ],
+   "col": 6,
+   "row": 4
+  },
+  {
+   "id": "173",
+   "name": "Central Kootenay",
+   "labels": [
+    "CENTRAL KOOTENAY",
+    "C KOOT",
+    "C KOOTENAY",
+    "CK",
+    "CKT",
+    "CENTRA"
+   ],
+   "col": 7,
+   "row": 4
+  },
+  {
+   "id": "247",
+   "name": "Alberni-Clayoquot",
+   "labels": [
+    "ALBERNI-CLAYOQUOT",
+    "A CLAYOQUOT",
+    "AC",
+    "ALBRN-CL",
+    "ALBERN"
+   ],
+   "col": 1,
+   "row": 5
+  },
+  {
+   "id": "257",
+   "name": "Capital Regional District",
+   "labels": [
+    "CAPITAL REGIONAL DISTRICT",
+    "CAPITAL REG DIST",
+    "C R DISTRICT",
+    "CRD",
+    "CPTLRGDS",
+    "CAPITA"
+   ],
+   "col": 2,
+   "row": 5
+  },
+  {
+   "id": "287",
+   "name": "Cowichan Valley Regional District",
+   "labels": [
+    "COWICHAN VALLEY REGIONAL DISTRICT",
+    "COWICHAN VLY REG DIST",
+    "C V R DISTRICT",
+    "CVRD",
+    "CWCHNVLY",
+    "COWICH"
+   ],
+   "col": 3,
+   "row": 5
+  },
+  {
+   "id": "104",
+   "name": "Metro Vancouver Regional District",
+   "labels": [
+    "METRO VANCOUVER REGIONAL DISTRICT",
+    "METRO VAN REG DIST",
+    "M V R DISTRICT",
+    "MVRD",
+    "MTRVNRGD",
+    "METRO"
+   ],
+   "col": 4,
+   "row": 5
+  },
+  {
+   "id": "127",
+   "name": "Okanagan-Similkameen",
+   "labels": [
+    "OKANAGAN-SIMILKAMEEN",
+    "OKAN-SIMILKAMEEN",
+    "O SIMILKAMEEN",
+    "OS",
+    "OKN-SMLK",
+    "OKANAG"
+   ],
+   "col": 5,
+   "row": 5
+  },
+  {
+   "id": "221",
+   "name": "Kootenay Boundary",
+   "labels": [
+    "KOOTENAY BOUNDARY",
+    "KOOT BOUNDARY",
+    "K BOUNDARY",
+    "KB",
+    "KTBNDRY",
+    "KOOTEN"
+   ],
+   "col": 6,
+   "row": 5
+  }
+ ]
+}

@@ -1,0 +1,220 @@
+{
+ "id": "hsdas",
+ "label": "Health service delivery areas",
+ "level": "hsda",
+ "source": "Health service delivery areas",
+ "cols": 6,
+ "rows": 4,
+ "units": [
+  {
+   "id": "51",
+   "name": "Northwest",
+   "labels": [
+    "NORTHWEST",
+    "NW",
+    "NORTHW"
+   ],
+   "col": 0,
+   "row": 0
+  },
+  {
+   "id": "52",
+   "name": "Northern Interior",
+   "labels": [
+    "NORTHERN INTERIOR",
+    "N INTERIOR",
+    "NI",
+    "NRTHRNIN",
+    "NORTHE"
+   ],
+   "col": 1,
+   "row": 0
+  },
+  {
+   "id": "53",
+   "name": "Northeast",
+   "labels": [
+    "NORTHEAST",
+    "NE",
+    "NORTHE"
+   ],
+   "col": 3,
+   "row": 0
+  },
+  {
+   "id": "33",
+   "name": "North Shore/Coast Garibaldi",
+   "labels": [
+    "NORTH SHORE/COAST GARIBALDI",
+    "N SHORE/COAST GARIBALDI",
+    "N S GARIBALDI",
+    "NSG",
+    "NSHR/CST",
+    "NORTH"
+   ],
+   "col": 0,
+   "row": 1
+  },
+  {
+   "id": "43",
+   "name": "North Vancouver Island",
+   "labels": [
+    "NORTH VANCOUVER ISLAND",
+    "N VAN I",
+    "N V ISLAND",
+    "NVI",
+    "NVNI",
+    "NORTH"
+   ],
+   "col": 1,
+   "row": 1
+  },
+  {
+   "id": "14",
+   "name": "Thompson Cariboo Shuswap",
+   "labels": [
+    "THOMPSON CARIBOO SHUSWAP",
+    "T C SHUSWAP",
+    "TCS",
+    "THMPSNCR",
+    "THOMPS"
+   ],
+   "col": 4,
+   "row": 1
+  },
+  {
+   "id": "11",
+   "name": "East Kootenay",
+   "labels": [
+    "EAST KOOTENAY",
+    "E KOOT",
+    "E KOOTENAY",
+    "EK",
+    "EKT",
+    "EAST K"
+   ],
+   "col": 5,
+   "row": 1
+  },
+  {
+   "id": "32",
+   "name": "Vancouver",
+   "labels": [
+    "VANCOUVER",
+    "VAN",
+    "VN",
+    "VANCOU"
+   ],
+   "col": 1,
+   "row": 2
+  },
+  {
+   "id": "22",
+   "name": "Fraser North",
+   "labels": [
+    "FRASER NORTH",
+    "FRASER N",
+    "F NORTH",
+    "FN",
+    "FRSRN",
+    "FRASER"
+   ],
+   "col": 2,
+   "row": 2
+  },
+  {
+   "id": "21",
+   "name": "Fraser East",
+   "labels": [
+    "FRASER EAST",
+    "FRASER E",
+    "F EAST",
+    "FE",
+    "FRSRE",
+    "FRASER"
+   ],
+   "col": 3,
+   "row": 2
+  },
+  {
+   "id": "13",
+   "name": "Okanagan",
+   "labels": [
+    "OKANAGAN",
+    "OKAN",
+    "OKN",
+    "OKANAG"
+   ],
+   "col": 4,
+   "row": 2
+  },
+  {
+   "id": "12",
+   "name": "Kootenay Boundary",
+   "labels": [
+    "KOOTENAY BOUNDARY",
+    "KOOT BOUNDARY",
+    "K BOUNDARY",
+    "KB",
+    "KTBNDRY",
+    "KOOTEN"
+   ],
+   "col": 5,
+   "row": 2
+  },
+  {
+   "id": "42",
+   "name": "Central Vancouver Island",
+   "labels": [
+    "CENTRAL VANCOUVER ISLAND",
+    "C VAN I",
+    "C V ISLAND",
+    "CVI",
+    "CVNI",
+    "CENTRA"
+   ],
+   "col": 0,
+   "row": 3
+  },
+  {
+   "id": "41",
+   "name": "South Vancouver Island",
+   "labels": [
+    "SOUTH VANCOUVER ISLAND",
+    "S VAN I",
+    "S V ISLAND",
+    "SVI",
+    "SVNI",
+    "SOUTH"
+   ],
+   "col": 1,
+   "row": 3
+  },
+  {
+   "id": "31",
+   "name": "Richmond",
+   "labels": [
+    "RICHMOND",
+    "RICH",
+    "RCH",
+    "RICHMO"
+   ],
+   "col": 2,
+   "row": 3
+  },
+  {
+   "id": "23",
+   "name": "Fraser South",
+   "labels": [
+    "FRASER SOUTH",
+    "FRASER S",
+    "F SOUTH",
+    "FS",
+    "FRSRS",
+    "FRASER"
+   ],
+   "col": 3,
+   "row": 3
+  }
+ ]
+}

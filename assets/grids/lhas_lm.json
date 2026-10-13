@@ -1,0 +1,325 @@
+{
+ "id": "lhas_lm",
+ "label": "Local health areas",
+ "level": "lha",
+ "source": "Local health areas",
+ "cols": 9,
+ "rows": 5,
+ "units": [
+  {
+   "id": "333",
+   "name": "Sunshine Coast",
+   "labels": [
+    "SUNSHINE COAST",
+    "SUN COAST",
+    "S COAST",
+    "SC",
+    "SNCST",
+    "SUNSHI"
+   ],
+   "col": 0,
+   "row": 0
+  },
+  {
+   "id": "335",
+   "name": "Howe Sound",
+   "labels": [
+    "HOWE SOUND",
+    "H SOUND",
+    "HS",
+    "HWSND",
+    "HOWE S"
+   ],
+   "col": 4,
+   "row": 0
+  },
+  {
+   "id": "223",
+   "name": "Maple Ridge/Pitt Meadows",
+   "labels": [
+    "MAPLE RIDGE/PITT MEADOWS",
+    "M R MEADOWS",
+    "MRM",
+    "MPLRDG/P",
+    "MAPLE"
+   ],
+   "col": 5,
+   "row": 1
+  },
+  {
+   "id": "215",
+   "name": "Agassiz/Harrison",
+   "labels": [
+    "AGASSIZ/HARRISON",
+    "AGSSZ/HR",
+    "AGASSI"
+   ],
+   "col": 7,
+   "row": 1
+  },
+  {
+   "id": "211",
+   "name": "Hope",
+   "labels": [
+    "HOPE",
+    "HP"
+   ],
+   "col": 8,
+   "row": 1
+  },
+  {
+   "id": "332",
+   "name": "West Vancouver/Bowen Island",
+   "labels": [
+    "WEST VANCOUVER/BOWEN ISLAND",
+    "W VANCOUVER/BOWEN I",
+    "W V ISLAND",
+    "WVI",
+    "WVNCVR/B",
+    "WEST V"
+   ],
+   "col": 0,
+   "row": 2
+  },
+  {
+   "id": "321",
+   "name": "Vancouver - City Centre",
+   "labels": [
+    "VANCOUVER - CITY CENTRE",
+    "VAN-CITY CTR",
+    "V C CENTRE",
+    "VCC",
+    "VN-CTYCT",
+    "VANCOU"
+   ],
+   "col": 1,
+   "row": 2
+  },
+  {
+   "id": "322",
+   "name": "Vancouver - Centre North",
+   "labels": [
+    "VANCOUVER - CENTRE NORTH",
+    "VAN-CTR N",
+    "V C NORTH",
+    "VCN",
+    "VN-CTRN",
+    "VANCOU"
+   ],
+   "col": 2,
+   "row": 2
+  },
+  {
+   "id": "323",
+   "name": "Vancouver - Northeast",
+   "labels": [
+    "VANCOUVER - NORTHEAST",
+    "VAN-NE",
+    "V NORTHEAST",
+    "VN",
+    "VN-NE",
+    "VANCOU"
+   ],
+   "col": 3,
+   "row": 2
+  },
+  {
+   "id": "331",
+   "name": "North Vancouver",
+   "labels": [
+    "NORTH VANCOUVER",
+    "N VAN",
+    "N VANCOUVER",
+    "NV",
+    "NVN",
+    "NORTH"
+   ],
+   "col": 4,
+   "row": 2
+  },
+  {
+   "id": "224",
+   "name": "Tri-Cities",
+   "labels": [
+    "TRI-CITIES",
+    "T CITIES",
+    "TC",
+    "TR-CTS",
+    "TRI-CI"
+   ],
+   "col": 5,
+   "row": 2
+  },
+  {
+   "id": "214",
+   "name": "Mission",
+   "labels": [
+    "MISSION",
+    "MSSN",
+    "MISSIO"
+   ],
+   "col": 6,
+   "row": 2
+  },
+  {
+   "id": "324",
+   "name": "Vancouver - Westside",
+   "labels": [
+    "VANCOUVER - WESTSIDE",
+    "VAN-WESTSIDE",
+    "V WESTSIDE",
+    "VW",
+    "VN-WSTSD",
+    "VANCOU"
+   ],
+   "col": 1,
+   "row": 3
+  },
+  {
+   "id": "325",
+   "name": "Vancouver - Midtown",
+   "labels": [
+    "VANCOUVER - MIDTOWN",
+    "VAN-MIDTOWN",
+    "V MIDTOWN",
+    "VM",
+    "VN-MDTWN",
+    "VANCOU"
+   ],
+   "col": 2,
+   "row": 3
+  },
+  {
+   "id": "326",
+   "name": "Vancouver - South",
+   "labels": [
+    "VANCOUVER - SOUTH",
+    "VAN-S",
+    "V SOUTH",
+    "VS",
+    "VN-S",
+    "VANCOU"
+   ],
+   "col": 3,
+   "row": 3
+  },
+  {
+   "id": "222",
+   "name": "Burnaby",
+   "labels": [
+    "BURNABY",
+    "BBY",
+    "BURNAB"
+   ],
+   "col": 4,
+   "row": 3
+  },
+  {
+   "id": "221",
+   "name": "New Westminster",
+   "labels": [
+    "NEW WESTMINSTER",
+    "NEW WEST",
+    "N WESTMINSTER",
+    "NW",
+    "NWWST",
+    "NEW WE"
+   ],
+   "col": 5,
+   "row": 3
+  },
+  {
+   "id": "423",
+   "name": "Cowichan Valley North",
+   "labels": [
+    "COWICHAN VALLEY NORTH",
+    "COWICHAN VLY N",
+    "C V NORTH",
+    "CVN",
+    "CWCHNVLY",
+    "COWICH"
+   ],
+   "col": 0,
+   "row": 4
+  },
+  {
+   "id": "311",
+   "name": "Richmond",
+   "labels": [
+    "RICHMOND",
+    "RICH",
+    "RCH",
+    "RICHMO"
+   ],
+   "col": 2,
+   "row": 4
+  },
+  {
+   "id": "232",
+   "name": "Delta",
+   "labels": [
+    "DELTA",
+    "DLT"
+   ],
+   "col": 3,
+   "row": 4
+  },
+  {
+   "id": "233",
+   "name": "Surrey",
+   "labels": [
+    "SURREY",
+    "SRY"
+   ],
+   "col": 4,
+   "row": 4
+  },
+  {
+   "id": "234",
+   "name": "South Surrey/White Rock",
+   "labels": [
+    "SOUTH SURREY/WHITE ROCK",
+    "S SURREY/WHITE ROCK",
+    "S S ROCK",
+    "SSR",
+    "SSRRY/WH",
+    "SOUTH"
+   ],
+   "col": 5,
+   "row": 4
+  },
+  {
+   "id": "231",
+   "name": "Langley",
+   "labels": [
+    "LANGLEY",
+    "LGLY",
+    "LANGLE"
+   ],
+   "col": 6,
+   "row": 4
+  },
+  {
+   "id": "213",
+   "name": "Abbotsford",
+   "labels": [
+    "ABBOTSFORD",
+    "ABBY",
+    "ABBOTS"
+   ],
+   "col": 7,
+   "row": 4
+  },
+  {
+   "id": "212",
+   "name": "Chilliwack",
+   "labels": [
+    "CHILLIWACK",
+    "CHWK",
+    "CHILLI"
+   ],
+   "col": 8,
+   "row": 4
+  }
+ ]
+}

@@ -1,0 +1,764 @@
+{
+ "id": "bc_ridings_lm",
+ "label": "Provincial ridings",
+ "level": "bc_riding",
+ "source": "Provincial electoral districts",
+ "cols": 11,
+ "rows": 8,
+ "units": [
+  {
+   "id": "WVS",
+   "name": "West Vancouver-Sea to Sky",
+   "labels": [
+    "WEST VANCOUVER-SEA TO SKY",
+    "W VAN-SEA TO SKY",
+    "W V S T SKY",
+    "WVSTS",
+    "WVN-STSK",
+    "WEST V"
+   ],
+   "col": 4,
+   "row": 0
+  },
+  {
+   "id": "NVS",
+   "name": "North Vancouver-Seymour",
+   "labels": [
+    "NORTH VANCOUVER-SEYMOUR",
+    "N VAN-SEYMOUR",
+    "N V SEYMOUR",
+    "NVS",
+    "NVN-SYMR",
+    "NORTH"
+   ],
+   "col": 4,
+   "row": 1
+  },
+  {
+   "id": "MAP",
+   "name": "Maple Ridge-Pitt Meadows",
+   "labels": [
+    "MAPLE RIDGE-PITT MEADOWS",
+    "M R P MEADOWS",
+    "MRPM",
+    "MPLRDG-P",
+    "MAPLE"
+   ],
+   "col": 8,
+   "row": 1
+  },
+  {
+   "id": "VNW",
+   "name": "Vancouver-West End",
+   "labels": [
+    "VANCOUVER-WEST END",
+    "VAN-W END",
+    "V W END",
+    "VWE",
+    "VN-WEND",
+    "VANCOU"
+   ],
+   "col": 1,
+   "row": 2
+  },
+  {
+   "id": "WVC",
+   "name": "West Vancouver-Capilano",
+   "labels": [
+    "WEST VANCOUVER-CAPILANO",
+    "W VAN-CAPILANO",
+    "W V CAPILANO",
+    "WVC",
+    "WVN-CPLN",
+    "WEST V"
+   ],
+   "col": 2,
+   "row": 2
+  },
+  {
+   "id": "NVL",
+   "name": "North Vancouver-Lonsdale",
+   "labels": [
+    "NORTH VANCOUVER-LONSDALE",
+    "N VAN-LONSDALE",
+    "N V LONSDALE",
+    "NVL",
+    "NVN-LNSD",
+    "NORTH"
+   ],
+   "col": 3,
+   "row": 2
+  },
+  {
+   "id": "VHA",
+   "name": "Vancouver-Hastings",
+   "labels": [
+    "VANCOUVER-HASTINGS",
+    "VAN-HASTINGS",
+    "V HASTINGS",
+    "VH",
+    "VN-HSTNG",
+    "VANCOU"
+   ],
+   "col": 4,
+   "row": 2
+  },
+  {
+   "id": "BNO",
+   "name": "Burnaby North",
+   "labels": [
+    "BURNABY NORTH",
+    "BBY N",
+    "B NORTH",
+    "BN",
+    "BBYN",
+    "BURNAB"
+   ],
+   "col": 5,
+   "row": 2
+  },
+  {
+   "id": "POM",
+   "name": "Port Moody-Burquitlam",
+   "labels": [
+    "PORT MOODY-BURQUITLAM",
+    "PT MOODY-BURQUITLAM",
+    "P M BURQUITLAM",
+    "PMB",
+    "PTMDY-BR",
+    "PORT M"
+   ],
+   "col": 6,
+   "row": 2
+  },
+  {
+   "id": "CQB",
+   "name": "Coquitlam-Burke Mountain",
+   "labels": [
+    "COQUITLAM-BURKE MOUNTAIN",
+    "COQ-BURKE MTN",
+    "C B MOUNTAIN",
+    "CBM",
+    "CQ-BRKMT",
+    "COQUIT"
+   ],
+   "col": 7,
+   "row": 2
+  },
+  {
+   "id": "NAL",
+   "name": "Nanaimo-Lantzville",
+   "labels": [
+    "NANAIMO-LANTZVILLE",
+    "N LANTZVILLE",
+    "NL",
+    "NNM-LNTZ",
+    "NANAIM"
+   ],
+   "col": 0,
+   "row": 3
+  },
+  {
+   "id": "VNS",
+   "name": "Vancouver-South Granville",
+   "labels": [
+    "VANCOUVER-SOUTH GRANVILLE",
+    "VAN-S GRANVILLE",
+    "V S GRANVILLE",
+    "VSG",
+    "VN-SGRNV",
+    "VANCOU"
+   ],
+   "col": 1,
+   "row": 3
+  },
+  {
+   "id": "VNY",
+   "name": "Vancouver-Yaletown",
+   "labels": [
+    "VANCOUVER-YALETOWN",
+    "VAN-YALETOWN",
+    "V YALETOWN",
+    "VY",
+    "VN-YLTWN",
+    "VANCOU"
+   ],
+   "col": 2,
+   "row": 3
+  },
+  {
+   "id": "VNT",
+   "name": "Vancouver-Strathcona",
+   "labels": [
+    "VANCOUVER-STRATHCONA",
+    "VAN-STRATHCONA",
+    "V STRATHCONA",
+    "VS",
+    "VN-STRTH",
+    "VANCOU"
+   ],
+   "col": 3,
+   "row": 3
+  },
+  {
+   "id": "VNR",
+   "name": "Vancouver-Renfrew",
+   "labels": [
+    "VANCOUVER-RENFREW",
+    "VAN-RENFREW",
+    "V RENFREW",
+    "VR",
+    "VN-RNFRW",
+    "VANCOU"
+   ],
+   "col": 4,
+   "row": 3
+  },
+  {
+   "id": "BNE",
+   "name": "Burnaby East",
+   "labels": [
+    "BURNABY EAST",
+    "BBY E",
+    "B EAST",
+    "BE",
+    "BBYE",
+    "BURNAB"
+   ],
+   "col": 5,
+   "row": 3
+  },
+  {
+   "id": "CQM",
+   "name": "Coquitlam-Maillardville",
+   "labels": [
+    "COQUITLAM-MAILLARDVILLE",
+    "COQ-MAILLARDVILLE",
+    "C MAILLARDVILLE",
+    "CM",
+    "CQ-MLLRD",
+    "COQUIT"
+   ],
+   "col": 6,
+   "row": 3
+  },
+  {
+   "id": "VNP",
+   "name": "Vancouver-Point Grey",
+   "labels": [
+    "VANCOUVER-POINT GREY",
+    "VAN-POINT GREY",
+    "V P GREY",
+    "VPG",
+    "VN-PNTGR",
+    "VANCOU"
+   ],
+   "col": 0,
+   "row": 4
+  },
+  {
+   "id": "VNQ",
+   "name": "Vancouver-Quilchena",
+   "labels": [
+    "VANCOUVER-QUILCHENA",
+    "VAN-QUILCHENA",
+    "V QUILCHENA",
+    "VQ",
+    "VN-QLCHN",
+    "VANCOU"
+   ],
+   "col": 1,
+   "row": 4
+  },
+  {
+   "id": "VLM",
+   "name": "Vancouver-Little Mountain",
+   "labels": [
+    "VANCOUVER-LITTLE MOUNTAIN",
+    "VAN-LITTLE MTN",
+    "V L MOUNTAIN",
+    "VLM",
+    "VN-LTTLM",
+    "VANCOU"
+   ],
+   "col": 2,
+   "row": 4
+  },
+  {
+   "id": "VKE",
+   "name": "Vancouver-Kensington",
+   "labels": [
+    "VANCOUVER-KENSINGTON",
+    "VAN-KENSINGTON",
+    "V KENSINGTON",
+    "VK",
+    "VN-KNSNG",
+    "VANCOU"
+   ],
+   "col": 3,
+   "row": 4
+  },
+  {
+   "id": "BNC",
+   "name": "Burnaby Centre",
+   "labels": [
+    "BURNABY CENTRE",
+    "BBY CTR",
+    "B CENTRE",
+    "BC",
+    "BBYCTR",
+    "BURNAB"
+   ],
+   "col": 4,
+   "row": 4
+  },
+  {
+   "id": "BNN",
+   "name": "Burnaby-New Westminster",
+   "labels": [
+    "BURNABY-NEW WESTMINSTER",
+    "BBY-NEW WEST",
+    "B N WESTMINSTER",
+    "BNW",
+    "BBY-NWWS",
+    "BURNAB"
+   ],
+   "col": 5,
+   "row": 4
+  },
+  {
+   "id": "NMC",
+   "name": "New Westminster-Coquitlam",
+   "labels": [
+    "NEW WESTMINSTER-COQUITLAM",
+    "NEW WEST-COQ",
+    "N W COQUITLAM",
+    "NWC",
+    "NWWST-CQ",
+    "NEW WE"
+   ],
+   "col": 6,
+   "row": 4
+  },
+  {
+   "id": "POC",
+   "name": "Port Coquitlam",
+   "labels": [
+    "PORT COQUITLAM",
+    "PT COQ",
+    "P COQUITLAM",
+    "PC",
+    "PTCQ",
+    "PORT C"
+   ],
+   "col": 7,
+   "row": 4
+  },
+  {
+   "id": "MAE",
+   "name": "Maple Ridge East",
+   "labels": [
+    "MAPLE RIDGE EAST",
+    "MAPLE RIDGE E",
+    "M R EAST",
+    "MRE",
+    "MPLRDGE",
+    "MAPLE"
+   ],
+   "col": 8,
+   "row": 4
+  },
+  {
+   "id": "RCB",
+   "name": "Richmond-Bridgeport",
+   "labels": [
+    "RICHMOND-BRIDGEPORT",
+    "RICH-BRIDGEPORT",
+    "R BRIDGEPORT",
+    "RB",
+    "RCH-BRDG",
+    "RICHMO"
+   ],
+   "col": 1,
+   "row": 5
+  },
+  {
+   "id": "VLA",
+   "name": "Vancouver-Langara",
+   "labels": [
+    "VANCOUVER-LANGARA",
+    "VAN-LANGARA",
+    "V LANGARA",
+    "VL",
+    "VN-LNGR",
+    "VANCOU"
+   ],
+   "col": 2,
+   "row": 5
+  },
+  {
+   "id": "VFV",
+   "name": "Vancouver-Fraserview",
+   "labels": [
+    "VANCOUVER-FRASERVIEW",
+    "VAN-FRASERVIEW",
+    "V FRASERVIEW",
+    "VF",
+    "VN-FRSRV",
+    "VANCOU"
+   ],
+   "col": 3,
+   "row": 5
+  },
+  {
+   "id": "BNS",
+   "name": "Burnaby South-Metrotown",
+   "labels": [
+    "BURNABY SOUTH-METROTOWN",
+    "BBY S-METROTOWN",
+    "B S METROTOWN",
+    "BSM",
+    "BBYS-MTR",
+    "BURNAB"
+   ],
+   "col": 4,
+   "row": 5
+  },
+  {
+   "id": "SUN",
+   "name": "Surrey North",
+   "labels": [
+    "SURREY NORTH",
+    "SRY N",
+    "S NORTH",
+    "SN",
+    "SRYN",
+    "SURREY"
+   ],
+   "col": 5,
+   "row": 5
+  },
+  {
+   "id": "SRC",
+   "name": "Surrey City Centre",
+   "labels": [
+    "SURREY CITY CENTRE",
+    "SRY CITY CTR",
+    "S C CENTRE",
+    "SCC",
+    "SRYCTYCT",
+    "SURREY"
+   ],
+   "col": 6,
+   "row": 5
+  },
+  {
+   "id": "SRG",
+   "name": "Surrey-Guildford",
+   "labels": [
+    "SURREY-GUILDFORD",
+    "SRY-GUILDFORD",
+    "S GUILDFORD",
+    "SG",
+    "SRY-GLDF",
+    "SURREY"
+   ],
+   "col": 7,
+   "row": 5
+  },
+  {
+   "id": "LWG",
+   "name": "Langley-Walnut Grove",
+   "labels": [
+    "LANGLEY-WALNUT GROVE",
+    "LGLY-WALNUT GROVE",
+    "L W GROVE",
+    "LWG",
+    "LGLY-WLN",
+    "LANGLE"
+   ],
+   "col": 8,
+   "row": 5
+  },
+  {
+   "id": "CHN",
+   "name": "Chilliwack North",
+   "labels": [
+    "CHILLIWACK NORTH",
+    "CHWK N",
+    "C NORTH",
+    "CN",
+    "CHWKN",
+    "CHILLI"
+   ],
+   "col": 10,
+   "row": 5
+  },
+  {
+   "id": "NAI",
+   "name": "Nanaimo-Gabriola Island",
+   "labels": [
+    "NANAIMO-GABRIOLA ISLAND",
+    "NANAIMO-GABRIOLA I",
+    "N G ISLAND",
+    "NGI",
+    "NNM-GBRL",
+    "NANAIM"
+   ],
+   "col": 0,
+   "row": 6
+  },
+  {
+   "id": "RCS",
+   "name": "Richmond-Steveston",
+   "labels": [
+    "RICHMOND-STEVESTON",
+    "RICH-STEVESTON",
+    "R STEVESTON",
+    "RS",
+    "RCH-STVS",
+    "RICHMO"
+   ],
+   "col": 1,
+   "row": 6
+  },
+  {
+   "id": "RCC",
+   "name": "Richmond Centre",
+   "labels": [
+    "RICHMOND CENTRE",
+    "RICH CTR",
+    "R CENTRE",
+    "RC",
+    "RCHCTR",
+    "RICHMO"
+   ],
+   "col": 2,
+   "row": 6
+  },
+  {
+   "id": "RCQ",
+   "name": "Richmond-Queensborough",
+   "labels": [
+    "RICHMOND-QUEENSBOROUGH",
+    "RICH-QUEENSBOROUGH",
+    "R QUEENSBOROUGH",
+    "RQ",
+    "RCH-QNSB",
+    "RICHMO"
+   ],
+   "col": 3,
+   "row": 6
+  },
+  {
+   "id": "DLN",
+   "name": "Delta North",
+   "labels": [
+    "DELTA NORTH",
+    "DELTA N",
+    "D NORTH",
+    "DN",
+    "DLTN",
+    "DELTA"
+   ],
+   "col": 4,
+   "row": 6
+  },
+  {
+   "id": "SRN",
+   "name": "Surrey-Newton",
+   "labels": [
+    "SURREY-NEWTON",
+    "SRY-NEWTON",
+    "S NEWTON",
+    "SN",
+    "SRY-NWTN",
+    "SURREY"
+   ],
+   "col": 5,
+   "row": 6
+  },
+  {
+   "id": "SRF",
+   "name": "Surrey-Fleetwood",
+   "labels": [
+    "SURREY-FLEETWOOD",
+    "SRY-FLEETWOOD",
+    "S FLEETWOOD",
+    "SF",
+    "SRY-FLTW",
+    "SURREY"
+   ],
+   "col": 6,
+   "row": 6
+  },
+  {
+   "id": "SUR",
+   "name": "Surrey-Serpentine River",
+   "labels": [
+    "SURREY-SERPENTINE RIVER",
+    "SRY-SERPENTINE R",
+    "S S RIVER",
+    "SSR",
+    "SRY-SRPN",
+    "SURREY"
+   ],
+   "col": 7,
+   "row": 6
+  },
+  {
+   "id": "SRD",
+   "name": "Surrey-Cloverdale",
+   "labels": [
+    "SURREY-CLOVERDALE",
+    "SRY-CLOVERDALE",
+    "S CLOVERDALE",
+    "SC",
+    "SRY-CLVR",
+    "SURREY"
+   ],
+   "col": 8,
+   "row": 6
+  },
+  {
+   "id": "ABM",
+   "name": "Abbotsford-Mission",
+   "labels": [
+    "ABBOTSFORD-MISSION",
+    "ABBY-MISSION",
+    "A MISSION",
+    "AM",
+    "ABBY-MSS",
+    "ABBOTS"
+   ],
+   "col": 9,
+   "row": 6
+  },
+  {
+   "id": "CHC",
+   "name": "Chilliwack-Cultus Lake",
+   "labels": [
+    "CHILLIWACK-CULTUS LAKE",
+    "CHWK-CULTUS LK",
+    "C C LAKE",
+    "CCL",
+    "CHWK-CLT",
+    "CHILLI"
+   ],
+   "col": 10,
+   "row": 6
+  },
+  {
+   "id": "DLS",
+   "name": "Delta South",
+   "labels": [
+    "DELTA SOUTH",
+    "DELTA S",
+    "D SOUTH",
+    "DS",
+    "DLTS",
+    "DELTA"
+   ],
+   "col": 2,
+   "row": 7
+  },
+  {
+   "id": "SWR",
+   "name": "Surrey-White Rock",
+   "labels": [
+    "SURREY-WHITE ROCK",
+    "SRY-WHITE ROCK",
+    "S W ROCK",
+    "SWR",
+    "SRY-WHTR",
+    "SURREY"
+   ],
+   "col": 4,
+   "row": 7
+  },
+  {
+   "id": "SUP",
+   "name": "Surrey-Panorama",
+   "labels": [
+    "SURREY-PANORAMA",
+    "SRY-PANORAMA",
+    "S PANORAMA",
+    "SP",
+    "SRY-PNRM",
+    "SURREY"
+   ],
+   "col": 5,
+   "row": 7
+  },
+  {
+   "id": "SUS",
+   "name": "Surrey South",
+   "labels": [
+    "SURREY SOUTH",
+    "SRY S",
+    "S SOUTH",
+    "SS",
+    "SRYS",
+    "SURREY"
+   ],
+   "col": 6,
+   "row": 7
+  },
+  {
+   "id": "LWI",
+   "name": "Langley-Willowbrook",
+   "labels": [
+    "LANGLEY-WILLOWBROOK",
+    "LGLY-WILLOWBROOK",
+    "L WILLOWBROOK",
+    "LW",
+    "LGLY-WLL",
+    "LANGLE"
+   ],
+   "col": 7,
+   "row": 7
+  },
+  {
+   "id": "LLA",
+   "name": "Langley-Abbotsford",
+   "labels": [
+    "LANGLEY-ABBOTSFORD",
+    "LGLY-ABBY",
+    "L ABBOTSFORD",
+    "LA",
+    "LGLY-ABB",
+    "LANGLE"
+   ],
+   "col": 8,
+   "row": 7
+  },
+  {
+   "id": "ABW",
+   "name": "Abbotsford West",
+   "labels": [
+    "ABBOTSFORD WEST",
+    "ABBY W",
+    "A WEST",
+    "AW",
+    "ABBYW",
+    "ABBOTS"
+   ],
+   "col": 9,
+   "row": 7
+  },
+  {
+   "id": "ABS",
+   "name": "Abbotsford South",
+   "labels": [
+    "ABBOTSFORD SOUTH",
+    "ABBY S",
+    "A SOUTH",
+    "AS",
+    "ABBYS",
+    "ABBOTS"
+   ],
+   "col": 10,
+   "row": 7
+  }
+ ]
+}

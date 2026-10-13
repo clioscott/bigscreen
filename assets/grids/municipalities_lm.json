@@ -1,0 +1,423 @@
+{
+ "id": "municipalities_lm",
+ "label": "Municipalities",
+ "level": "municipality",
+ "source": "Municipalities",
+ "cols": 10,
+ "rows": 6,
+ "units": [
+  {
+   "id": "145",
+   "name": "Whistler",
+   "labels": [
+    "WHISTLER",
+    "WHSTLR",
+    "WHISTL"
+   ],
+   "col": 3,
+   "row": 0
+  },
+  {
+   "id": "146",
+   "name": "Pemberton",
+   "labels": [
+    "PEMBERTON",
+    "PMBRTN",
+    "PEMBER"
+   ],
+   "col": 4,
+   "row": 0
+  },
+  {
+   "id": "160",
+   "name": "Lytton",
+   "labels": [
+    "LYTTON",
+    "LYTTN"
+   ],
+   "col": 9,
+   "row": 0
+  },
+  {
+   "id": "144",
+   "name": "Squamish",
+   "labels": [
+    "SQUAMISH",
+    "SQMSH",
+    "SQUAMI"
+   ],
+   "col": 2,
+   "row": 1
+  },
+  {
+   "id": "331",
+   "name": "Sechelt",
+   "labels": [
+    "SECHELT",
+    "SCHLT",
+    "SECHEL"
+   ],
+   "col": 0,
+   "row": 2
+  },
+  {
+   "id": "330",
+   "name": "Gibsons",
+   "labels": [
+    "GIBSONS",
+    "GBSNS",
+    "GIBSON"
+   ],
+   "col": 1,
+   "row": 2
+  },
+  {
+   "id": "123",
+   "name": "Lions Bay",
+   "labels": [
+    "LIONS BAY",
+    "L BAY",
+    "LB",
+    "LNSBY",
+    "LIONS"
+   ],
+   "col": 2,
+   "row": 2
+  },
+  {
+   "id": "125",
+   "name": "North Vancouver",
+   "labels": [
+    "NORTH VANCOUVER",
+    "N VAN",
+    "N VANCOUVER",
+    "NV",
+    "NVN",
+    "NORTH"
+   ],
+   "col": 3,
+   "row": 2
+  },
+  {
+   "id": "106",
+   "name": "Belcarra",
+   "labels": [
+    "BELCARRA",
+    "BLCRR",
+    "BELCAR"
+   ],
+   "col": 4,
+   "row": 2
+  },
+  {
+   "id": "105",
+   "name": "Anmore",
+   "labels": [
+    "ANMORE",
+    "ANMR"
+   ],
+   "col": 5,
+   "row": 2
+  },
+  {
+   "id": "93",
+   "name": "Hope",
+   "labels": [
+    "HOPE",
+    "HP"
+   ],
+   "col": 9,
+   "row": 2
+  },
+  {
+   "id": "107",
+   "name": "Bowen Island Municipality",
+   "labels": [
+    "BOWEN ISLAND MUNICIPALITY",
+    "BOWEN I MUNICIPALITY",
+    "B I MUNICIPALITY",
+    "BIM",
+    "BWNIMNCP",
+    "BOWEN"
+   ],
+   "col": 1,
+   "row": 3
+  },
+  {
+   "id": "121",
+   "name": "District Municipality of West Vancouver",
+   "labels": [
+    "DISTRICT MUNICIPALITY OF WEST VANCOUVER",
+    "DIST MUNICIPALITY OF W VAN",
+    "D M O W VANCOUVER",
+    "DMOWV",
+    "DSTMNCPL",
+    "DISTRI"
+   ],
+   "col": 2,
+   "row": 3
+  },
+  {
+   "id": "114",
+   "name": "North Vancouver",
+   "labels": [
+    "NORTH VANCOUVER",
+    "N VAN",
+    "N VANCOUVER",
+    "NV",
+    "NVN",
+    "NORTH"
+   ],
+   "col": 3,
+   "row": 3
+  },
+  {
+   "id": "117",
+   "name": "Port Moody",
+   "labels": [
+    "PORT MOODY",
+    "PT MOODY",
+    "P MOODY",
+    "PM",
+    "PTMDY",
+    "PORT M"
+   ],
+   "col": 4,
+   "row": 3
+  },
+  {
+   "id": "109",
+   "name": "Coquitlam",
+   "labels": [
+    "COQUITLAM",
+    "COQ",
+    "CQ",
+    "COQUIT"
+   ],
+   "col": 5,
+   "row": 3
+  },
+  {
+   "id": "115",
+   "name": "Pitt Meadows",
+   "labels": [
+    "PITT MEADOWS",
+    "P MEADOWS",
+    "PM",
+    "PTTMDWS",
+    "PITT M"
+   ],
+   "col": 6,
+   "row": 3
+  },
+  {
+   "id": "94",
+   "name": "Kent",
+   "labels": [
+    "KENT",
+    "KNT"
+   ],
+   "col": 8,
+   "row": 3
+  },
+  {
+   "id": "92",
+   "name": "Harrison Hot Springs",
+   "labels": [
+    "HARRISON HOT SPRINGS",
+    "H H SPRINGS",
+    "HHS",
+    "HRRSNHTS",
+    "HARRIS"
+   ],
+   "col": 9,
+   "row": 3
+  },
+  {
+   "id": "313",
+   "name": "Nanaimo",
+   "labels": [
+    "NANAIMO",
+    "NNM",
+    "NANAIM"
+   ],
+   "col": 0,
+   "row": 4
+  },
+  {
+   "id": "120",
+   "name": "Vancouver",
+   "labels": [
+    "VANCOUVER",
+    "VAN",
+    "VN",
+    "VANCOU"
+   ],
+   "col": 2,
+   "row": 4
+  },
+  {
+   "id": "108",
+   "name": "Burnaby",
+   "labels": [
+    "BURNABY",
+    "BBY",
+    "BURNAB"
+   ],
+   "col": 3,
+   "row": 4
+  },
+  {
+   "id": "113",
+   "name": "New Westminster",
+   "labels": [
+    "NEW WESTMINSTER",
+    "NEW WEST",
+    "N WESTMINSTER",
+    "NW",
+    "NWWST",
+    "NEW WE"
+   ],
+   "col": 4,
+   "row": 4
+  },
+  {
+   "id": "116",
+   "name": "Port Coquitlam",
+   "labels": [
+    "PORT COQUITLAM",
+    "PT COQ",
+    "P COQUITLAM",
+    "PC",
+    "PTCQ",
+    "PORT C"
+   ],
+   "col": 5,
+   "row": 4
+  },
+  {
+   "id": "112",
+   "name": "Maple Ridge",
+   "labels": [
+    "MAPLE RIDGE",
+    "M RIDGE",
+    "MR",
+    "MPLRDG",
+    "MAPLE"
+   ],
+   "col": 6,
+   "row": 4
+  },
+  {
+   "id": "95",
+   "name": "Mission",
+   "labels": [
+    "MISSION",
+    "MSSN",
+    "MISSIO"
+   ],
+   "col": 7,
+   "row": 4
+  },
+  {
+   "id": "91",
+   "name": "Chilliwack",
+   "labels": [
+    "CHILLIWACK",
+    "CHWK",
+    "CHILLI"
+   ],
+   "col": 8,
+   "row": 4
+  },
+  {
+   "id": "289",
+   "name": "Ladysmith",
+   "labels": [
+    "LADYSMITH",
+    "LDYSMTH",
+    "LADYSM"
+   ],
+   "col": 0,
+   "row": 5
+  },
+  {
+   "id": "118",
+   "name": "Richmond",
+   "labels": [
+    "RICHMOND",
+    "RICH",
+    "RCH",
+    "RICHMO"
+   ],
+   "col": 2,
+   "row": 5
+  },
+  {
+   "id": "110",
+   "name": "Delta",
+   "labels": [
+    "DELTA",
+    "DLT"
+   ],
+   "col": 3,
+   "row": 5
+  },
+  {
+   "id": "122",
+   "name": "White Rock",
+   "labels": [
+    "WHITE ROCK",
+    "W ROCK",
+    "WR",
+    "WHTRCK",
+    "WHITE"
+   ],
+   "col": 4,
+   "row": 5
+  },
+  {
+   "id": "119",
+   "name": "Surrey",
+   "labels": [
+    "SURREY",
+    "SRY"
+   ],
+   "col": 5,
+   "row": 5
+  },
+  {
+   "id": "111",
+   "name": "Langley",
+   "labels": [
+    "LANGLEY",
+    "LGLY",
+    "LANGLE"
+   ],
+   "col": 6,
+   "row": 5
+  },
+  {
+   "id": "124",
+   "name": "Langley",
+   "labels": [
+    "LANGLEY",
+    "LGLY",
+    "LANGLE"
+   ],
+   "col": 7,
+   "row": 5
+  },
+  {
+   "id": "90",
+   "name": "Abbotsford",
+   "labels": [
+    "ABBOTSFORD",
+    "ABBY",
+    "ABBOTS"
+   ],
+   "col": 8,
+   "row": 5
+  }
+ ]
+}

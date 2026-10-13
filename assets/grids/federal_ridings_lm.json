@@ -1,0 +1,370 @@
+{
+ "id": "federal_ridings_lm",
+ "label": "Federal ridings",
+ "level": "federal_riding",
+ "source": "Federal electoral districts",
+ "cols": 9,
+ "rows": 6,
+ "units": [
+  {
+   "id": "59043",
+   "name": "West Vancouver—Sunshine Coast—Sea to Sky Country",
+   "labels": [
+    "WEST VANCOUVER—SUNSHINE COAST—SEA TO SKY COUNTRY",
+    "W VANCOUVER—SUNSHINE COAST—SEA TO SKY COUNTRY",
+    "W V C T S COUNTRY",
+    "WVCTSC",
+    "WVNCVR—S",
+    "WEST V"
+   ],
+   "col": 1,
+   "row": 0
+  },
+  {
+   "id": "59024",
+   "name": "Pitt Meadows—Maple Ridge",
+   "labels": [
+    "PITT MEADOWS—MAPLE RIDGE",
+    "P M RIDGE",
+    "PMR",
+    "PTTMDWS—",
+    "PITT M"
+   ],
+   "col": 6,
+   "row": 1
+  },
+  {
+   "id": "59018",
+   "name": "Mission—Matsqui—Abbotsford",
+   "labels": [
+    "MISSION—MATSQUI—ABBOTSFORD",
+    "MSSN—MTS",
+    "MISSIO"
+   ],
+   "col": 7,
+   "row": 1
+  },
+  {
+   "id": "59005",
+   "name": "Chilliwack—Hope",
+   "labels": [
+    "CHILLIWACK—HOPE",
+    "CHLLWCK—",
+    "CHILLI"
+   ],
+   "col": 8,
+   "row": 1
+  },
+  {
+   "id": "59035",
+   "name": "Vancouver Centre",
+   "labels": [
+    "VANCOUVER CENTRE",
+    "VAN CTR",
+    "V CENTRE",
+    "VC",
+    "VNCTR",
+    "VANCOU"
+   ],
+   "col": 1,
+   "row": 2
+  },
+  {
+   "id": "59022",
+   "name": "North Vancouver—Capilano",
+   "labels": [
+    "NORTH VANCOUVER—CAPILANO",
+    "N VANCOUVER—CAPILANO",
+    "NV",
+    "NVNCVR—C",
+    "NORTH"
+   ],
+   "col": 2,
+   "row": 2
+  },
+  {
+   "id": "59003",
+   "name": "Burnaby North—Seymour",
+   "labels": [
+    "BURNABY NORTH—SEYMOUR",
+    "BBY NORTH—SEYMOUR",
+    "B NORTH—SEYMOUR",
+    "BN",
+    "BBYNRTH—",
+    "BURNAB"
+   ],
+   "col": 3,
+   "row": 2
+  },
+  {
+   "id": "59025",
+   "name": "Port Moody—Coquitlam",
+   "labels": [
+    "PORT MOODY—COQUITLAM",
+    "PT MOODY—COQUITLAM",
+    "P MOODY—COQUITLAM",
+    "PM",
+    "PTMDY—CQ",
+    "PORT M"
+   ],
+   "col": 4,
+   "row": 2
+  },
+  {
+   "id": "59008",
+   "name": "Coquitlam—Port Coquitlam",
+   "labels": [
+    "COQUITLAM—PORT COQUITLAM",
+    "COQUITLAM—PORT COQ",
+    "C COQUITLAM",
+    "CC",
+    "CQTLM—PR",
+    "COQUIT"
+   ],
+   "col": 5,
+   "row": 2
+  },
+  {
+   "id": "59040",
+   "name": "Vancouver Quadra",
+   "labels": [
+    "VANCOUVER QUADRA",
+    "VAN QUADRA",
+    "V QUADRA",
+    "VQ",
+    "VNQDR",
+    "VANCOU"
+   ],
+   "col": 0,
+   "row": 3
+  },
+  {
+   "id": "59038",
+   "name": "Vancouver Granville",
+   "labels": [
+    "VANCOUVER GRANVILLE",
+    "VAN GRANVILLE",
+    "V GRANVILLE",
+    "VG",
+    "VNGRNVLL",
+    "VANCOU"
+   ],
+   "col": 1,
+   "row": 3
+  },
+  {
+   "id": "59039",
+   "name": "Vancouver Kingsway",
+   "labels": [
+    "VANCOUVER KINGSWAY",
+    "VAN KINGSWAY",
+    "V KINGSWAY",
+    "VK",
+    "VNKNGSWY",
+    "VANCOU"
+   ],
+   "col": 2,
+   "row": 3
+  },
+  {
+   "id": "59036",
+   "name": "Vancouver East",
+   "labels": [
+    "VANCOUVER EAST",
+    "VAN E",
+    "V EAST",
+    "VE",
+    "VNE",
+    "VANCOU"
+   ],
+   "col": 3,
+   "row": 3
+  },
+  {
+   "id": "59002",
+   "name": "Burnaby Central",
+   "labels": [
+    "BURNABY CENTRAL",
+    "BBY C",
+    "B CENTRAL",
+    "BC",
+    "BBYC",
+    "BURNAB"
+   ],
+   "col": 4,
+   "row": 3
+  },
+  {
+   "id": "59027",
+   "name": "Richmond Centre—Marpole",
+   "labels": [
+    "RICHMOND CENTRE—MARPOLE",
+    "RICH CENTRE—MARPOLE",
+    "R CENTRE—MARPOLE",
+    "RC",
+    "RCHCNTR—",
+    "RICHMO"
+   ],
+   "col": 1,
+   "row": 4
+  },
+  {
+   "id": "59037",
+   "name": "Vancouver Fraserview—South Burnaby",
+   "labels": [
+    "VANCOUVER FRASERVIEW—SOUTH BURNABY",
+    "VAN FRASERVIEW—SOUTH BBY",
+    "V F BURNABY",
+    "VFB",
+    "VNFRSRVW",
+    "VANCOU"
+   ],
+   "col": 2,
+   "row": 4
+  },
+  {
+   "id": "59020",
+   "name": "New Westminster—Burnaby—Maillardville",
+   "labels": [
+    "NEW WESTMINSTER—BURNABY—MAILLARDVILLE",
+    "N WESTMINSTER—BURNABY—MAILLARDVILLE",
+    "NW",
+    "NWWSTMNS",
+    "NEW WE"
+   ],
+   "col": 3,
+   "row": 4
+  },
+  {
+   "id": "59033",
+   "name": "Surrey Centre",
+   "labels": [
+    "SURREY CENTRE",
+    "SRY CTR",
+    "S CENTRE",
+    "SC",
+    "SRYCTR",
+    "SURREY"
+   ],
+   "col": 4,
+   "row": 4
+  },
+  {
+   "id": "59034",
+   "name": "Surrey Newton",
+   "labels": [
+    "SURREY NEWTON",
+    "SRY NEWTON",
+    "S NEWTON",
+    "SN",
+    "SRYNWTN",
+    "SURREY"
+   ],
+   "col": 5,
+   "row": 4
+  },
+  {
+   "id": "59013",
+   "name": "Fleetwood—Port Kells",
+   "labels": [
+    "FLEETWOOD—PORT KELLS",
+    "F KELLS",
+    "FK",
+    "FLTWD—PR",
+    "FLEETW"
+   ],
+   "col": 6,
+   "row": 4
+  },
+  {
+   "id": "59019",
+   "name": "Nanaimo—Ladysmith",
+   "labels": [
+    "NANAIMO—LADYSMITH",
+    "NNM—LDYS",
+    "NANAIM"
+   ],
+   "col": 0,
+   "row": 5
+  },
+  {
+   "id": "59028",
+   "name": "Richmond East—Steveston",
+   "labels": [
+    "RICHMOND EAST—STEVESTON",
+    "RICH EAST—STEVESTON",
+    "R EAST—STEVESTON",
+    "RE",
+    "RCHEST—S",
+    "RICHMO"
+   ],
+   "col": 2,
+   "row": 5
+  },
+  {
+   "id": "59011",
+   "name": "Delta",
+   "labels": [
+    "DELTA",
+    "DLT"
+   ],
+   "col": 3,
+   "row": 5
+  },
+  {
+   "id": "59032",
+   "name": "South Surrey—White Rock",
+   "labels": [
+    "SOUTH SURREY—WHITE ROCK",
+    "S SURREY—WHITE ROCK",
+    "S S ROCK",
+    "SSR",
+    "SSRRY—WH",
+    "SOUTH"
+   ],
+   "col": 4,
+   "row": 5
+  },
+  {
+   "id": "59006",
+   "name": "Cloverdale—Langley City",
+   "labels": [
+    "CLOVERDALE—LANGLEY CITY",
+    "C CITY",
+    "CC",
+    "CLVRDL—L",
+    "CLOVER"
+   ],
+   "col": 5,
+   "row": 5
+  },
+  {
+   "id": "59017",
+   "name": "Langley Township—Fraser Heights",
+   "labels": [
+    "LANGLEY TOWNSHIP—FRASER HEIGHTS",
+    "LGLY TOWNSHIP—FRASER HTS",
+    "L T HEIGHTS",
+    "LTH",
+    "LGLYTWNS",
+    "LANGLE"
+   ],
+   "col": 6,
+   "row": 5
+  },
+  {
+   "id": "59001",
+   "name": "Abbotsford—South Langley",
+   "labels": [
+    "ABBOTSFORD—SOUTH LANGLEY",
+    "ABBOTSFORD—SOUTH LGLY",
+    "A LANGLEY",
+    "AL",
+    "ABBTSFRD",
+    "ABBOTS"
+   ],
+   "col": 7,
+   "row": 5
+  }
+ ]
+}

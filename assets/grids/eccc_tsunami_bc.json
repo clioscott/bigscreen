@@ -1,0 +1,80 @@
+{
+ "id": "eccc_tsunami_bc",
+ "label": "Tsunami zones",
+ "level": "eccc_tsunami",
+ "source": "Tsunami zones",
+ "cols": 4,
+ "rows": 3,
+ "units": [
+  {
+   "id": "Zone A - the North Coast and Haida Gwaii",
+   "name": "Zone A - the North Coast and Haida Gwaii",
+   "labels": [
+    "ZONE A - THE NORTH COAST AND HAIDA GWAII",
+    "ZONE A-THE N COAST AND HAIDA GWAII",
+    "Z A T N C A H GWAII",
+    "ZATNCAHG",
+    "ZNA-THNC",
+    "ZONE A"
+   ],
+   "col": 0,
+   "row": 0
+  },
+  {
+   "id": "Zone B - the Central Coast and Northeast Vancouver Island coast including Kitimat Bella Coola and Port Hardy",
+   "name": "Zone B - the Central Coast and Northeast Vancouver Island coast",
+   "labels": [
+    "ZONE B - THE CENTRAL COAST AND NORTHEAST VANCOUVER ISLAND COAST",
+    "ZONE B-THE C COAST AND NE VAN I COAST",
+    "Z B T C C A N V I COAST",
+    "ZBTCCANVIC",
+    "ZNB-THCC",
+    "ZONE B"
+   ],
+   "col": 1,
+   "row": 0
+  },
+  {
+   "id": "Zone E - the Strait of Georgia including the Gulf Islands Greater Vancouver and Johnstone Strait",
+   "name": "Zone E - the Strait of Georgia",
+   "labels": [
+    "ZONE E - THE STRAIT OF GEORGIA",
+    "ZONE E-THE STRAIT OF GEORGIA",
+    "Z E T S O GEORGIA",
+    "ZETSOG",
+    "ZNE-THST",
+    "ZONE E"
+   ],
+   "col": 3,
+   "row": 1
+  },
+  {
+   "id": "Zone C - the Outer West Coast of Vancouver Island from Cape Scott to Port Renfrew",
+   "name": "Zone C - the Outer West Coast of Vancouver Island from Cape Scott to Port Renfrew",
+   "labels": [
+    "ZONE C - THE OUTER WEST COAST OF VANCOUVER ISLAND FROM CAPE SCOTT TO PORT RENFREW",
+    "ZONE C-THE OUTER W COAST OF VAN I FROM CAPE SCOTT TO PT RENFREW",
+    "Z C T O W C O V I F C S T P RENFREW",
+    "ZCTOWCOVIFCSTPR",
+    "ZNC-THOT",
+    "ZONE C"
+   ],
+   "col": 2,
+   "row": 2
+  },
+  {
+   "id": "Zone D - the Juan de Fuca Strait from Jordan River to Greater Victoria including the Saanich Peninsula",
+   "name": "Zone D - the Juan de Fuca Strait from Jordan River to Greater Victoria",
+   "labels": [
+    "ZONE D - THE JUAN DE FUCA STRAIT FROM JORDAN RIVER TO GREATER VICTORIA",
+    "ZONE D-THE JUAN DE FUCA STRAIT FROM JORDAN R TO GREATER VICTORIA",
+    "Z D T J D F S F J R T G VICTORIA",
+    "ZDTJDFSFJRTGV",
+    "ZND-THJN",
+    "ZONE D"
+   ],
+   "col": 3,
+   "row": 2
+  }
+ ]
+}

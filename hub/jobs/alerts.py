@@ -111,6 +111,11 @@ def run(cfg):
         except Exception as e:
             print(f"map for {a['name']}: {e}", flush=True)
             meta = None
+        try:                                                   # which tile-grid units it covers, every level
+            from hub import geo_cover
+            a["coverage"] = geo_cover.coverage(geo_cover.alert_area(a))
+        except Exception as e:
+            print(f"coverage for {a['name']}: {e}", flush=True)
         a.pop("geometries", None)
         if meta:
             a["map"] = meta
@@ -128,10 +133,20 @@ def run(cfg):
             except Exception as e:
                 print(f"sample map {kind}: {e}", flush=True)
     sample_map = sample_maps.get("rain")
+    sample_coverage, home_units = {}, {}
+    try:
+        from hub import geo_cover
+        from display.modules.alert_samples import SAMPLES
+        for kind, smp in SAMPLES.items():
+            sample_coverage[kind] = geo_cover.coverage(geo_cover.zones_area(smp.get("regions")))
+        hl = acfg.get("home_lonlat") or (-123.0918, 49.1442)
+        home_units = geo_cover.home_units(hl[0], hl[1])
+    except Exception as e:
+        print(f"sample coverage: {e}", flush=True)
     alertmap.prune(metas)
     atomic_write_json(paths.DATA_DIR / "alerts.json", {
         "updated_utc": time.time(), "area": label, "bbox": bbox, "alerts": alerts, "sample_map": sample_map,
-        "sample_maps": sample_maps})
+        "sample_maps": sample_maps, "sample_coverage": sample_coverage, "home_units": home_units})
     for a in alerts:
         print(f"{'HOME' if a['home'] else 'nearby'} {a['type'].upper()}: {a['name']} — {', '.join(a['regions'])[:120]}", flush=True)
     return {"ok": True, "message": f"{len(alerts)} alert(s) in effect" if alerts else "no alerts in effect",

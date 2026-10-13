@@ -1,0 +1,166 @@
+{
+ "id": "provinces",
+ "label": "Provinces and territories",
+ "level": "province",
+ "source": "Provinces and territories",
+ "cols": 8,
+ "rows": 3,
+ "units": [
+  {
+   "id": "YT",
+   "name": "Yukon",
+   "labels": [
+    "YUKON",
+    "YKN"
+   ],
+   "col": 0,
+   "row": 0
+  },
+  {
+   "id": "NT",
+   "name": "Northwest Territories",
+   "labels": [
+    "NORTHWEST TERRITORIES",
+    "NW TERRITORIES",
+    "N TERRITORIES",
+    "NT",
+    "NWTRRTRS",
+    "NORTHW"
+   ],
+   "col": 1,
+   "row": 0
+  },
+  {
+   "id": "NU",
+   "name": "Nunavut",
+   "labels": [
+    "NUNAVUT",
+    "NNVT",
+    "NUNAVU"
+   ],
+   "col": 3,
+   "row": 0
+  },
+  {
+   "id": "BC",
+   "name": "British Columbia",
+   "labels": [
+    "BRITISH COLUMBIA",
+    "BRITISH COL",
+    "B COLUMBIA",
+    "BC",
+    "BRTSHCL",
+    "BRITIS"
+   ],
+   "col": 0,
+   "row": 1
+  },
+  {
+   "id": "AB",
+   "name": "Alberta",
+   "labels": [
+    "ALBERTA",
+    "ALBRT",
+    "ALBERT"
+   ],
+   "col": 1,
+   "row": 1
+  },
+  {
+   "id": "SK",
+   "name": "Saskatchewan",
+   "labels": [
+    "SASKATCHEWAN",
+    "SSKTCHWN",
+    "SASKAT"
+   ],
+   "col": 2,
+   "row": 1
+  },
+  {
+   "id": "MB",
+   "name": "Manitoba",
+   "labels": [
+    "MANITOBA",
+    "MNTB",
+    "MANITO"
+   ],
+   "col": 3,
+   "row": 1
+  },
+  {
+   "id": "QC",
+   "name": "Québec",
+   "labels": [
+    "QUÉBEC",
+    "QÉBC"
+   ],
+   "col": 5,
+   "row": 1
+  },
+  {
+   "id": "NL",
+   "name": "Newfoundland and Labrador",
+   "labels": [
+    "NEWFOUNDLAND AND LABRADOR",
+    "N A LABRADOR",
+    "NAL",
+    "NWFNDLND",
+    "NEWFOU"
+   ],
+   "col": 7,
+   "row": 1
+  },
+  {
+   "id": "ON",
+   "name": "Ontario",
+   "labels": [
+    "ONTARIO",
+    "ONTR",
+    "ONTARI"
+   ],
+   "col": 4,
+   "row": 2
+  },
+  {
+   "id": "NB",
+   "name": "New Brunswick",
+   "labels": [
+    "NEW BRUNSWICK",
+    "N BRUNSWICK",
+    "NB",
+    "NWBRNSWC",
+    "NEW BR"
+   ],
+   "col": 5,
+   "row": 2
+  },
+  {
+   "id": "NS",
+   "name": "Nova Scotia",
+   "labels": [
+    "NOVA SCOTIA",
+    "N SCOTIA",
+    "NS",
+    "NVSCT",
+    "NOVA S"
+   ],
+   "col": 6,
+   "row": 2
+  },
+  {
+   "id": "PE",
+   "name": "Prince Edward Island",
+   "labels": [
+    "PRINCE EDWARD ISLAND",
+    "PRINCE EDWARD I",
+    "P E ISLAND",
+    "PEI",
+    "PRNCEDWR",
+    "PRINCE"
+   ],
+   "col": 7,
+   "row": 2
+  }
+ ]
+}

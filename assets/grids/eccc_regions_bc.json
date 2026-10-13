@@ -1,0 +1,650 @@
+{
+ "id": "eccc_regions_bc",
+ "label": "ECCC forecast regions",
+ "level": "eccc_region",
+ "source": "ECCC public forecast regions",
+ "cols": 9,
+ "rows": 9,
+ "units": [
+  {
+   "id": "Atlin",
+   "name": "Atlin",
+   "labels": [
+    "ATLIN",
+    "ATLN"
+   ],
+   "col": 0,
+   "row": 0
+  },
+  {
+   "id": "Dease Lake",
+   "name": "Dease Lake",
+   "labels": [
+    "DEASE LAKE",
+    "DEASE LK",
+    "D LAKE",
+    "DL",
+    "DSLK",
+    "DEASE"
+   ],
+   "col": 1,
+   "row": 0
+  },
+  {
+   "id": "Muncho Lake Park - Stone Mountain Park",
+   "name": "Muncho Lake Park - Stone Mountain Park",
+   "labels": [
+    "MUNCHO LAKE PARK - STONE MOUNTAIN PARK",
+    "MUNCHO LK PARK-STONE MTN PARK",
+    "M L P S M PARK",
+    "MLPSMP",
+    "MNCHLKPR",
+    "MUNCHO"
+   ],
+   "col": 3,
+   "row": 0
+  },
+  {
+   "id": "Fort Nelson",
+   "name": "Fort Nelson",
+   "labels": [
+    "FORT NELSON",
+    "FT NELSON",
+    "F NELSON",
+    "FN",
+    "FTNLSN",
+    "FORT N"
+   ],
+   "col": 5,
+   "row": 0
+  },
+  {
+   "id": "North Coast - inland sections",
+   "name": "North Coast - inland sections",
+   "labels": [
+    "NORTH COAST - INLAND SECTIONS",
+    "N COAST-INLAND SECTIONS",
+    "N C I SECTIONS",
+    "NCIS",
+    "NCST-INL",
+    "NORTH"
+   ],
+   "col": 1,
+   "row": 1
+  },
+  {
+   "id": "Bulkley Valley and the Lakes District",
+   "name": "Bulkley Valley and the Lakes District",
+   "labels": [
+    "BULKLEY VALLEY AND THE LAKES DISTRICT",
+    "BULKLEY VLY AND THE LAKES DIST",
+    "B V A T L DISTRICT",
+    "BVATLD",
+    "BLKLYVLY",
+    "BULKLE"
+   ],
+   "col": 2,
+   "row": 1
+  },
+  {
+   "id": "Williston",
+   "name": "Williston",
+   "labels": [
+    "WILLISTON",
+    "WLLSTN",
+    "WILLIS"
+   ],
+   "col": 4,
+   "row": 1
+  },
+  {
+   "id": "B.C. Peace River",
+   "name": "B.C. Peace River",
+   "labels": [
+    "B.C. PEACE RIVER",
+    "B.C. PEACE R",
+    "B P RIVER",
+    "BPR",
+    "B.C.PCR",
+    "B.C. P"
+   ],
+   "col": 6,
+   "row": 1
+  },
+  {
+   "id": "North Coast - coastal sections",
+   "name": "North Coast - coastal sections",
+   "labels": [
+    "NORTH COAST - COASTAL SECTIONS",
+    "N COAST-COASTAL SECTIONS",
+    "N C C SECTIONS",
+    "NCCS",
+    "NCST-CST",
+    "NORTH"
+   ],
+   "col": 1,
+   "row": 2
+  },
+  {
+   "id": "Stuart - Nechako",
+   "name": "Stuart - Nechako",
+   "labels": [
+    "STUART - NECHAKO",
+    "STUART-NECHAKO",
+    "S NECHAKO",
+    "SN",
+    "STRT-NCH",
+    "STUART"
+   ],
+   "col": 3,
+   "row": 2
+  },
+  {
+   "id": "Prince George",
+   "name": "Prince George",
+   "labels": [
+    "PRINCE GEORGE",
+    "P GEORGE",
+    "PG",
+    "PRNCGRG",
+    "PRINCE"
+   ],
+   "col": 4,
+   "row": 2
+  },
+  {
+   "id": "McGregor",
+   "name": "McGregor",
+   "labels": [
+    "MCGREGOR",
+    "MCGRGR",
+    "MCGREG"
+   ],
+   "col": 5,
+   "row": 2
+  },
+  {
+   "id": "Haida Gwaii",
+   "name": "Haida Gwaii",
+   "labels": [
+    "HAIDA GWAII",
+    "H GWAII",
+    "HG",
+    "HDGW",
+    "HAIDA"
+   ],
+   "col": 0,
+   "row": 3
+  },
+  {
+   "id": "Cariboo",
+   "name": "Cariboo",
+   "labels": [
+    "CARIBOO",
+    "CRB",
+    "CARIBO"
+   ],
+   "col": 5,
+   "row": 3
+  },
+  {
+   "id": "Yellowhead",
+   "name": "Yellowhead",
+   "labels": [
+    "YELLOWHEAD",
+    "YLLWHD",
+    "YELLOW"
+   ],
+   "col": 6,
+   "row": 3
+  },
+  {
+   "id": "Kinbasket",
+   "name": "Kinbasket",
+   "labels": [
+    "KINBASKET",
+    "KNBSKT",
+    "KINBAS"
+   ],
+   "col": 7,
+   "row": 3
+  },
+  {
+   "id": "Central Coast - coastal sections",
+   "name": "Central Coast - coastal sections",
+   "labels": [
+    "CENTRAL COAST - COASTAL SECTIONS",
+    "C COAST-COASTAL SECTIONS",
+    "C C C SECTIONS",
+    "CCCS",
+    "CCST-CST",
+    "CENTRA"
+   ],
+   "col": 1,
+   "row": 4
+  },
+  {
+   "id": "Central Coast - inland sections",
+   "name": "Central Coast - inland sections",
+   "labels": [
+    "CENTRAL COAST - INLAND SECTIONS",
+    "C COAST-INLAND SECTIONS",
+    "C C I SECTIONS",
+    "CCIS",
+    "CCST-INL",
+    "CENTRA"
+   ],
+   "col": 2,
+   "row": 4
+  },
+  {
+   "id": "Chilcotin",
+   "name": "Chilcotin",
+   "labels": [
+    "CHILCOTIN",
+    "CHLCTN",
+    "CHILCO"
+   ],
+   "col": 3,
+   "row": 4
+  },
+  {
+   "id": "100 Mile",
+   "name": "100 Mile",
+   "labels": [
+    "100 MILE",
+    "1 MILE",
+    "1M",
+    "100ML",
+    "100 MI"
+   ],
+   "col": 5,
+   "row": 4
+  },
+  {
+   "id": "North Thompson",
+   "name": "North Thompson",
+   "labels": [
+    "NORTH THOMPSON",
+    "N THOMPSON",
+    "NT",
+    "NTHMPSN",
+    "NORTH"
+   ],
+   "col": 6,
+   "row": 4
+  },
+  {
+   "id": "North Columbia",
+   "name": "North Columbia",
+   "labels": [
+    "NORTH COLUMBIA",
+    "N COL",
+    "N COLUMBIA",
+    "NC",
+    "NCL",
+    "NORTH"
+   ],
+   "col": 7,
+   "row": 4
+  },
+  {
+   "id": "East Columbia",
+   "name": "East Columbia",
+   "labels": [
+    "EAST COLUMBIA",
+    "E COL",
+    "E COLUMBIA",
+    "EC",
+    "ECL",
+    "EAST C"
+   ],
+   "col": 8,
+   "row": 4
+  },
+  {
+   "id": "Sunshine Coast",
+   "name": "Sunshine Coast",
+   "labels": [
+    "SUNSHINE COAST",
+    "SUN COAST",
+    "S COAST",
+    "SC",
+    "SNCST",
+    "SUNSHI"
+   ],
+   "col": 3,
+   "row": 5
+  },
+  {
+   "id": "South Thompson",
+   "name": "South Thompson",
+   "labels": [
+    "SOUTH THOMPSON",
+    "S THOMPSON",
+    "ST",
+    "STHMPSN",
+    "SOUTH"
+   ],
+   "col": 5,
+   "row": 5
+  },
+  {
+   "id": "Shuswap",
+   "name": "Shuswap",
+   "labels": [
+    "SHUSWAP",
+    "SHSWP",
+    "SHUSWA"
+   ],
+   "col": 6,
+   "row": 5
+  },
+  {
+   "id": "West Columbia",
+   "name": "West Columbia",
+   "labels": [
+    "WEST COLUMBIA",
+    "W COL",
+    "W COLUMBIA",
+    "WC",
+    "WCL",
+    "WEST C"
+   ],
+   "col": 7,
+   "row": 5
+  },
+  {
+   "id": "Yoho Park - Kootenay Park",
+   "name": "Yoho Park - Kootenay Park",
+   "labels": [
+    "YOHO PARK - KOOTENAY PARK",
+    "YOHO PARK-KOOT PARK",
+    "Y P K PARK",
+    "YPKP",
+    "YHPRK-KT",
+    "YOHO P"
+   ],
+   "col": 8,
+   "row": 5
+  },
+  {
+   "id": "North Vancouver Island",
+   "name": "North Vancouver Island",
+   "labels": [
+    "NORTH VANCOUVER ISLAND",
+    "N VAN I",
+    "N V ISLAND",
+    "NVI",
+    "NVNI",
+    "NORTH"
+   ],
+   "col": 2,
+   "row": 6
+  },
+  {
+   "id": "Howe Sound",
+   "name": "Howe Sound",
+   "labels": [
+    "HOWE SOUND",
+    "H SOUND",
+    "HS",
+    "HWSND",
+    "HOWE S"
+   ],
+   "col": 3,
+   "row": 6
+  },
+  {
+   "id": "Whistler",
+   "name": "Whistler",
+   "labels": [
+    "WHISTLER",
+    "WHSTLR",
+    "WHISTL"
+   ],
+   "col": 4,
+   "row": 6
+  },
+  {
+   "id": "Fraser Canyon",
+   "name": "Fraser Canyon",
+   "labels": [
+    "FRASER CANYON",
+    "F CANYON",
+    "FC",
+    "FRSRCNYN",
+    "FRASER"
+   ],
+   "col": 5,
+   "row": 6
+  },
+  {
+   "id": "Nicola",
+   "name": "Nicola",
+   "labels": [
+    "NICOLA",
+    "NCL"
+   ],
+   "col": 6,
+   "row": 6
+  },
+  {
+   "id": "Arrow Lakes - Slocan Lake",
+   "name": "Arrow Lakes - Slocan Lake",
+   "labels": [
+    "ARROW LAKES - SLOCAN LAKE",
+    "ARROW LAKES-SLOCAN LK",
+    "A L S LAKE",
+    "ALSL",
+    "ARRWLKS-",
+    "ARROW"
+   ],
+   "col": 7,
+   "row": 6
+  },
+  {
+   "id": "East Kootenay",
+   "name": "East Kootenay",
+   "labels": [
+    "EAST KOOTENAY",
+    "E KOOT",
+    "E KOOTENAY",
+    "EK",
+    "EKT",
+    "EAST K"
+   ],
+   "col": 8,
+   "row": 6
+  },
+  {
+   "id": "Inland Vancouver Island",
+   "name": "Inland Vancouver Island",
+   "labels": [
+    "INLAND VANCOUVER ISLAND",
+    "INLAND VAN I",
+    "I V ISLAND",
+    "IVI",
+    "INLNDVNI",
+    "INLAND"
+   ],
+   "col": 2,
+   "row": 7
+  },
+  {
+   "id": "East Vancouver Island",
+   "name": "East Vancouver Island",
+   "labels": [
+    "EAST VANCOUVER ISLAND",
+    "E VAN I",
+    "E V ISLAND",
+    "EVI",
+    "EVNI",
+    "EAST V"
+   ],
+   "col": 3,
+   "row": 7
+  },
+  {
+   "id": "Metro Vancouver",
+   "name": "Metro Vancouver",
+   "labels": [
+    "METRO VANCOUVER",
+    "METRO VAN",
+    "M VANCOUVER",
+    "MV",
+    "MTRVN",
+    "METRO"
+   ],
+   "col": 4,
+   "row": 7
+  },
+  {
+   "id": "Fraser Valley",
+   "name": "Fraser Valley",
+   "labels": [
+    "FRASER VALLEY",
+    "FRASER VLY",
+    "F VALLEY",
+    "FV",
+    "FRSRVLY",
+    "FRASER"
+   ],
+   "col": 5,
+   "row": 7
+  },
+  {
+   "id": "Okanagan Valley",
+   "name": "Okanagan Valley",
+   "labels": [
+    "OKANAGAN VALLEY",
+    "OKAN VLY",
+    "O VALLEY",
+    "OV",
+    "OKNVLY",
+    "OKANAG"
+   ],
+   "col": 6,
+   "row": 7
+  },
+  {
+   "id": "Kootenay Lake",
+   "name": "Kootenay Lake",
+   "labels": [
+    "KOOTENAY LAKE",
+    "KOOT LK",
+    "K LAKE",
+    "KL",
+    "KTLK",
+    "KOOTEN"
+   ],
+   "col": 7,
+   "row": 7
+  },
+  {
+   "id": "Elk Valley",
+   "name": "Elk Valley",
+   "labels": [
+    "ELK VALLEY",
+    "ELK VLY",
+    "E VALLEY",
+    "EV",
+    "ELKVLY",
+    "ELK VA"
+   ],
+   "col": 8,
+   "row": 7
+  },
+  {
+   "id": "West Vancouver Island",
+   "name": "West Vancouver Island",
+   "labels": [
+    "WEST VANCOUVER ISLAND",
+    "W VAN I",
+    "W V ISLAND",
+    "WVI",
+    "WVNI",
+    "WEST V"
+   ],
+   "col": 2,
+   "row": 8
+  },
+  {
+   "id": "Southern Gulf Islands",
+   "name": "Southern Gulf Islands",
+   "labels": [
+    "SOUTHERN GULF ISLANDS",
+    "SOUTHERN GULF IS",
+    "S G ISLANDS",
+    "SGI",
+    "STHRNGLF",
+    "SOUTHE"
+   ],
+   "col": 3,
+   "row": 8
+  },
+  {
+   "id": "Greater Victoria",
+   "name": "Greater Victoria",
+   "labels": [
+    "GREATER VICTORIA",
+    "G VICTORIA",
+    "GV",
+    "GRTRVCTR",
+    "GREATE"
+   ],
+   "col": 4,
+   "row": 8
+  },
+  {
+   "id": "Manning - Skagit Valley",
+   "name": "Manning - Skagit Valley",
+   "labels": [
+    "MANNING - SKAGIT VALLEY",
+    "MANNING-SKAGIT VLY",
+    "M S VALLEY",
+    "MSV",
+    "MNNNG-SK",
+    "MANNIN"
+   ],
+   "col": 5,
+   "row": 8
+  },
+  {
+   "id": "Similkameen",
+   "name": "Similkameen",
+   "labels": [
+    "SIMILKAMEEN",
+    "SMLKMN",
+    "SIMILK"
+   ],
+   "col": 6,
+   "row": 8
+  },
+  {
+   "id": "Boundary",
+   "name": "Boundary",
+   "labels": [
+    "BOUNDARY",
+    "BNDRY",
+    "BOUNDA"
+   ],
+   "col": 7,
+   "row": 8
+  },
+  {
+   "id": "West Kootenay",
+   "name": "West Kootenay",
+   "labels": [
+    "WEST KOOTENAY",
+    "W KOOT",
+    "W KOOTENAY",
+    "WK",
+    "WKT",
+    "WEST K"
+   ],
+   "col": 8,
+   "row": 8
+  }
+ ]
+}

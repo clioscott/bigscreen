@@ -1,0 +1,175 @@
+{
+ "id": "eccc_zones_lm",
+ "label": "ECCC alert zones",
+ "level": "eccc_zone",
+ "source": "ECCC alert zones",
+ "cols": 6,
+ "rows": 4,
+ "units": [
+  {
+   "id": "Sunshine Coast - Gibsons to Earls Cove",
+   "name": "Sunshine Coast - Gibsons to Earls Cove",
+   "labels": [
+    "SUNSHINE COAST - GIBSONS TO EARLS COVE",
+    "SUN COAST-GIBSONS TO EARLS COVE",
+    "S C G T E COVE",
+    "SCGTEC",
+    "SNCST-GB",
+    "SUNSHI"
+   ],
+   "col": 0,
+   "row": 0
+  },
+  {
+   "id": "Whistler",
+   "name": "Whistler",
+   "labels": [
+    "WHISTLER",
+    "WHSTLR",
+    "WHISTL"
+   ],
+   "col": 3,
+   "row": 0
+  },
+  {
+   "id": "Fraser Canyon - south including Lytton",
+   "name": "Fraser Canyon - south",
+   "labels": [
+    "FRASER CANYON - SOUTH",
+    "FRASER CANYON-SOUTH",
+    "F C SOUTH",
+    "FCS",
+    "FRSRCNYN",
+    "FRASER"
+   ],
+   "col": 5,
+   "row": 0
+  },
+  {
+   "id": "Howe Sound",
+   "name": "Howe Sound",
+   "labels": [
+    "HOWE SOUND",
+    "H SOUND",
+    "HS",
+    "HWSND",
+    "HOWE S"
+   ],
+   "col": 1,
+   "row": 1
+  },
+  {
+   "id": "Metro Vancouver - North Shore including West Vancouver and North Vancouver",
+   "name": "North Shore",
+   "labels": [
+    "NORTH SHORE",
+    "N SHORE",
+    "NS",
+    "NSHR",
+    "NORTH"
+   ],
+   "col": 2,
+   "row": 2
+  },
+  {
+   "id": "Metro Vancouver - northeast including Coquitlam and Maple Ridge",
+   "name": "northeast",
+   "labels": [
+    "NORTHEAST",
+    "NRTHST",
+    "NORTHE"
+   ],
+   "col": 3,
+   "row": 2
+  },
+  {
+   "id": "Fraser Valley - central including Chilliwack",
+   "name": "Fraser Valley - central",
+   "labels": [
+    "FRASER VALLEY - CENTRAL",
+    "FRASER VLY-CENTRAL",
+    "F V CENTRAL",
+    "FVC",
+    "FRSRVLY-",
+    "FRASER"
+   ],
+   "col": 4,
+   "row": 2
+  },
+  {
+   "id": "Fraser Valley - east including Hope",
+   "name": "Fraser Valley - east",
+   "labels": [
+    "FRASER VALLEY - EAST",
+    "FRASER VLY-EAST",
+    "F V EAST",
+    "FVE",
+    "FRSRVLY-",
+    "FRASER"
+   ],
+   "col": 5,
+   "row": 2
+  },
+  {
+   "id": "Southern Gulf Islands",
+   "name": "Southern Gulf Islands",
+   "labels": [
+    "SOUTHERN GULF ISLANDS",
+    "SOUTHERN GULF IS",
+    "S G ISLANDS",
+    "SGI",
+    "STHRNGLF",
+    "SOUTHE"
+   ],
+   "col": 0,
+   "row": 3
+  },
+  {
+   "id": "Metro Vancouver - central including the City of Vancouver Burnaby and New Westminster",
+   "name": "central",
+   "labels": [
+    "CENTRAL",
+    "CNTRL",
+    "CENTRA"
+   ],
+   "col": 1,
+   "row": 3
+  },
+  {
+   "id": "Metro Vancouver - southwest including Richmond and Delta",
+   "name": "southwest",
+   "labels": [
+    "SOUTHWEST",
+    "STHWST",
+    "SOUTHW"
+   ],
+   "col": 2,
+   "row": 3
+  },
+  {
+   "id": "Metro Vancouver - southeast including Surrey and Langley",
+   "name": "southeast",
+   "labels": [
+    "SOUTHEAST",
+    "STHST",
+    "SOUTHE"
+   ],
+   "col": 3,
+   "row": 3
+  },
+  {
+   "id": "Fraser Valley - west including Abbotsford",
+   "name": "Fraser Valley - west",
+   "labels": [
+    "FRASER VALLEY - WEST",
+    "FRASER VLY-WEST",
+    "F V WEST",
+    "FVW",
+    "FRSRVLY-",
+    "FRASER"
+   ],
+   "col": 4,
+   "row": 3
+  }
+ ]
+}

@@ -1,0 +1,277 @@
+{
+ "id": "neighbourhoods_van",
+ "label": "Vancouver neighbourhoods",
+ "level": "neighbourhood_van",
+ "source": "Vancouver neighbourhoods",
+ "cols": 7,
+ "rows": 6,
+ "units": [
+  {
+   "id": "West End",
+   "name": "West End",
+   "labels": [
+    "WEST END",
+    "W END",
+    "WE",
+    "WEND",
+    "WEST E"
+   ],
+   "col": 2,
+   "row": 0
+  },
+  {
+   "id": "Downtown",
+   "name": "Downtown",
+   "labels": [
+    "DOWNTOWN",
+    "DWNTWN",
+    "DOWNTO"
+   ],
+   "col": 3,
+   "row": 0
+  },
+  {
+   "id": "Strathcona",
+   "name": "Strathcona",
+   "labels": [
+    "STRATHCONA",
+    "STRTHCN",
+    "STRATH"
+   ],
+   "col": 4,
+   "row": 0
+  },
+  {
+   "id": "Grandview-Woodland",
+   "name": "Grandview-Woodland",
+   "labels": [
+    "GRANDVIEW-WOODLAND",
+    "G WOODLAND",
+    "GW",
+    "GRNDVW-W",
+    "GRANDV"
+   ],
+   "col": 5,
+   "row": 0
+  },
+  {
+   "id": "Hastings-Sunrise",
+   "name": "Hastings-Sunrise",
+   "labels": [
+    "HASTINGS-SUNRISE",
+    "H SUNRISE",
+    "HS",
+    "HSTNGS-S",
+    "HASTIN"
+   ],
+   "col": 6,
+   "row": 0
+  },
+  {
+   "id": "West Point Grey",
+   "name": "West Point Grey",
+   "labels": [
+    "WEST POINT GREY",
+    "W POINT GREY",
+    "W P GREY",
+    "WPG",
+    "WPNTGRY",
+    "WEST P"
+   ],
+   "col": 0,
+   "row": 1
+  },
+  {
+   "id": "Kitsilano",
+   "name": "Kitsilano",
+   "labels": [
+    "KITSILANO",
+    "KTSLN",
+    "KITSIL"
+   ],
+   "col": 1,
+   "row": 1
+  },
+  {
+   "id": "Fairview",
+   "name": "Fairview",
+   "labels": [
+    "FAIRVIEW",
+    "FRVW",
+    "FAIRVI"
+   ],
+   "col": 2,
+   "row": 1
+  },
+  {
+   "id": "South Cambie",
+   "name": "South Cambie",
+   "labels": [
+    "SOUTH CAMBIE",
+    "S CAMBIE",
+    "SC",
+    "SCMB",
+    "SOUTH"
+   ],
+   "col": 3,
+   "row": 2
+  },
+  {
+   "id": "Mount Pleasant",
+   "name": "Mount Pleasant",
+   "labels": [
+    "MOUNT PLEASANT",
+    "MT PLEASANT",
+    "M PLEASANT",
+    "MP",
+    "MTPLSNT",
+    "MOUNT"
+   ],
+   "col": 4,
+   "row": 2
+  },
+  {
+   "id": "Kensington-Cedar Cottage",
+   "name": "Kensington-Cedar Cottage",
+   "labels": [
+    "KENSINGTON-CEDAR COTTAGE",
+    "K C COTTAGE",
+    "KCC",
+    "KNSNGTN-",
+    "KENSIN"
+   ],
+   "col": 5,
+   "row": 2
+  },
+  {
+   "id": "Renfrew-Collingwood",
+   "name": "Renfrew-Collingwood",
+   "labels": [
+    "RENFREW-COLLINGWOOD",
+    "R COLLINGWOOD",
+    "RC",
+    "RNFRW-CL",
+    "RENFRE"
+   ],
+   "col": 6,
+   "row": 2
+  },
+  {
+   "id": "Arbutus Ridge",
+   "name": "Arbutus Ridge",
+   "labels": [
+    "ARBUTUS RIDGE",
+    "A RIDGE",
+    "AR",
+    "ARBTSRDG",
+    "ARBUTU"
+   ],
+   "col": 1,
+   "row": 3
+  },
+  {
+   "id": "Shaughnessy",
+   "name": "Shaughnessy",
+   "labels": [
+    "SHAUGHNESSY",
+    "SHGHNSSY",
+    "SHAUGH"
+   ],
+   "col": 2,
+   "row": 3
+  },
+  {
+   "id": "Riley Park",
+   "name": "Riley Park",
+   "labels": [
+    "RILEY PARK",
+    "R PARK",
+    "RP",
+    "RLYPRK",
+    "RILEY"
+   ],
+   "col": 4,
+   "row": 3
+  },
+  {
+   "id": "Dunbar-Southlands",
+   "name": "Dunbar-Southlands",
+   "labels": [
+    "DUNBAR-SOUTHLANDS",
+    "D SOUTHLANDS",
+    "DS",
+    "DNBR-STH",
+    "DUNBAR"
+   ],
+   "col": 0,
+   "row": 4
+  },
+  {
+   "id": "Kerrisdale",
+   "name": "Kerrisdale",
+   "labels": [
+    "KERRISDALE",
+    "KRRSDL",
+    "KERRIS"
+   ],
+   "col": 1,
+   "row": 4
+  },
+  {
+   "id": "Oakridge",
+   "name": "Oakridge",
+   "labels": [
+    "OAKRIDGE",
+    "OKRDG",
+    "OAKRID"
+   ],
+   "col": 3,
+   "row": 4
+  },
+  {
+   "id": "Marpole",
+   "name": "Marpole",
+   "labels": [
+    "MARPOLE",
+    "MRPL",
+    "MARPOL"
+   ],
+   "col": 2,
+   "row": 5
+  },
+  {
+   "id": "Sunset",
+   "name": "Sunset",
+   "labels": [
+    "SUNSET",
+    "SNST"
+   ],
+   "col": 4,
+   "row": 5
+  },
+  {
+   "id": "Victoria-Fraserview",
+   "name": "Victoria-Fraserview",
+   "labels": [
+    "VICTORIA-FRASERVIEW",
+    "V FRASERVIEW",
+    "VF",
+    "VCTR-FRS",
+    "VICTOR"
+   ],
+   "col": 5,
+   "row": 5
+  },
+  {
+   "id": "Killarney",
+   "name": "Killarney",
+   "labels": [
+    "KILLARNEY",
+    "KLLRNY",
+    "KILLAR"
+   ],
+   "col": 6,
+   "row": 5
+  }
+ ]
+}

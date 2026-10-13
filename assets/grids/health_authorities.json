@@ -1,0 +1,70 @@
+{
+ "id": "health_authorities",
+ "label": "Health authorities",
+ "level": "health_authority",
+ "source": "Health authorities",
+ "cols": 3,
+ "rows": 3,
+ "units": [
+  {
+   "id": "5",
+   "name": "Northern",
+   "labels": [
+    "NORTHERN",
+    "NRTHRN",
+    "NORTHE"
+   ],
+   "col": 0,
+   "row": 0
+  },
+  {
+   "id": "3",
+   "name": "Vancouver Coastal",
+   "labels": [
+    "VANCOUVER COASTAL",
+    "VAN COASTAL",
+    "V COASTAL",
+    "VC",
+    "VNCSTL",
+    "VANCOU"
+   ],
+   "col": 0,
+   "row": 1
+  },
+  {
+   "id": "4",
+   "name": "Vancouver Island",
+   "labels": [
+    "VANCOUVER ISLAND",
+    "VAN I",
+    "V ISLAND",
+    "VI",
+    "VNI",
+    "VANCOU"
+   ],
+   "col": 0,
+   "row": 2
+  },
+  {
+   "id": "2",
+   "name": "Fraser",
+   "labels": [
+    "FRASER",
+    "FRSR"
+   ],
+   "col": 1,
+   "row": 2
+  },
+  {
+   "id": "1",
+   "name": "Interior",
+   "labels": [
+    "INTERIOR",
+    "INTRR",
+    "INTERI"
+   ],
+   "col": 2,
+   "row": 2
+  }
+ ]
+}
