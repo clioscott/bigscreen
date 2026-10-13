@@ -196,14 +196,38 @@ export const Alerts = {
       pushReview();
     };
     // one click: every weather type in a theme, then every weather type in the next theme
-    const everyTypeEachTheme = (auto_ = false) => {
+    // each theme loops through every weather type, on its own, until it's approved or dropped
+    const loopTheme = ref(false);
+    const everyTypeEachTheme = () => {
       revAlerts.value = Object.keys(cat.value.samples || {});
       revOrder.value = "theme";
       startReview(0);
-      auto.value = auto_;
+      auto.value = true;
+      loopTheme.value = true;
+    };
+    const themeSpan = () => {            // [first, last] queue index of the current theme
+      const th = item.value?.[0];
+      let i = idx.value, j = idx.value;
+      while (i > 0 && queue.value[i - 1][0] === th) i--;
+      while (j + 1 < queue.value.length && queue.value[j + 1][0] === th) j++;
+      return [i, j];
+    };
+    const position = computed(() => {
+      if (!item.value) return "";
+      if (revOrder.value !== "theme") return `${idx.value + 1} / ${queue.value.length}`;
+      const themesInQueue = [...new Set(queue.value.map((x) => x[0]))];
+      const [i, j] = themeSpan();
+      return `theme ${themesInQueue.indexOf(item.value[0]) + 1} / ${themesInQueue.length} · weather type ${idx.value - i + 1} / ${j - i + 1}`;
+    });
+    const autoNext = () => {
+      if (loopTheme.value && revOrder.value === "theme") {
+        const [i, j] = themeSpan();
+        idx.value = idx.value >= j ? i : idx.value + 1;     // round the theme's weather types again
+      } else if (idx.value + 1 < queue.value.length) idx.value += 1;
+      else auto.value = false;
     };
     const everyTypeItems = computed(() => revThemeList.value.flatMap((x) => Object.keys(cat.value.samples || {}).map((smp) => [x.id, smp])));
-    const stopReview = () => { idx.value = -1; auto.value = false; };
+    const stopReview = () => { idx.value = -1; auto.value = false; loopTheme.value = false; };
     const step = (d) => { if (idx.value >= 0) idx.value = Math.max(0, Math.min(queue.value.length - 1, idx.value + d)); };
     const nextTheme = () => {          // first item of the next theme (or next alert group) in the queue
       if (!item.value) return;
@@ -278,9 +302,8 @@ export const Alerts = {
       tick = setInterval(() => {
         if (idx.value >= 0) {
           rt.value += 0.5;
-          if (auto.value && rt.value >= autoSec.value) {
-            if (idx.value + 1 < queue.value.length) idx.value += 1; else auto.value = false;
-          } else if (rt.value > 24) rt.value = 0;
+          if (auto.value && rt.value >= autoSec.value) autoNext();
+          else if (rt.value > 24) rt.value = 0;
         }
         if (playing.value && tab.value === "design") t.value = (t.value + 0.5) % Math.max(4, tl.value.total || 30);
       }, 500);
@@ -293,7 +316,7 @@ export const Alerts = {
       optImg, borderAt, revealAt, opts, fontName,
       wall, showLive, showReal, backToRotation,
       revThemes, revLayout, revAlerts, revOrder, revThemeList, items, toggleRevAlert, queue, idx, item, mirror, auto, autoSec, rt, revImg,
-      startReview, stopReview, everyTypeEachTheme, everyTypeItems, step, nextTheme, judge, tourSec, tourWall, allSamples, themeById,
+      startReview, stopReview, everyTypeEachTheme, everyTypeItems, loopTheme, position, step, nextTheme, judge, tourSec, tourWall, allSamples, themeById,
       types, toggleType, hazards, toggleHazard, areas, areaId, entry, addToRotation, when, ago };
   },
   template: `<div class="page">
@@ -455,12 +478,10 @@ export const Alerts = {
             </div></Field>
           <Field label="Order"><Seg v-model="revOrder" :options="[{value:'theme', label:'Theme by theme'}, {value:'alert', label:'Alert by alert'}]"/></Field>
           <div class="row">
-            <button class="btn" @click="everyTypeEachTheme(false)" :disabled="!revThemeList.length"
-              :title="'Every weather type in the first theme, then every weather type in the next — ' + everyTypeItems.length + ' screens'">
-              <Icon name="CloudRainWind" :size="15"/>All weather types, theme by theme</button>
-            <button class="btn" @click="everyTypeEachTheme(true)" :disabled="!revThemeList.length" title="The same, stepping on its own (approve or drop any time)">
-              <Icon name="Play" :size="15"/>…with auto-advance</button>
-            <button class="btn primary start-review" @click="startReview(0)" :disabled="!items.length"><Icon name="Play" :size="15"/>Review {{ revThemeList.length }} themes × {{ revAlerts.length || 1 }} alerts ({{ items.length }} screens)</button>
+            <button class="btn primary" @click="everyTypeEachTheme()" :disabled="!revThemeList.length"
+              title="Each theme plays every weather type in a loop until you approve or drop it, then the next theme">
+              <Icon name="CloudRainWind" :size="15"/>Judge {{ revThemeList.length }} themes, looping all weather types</button>
+            <button class="btn start-review" @click="startReview(0)" :disabled="!items.length"><Icon name="Play" :size="15"/>Review {{ revThemeList.length }} themes × {{ revAlerts.length || 1 }} alerts ({{ items.length }} screens)</button>
             <label class="row" style="gap:6px; font-size:12.5px"><input type="checkbox" v-model="mirror">mirror on the wall</label>
           </div>
         </div></div>
@@ -469,7 +490,7 @@ export const Alerts = {
         <div class="card-head"><Icon name="Eye" :size="15"/>
           <h3>{{ themeById(item[0]).name }} <span class="faint" style="font-weight:500">· {{ themeById(item[0]).description }}</span></h3>
           <span class="pill" :class="{ok: verdict(item[0]) === 'approved', bad: verdict(item[0]) === 'dropped'}">{{ verdict(item[0]) === 'unreviewed' ? 'not reviewed' : verdict(item[0]) }}</span>
-          <span class="faint mono" style="font-size:12px">{{ idx + 1 }} / {{ queue.length }}</span>
+          <span class="faint mono" style="font-size:12px">{{ position }}</span>
           <button class="btn sm ghost" @click="stopReview"><Icon name="X" :size="13"/>Close</button></div>
         <div class="card-body stack">
           <div style="background:#000; border-radius:8px; overflow:hidden"><img :src="revImg" style="width:100%; image-rendering:pixelated; display:block" alt=""></div>
@@ -484,11 +505,13 @@ export const Alerts = {
             <button class="btn" @click="step(1)" :disabled="idx + 1 >= queue.length">Next<Icon name="ChevronRight" :size="15"/></button>
             <button class="btn ghost" @click="nextTheme" v-if="revOrder === 'theme'">Skip theme<Icon name="ChevronsRight" :size="15"/></button>
             <span class="spacer" style="flex:1"></span>
+            <label class="row" style="gap:6px; font-size:12.5px" v-if="revOrder === 'theme'" title="Keep cycling this theme's weather types until you approve or drop it">
+              <input type="checkbox" v-model="loopTheme">loop this theme</label>
             <button class="btn sm" :class="{primary: auto}" @click="auto = !auto"><Icon :name="auto ? 'Pause' : 'Play'" :size="13"/>{{ auto ? 'Auto' : 'Auto-advance' }}</button>
             <Stepper v-model="autoSec" :min="4" :max="30" unit="s"/>
             <label class="row" style="gap:6px; font-size:12.5px"><input type="checkbox" v-model="mirror">on the wall</label>
           </div>
-          <div class="faint" style="font-size:12px">Keys: <b>A</b> approve · <b>D</b> drop (both jump to the next theme) · <b>←</b> / <b>→</b> or space step · <b>↓</b> skip theme · <b>Esc</b> close. Verdicts are part of the page's changes — Save to keep them.</div>
+          <div class="faint" style="font-size:12px"><template v-if="loopTheme && revOrder === 'theme'">Looping this theme's weather types every {{ autoSec }} s until you decide. </template>Keys: <b>A</b> approve · <b>D</b> drop (both jump to the next theme) · <b>←</b> / <b>→</b> or space step · <b>↓</b> skip theme · <b>Esc</b> close. Verdicts are part of the page's changes — Save to keep them.</div>
         </div></div>
 
       <div class="card"><div class="card-head"><Icon name="Clapperboard" :size="15"/><h3>Unattended tours on the wall</h3>
