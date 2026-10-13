@@ -195,6 +195,14 @@ export const Alerts = {
       idx.value = Math.min(from, queue.value.length - 1);
       pushReview();
     };
+    // one click: every weather type in a theme, then every weather type in the next theme
+    const everyTypeEachTheme = (auto_ = false) => {
+      revAlerts.value = Object.keys(cat.value.samples || {});
+      revOrder.value = "theme";
+      startReview(0);
+      auto.value = auto_;
+    };
+    const everyTypeItems = computed(() => revThemeList.value.flatMap((x) => Object.keys(cat.value.samples || {}).map((smp) => [x.id, smp])));
     const stopReview = () => { idx.value = -1; auto.value = false; };
     const step = (d) => { if (idx.value >= 0) idx.value = Math.max(0, Math.min(queue.value.length - 1, idx.value + d)); };
     const nextTheme = () => {          // first item of the next theme (or next alert group) in the queue
@@ -285,7 +293,7 @@ export const Alerts = {
       optImg, borderAt, revealAt, opts, fontName,
       wall, showLive, showReal, backToRotation,
       revThemes, revLayout, revAlerts, revOrder, revThemeList, items, toggleRevAlert, queue, idx, item, mirror, auto, autoSec, rt, revImg,
-      startReview, stopReview, step, nextTheme, judge, tourSec, tourWall, allSamples, themeById,
+      startReview, stopReview, everyTypeEachTheme, everyTypeItems, step, nextTheme, judge, tourSec, tourWall, allSamples, themeById,
       types, toggleType, hazards, toggleHazard, areas, areaId, entry, addToRotation, when, ago };
   },
   template: `<div class="page">
@@ -447,6 +455,11 @@ export const Alerts = {
             </div></Field>
           <Field label="Order"><Seg v-model="revOrder" :options="[{value:'theme', label:'Theme by theme'}, {value:'alert', label:'Alert by alert'}]"/></Field>
           <div class="row">
+            <button class="btn" @click="everyTypeEachTheme(false)" :disabled="!revThemeList.length"
+              :title="'Every weather type in the first theme, then every weather type in the next — ' + everyTypeItems.length + ' screens'">
+              <Icon name="CloudRainWind" :size="15"/>All weather types, theme by theme</button>
+            <button class="btn" @click="everyTypeEachTheme(true)" :disabled="!revThemeList.length" title="The same, stepping on its own (approve or drop any time)">
+              <Icon name="Play" :size="15"/>…with auto-advance</button>
             <button class="btn primary start-review" @click="startReview(0)" :disabled="!items.length"><Icon name="Play" :size="15"/>Review {{ revThemeList.length }} themes × {{ revAlerts.length || 1 }} alerts ({{ items.length }} screens)</button>
             <label class="row" style="gap:6px; font-size:12.5px"><input type="checkbox" v-model="mirror">mirror on the wall</label>
           </div>
@@ -484,6 +497,7 @@ export const Alerts = {
           <div class="faint" style="font-size:12.5px">The wall plays these by itself, each with a caption and a progress line, then goes back to the rotation.</div>
           <div class="row">
             <button class="btn" @click="tourWall(items, 'screens (the review selection above)')"><Icon name="ListVideo" :size="15"/>The review selection ({{ items.length }})</button>
+            <button class="btn" @click="tourWall(everyTypeItems, 'screens: every weather type, theme by theme')"><Icon name="CloudRainWind" :size="15"/>All weather types, theme by theme ({{ everyTypeItems.length }})</button>
             <button class="btn" @click="tourWall(allSamples.map(s => [a.theme, s]), 'weather types in ' + current.name)"><Icon name="CloudRainWind" :size="15"/>Every weather type in {{ current.name }}</button>
             <button class="btn" @click="tourWall(PER_LEVEL.map(s => [a.theme, s]), 'alert levels in ' + current.name)"><Icon name="Layers" :size="15"/>Each level in {{ current.name }}</button>
             <button class="btn" @click="tourWall(approvedIds.map(id => [id, a.sample || 'rain']), 'approved themes')" :disabled="!approvedIds.length"><Icon name="BadgeCheck" :size="15"/>Approved themes ({{ approvedIds.length }})</button>
