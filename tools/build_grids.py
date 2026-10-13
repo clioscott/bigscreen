@@ -349,7 +349,7 @@ def build(grid_id, cache):
         # and anything west of Bowen Island: the Sunshine Coast and the islands are a ferry away
         island |= {u["id"] for u in units if u["geom"].representative_point().x < -123.42}
     cols, rows = layout(units, max_cols)
-    out = {"id": grid_id, "label": label, "level": level, "source": LEVELS[level][0], "cols": cols, "rows": rows,
+    out = {"id": grid_id, "label": label, "level": level, "source": LEVELS.get(level, LEVELS["municipality"])[0], "cols": cols, "rows": rows,
            "units": [{"id": u["id"], "name": u["name"], "labels": labels(u["name"]), "col": u["col"], "row": u["row"],
                       **({"optional": "island"} if u["id"] in island else {})}
                      for u in sorted(units, key=lambda u: (u["row"], u["col"]))]}
