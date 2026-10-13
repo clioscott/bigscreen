@@ -77,30 +77,28 @@ def tile_rects(extent, x, y, w, h, gap=1):
             for n, (col, row, span) in t["tiles"].items()}
 
 
-# the Where grid on the message page: a tidy 3 x 3 of the mainland regions (no holes, every box the same size),
-# roughly where they sit - north shore and the Sea to Sky on top, the Fraser Valley on the right. The Sunshine
-# Coast only appears (as a column down the left) when the alert covers it.
-WHERE_GRID = [["Sea to Sky", "North Shore", "Tri-Cities"],
-              ["Howe Sound", "Vancouver", "Abbotsford"],
-              ["Richmond", "Surrey", "Chilliwack"]]
-WHERE_NAMES = {"Sea to Sky": "SEA TO SKY", "North Shore": "NORTH SHORE", "Tri-Cities": "TRI-CITIES",
-               "Howe Sound": "HOWE SOUND", "Vancouver": "VANCOUVER", "Abbotsford": "ABBOTSFORD",
+# the Where grid on the message page: columns west to east, each split evenly - the City-side column (North
+# Shore, Vancouver, Richmond), the Tri-Cities over Surrey, then the Fraser Valley. Regions off the main grid
+# (Sunshine Coast, Howe Sound, Sea to Sky) only appear, as a column down the left, when the alert covers them.
+WHERE_COLS = [["North Shore", "Vancouver", "Richmond"], ["Tri-Cities", "Surrey"], ["Abbotsford", "Chilliwack"]]
+WHERE_EXTRA = ["Sea to Sky", "Howe Sound", "Sunshine Coast"]
+WHERE_NAMES = {"Sea to Sky": "SEA TO|SKY", "North Shore": "NORTH SHORE", "Tri-Cities": "TRI-CITIES",
+               "Howe Sound": "HOWE|SOUND", "Vancouver": "VANCOUVER", "Abbotsford": "ABBOTSFORD",
                "Richmond": "RICHMOND", "Surrey": "SURREY", "Chilliwack": "CHILLIWACK", "Sunshine Coast": "SUNSHINE|COAST"}
 
 
 def where_rects(ctx, x, y, w, h, gap=1):
-    side = "Sunshine Coast" in affected(ctx)
-    cols = 3 + side
-    cw = (w - gap * (cols - 1)) // cols
-    ch = (h - gap * 2) // 3
-    x += (w - (cols * cw + gap * (cols - 1))) // 2
+    hit = affected(ctx)
+    cols = ([[n for n in WHERE_EXTRA if n in hit]] if hit & set(WHERE_EXTRA) else []) + WHERE_COLS
+    cw = (w - gap * (len(cols) - 1)) // len(cols)
+    x += (w - (len(cols) * cw + gap * (len(cols) - 1))) // 2
     out = {}
-    if side:
-        out["Sunshine Coast"] = (x, y, cw, 3 * ch + 2 * gap)
-        x += cw + gap
-    for r, row in enumerate(WHERE_GRID):
-        for k, name in enumerate(row):
-            out[name] = (x + k * (cw + gap), y + r * (ch + gap), cw, ch)
+    for k, col in enumerate(cols):
+        n = len(col)
+        for r, name in enumerate(col):
+            ty0 = y + (h + gap) * r // n
+            ty1 = y + (h + gap) * (r + 1) // n - gap
+            out[name] = (x + k * (cw + gap), ty0, cw, ty1 - ty0)
     return out
 
 
