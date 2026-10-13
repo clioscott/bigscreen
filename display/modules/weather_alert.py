@@ -910,14 +910,14 @@ class AlertScreen:
         # top band: what and how bad
         band = max(16, f.h) + 4
         c.buf[0:band + sf.line + 3] = (c.buf[0:band + sf.line + 3] * 0.25).astype(np.uint8)
-        x = 8 + icon(c, ctx, 8, 2 + (band - 16) // 2, 1, (0, 0, 0)) + 6
+        x = tx = 8 + icon(c, ctx, 8, 2 + (band - 16) // 2, 1, (0, 0, 0)) + 6
         x += f.draw(c, x, 2 + (band - f.h) // 2, ctx.sev, title_text(ctx)) + 10
         lab = ctx.b["kind"].upper()                             # the level's label box, in the level's colour
         if x + k_f.width(lab) + 6 < W - 44:
             chip(c, x, 2 + (band - k_f.h - 2) // 2, lab, k_f, ctx.level, (0, 0, 0))
         b = ctx.b
         info = U(ctx, " · ".join(v for v in (f"until {b['until']}" if b["until"] else "", b["amount"]) if v))
-        sf.draw(c, 8, band + 1, ctx.pal["strong"], info)
+        sf.draw(c, tx, band + 1, ctx.pal["strong"], info)       # under the title, clear of the icon
         meter(c, W - 38, 2 + (band - 8) // 2, ctx)
         # legend + map name, bottom left
         lg = U(ctx, f"{b['title'].lower()} area")

@@ -16,6 +16,23 @@ from datetime import datetime, timezone
 import numpy as np
 
 from display.gfx import Color, graphics
+from display.modules.date_display import _WEEKDAY_COLORS
+
+
+def _lum(rgb):
+    """WCAG relative luminance of an sRGB colour."""
+    def ch(v):
+        v /= 255
+        return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+    r, g, b = (ch(v) for v in rgb)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+# per weekday (Mon=0): the status bar's kanji colour, the text that reads best on it, and its dim shade
+_DAY_BG = tuple(Color(*rgb) for rgb in _WEEKDAY_COLORS)
+_DAY_FG = tuple(Color(0, 0, 0) if (_lum(rgb) + 0.05) / 0.05 >= 1.05 / (_lum(rgb) + 0.05) else Color(255, 255, 255)
+                for rgb in _WEEKDAY_COLORS)
+_DAY_DIM = tuple(Color(*(max(18, int(v * 0.28)) for v in rgb)) for rgb in _WEEKDAY_COLORS)
 
 
 class MapStore:
@@ -77,7 +94,7 @@ class MapPanel:
         self.shadow = Color(0, 0, 0)
         self.dim = Color(170, 170, 170)
         self.marker = Color(255, 230, 90)
-        self.forecast_bg = Color(200, 80, 0)          # FORECAST tag, and the forecast stretch of the progress bar
+        self.forecast_bg = Color(200, 80, 0)          # FORECAST tag
         self._started = {}
         self._loops_seen = {}
         self._fonts = {}
@@ -137,12 +154,16 @@ class MapPanel:
         c.Blit(fr[: min(h, fr.shape[0]), : min(w, fr.shape[1])], x, y)
 
         # bottom edge: a progress bar for the animation, and the frame's local time ("MON 12:10P") above it
-        times = self._times(tid, meta)
-        self._progress(c, x, y + h - 2, w, idx, n, times, now)
+        times, days = self._times(tid, meta)
+        self._progress(c, x, y + h - 2, w, idx, n, times, days, now)
         if meta.get("timestamp", True) and idx < len(times):
             t = times[idx]
-            label = f"{t:%a}".upper() + f" {t.hour % 12 or 12}:{t:%M}{'A' if t.hour < 12 else 'P'}"
-            lx = x + 2 + self._text(c, x + 2, y + h - 4, label) + 4
+            wd = t.weekday()                                   # weekday on a chip in the status bar's kanji colour
+            day = f"{t:%a}".upper()
+            c.FillRect(x + 1, y + h - 11, self._tw(day) + 3, 8, _DAY_BG[wd])
+            graphics.DrawText(c, self.font, x + 3, y + h - 4, _DAY_FG[wd], day)
+            lx = x + 4 + self._tw(day) + 2
+            lx += self._text(c, lx, y + h - 4, f"{t.hour % 12 or 12}:{t:%M}{'A' if t.hour < 12 else 'P'}") + 4
             if t.timestamp() > now + 120:                      # model forecast / radar nowcast frame
                 tag = "FORECAST"
                 c.FillRect(lx - 1, y + h - 11, self._tw(tag) + 3, 8, self.forecast_bg)
@@ -158,31 +179,47 @@ class MapPanel:
         return None
 
     def _times(self, tid, meta):
-        """Frame times as local datetimes, parsed once per pack (not every frame)."""
+        """Frame times as local datetimes, and the days they span as [(start, end, weekday)] in fractions of
+        the loop (a day starts where local midnight falls between two frames) — parsed once per pack."""
         key = id(meta)                                      # a reloaded pack is a new meta object
         cached = self._time_cache.get(tid)
         if cached and cached[0] == key:
-            return cached[1]
+            return cached[1], cached[2]
         out = [datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).astimezone()
                for s in meta.get("times") or []]
-        self._time_cache[tid] = (key, out)
-        return out
+        days = []
+        if len(out) > 1:
+            start = 0.0
+            for i in range(1, len(out)):
+                a, b = out[i - 1], out[i]
+                if b.date() != a.date():
+                    mid = b.replace(hour=0, minute=0, second=0, microsecond=0)
+                    span = (b - a).total_seconds()
+                    f = (i - 1 + ((mid - a).total_seconds() / span if span > 0 else 1.0)) / (len(out) - 1)
+                    days.append((start, f, a.weekday()))
+                    start = f
+            days.append((start, 1.0, out[-1].weekday()))
+        self._time_cache[tid] = (key, out, days)
+        return out, days
 
-    def _progress(self, c, x, y, w, idx, n, times, now):
-        """2-px bar along the bottom: the played part bright, the rest dim; nowcast (future) frames amber."""
-        c.FillRect(x, y, w, 2, Color(45, 45, 52))
-        if n <= 1:
+    def _progress(self, c, x, y, w, idx, n, times, days, now):
+        """2-px bar along the bottom, one stretch per day in that day's weekday colour (played part bright,
+        the rest dim), a notch at each midnight; nowcast (future) frames checkered."""
+        if n <= 1 or not days:
             c.FillRect(x, y, w, 2, self.white)
             return
+        px = x + round(w * idx / (n - 1))
+        for a, b, wd in days:
+            sx, ex = x + round(w * a), x + round(w * b)
+            c.FillRect(sx, y, ex - sx, 2, _DAY_DIM[wd])
+            if px > sx:
+                c.FillRect(sx, y, min(px, ex) - sx, 2, _DAY_BG[wd])
         future = next((i for i, t in enumerate(times) if t.timestamp() > now + 120), None)
-        if future is not None:                                  # where the forecast part of the loop starts
-            fx = x + round(w * future / (n - 1))
-            c.FillRect(fx, y, x + w - fx, 2, Color(80, 32, 0))
-        px = round(w * idx / (n - 1))
-        fx = x + round(w * future / (n - 1)) if future is not None else x + w
-        c.FillRect(x, y, min(px, fx - x), 2, self.white)
-        if px > fx - x:
-            c.FillRect(fx, y, x + px - fx, 2, self.forecast_bg)
+        if future is not None:                                  # the forecast part: checkered (amber is Tuesday's colour)
+            for cx in range(x + round(w * future / (n - 1)), x + w):
+                c.FillRect(cx, y + (cx & 1), 1, 1, self.shadow)
+        for a, _, _ in days[1:]:                                # midnight notches, poking up above the bar
+            c.FillRect(x + round(w * a), y - 1, 1, 3, self.white)
 
     def default_loops(self, tid):
         pack = self.store.get(tid)
