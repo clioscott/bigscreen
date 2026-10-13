@@ -74,15 +74,23 @@ def _lonlat(g):
     return g
 
 
-def represent(boundary_set):
-    out, url = [], f"https://represent.opennorth.ca/boundaries/{boundary_set}/?limit=500"
+def represent(boundary_set, id_prefix=""):
+    """Represent allows ~60 requests a minute: list the set, then fetch the wanted shapes a second apart."""
+    import time as _t
+    out, url, items = [], f"https://represent.opennorth.ca/boundaries/{boundary_set}/?limit=500", []
     while url:
         j = requests.get(url, headers=UA, timeout=120).json()
-        for b in j["objects"]:
-            shp = requests.get(f"https://represent.opennorth.ca{b['url']}simple_shape", headers=UA, timeout=60).json()
-            out.append({"id": b["external_id"] or b["name"], "name": b["name"], "geom": shape(shp)})
+        items += [b for b in j["objects"] if str(b.get("external_id") or "").startswith(id_prefix)]
         nxt = j["meta"].get("next")
         url = f"https://represent.opennorth.ca{nxt}" if nxt else None
+    for b in items:
+        for attempt in range(3):
+            r = requests.get(f"https://represent.opennorth.ca{b['url']}simple_shape", headers=UA, timeout=60)
+            if r.ok:
+                out.append({"id": b["external_id"] or b["name"], "name": b["name"], "geom": shape(r.json())})
+                break
+            _t.sleep(5 * (attempt + 1))
+        _t.sleep(1.1)
     return out
 
 
@@ -132,7 +140,7 @@ LEVELS = {
     "neighbourhood_van": ("Vancouver neighbourhoods", vancouver_local_areas),
     "reserve": ("First Nations reserves", lambda: wfs("WHSE_ADMIN_BOUNDARIES.CLAB_INDIAN_RESERVES", "ENGLISH_NAME", "CLAB_ID", LOWER_MAINLAND)),
     "bc_riding": ("Provincial electoral districts", lambda: wfs("WHSE_ADMIN_BOUNDARIES.EBC_PROV_ELECTORAL_DIST_SVW", "ED_NAME", "ED_ABBREVIATION")),
-    "federal_riding": ("Federal electoral districts", lambda: represent("federal-electoral-districts-2023")),
+    "federal_riding": ("Federal electoral districts", lambda: represent("federal-electoral-districts-2023", "59")),
     "health_authority": ("Health authorities", lambda: wfs("WHSE_ADMIN_BOUNDARIES.BCHA_HEALTH_AUTHORITY_BNDRY_SP", "HLTH_AUTHORITY_NAME", "HLTH_AUTHORITY_CODE")),
     "hsda": ("Health service delivery areas", hsda),
     "lha": ("Local health areas", lambda: wfs("WHSE_ADMIN_BOUNDARIES.BCHA_LOCAL_HEALTH_AREA_SP", "LOCAL_HLTH_AREA_NAME", "LOCAL_HLTH_AREA_CODE")),
@@ -249,7 +257,11 @@ def build(grid_id, cache):
     by = {}
     for u in units:
         by.setdefault(clean(u["name"]), []).append(u)
-    units = [{"id": us[0]["id"], "name": clean(n), "geom": unary_union([x["geom"].buffer(0) for x in us])} for n, us in by.items()]
+    def fix(g):
+        b = g.buffer(0) if g.geom_type in ("Polygon", "MultiPolygon") else g
+        return g if b.is_empty else b
+    units = [{"id": us[0]["id"], "name": clean(n), "geom": unary_union([fix(x["geom"]) for x in us])} for n, us in by.items()]
+    units = [u for u in units if not u["geom"].is_empty]
     cols, rows = layout(units, max_cols)
     out = {"id": grid_id, "label": label, "level": level, "source": LEVELS[level][0], "cols": cols, "rows": rows,
            "units": [{"id": u["id"], "name": u["name"], "labels": labels(u["name"]), "col": u["col"], "row": u["row"]}
