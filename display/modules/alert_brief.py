@@ -315,6 +315,14 @@ HAZARD_PAGES = {
     "fog": ["fog", "satellite"], "smoke": ["smoke", "satellite"], "general": ["satellite", "radar"],
 }
 
+# The forecast variables (hub/weather/alert_data.py) each weather type's special page uses.
+HAZARD_VARS = {
+    "rain": ["precip", "pop", "temp"], "snow": ["snow", "snowlevel", "temp", "precip"], "freezing": ["fzra", "temp", "precip"],
+    "wind": ["wind", "temp"], "thunder": ["tstorm", "pop", "precip"], "tornado": ["tstorm", "wind"],
+    "flood": ["sealevel", "wind", "precip"], "heat": ["temp", "dew"], "cold": ["temp", "wind"], "frost": ["temp", "dew"],
+    "fog": ["vis", "temp", "dew"], "smoke": ["smoke", "pm25", "wind"], "general": ["temp", "precip", "pop", "wind"],
+}
+
 HAZARD_INFO = [
     ("rain", "Rain", "rainfall warning, atmospheric river"),
     ("snow", "Snow & winter storms", "snowfall, snow squall, blowing snow, winter storm, blizzard warnings"),

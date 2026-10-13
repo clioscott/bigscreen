@@ -100,6 +100,11 @@ def run(cfg):
         done, errs = alert_pages.update(cfg, hazards, log=lambda m: print(m, flush=True))
         rendered += [f"alert page {p}" for p in done]
         errors += errs[:4]
+        from hub.weather import alert_data
+        hot = {v for h in hazards for v in alert_brief.HAZARD_VARS.get(h, [])}
+        done, errs = alert_data.update(cfg, hot, log=lambda m: print(m, flush=True), budget_sec=150)
+        rendered += [f"alert data {v}" for v in done]
+        errors += errs[:4]
     except Exception as e:
         errors.append(f"alert pages: {type(e).__name__}: {e}"[:160])
 
