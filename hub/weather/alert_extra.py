@@ -92,8 +92,8 @@ def aqhi():
         loc = locs.setdefault(lid, {"name": p["location_name_en"], "forecast": []})
         loc["forecast"].append([p.get("forecast_datetime"), p.get("aqhi")])
     for loc in locs.values():
-        loc["forecast"].sort()
-    return [dict(id=k, **v) for k, v in sorted(locs.items(), key=lambda kv: kv[1]["name"])]
+        loc["forecast"].sort(key=lambda f: str(f[0]))
+    return [dict(id=k, **v) for k, v in sorted(locs.items(), key=lambda kv: str(kv[1].get("name") or ""))]
 
 
 def update(active_hazards=(), log=print):
