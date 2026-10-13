@@ -385,7 +385,8 @@ def display_preview_clear():
 
 @app.post("/api/display/headlines/jump")
 def display_headlines_jump(payload: dict = Body(default={})):
-    """{"delta": 1|-1} or {"index": n}: show another headline category now (pins headlines if off-screen)."""
+    """{"delta": 1|-1} or {"index": n}: show another headline category now (if headlines
+    are off-screen: that one page, then the rotation resumes; or pinned with "hold_sec")."""
     return _display_call("/headlines/jump", payload)
 
 

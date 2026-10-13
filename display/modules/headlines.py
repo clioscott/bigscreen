@@ -287,6 +287,7 @@ class HeadlinesRenderer(ModuleRenderer):
                     if not self._cycle_complete:
                         # First completion signal — let main.py force-advance the cycle.
                         self._cycle_complete = True
+                        self.pages_shown += 1
                         return
                     # render() was called again while _cycle_complete is already True.
                     # This means the cycle engine re-selected headlines without a panel
@@ -299,6 +300,7 @@ class HeadlinesRenderer(ModuleRenderer):
                     self._prepare_page(width)
                     # Fall through to render the freshly prepared first page.
                 else:
+                    self.pages_shown += 1
                     self.current_sub_index = (self.current_sub_index + 1) % len(self.subreddits)
                     self._prepare_page(width)
                     return
@@ -350,6 +352,7 @@ class HeadlinesRenderer(ModuleRenderer):
 
     # -- manual control (called from the control-server thread; applied on the next frame) --
     _pending_jump = None
+    pages_shown = 0                              # category pages finished so far (a "pages" entry counts these)
 
     def request_jump(self, index=None, delta=0):
         """Queue a jump to category ``index`` (or ``delta`` steps from the current one)."""

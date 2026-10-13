@@ -116,6 +116,8 @@ class EmulatorOutput:
 class Screen:
     """Owns the modules for one effective config. Rebuilt when the config changes."""
 
+    _hl_pages0 = 0                               # headlines.pages_shown when the current headlines play began
+
     def __init__(self, cfg, loader, prev=None, maps=None):
         from display.modules.calendar import CalendarRenderer
         from display.modules.client_calls import ClientCallsRenderer
@@ -240,7 +242,11 @@ class Screen:
         if transition and not self.headlines.has_pending_jump():
             self.headlines.reset_to_first_sub(w)
             self.headlines._cycle_complete = False
+        if transition:
+            self._hl_pages0 = self.headlines.pages_shown
         self.headlines.render(c, x, y, w, h)
+        if entry.get("pages") and self.headlines.pages_shown - self._hl_pages0 >= int(entry["pages"]):
+            return "done"                        # "pages": N ends after N category pages (a jump played once)
         if getattr(self.headlines, "_cycle_complete", False):
             return "done"
 
@@ -323,23 +329,28 @@ class Screen:
         self.date.render(c, self.w - date_w, self.h - 14, date_w, 14)
         graphics.DrawLine(c, 0, self.status_top, self.w, self.status_top, self.border)
 
-    def headlines_jump(self, index=None, delta=0, hold_sec=300):
-        """Show a headline category now. If headlines aren't on screen, pin them on the side the
-        rotation normally uses (right by default) for ``hold_sec``."""
+    def headlines_jump(self, index=None, delta=0, hold_sec=None):
+        """Show a headline category now. If headlines aren't on screen, play them on the side the
+        rotation normally uses (right by default): that one category page, then the rotation resumes
+        (or, with ``hold_sec``, pinned for that long)."""
         h = self.headlines
         if not h.subreddits:
             return {"error": "no headline categories loaded yet"}
         if index is not None and not (0 <= int(index) < len(h.subreddits)):
             return {"error": f"category index {index} out of range"}
         side = next((s for s in ("left", "right") if self.prev.get(s) == "headlines"), None)
-        if side is None:
+        started = side is None
+        if started:
             side = next((s for s in ("right", "left")
                          if any(e.get("panel") == "headlines" for e in self.engines[s].entries)), "right")
-            self.engines[side].play({"panel": "headlines"}, hold=True, ttl_sec=hold_sec)
+            if hold_sec:
+                self.engines[side].play({"panel": "headlines"}, hold=True, ttl_sec=hold_sec)
+            else:
+                self.engines[side].play({"panel": "headlines", "advance": "cycles", "cycles": 1, "pages": 1})
         h.request_jump(index=index, delta=delta)
         target = (int(index) if index is not None else (h.current_sub_index + int(delta))) % len(h.subreddits)
         return {"ok": True, "side": side, "category": h.subreddits[target], "index": target,
-                "pinned_sec": None if self.prev.get(side) == "headlines" else hold_sec}
+                "pinned_sec": hold_sec if started and hold_sec else None, "once": started and not hold_sec}
 
     def describe(self):
         return {side: {"panel": self.prev[side], **self.engines[side].describe()} for side in ("left", "right")}

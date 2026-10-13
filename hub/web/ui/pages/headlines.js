@@ -50,7 +50,8 @@ export const Headlines = {
       jumping.value = true;
       try {
         const r = await api("/api/display/headlines/jump", { json: body });
-        toast(r.pinned_sec ? `Showing “${r.category}” — headlines pinned for ${Math.round(r.pinned_sec / 60)} min` : `Showing “${r.category}”`);
+        toast(r.pinned_sec ? `Showing “${r.category}” — headlines pinned for ${Math.round(r.pinned_sec / 60)} min`
+          : r.once ? `Showing “${r.category}” once, then back to the rotation` : `Showing “${r.category}”`);
         setTimeout(refreshDisplay, 400);
       } catch (e) { fail(e); } finally { jumping.value = false; }
     };
@@ -87,7 +88,7 @@ export const Headlines = {
             <button v-for="(name, i) in (onDisplay?.categories || [])" :key="name" class="btn sm" :class="{primary: i === onDisplay.index}"
               :disabled="jumping" @click="jump({index: i})">{{ name }}</button>
           </div>
-          <div class="faint" style="font-size:12.5px">Jumps straight to a category. If headlines aren't on screen they're pinned for 5 minutes; the rotation carries on from there as usual.</div>
+          <div class="faint" style="font-size:12.5px">Jumps straight to a category. If headlines aren't on screen, that one category plays and then the rotation carries on.</div>
           <div class="callout" v-if="store.display && !store.display.status"><Icon name="TriangleAlert" :size="15"/>The display isn't reachable.</div>
         </div>
       </div></div>
