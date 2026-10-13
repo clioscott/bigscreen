@@ -67,7 +67,8 @@
     "SEC"
    ],
    "col": 0,
-   "row": 2
+   "row": 2,
+   "optional": "island"
   },
   {
    "id": "330",
@@ -80,7 +81,8 @@
     "GIB"
    ],
    "col": 1,
-   "row": 2
+   "row": 2,
+   "optional": "island"
   },
   {
    "id": "123",

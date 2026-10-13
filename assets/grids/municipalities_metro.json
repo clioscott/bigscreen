@@ -1,0 +1,175 @@
+{
+ "id": "municipalities_metro",
+ "label": "Metro Vancouver municipalities",
+ "level": "municipality_metro",
+ "source": "Municipalities",
+ "cols": 8,
+ "rows": 3,
+ "units": [
+  {
+   "id": "vancouver",
+   "name": "Vancouver",
+   "labels": [
+    "VANCOUVER",
+    "VAN"
+   ],
+   "col": 0,
+   "row": 0
+  },
+  {
+   "id": "north_vancouver",
+   "name": "North Vancouver",
+   "labels": [
+    "NORTH VANCOUVER",
+    "N VAN",
+    "N VANCO",
+    "NV"
+   ],
+   "col": 1,
+   "row": 0
+  },
+  {
+   "id": "burnaby",
+   "name": "Burnaby",
+   "labels": [
+    "BURNABY",
+    "BBY"
+   ],
+   "col": 2,
+   "row": 0
+  },
+  {
+   "id": "port_moody",
+   "name": "Port Moody",
+   "labels": [
+    "PORT MOODY",
+    "PT MOODY",
+    "PT MOOD",
+    "PT MOO",
+    "P MOODY",
+    "PM"
+   ],
+   "col": 3,
+   "row": 0
+  },
+  {
+   "id": "coquitlam",
+   "name": "Coquitlam",
+   "labels": [
+    "COQUITLAM",
+    "COQ"
+   ],
+   "col": 4,
+   "row": 0
+  },
+  {
+   "id": "pitt_meadows",
+   "name": "Pitt Meadows",
+   "labels": [
+    "PITT MEADOWS",
+    "PITT MEADOW",
+    "PITT MEADO",
+    "PITT MEAD",
+    "PIT MEA",
+    "P MEADO",
+    "PM"
+   ],
+   "col": 6,
+   "row": 0
+  },
+  {
+   "id": "maple_ridge",
+   "name": "Maple Ridge",
+   "labels": [
+    "MAPLE RIDGE",
+    "MAPL RIDG",
+    "MAP RID",
+    "M RIDGE",
+    "MR"
+   ],
+   "col": 7,
+   "row": 0
+  },
+  {
+   "id": "richmond",
+   "name": "Richmond",
+   "labels": [
+    "RICHMOND",
+    "RICH",
+    "RIC"
+   ],
+   "col": 0,
+   "row": 1
+  },
+  {
+   "id": "new_westminster",
+   "name": "New Westminster",
+   "labels": [
+    "NEW WESTMINSTER",
+    "NEW WEST",
+    "NEW WES",
+    "N WESTM",
+    "NW"
+   ],
+   "col": 2,
+   "row": 1
+  },
+  {
+   "id": "port_coquitlam",
+   "name": "Port Coquitlam",
+   "labels": [
+    "PORT COQUITLAM",
+    "PT COQ",
+    "P COQUI",
+    "PC"
+   ],
+   "col": 5,
+   "row": 1
+  },
+  {
+   "id": "delta",
+   "name": "Delta",
+   "labels": [
+    "DELTA",
+    "DELT",
+    "DEL"
+   ],
+   "col": 1,
+   "row": 2
+  },
+  {
+   "id": "white_rock",
+   "name": "White Rock",
+   "labels": [
+    "WHITE ROCK",
+    "WHIT ROCK",
+    "WHI ROC",
+    "W ROCK",
+    "WR"
+   ],
+   "col": 4,
+   "row": 2
+  },
+  {
+   "id": "surrey",
+   "name": "Surrey",
+   "labels": [
+    "SURREY",
+    "SRY"
+   ],
+   "col": 5,
+   "row": 2
+  },
+  {
+   "id": "langley",
+   "name": "Langley",
+   "labels": [
+    "LANGLEY",
+    "LGLY",
+    "LGL"
+   ],
+   "col": 6,
+   "row": 2
+  }
+ ]
+}

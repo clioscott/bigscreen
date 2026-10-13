@@ -18,7 +18,8 @@
     "SC"
    ],
    "col": 0,
-   "row": 0
+   "row": 0,
+   "optional": "island"
   },
   {
    "id": "335",

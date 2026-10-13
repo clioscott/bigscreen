@@ -734,6 +734,7 @@ class AlertScreen:
                      if st.get("show_pages", True) is not False
                      and _page_pack(self._data_dir(), pid, check_only=True) and _page_has_data(self._data_dir(), pid)]
             ctx.checked = adata.get("updated_utc")
+            ctx.amap, ctx.data_dir = amap, self._data_dir()
             ctx.home_km = a.get("home_km")
             for kind, extra in alert_story.page_plan(ctx, has_map, pages):
                 if kind in ("about",) and st.get("show_details", True) is False:
