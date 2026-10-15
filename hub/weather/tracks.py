@@ -10,8 +10,9 @@ Config: modules.weather_maps
                   fps, hold_last_sec, loops, timestamp, legend}}
     palettes: {name: [[threshold, "#rrggbb"], ...]}   (overrides hub/weather/radar.py PALETTES)
 
-Frame order: basemap → highways → wms imagery (GOES etc.) → coastlines/boundaries/rivers → radar/totals.
-Imagery sits under the map lines (clouds would hide them otherwise); radar sits on top of everything.
+Frame order (loops): basemap → highways → wms imagery (GOES etc.) → coastlines/boundaries/rivers → radar.
+Imagery sits under the map lines (clouds would hide them otherwise); live radar sits on top of everything.
+Totals (accumulation/forecast) go under the coastlines/boundaries, so a wide swath of rain stays placeable.
 
 Loop layers (wms layers drawn in order; radar layers always last):
     {"type": "wms", "layer": "GOES-West_1km_DayVis-NightIR", "style": "", "opacity": 1, "scale": 2,
@@ -151,10 +152,10 @@ def render_track(tid, track, cfg, log=print):
             if t in show:
                 layer = radar.accumulation_layer(rain_mm, snow_cm, wm.get("palettes"),
                                                  float(track.get("snow_on_top_cm", 0.5)))
-                img = _basemap_for(base, view, track, t, under)
-                if overlay is not None:
-                    img = alpha_over(img, overlay)
-                frames.append(alpha_over(img, layer))         # totals sit on top of every map line
+                img = alpha_over(_basemap_for(base, view, track, t, under), layer)
+                if overlay is not None:                       # map lines over the totals, so heavy
+                    img = alpha_over(img, overlay)            # rain can't hide where it fell
+                frames.append(img)
                 times.append(t)
         coverage = f"{(arch[-1] - arch[0]).total_seconds() / 3600:.1f} of {hours:g} h archived"
     elif kind == "forecast":
@@ -164,10 +165,10 @@ def render_track(tid, track, cfg, log=print):
         for t, rain_mm, snow_cm in forecast.precip_forecast(view, hours, step_h):
             layer = radar.accumulation_layer(rain_mm, snow_cm, wm.get("palettes"),
                                              float(track.get("snow_on_top_cm", 0.5)))
-            img = _basemap_for(base, view, track, t, under)
+            img = alpha_over(_basemap_for(base, view, track, t, under), layer)
             if overlay is not None:
                 img = alpha_over(img, overlay)
-            frames.append(alpha_over(img, layer))
+            frames.append(img)
             times.append(t)
         if not frames:
             return {"ok": False, "message": "no HRDPS forecast available"}
