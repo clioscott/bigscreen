@@ -174,6 +174,7 @@ def run(cfg):
     from hub.bc import maps, trafficmap
     try:
         trafficmap.render("roads_metro", METRO, 448, 192)
+        trafficmap.render("roads_metro_mini", METRO, 120, 52)        # the Incident map's corner minimap
     except Exception as e:
         print(f"overview map: {e}", flush=True)
     if st.get("enabled") is False:

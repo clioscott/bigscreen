@@ -205,13 +205,15 @@ def _centre(pts):
     return (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)) if pts else (W / 2, H / 2)
 
 
-def _route_shields(c, mp, avoid=(), h=14, ox=0, oy=0, clip=(0, 0, W, H)):
+def _route_shields(c, mp, avoid=(), h=14, ox=0, oy=0, clip=(0, 0, W, H), block=()):
     """The real shield on each route, where the map's renderer placed them (none over the event)."""
     for a in mp.meta.get("shields") or []:
         x, y = a["x"] + ox, a["y"] + oy
         if any((x - ax) ** 2 + (y - ay) ** 2 < 16 ** 2 for ax, ay in avoid):
             continue
         wd = sh.width(a["num"], h, a["kind"])
+        if any(bx0 - wd / 2 - 2 <= x <= bx1 + wd / 2 + 2 and by0 - h / 2 - 2 <= y <= by1 + h / 2 + 2 for bx0, by0, bx1, by1 in block):
+            continue
         if clip[0] <= x - wd / 2 and x + wd / 2 <= clip[2] and clip[1] <= y - h / 2 and y + h / 2 <= clip[3]:
             sh.draw(c, int(x - wd / 2), int(y - h / 2), a["num"], h, kind=a["kind"])
 
@@ -322,13 +324,52 @@ def _map(s, c, item, now, el):
     def static():
         if mp:
             mp.blit(c, mx, 0, sx, 0, mw, H)
-            _route_shields(c, mp, avoid=_hl_avoid(mp, item, mx - sx), h=14, ox=mx - sx, clip=(mx, 0, mx + mw, H))
+            rect = _minimap_rect(s, mp, item, sx, mx, mw)
+            _route_shields(c, mp, avoid=_hl_avoid(mp, item, mx - sx), h=22, ox=mx - sx, clip=(mx, 0, mx + mw, H),
+                           block=[rect] if rect else [])
+            _minimap(s, c, mp, item, sx, mx, mw)
         _panel(c, item, px_, pw)
         k.box(c, pw if left else W - pw - 1, 0, 1, H, (50, 56, 70))
 
     s.static(c, ("map", item["id"], item.get("updated")), static)
     if mp:
         highlight(c, mp, item, now, ox=mx - sx, width=4 if mp.km_per_px() < 0.06 else 3, clip=(mx, 0, mx + mw, H))
+
+
+def _minimap_rect(s, mp, item, sx, mx, mw):
+    """Where the minimap goes: the map corner farthest from the affected road (x0, y0, x1, y1)."""
+    mini = k.Map.load(s.data_dir, "roads_metro_mini")
+    if not mini:
+        return None
+    hx, hy = _hl_centre(mp, item, mx - sx)
+    m = 4
+    corners = [(mx + m, m), (mx + mw - mini.w - m, m), (mx + m, H - mini.h - m), (mx + mw - mini.w - m, H - mini.h - m)]
+    x, y = max(corners, key=lambda p: (p[0] + mini.w / 2 - hx) ** 2 + (p[1] + mini.h / 2 - hy) ** 2)
+    return (x - 2, y - 2, x + mini.w + 2, y + mini.h + 2)
+
+
+def _minimap(s, c, mp, item, sx, mx, mw):
+    """The whole Metro area small, in the map corner farthest from the affected road, with a box round the
+    part the big map shows."""
+    mini = k.Map.load(s.data_dir, "roads_metro_mini")
+    rect = _minimap_rect(s, mp, item, sx, mx, mw)
+    if not mini or not rect:
+        return
+    x, y = rect[0] + 2, rect[1] + 2
+    k.box(c, x - 2, y - 2, mini.w + 4, mini.h + 4, (0, 0, 0))
+    mini.blit(c, x, y)
+    k.frame(c, x - 1, y - 1, mini.w + 2, mini.h + 2, (90, 95, 110))
+    # the big map's visible area, as a box on the minimap
+    la0, lo0 = mp.unproject(sx, 0)
+    la1, lo1 = mp.unproject(sx + mw, H)
+    ax, ay = mini.project(la0, lo0)
+    bx, by = mini.project(la1, lo1)
+    ax, bx = sorted((max(0, min(mini.w - 1, int(round(ax)))), max(0, min(mini.w - 1, int(round(bx))))))
+    ay, by = sorted((max(0, min(mini.h - 1, int(round(ay)))), max(0, min(mini.h - 1, int(round(by))))))
+    bw, bh = max(3, bx - ax + 1), max(3, by - ay + 1)
+    if bw <= 3 and bh <= 3:                                  # zoomed in further than the minimap's pixels: a dot
+        ax, ay = int((ax + bx) / 2) - 1, int((ay + by) / 2) - 1
+    k.frame(c, x + ax, y + ay, bw, bh, WHITE)
 
 
 def _hero(s, c, item, now, el):
@@ -529,7 +570,7 @@ SAMPLES = {
     "snow_port_mann": {"label": "Snow on the Port Mann", "item": _smp(
         type="ROAD_CONDITION", kind="winter", road="Port Mann Bridge", highways=["1"], direction="Both directions", severity="MINOR",
         description="Compact snow. Slippery sections. Drive with care; winter tires required.",
-        geometry={"type": "LineString", "points": [[-122.80834, 49.21108], [-122.80856, 49.21125], [-122.8091, 49.21168], [-122.80935, 49.2119], [-122.80959, 49.21214], [-122.8099, 49.21251]]})},
+        geometry={"type": "LineString", "points": [[-122.8135, 49.2190], [-122.8099, 49.21251], [-122.8053, 49.2040]]})},
 }
 
 THEMES = {

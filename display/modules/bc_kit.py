@@ -442,6 +442,13 @@ class Map:
         m = self.meta
         return (x - m["merc"][0]) / m["mpp"], (m["merc"][3] - y) / m["mpp"]
 
+    def unproject(self, x, y):
+        """(lat, lon) of a map pixel position."""
+        m = self.meta
+        mx = m["merc"][0] + x * m["mpp"]
+        my = m["merc"][3] - y * m["mpp"]
+        return math.degrees(2 * math.atan(math.exp(my / R)) - math.pi / 2), math.degrees(mx / R)
+
     def km_per_px(self):
         return float(self.meta.get("km_per_px") or 1.0)
 
