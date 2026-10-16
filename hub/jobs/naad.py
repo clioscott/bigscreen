@@ -94,6 +94,7 @@ def item_of(a):
         "sender": a.get("sender_name") or a.get("sender"), "sent": a.get("sent"), "effective": a.get("effective"),
         "expires": a.get("expires"), "msg_type": a.get("msg_type"), "status": a.get("status"), "web": a.get("web") or "",
         "immediate": immediate, "updates": a.get("updates", 0),
+        "params": {k_: v[0] for k_, v in (a.get("params") or {}).items() if v}, "circles": a.get("circles") or [],
     }
 
 

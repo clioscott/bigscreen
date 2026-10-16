@@ -96,7 +96,65 @@ def _recent(s, c, mp, item, ox=0, oy=0, w=W):
             k.disc(c, x + ox, y + oy, r, col) if r else k.box(c, x + ox, y + oy, 1, 1, col)
 
 
+VP, VS = 6.5, 3.6                     # km/s — the crustal P and S speeds the Japan EEW screen also uses
+FRESH = 300                           # seconds after origin during which the true wavefronts are drawn
+
+
+def s_arrival(item):
+    """Epoch seconds when the S wave reaches home (None without a location and an origin time)."""
+    if item.get("lat") is None or item.get("dist_km") is None or not item.get("time"):
+        return None
+    hyp = math.hypot(float(item["dist_km"]), float(item.get("depth") or 10))
+    return float(item["time"]) + hyp / VS
+
+
+def _waves(c, mp, item, now, col, clip=(0, 0, W, H)):
+    """Waves spreading from the epicentre: the true P and S fronts while the quake is fresh, else a ripple."""
+    ex, ey = mp.project(item["lat"], item["lon"])
+    el = now - float(item.get("time") or now)
+    kpp = mp.km_per_px()
+    if 0 <= el <= FRESH:
+        dep = float(item.get("depth") or 10)
+        for v, wc in ((VP, (90, 160, 255)), (VS, (255, 70, 40))):
+            r2 = (v * el) ** 2 - dep ** 2
+            if r2 > 0:
+                r = math.sqrt(r2) / kpp
+                if r < 1200:
+                    k.circle_clip(c, ex, ey, r, wc, clip)
+                    k.circle_clip(c, ex, ey, r + 1, k.dim(wc, 0.5), clip)
+    else:
+        for i in range(3):
+            r = ((now * 18) + i * 16) % 48 + 4
+            k.circle(c, ex, ey, r, k.dim(col, max(0.15, 1 - r / 52)))
+    return ex, ey
+
+
+def countdown(c, item, now, x, y, w, big=True):
+    """S-wave countdown to home (Japan EEW style) while it is still coming; 'shaking now' just after."""
+    t = s_arrival(item)
+    if t is None:
+        return 0
+    left = t - now
+    if left > 0:
+        k.text(c, k.font("hvb10"), x, y, (255, 200, 120), "S WAVE REACHES HOME IN")
+        dw, dh = (16, 30) if big else (10, 18)
+        txt = f"{int(math.ceil(left))}"
+        k.seven_seg(c, x, y + 12, txt, dw, dh, 3 if big else 2, on=(255, 60, 40), off=(40, 10, 10))
+        k.text(c, k.font("lutb12"), x + len(txt) * (dw + 4) + 4, y + 12 + dh - 12, (255, 120, 90), "s")
+        return 12 + dh + 2
+    if left > -60:
+        if k.blink(now, 0.6):
+            k.box(c, x, y, w, 20, (200, 0, 0))
+            k.text(c, k.font("h16"), x + 4, y + 2, WHITE, "SHAKING NOW")
+        return 22
+    return 0
+
+
 def _rings(c, mp, home, col=(60, 70, 90), ox=0, labels=True):
+    """Home on the map (the house; distances are in the panels, not as rings round it)."""
+    hx, hy = mp.project(home[1], home[0])
+    k.icon_outlined(c, "house", int(hx + ox) - 8, int(hy) - 7, (230, 230, 240))
+    return
     hx, hy = mp.project(home[1], home[0])
     f = k.font("s8")
     for km in (50, 100, 200, 400):
@@ -159,10 +217,12 @@ def _pnsn(s, c, item, now, el):
 
     s.static(c, ("pnsn", item["id"]), static)
     if mp:
-        r = (el * 30) % 50
-        k.circle(c, ex, ey, r, k.dim(col, max(0.2, 1 - r / 50)))
-        k.circle(c, ex, ey, (r + 25) % 50, k.dim(col, max(0.2, 1 - ((r + 25) % 50) / 50)))
+        _waves(c, mp, item, now, col, (0, 0, px_, H))
         _star(c, ex, ey, 7, col if k.blink(now, 0.8, 0.7) else WHITE)
+    t = s_arrival(item)
+    if t is not None and -60 < t - now:
+        k.box(c, px_ + 2, H - 70, pw - 4, 48, (20, 6, 6))
+        countdown(c, item, now, px_ + 8, H - 66, pw - 16)
 
 
 # ------------------------------------------------------------------------------------------------ shakemap
@@ -230,7 +290,7 @@ def _shakemap(s, c, item, now, el):
 
     s.static(c, ("shake", item["id"]), static)
     if mp:
-        ex, ey = mp.project(item["lat"], item["lon"])
+        ex, ey = _waves(c, mp, item, now, col, (0, 0, W - tw_, H))
         _star(c, ex, ey, 7, col if k.blink(now, 0.8, 0.7) else WHITE)
 
 
@@ -293,6 +353,10 @@ def _report(s, c, item, now, el):
 
 # ------------------------------------------------------------------------------------------------ drop (early warning)
 def _drop(s, c, item, now, el):
+    """Canada's early warning. With an epicentre: the waves on the map, a big S-wave countdown to home and the
+    expected shaking — like the Japan EEW screen; without one: the warning text with DROP · COVER · HOLD ON."""
+    if item.get("lat") is not None:
+        return _drop_live(s, c, item, now, el)
     on = k.blink(now, 0.6)
 
     def static():
@@ -300,7 +364,6 @@ def _drop(s, c, item, now, el):
         k.icon(c, "pulse", 8, 9, WHITE)
         k.text(c, k.font("h24"), 30, 5, WHITE, "EARTHQUAKE")
         k.text_r(c, k.font("h18r"), W - 8, 9, (255, 210, 210), "SÉISME")
-        # the three actions
         bw = (W - 24) // 3
         for i, (t, sub) in enumerate((("DROP", "to your hands and knees"), ("COVER", "your head and neck"), ("HOLD ON", "until the shaking stops"))):
             x = 6 + i * (bw + 6)
@@ -322,6 +385,69 @@ def _drop(s, c, item, now, el):
         k.box(c, 0, 34, W, 2, WHITE)
     else:
         c.buf[0:34, :, 1:] = 0
+
+
+def _drop_live(s, c, item, now, el):
+    mp = _pick_map(s, item)
+    mw = 236
+    col = mag_col(item.get("mag"))
+    x0 = mw + 6
+    t_s = s_arrival(item)
+
+    def static():
+        if mp:
+            ex, ey = mp.project(item["lat"], item["lon"])
+            hx, hy = mp.project(_home(s)[1], _home(s)[0])
+            sx = int(max(0, min(mp.w - mw, (ex + hx) / 2 - mw / 2)))
+            s.state["sx"] = sx
+            mp.blit(c, 0, 0, sx, 0, mw, H)
+        k.box(c, mw, 0, W - mw, H, (14, 0, 0))
+        k.box(c, mw, 0, 2, H, (220, 0, 0))
+        k.text(c, k.font("h20"), x0, 3, WHITE, "EARTHQUAKE")
+        k.text(c, k.font("hvb10"), x0, 25, (255, 190, 190), "EARLY WARNING · NRCan")
+        bits = [f"M{item['mag']:.1f}" if item.get("mag") else "", f"{item['dist_km']:.0f} km away" if item.get("dist_km") else ""]
+        k.text(c, k.font("lutb12"), x0, 38, (255, 220, 200), "  ·  ".join(b for b in bits if b))
+        if item.get("mmi_home"):
+            i = mmi_i(item["mmi_home"])
+            t = f"{ROMAN[i]} {MMI_WORD[i]}"
+            k.icon(c, "house", x0, 54, (230, 200, 200))
+            k.text(c, k.font("hvb10"), x0 + 20, 57, (230, 200, 200), "expect")
+            k.chip(c, k.font("hvb10"), x0 + 62, 55, t, MMI_COL[i], BLACK, 3, 1)
+        y = H - 40
+        bw = (W - x0 - 12) // 3
+        for j, t in enumerate(("DROP", "COVER", "HOLD ON")):
+            bx = x0 + j * (bw + 4)
+            k.box(c, bx, y, bw, 22, (255, 200, 0))
+            k.text_c(c, k.pick(("h16", "lutb12", "hvb10"), t, bw - 4), bx + bw // 2, y + 4, BLACK, t)
+        k.fit_text(c, " · ".join(item.get("areas") or []), x0, H - 14, W - x0 - 6, 12, ("hv10", "s8"), (220, 190, 190))
+
+    s.static(c, ("dropl", item["id"]), static)
+    if mp:
+        sx = s.state.get("sx", 0)
+        ex, ey = mp.project(item["lat"], item["lon"])
+        tmp_el = now - float(item.get("time") or now)
+        dep = float(item.get("depth") or 10)
+        for v, wc in ((VP, (90, 160, 255)), (VS, (255, 70, 40))):
+            r2 = (v * tmp_el) ** 2 - dep ** 2
+            if r2 > 0:
+                k.circle_clip(c, ex - sx, ey, math.sqrt(r2) / mp.km_per_px(), wc, (0, 0, mw, H))
+        _star(c, ex - sx, ey, 6, col if k.blink(now, 0.6) else WHITE)
+        hx, hy = mp.project(_home(s)[1], _home(s)[0])
+        k.icon_outlined(c, "house", int(hx - sx) - 8, int(hy) - 7, WHITE)
+    # the countdown
+    y = 74
+    if t_s is not None and t_s - now > 0:
+        left = int(math.ceil(t_s - now))
+        k.text(c, k.font("hvb10"), x0, y, (255, 200, 120), "S WAVE REACHES HOME IN")
+        txt = str(left)
+        k.seven_seg(c, x0, y + 13, txt, 22, 58, 4, on=(255, 50, 30), off=(50, 8, 8))
+        k.text(c, k.font("h20"), x0 + len(txt) * 28 + 6, y + 48, (255, 120, 90), "s")
+    elif t_s is not None and t_s - now > -90:
+        if k.blink(now, 0.5):
+            k.box(c, x0, y + 6, W - x0 - 6, 50, (220, 0, 0))
+        k.text_c(c, k.font("h24"), x0 + (W - x0) // 2, y + 18, WHITE, "SHAKING NOW")
+    else:
+        k.fit_text(c, item.get("headline") or "", x0, y, W - x0 - 6, 70, ("h16", "lutb12"), WHITE)
 
 
 # ------------------------------------------------------------------------------------------------ samples
@@ -357,7 +483,8 @@ SAMPLES = {
                    {"name": "Port Hardy", "km": 220, "mmi": 3.7}, {"name": "Courtenay", "km": 270, "mmi": 3.4},
                    {"name": "Nanaimo", "km": 335, "mmi": 3.0}, {"name": "Victoria", "km": 380, "mmi": 2.8}]}},
     "eew": {"label": "Early warning (Alert Ready)", "item": {
-        "kind": "eew", "time_rel": -5, "sender": "Natural Resources Canada", "severity": "Severe",
+        "kind": "eew", "time_rel": -6, "sender": "Natural Resources Canada", "severity": "Severe",
+        "lat": 48.9, "lon": -125.9, "depth": 20, "mag": 6.8, "dist_km": 201, "mmi_home": 5.1, "origin_known": True,
         "headline": "Earthquake early warning: strong shaking expected",
         "description": "An earthquake has been detected off the west coast of Vancouver Island. Strong shaking is expected "
                        "in the next seconds in Greater Victoria and Metro Vancouver.",
@@ -388,7 +515,10 @@ class Screen(k.BCScreen):
         return "report" if tid == "drop" else tid             # the warning screen only fits warnings
 
     def dwell(self, item):
-        return 40.0 if item.get("kind") == "eew" else max(float(self.settings.get("dwell_sec") or 25), 20.0)
+        if item.get("kind") == "eew":
+            t = s_arrival(item)
+            return max(40.0, (t - item.get("time", 0)) + 60) if t else 40.0
+        return max(float(self.settings.get("dwell_sec") or 25), 20.0)
 
 
 def render_preview(theme, sample=None, at=4.0, settings=None, data=None, data_dir=None):

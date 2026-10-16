@@ -243,6 +243,19 @@ def circle(c, cx, cy, r, col):
         graphics.DrawCircle(c, int(cx), int(cy), int(r), C(col))
 
 
+def circle_clip(c, cx, cy, r, col, clip):
+    """A 1-px circle drawn only inside clip = (x0, y0, x1, y1)."""
+    if r < 1:
+        return
+    x0, y0, x1, y1 = clip
+    n = max(16, int(2 * math.pi * r))
+    a = np.linspace(0, 2 * math.pi, n, endpoint=False)
+    xs = np.rint(cx + r * np.cos(a)).astype(int)
+    ys = np.rint(cy + r * np.sin(a)).astype(int)
+    m = (xs >= max(0, x0)) & (xs < min(W, x1)) & (ys >= max(0, y0)) & (ys < min(H, y1))
+    c.buf[ys[m], xs[m]] = col
+
+
 def disc(c, cx, cy, r, col):
     r = int(r)
     for dy in range(-r, r + 1):
@@ -604,7 +617,7 @@ class BCScreen:
         it = json.loads(json.dumps(smp["item"]))
         it.setdefault("id", f"sample-{key}")
         it["sample"] = True
-        now = time.time()
+        now = getattr(self, "_clock", None) or time.time()      # the drawing clock (previews replay time)
         for k, v in list(it.items()):                  # sample times are relative ("-300" = five minutes ago)
             if k.endswith("_rel"):
                 it[k[:-4]] = now + float(v)
@@ -648,6 +661,7 @@ class BCScreen:
     def draw(self, c, zone, entry, transition, now=None):
         now = time.time() if now is None else now
         entry = entry or {}
+        self._clock = now
         if transition or not self.queue:
             self.queue, self.idx, self.t0 = self._queue(entry), 0, now
             self.state = {}

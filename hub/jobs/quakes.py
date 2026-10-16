@@ -143,16 +143,69 @@ def shown(e, st, now):
             or e["mmi_home"] >= float(st["home_mmi"]))
 
 
-def eew_items(st, home):
+def _eew_params(a):
+    """Epicentre, magnitude, depth and origin time from an NRCan warning's CAP parameters (names vary; matched
+    loosely), or from its CAP circle (centre = epicentre)."""
+    import re
+    from hub.bc.cap import ts
+    out = {}
+    for name, v in (a.get("params") or {}).items():
+        n = name.lower()
+        try:
+            if "latlon" in n or n.endswith("epicentre") or n.endswith("epicenter"):
+                la, lo = [float(x) for x in re.findall(r"-?\d+\.?\d*", v)[:2]]
+                out.setdefault("lat", la)
+                out.setdefault("lon", lo)
+            elif "latitude" in n:
+                out.setdefault("lat", float(re.findall(r"-?\d+\.?\d*", v)[0]))
+            elif "longitude" in n:
+                out.setdefault("lon", float(re.findall(r"-?\d+\.?\d*", v)[0]))
+            elif "magnitude" in n and "type" not in n:
+                out.setdefault("mag", float(re.findall(r"\d+\.?\d*", v)[0]))
+            elif "depth" in n:
+                out.setdefault("depth", float(re.findall(r"\d+\.?\d*", v)[0]))
+            elif "origin" in n and "time" in n:
+                t = ts(v)
+                if t:
+                    out.setdefault("origin", t)
+        except (ValueError, IndexError):
+            continue
+    if "lat" not in out and a.get("circles"):
+        lo, la, _r = a["circles"][0]
+        out.update(lat=la, lon=lo)
+    return out
+
+
+def eew_items(st, home, routed):
     if not st.get("eew"):
         return []
     out = []
-    for a in (common.cache("naad_routed", {}) or {}).get("quakes", []):
-        out.append({"id": f"eew-{a['id']}", "kind": "eew", "headline": a.get("headline"), "description": a.get("description"),
-                    "instruction": a.get("instruction"), "areas": a.get("areas"), "polygons": a.get("polygons"),
-                    "time": a.get("sent") or time.time(), "expires": a.get("expires"), "sender": a.get("sender"),
-                    "severity": a.get("severity"), "mag": None, "lat": None, "lon": None})
+    for a in routed:
+        p = _eew_params(a)
+        it = {"id": f"eew-{a['id']}", "kind": "eew", "headline": a.get("headline"), "description": a.get("description"),
+              "instruction": a.get("instruction"), "areas": a.get("areas"), "polygons": a.get("polygons"),
+              "time": p.get("origin") or a.get("sent") or time.time(), "origin_known": "origin" in p,
+              "expires": a.get("expires"), "sender": a.get("sender"), "severity": a.get("severity"),
+              "mag": p.get("mag"), "lat": p.get("lat"), "lon": p.get("lon"), "depth": p.get("depth", 10.0)}
+        if it["lat"] is not None:
+            it["dist_km"] = round(common.km(home[1], home[0], it["lat"], it["lon"]), 1)
+            if it["mag"]:
+                it["mmi_home"] = round(mmi_aw07(it["mag"], it["dist_km"], it["depth"]), 1)
+        out.append(it)
     return out
+
+
+def _routed_quakes():
+    """NRCan warnings straight from the stored NAAD messages (not waiting for the NAAD job's routing)."""
+    try:
+        from hub.jobs import naad as naad_job
+        from hub import config
+        st = common.settings(config.load(), "naad_alerts", naad_job.DEFAULTS)
+        _, routed = naad_job.collect(dict(st, area="bc"))
+        return routed.get("quakes", [])
+    except Exception as e:
+        print(f"early warnings: {e}", flush=True)
+        return []
 
 
 def run(cfg):
@@ -164,6 +217,12 @@ def run(cfg):
         return {"ok": True, "message": "earthquake screen off", "files": ["quakes.json"]}
     home = common.home(cfg)
     now = time.time()
+    # early warnings first: they take over the wall before the (slower) catalogue fetches
+    eew = eew_items(st, home, _routed_quakes())
+    if eew:
+        prev = common.cache("quakes_last", {}) or {}
+        common.write("quakes", {**prev, "items": eew + [i for i in prev.get("items", []) if i.get("kind") != "eew"]})
+        common.takeover("quake_alert", [i["id"] for i in eew], "quakes_takeover", log=lambda m: print(m, flush=True))
     start7 = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
     start30 = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%S")
     errors = []
@@ -191,11 +250,11 @@ def run(cfg):
                   if e.get("mag") is not None and common.km(home[1], home[0], e["lat"], e["lon"]) <= 500]
     except Exception as e:
         errors.append(f"recent: {e}")
-    eew = eew_items(st, home)
     items = eew + items
     near30 = sum(1 for r in recent if common.km(home[1], home[0], r[0], r[1]) <= 100 and r[2] >= 2)
-    common.write("quakes", {"items": items, "recent": recent, "home": list(home), "near30": near30,
-                            "counts": {"usgs": len(usgs), "nrcan": len(nrc), "events": len(events)}, "errors": errors})
+    out = common.write("quakes", {"items": items, "recent": recent, "home": list(home), "near30": near30,
+                                  "counts": {"usgs": len(usgs), "nrcan": len(nrc), "events": len(events)}, "errors": errors})
+    common.save_cache("quakes_last", out)
     for i in items:
         print(f"{i.get('kind')} M{i.get('mag')} {i.get('place_short', i.get('headline'))} — {i.get('dist_km')} km, "
               f"MMI {i.get('mmi_home')} at home", flush=True)

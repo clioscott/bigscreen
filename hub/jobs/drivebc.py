@@ -29,7 +29,8 @@ API = "https://www.drivebc.ca/api"
 DEFAULTS = {"enabled": True, "incidents": True, "closures": True, "conditions": True, "major_construction": False,
             "planned_hours": 0, "cameras": True, "takeover": "closures", "theme": "vms", "dwell_sec": 20,
             "refresh_interval_sec": 120, "bbox": [-123.30, 49.00, -122.45, 49.45]}
-CAM_W, CAM_H = 176, 103                      # DriveBC stills are 800×468; this keeps their shape at LED size
+CAM_W, CAM_H = 336, 192                      # full wall height; DriveBC stills are 800×468 (captions cropped)
+METRO = {"fit": {"nw": [49.4085, -123.2975], "se": [49.0021, -122.4593]}}
 OUT = paths.DATA_DIR / "drivebc"
 MAJOR_ROUTES = re.compile(r"highway|hwy|bridge|tunnel|causeway|trans-canada", re.I)
 
@@ -136,8 +137,11 @@ def _fetch_cam(cam):
     r.raise_for_status()
     img = Image.open(io.BytesIO(r.content)).convert("RGB")
     w, h = img.size
-    # crop DriveBC's caption strip (bottom ~6 %) and fit CAM_W×CAM_H
-    img = img.crop((0, 0, w, int(h * 0.94))).resize((CAM_W, CAM_H), Image.LANCZOS)
+    # crop DriveBC's caption strip (bottom ~6 %), centre-crop to CAM_W:CAM_H and fit
+    h2 = int(h * 0.94)
+    tw = min(w, int(h2 * CAM_W / CAM_H))
+    x0 = (w - tw) // 2
+    img = img.crop((x0, 0, x0 + tw, h2)).resize((CAM_W, CAM_H), Image.LANCZOS)
     OUT.mkdir(parents=True, exist_ok=True)
     np.ascontiguousarray(np.asarray(img), dtype=np.uint8).tofile(OUT / f"cam_{cam['id']}.bin")
     return {"id": cam["id"], "name": fold(cam.get("name") or ""), "caption": fold(cam.get("caption") or ""),
@@ -167,8 +171,11 @@ def item_of(e):
 
 def run(cfg):
     st = common.settings(cfg, "road_alerts", DEFAULTS)
-    from hub.bc import maps
-    maps.ensure_all(["roads_metro", "roads_metro_r"], log=lambda m: print(m, flush=True))
+    from hub.bc import maps, trafficmap
+    try:
+        trafficmap.render("roads_metro", METRO, 448, 192)
+    except Exception as e:
+        print(f"overview map: {e}", flush=True)
     if st.get("enabled") is False:
         common.write("drivebc", {"items": [], "disabled": True})
         return {"ok": True, "message": "DriveBC screen off", "files": ["drivebc.json"]}
@@ -210,6 +217,21 @@ def run(cfg):
             if p.name not in keep:
                 p.unlink(missing_ok=True)
         common.save_cache("drivebc_cams", {"items": [{"id": i["id"], "cam": i.get("cam")} for i in items]})
+    # a traffic map zoomed to each event on the wall, and to each sample (cached: re-drawn only when they change)
+    keep = []
+    from display.modules.bc_roads import SAMPLES
+    targets = [(i["id"], (i.get("geometry") or {}).get("points")) for i in items[:8]]
+    targets += [(f"sample-{k}", v["item"]["geometry"]["points"]) for k, v in SAMPLES.items()]
+    for iid, pts in targets:
+        if not pts:
+            continue
+        name = "roadevt_" + re.sub(r"[^A-Za-z0-9_-]", "_", iid)
+        try:
+            trafficmap.render(name, trafficmap.event_area(pts), 448, 192)
+            keep.append(name)
+        except Exception as e:
+            print(f"event map {iid}: {e}", flush=True)
+    maps.prune("roadevt_", keep)
     counts = {"metro_events": len(metro), "incidents": sum(i["type"] == "INCIDENT" for i in items),
               "closures": sum(i["closed"] for i in items)}
     common.write("drivebc", {"items": items, "counts": counts, "home": list(common.home(cfg))})

@@ -32,7 +32,7 @@ import sys
 import numpy as np
 from PIL import Image
 
-SIZES = [12, 14, 16, 18, 20, 22, 24, 28, 32]
+SIZES = [12, 14, 16, 18, 20, 22, 24, 28, 32, 40, 48, 56, 64]
 KEYS = ".abcdefghij"            # '.' = transparent; letters index the palette
 OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "icons", "shields", "shields.json")
 
@@ -393,7 +393,7 @@ def outline(px, of, colour, against):
                     break
 
 
-DIGIT_HEIGHTS = list(range(5, 23))
+DIGIT_HEIGHTS = list(range(5, 43))
 GLYPHS = "0123456789ABCDEW"                  # route numbers and their suffixes (99A, 1A, 97W…)
 
 
