@@ -217,11 +217,30 @@ def run(cfg):
             if p.name not in keep:
                 p.unlink(missing_ok=True)
         common.save_cache("drivebc_cams", {"items": [{"id": i["id"], "cam": i.get("cam")} for i in items]})
+    # the real road each event is on (OSM ways matched by route number or name, cut to the event)
+    for it in items:
+        try:
+            it["road_lines"] = trafficmap.match_road((it.get("geometry") or {}).get("points"), it.get("highways"),
+                                                     it.get("road"), direction=it.get("direction"))
+        except Exception as e:
+            print(f"road match {it['id']}: {e}", flush=True)
+    sample_lines = {}
     # a traffic map zoomed to each event on the wall, and to each sample (cached: re-drawn only when they change)
     keep = []
     from display.modules.bc_roads import SAMPLES
-    targets = [(i["id"], (i.get("geometry") or {}).get("points")) for i in items[:8]]
-    targets += [(f"sample-{k}", v["item"]["geometry"]["points"]) for k, v in SAMPLES.items()]
+    for key, v in SAMPLES.items():
+        it = v["item"]
+        try:
+            sample_lines[key] = trafficmap.match_road(it["geometry"]["points"], it.get("highways"), it.get("road"),
+                                                      direction=it.get("direction"))
+        except Exception as e:
+            print(f"sample road {key}: {e}", flush=True)
+
+    def frame(lines, geom):                          # frame the matched road (else DriveBC's own geometry)
+        pts = [p for l in lines or [] for p in l]
+        return pts or (geom or {}).get("points")
+    targets = [(i["id"], frame(i.get("road_lines"), i.get("geometry"))) for i in items[:8]]
+    targets += [(f"sample-{k}", frame(sample_lines.get(k), v["item"]["geometry"])) for k, v in SAMPLES.items()]
     for iid, pts in targets:
         if not pts:
             continue
@@ -234,7 +253,7 @@ def run(cfg):
     maps.prune("roadevt_", keep)
     counts = {"metro_events": len(metro), "incidents": sum(i["type"] == "INCIDENT" for i in items),
               "closures": sum(i["closed"] for i in items)}
-    common.write("drivebc", {"items": items, "counts": counts, "home": list(common.home(cfg))})
+    common.write("drivebc", {"items": items, "counts": counts, "home": list(common.home(cfg)), "sample_lines": sample_lines})
     for i in items:
         print(f"{i['severity']} {i['kind']}: {i['road']} {i['direction']} — {i['description'][:90]}", flush=True)
     if st.get("takeover") == "closures":

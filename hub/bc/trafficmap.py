@@ -68,7 +68,8 @@ def _roads(fname):
         for ln in lines:
             if len(ln) >= 2:
                 a = np.asarray(ln, dtype=np.float64)[:, :2]
-                out.append((cls, pr.get("ref") or "", a, (a[:, 0].min(), a[:, 1].min(), a[:, 0].max(), a[:, 1].max())))
+                out.append((cls, pr.get("ref") or "", a, (a[:, 0].min(), a[:, 1].min(), a[:, 0].max(), a[:, 1].max()),
+                            (pr.get("name") or "").lower()))
     return out
 
 
@@ -111,7 +112,7 @@ def render(name, area, w, h, force=False):
         if not _visible(cls, kpp):
             continue
         wd = _width(cls, kpp)
-        for c, ref, a, (x0, y0, x1, y1) in roads:
+        for c, ref, a, (x0, y0, x1, y1), _nm in roads:
             if c != cls or x1 < bb[0] or x0 > bb[2] or y1 < bb[1] or y0 > bb[3]:
                 continue
             xs, ys = view.project_many(a[:, 0], a[:, 1])
@@ -158,12 +159,64 @@ def render(name, area, w, h, force=False):
     return meta
 
 
-def event_area(points, w=448, h=192, min_kpp=0.03, max_kpp=0.12):
+def event_area(points, w=448, h=192, min_kpp=0.02, max_kpp=0.12):
     """A zoom that frames an event's geometry (points [[lon, lat], …]) with room around it."""
     lons = [p[0] for p in points]
     lats = [p[1] for p in points]
     clat, clon = (min(lats) + max(lats)) / 2, (min(lons) + max(lons)) / 2
     span_x = (max(lons) - min(lons)) * 111.32 * math.cos(math.radians(clat))
     span_y = (max(lats) - min(lats)) * 110.57
-    kpp = max(span_x * 2.2 / w, span_y * 2.2 / h, min_kpp)
+    kpp = max(span_x * 3.0 / w, span_y * 3.0 / h, min_kpp)
     return {"center": [round(clat, 5), round(clon, 5)], "km_per_px": round(min(max_kpp, kpp), 4)}
+
+
+DIRS = {"northbound": (0, 1), "southbound": (0, -1), "eastbound": (1, 0), "westbound": (-1, 0)}
+
+
+def match_road(points, highways=(), name="", corridor_m=180.0, point_reach_m=450.0, direction=""):
+    """The real road an event is on: OSM ways with the event's route number (or its name) inside a corridor round
+    the event's geometry, cut to that corridor. Returns lines as [[lon, lat], …] (empty if nothing matches)."""
+    from shapely.geometry import LineString, MultiLineString, Point
+    pts = [tuple(p[:2]) for p in points or []]
+    if not pts:
+        return []
+    lat0 = sum(p[1] for p in pts) / len(pts)
+    deg = 1.0 / 111_000.0
+    kx = math.cos(math.radians(lat0))
+    geom = LineString(pts) if len(pts) > 1 else Point(pts[0])
+    reach = corridor_m if len(pts) > 1 else point_reach_m
+    # buffer in metres (scale x by cos(lat) so the corridor is round on the ground)
+    from shapely.affinity import scale
+    area = scale(scale(geom, xfact=kx, origin=(0, 0)).buffer(reach * deg), xfact=1 / kx, origin=(0, 0))
+    nums = {str(h).upper() for h in highways or []}
+    nm = (name or "").lower()
+    minx, miny, maxx, maxy = area.bounds
+    out = []
+    for src in SOURCES:
+        for cls, ref, a, (x0, y0, x1, y1), onm in _roads(src):
+            if x1 < minx or x0 > maxx or y1 < miny or y0 > maxy:
+                continue
+            rt = route_of(ref, cls)
+            if nums:
+                hit = bool(rt and rt[1].upper() in nums)
+            else:                                    # a street, bridge or tunnel without a number: by name
+                hit = bool(nm and onm and (onm == nm or (len(onm) > 5 and (onm in nm or nm in onm))))
+            if not hit:
+                continue
+            seg = LineString(a).intersection(area)
+            if seg.is_empty:
+                continue
+            parts = seg.geoms if isinstance(seg, MultiLineString) or hasattr(seg, "geoms") else [seg]
+            for g in parts:
+                if g.geom_type == "LineString" and g.length > 0:
+                    out.append([[round(x, 5), round(y, 5)] for x, y in g.coords])
+        if out:
+            break                                   # the Metro extract matched; the regional one would duplicate it
+    v = DIRS.get((direction or "").lower())
+    if v and out:                                   # one-way carriageways: keep the ones running that way
+        def heading(l):
+            return (l[-1][0] - l[0][0]) * kx * v[0] + (l[-1][1] - l[0][1]) * v[1]
+        same = [l for l in out if heading(l) > 0]
+        if same:
+            out = same
+    return out
