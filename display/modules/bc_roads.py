@@ -258,36 +258,113 @@ def _alt(item):
     return (255, 255, 255) if item.get("closed") else (255, 230, 120)
 
 
+_HL = {}
+
+
+def _hl_mask(mp, item):
+    """Bool mask (map pixels) of the affected road. The hub rasterised it exactly as the map draws its roads
+    (item["hl"][map name]); without that, DriveBC's own geometry is drawn as a 1-px line."""
+    name = mp.meta.get("name")
+    pix = (item.get("hl") or {}).get(name)
+    key = (name, mp.meta.get("sig"), item.get("id"), len(pix or []))
+    m = _HL.get(key)
+    if m is None:
+        m = np.zeros((mp.h, mp.w), bool)
+        if pix:
+            a = np.asarray(pix, dtype=np.int32).reshape(-1, 2)
+            ok = (a[:, 0] >= 0) & (a[:, 0] < mp.w) & (a[:, 1] >= 0) & (a[:, 1] < mp.h)
+            m[a[ok, 1], a[ok, 0]] = True
+        else:
+            from PIL import Image, ImageDraw
+            img = Image.new("L", (mp.w, mp.h), 0)
+            d = ImageDraw.Draw(img)
+            for ln in _lines(item):
+                px = [mp.project(la, lo) for lo, la in ln]
+                if len(px) > 1:
+                    d.line(px, fill=255, width=1)
+                elif px:
+                    d.point(px, fill=255)
+            m = np.asarray(img) > 0
+        if len(_HL) > 24:
+            _HL.clear()
+        _HL[key] = m
+    return m
+
+
+_DIR = {}
+
+
+def _hl_dir(m, item):
+    """The road's main direction (unit vector) from its pixels, so the stripes run across it, not along it."""
+    key = (item.get("id"), int(m.sum()), m.shape)
+    if key not in _DIR:
+        ys, xs = np.nonzero(m)
+        if len(xs) < 2:
+            _DIR[key] = (0.7071, 0.7071)
+        else:
+            cov = np.cov(np.stack([xs - xs.mean(), ys - ys.mean()]))
+            w, v = np.linalg.eigh(cov)
+            ux, uy = v[:, int(np.argmax(w))]
+            _DIR[key] = (float(ux), float(uy))
+        if len(_DIR) > 64:
+            _DIR.clear()
+    return _DIR.get(key, (0.7071, 0.7071))
+
+
+def _grow(m, r):
+    """Square dilation by r pixels (even on every side, so a widened road stays centred on the road)."""
+    out = m.copy()
+    for _ in range(r):
+        p = np.pad(out, 1)
+        out = (p[1:-1, 1:-1] | p[:-2, 1:-1] | p[2:, 1:-1] | p[1:-1, :-2] | p[1:-1, 2:]
+               | p[:-2, :-2] | p[:-2, 2:] | p[2:, :-2] | p[2:, 2:])
+    return out
+
+
 def highlight(c, mp, item, now, ox=0, oy=0, width=3, animate=True, clip=(0, 0, W, H)):
-    """The affected road: a dark edge either side, then dashes alternating the alert colour and a bright second
-    colour, running along the road (a closure strobes the whole stretch on top)."""
-    col, alt = col_of(item), _alt(item)
-    lines = _hl_px(mp, item, ox, oy)
-    x0c, y0c, x1c, y1c = clip
-    half = width // 2
-    for ln in lines:
-        for (xa, ya), (xb, yb) in zip(ln[:-1], ln[1:]):
-            k.thick_line(c, xa, ya, xb, yb, (0, 0, 0), width + 2)
-    phase = (now * 16) if animate else 0.0
-    strobe = animate and item.get("closed") and k.blink(now, 1.6, 0.18)
-    dist = 0.0
-    for ln in lines:
-        if len(ln) == 1:
-            k.disc(c, ln[0][0], ln[0][1], width, col)
-            continue
-        for (xa, ya), (xb, yb) in zip(ln[:-1], ln[1:]):
-            L = math.hypot(xb - xa, yb - ya)
-            n = max(1, int(L * 2))
-            for i in range(n + 1):
-                t = i / n
-                x, y = int(round(xa + (xb - xa) * t)), int(round(ya + (yb - ya) * t))
-                if not (x0c <= x < x1c and y0c <= y < y1c):
-                    continue
-                d = dist + L * t
-                on = ((d + phase) % 10) < 5
-                cc = alt if strobe else (col if on else alt)
-                c.buf[max(0, y - half):min(H, y + half + 1), max(0, x - half):min(W, x + half + 1)] = cc
-            dist += L
+    """The affected road, on the map's own road pixels: widened evenly by ``width // 2`` px each side, a dark
+    edge round it, and the alert colour alternating with a bright second colour in stripes that move along it
+    (a closure strobes the whole stretch on top)."""
+    base = _hl_mask(mp, item)
+    if not base.any():
+        return
+    r = max(0, width // 2)
+    body = _grow(base, r)
+    edge = _grow(body, 1) & ~body
+    x0, y0, x1, y1 = max(0, clip[0]), max(0, clip[1]), min(W, clip[2]), min(H, clip[3])
+    # the part of the map visible in the clip window
+    mx0, my0 = x0 - ox, y0 - oy
+    mx1, my1 = x1 - ox, y1 - oy
+    sx0, sy0 = max(0, mx0), max(0, my0)
+    sx1, sy1 = min(mp.w, mx1), min(mp.h, my1)
+    if sx1 <= sx0 or sy1 <= sy0:
+        return
+    tgt = c.buf[sy0 + oy:sy1 + oy, sx0 + ox:sx1 + ox]
+    e = edge[sy0:sy1, sx0:sx1]
+    bd = body[sy0:sy1, sx0:sx1]
+    tgt[e] = (0, 0, 0)
+    col, alt = np.array(col_of(item), np.uint8), np.array(_alt(item), np.uint8)
+    if animate and item.get("closed") and k.blink(now, 1.6, 0.18):
+        tgt[bd] = alt
+        return
+    yy, xx = np.mgrid[sy0:sy1, sx0:sx1]
+    ux, uy = _hl_dir(base, item)
+    ph = now * 12 if animate else 0.0
+    stripe = ((np.floor((xx * ux + yy * uy + ph) / 4)).astype(int) % 2) == 0         # stripes across the road
+    tgt[bd & stripe] = col
+    tgt[bd & ~stripe] = alt
+
+
+def area_of(item):
+    """The city or area an event is in (DriveBC's closest landmark, else "In Surrey" from its location text);
+    none for bridges, which span two."""
+    if re.search(r"bridge", item.get("road") or "", re.I):
+        return ""
+    lm = (item.get("landmark") or "").strip()
+    if lm:
+        return lm.replace(" - City", " (City)").replace(" - District", " (District)")
+    m = re.search(r"\bIn ([A-Z][\w .'-]+?)(?:\n|$| at | between )", item.get("where") or "")
+    return m.group(1).strip() if m else ""
 
 
 def _panel(c, item, x, w, h_shield=56, big=True):
@@ -300,6 +377,8 @@ def _panel(c, item, x, w, h_shield=56, big=True):
     big_icon(c, item, x + w - 32, y + 2, col)
     y += h_shield + 6
     y += k.fit_text(c, item.get("road") or "", x + 8, y, w - 14, 34, ("h18", "h16", "lutb12", "hvb10"), WHITE) + 3
+    if area_of(item):
+        y += k.fit_text(c, area_of(item), x + 8, y, w - 14, 16, ("lutb14", "lutb12", "hvb10"), (255, 225, 150)) + 2
     if item.get("direction"):
         k.text(c, k.font("lutb12"), x + 8, y, (200, 205, 220), item["direction"])
         y += 15
@@ -386,8 +465,11 @@ def _hero(s, c, item, now, el):
         bw = hero(c, 10, 10, item, 64, lw - 60)
         x = 10 + bw + 12
         big_icon(c, item, lw - 34, 12, col)
-        k.fit_text(c, item.get("road") or "", x, 12, lw - x - 40, 44, ("h20", "h18", "h16", "lutb12"), WHITE)
-        k.text(c, k.font("lutb14"), x, 58, (200, 205, 220), item.get("direction") or "")
+        k.fit_text(c, item.get("road") or "", x, 10, lw - x - 40, 40, ("h20", "h18", "h16", "lutb12"), WHITE)
+        ar = area_of(item)
+        if ar:
+            k.text(c, k.font("lutb14"), x, 52, (255, 225, 150), ar)
+        k.text(c, k.font("lutb12"), x, 68 if ar else 54, (200, 205, 220), item.get("direction") or "")
         y = 84
         f = k.pick(("h20", "h18", "h16"), word_of(item), lw - 24)
         k.box(c, 10, y, k.tw(f, word_of(item)) + 12, f.h + 6, col)
@@ -423,7 +505,7 @@ def _vms(s, c, item, now, el):
         x = 8 + bw + 12
         big_icon(c, item, W - 32, y0, col)
         k.fit_text(c, item.get("road") or "", x, y0, W - x - 40, 22, ("h18", "h16", "lutb12"), WHITE)
-        dline = " · ".join(v for v in (item.get("direction") or "", word_of(item)) if v)
+        dline = " · ".join(v for v in (area_of(item), item.get("direction") or "", word_of(item)) if v)
         k.text(c, k.font("lutb12"), x, y0 + 22, col, dline)
         lines_, _ = k.fit(_desc(item, (220, 220, 225), (150, 160, 180)), W - x - 8, H - (y0 + 38) - 1,
                           [{"body": "lut12", "small": "hv10"}, {"body": "hv10", "small": "s8"}, {"body": "s8", "small": "s8"}])
@@ -467,7 +549,7 @@ def _overview(s, c, item, now, el):
             hw_ = hero(c, W - lw + 8, y, it, 22, 60)
             tx = W - lw + 8 + hw_ + 6
             k.text(c, k.pick(("hvb10", "s8"), it.get("road") or "", W - tx - 30), tx, y + 1, WHITE if on else (190, 190, 200), it.get("road") or "")
-            k.text(c, k.font("s8"), tx, y + 12, col_of(it), word_of(it))
+            k.text(c, k.font("s8"), tx, y + 12, col_of(it), " · ".join(v for v in (word_of(it), area_of(it)) if v))
             big_icon(c, it, W - 28, y, col_of(it))
             y += 30
 
@@ -529,6 +611,8 @@ def _board(s, c, item, now, el):
             hw_ = hero(c, 10, y + 1, it, 24, 130)
             fx = 10 + hw_ + 10
             name = " ".join(v for v in (it.get("road") or "", DIR.get((it.get("direction") or "").lower(), "")) if v)
+            if area_of(it):
+                name = f"{name}, {area_of(it)}"
             k.text(c, k.font("lutb12"), fx, y + 7, WHITE if on else (190, 190, 200), name)
             k.text(c, k.font("m10b"), fx + k.tw(k.font("lutb12"), name) + 10, y + 8, col_of(it), word_of(it))
             big_icon(c, it, W - 76, y + 1, col_of(it))
@@ -595,7 +679,9 @@ class Screen(k.BCScreen):
 
     def sample(self, key):
         it = super().sample(key)
-        it.setdefault("road_lines", (self.data().get("sample_lines") or {}).get(key) or [])
+        d = self.data()
+        it.setdefault("road_lines", (d.get("sample_lines") or {}).get(key) or [])
+        it.setdefault("hl", (d.get("sample_hl") or {}).get(key) or {})
         return it
 
     def dwell(self, item):

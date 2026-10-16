@@ -218,43 +218,45 @@ def run(cfg):
             if p.name not in keep:
                 p.unlink(missing_ok=True)
         common.save_cache("drivebc_cams", {"items": [{"id": i["id"], "cam": i.get("cam")} for i in items]})
-    # the real road each event is on (OSM ways matched by route number or name, cut to the event)
-    for it in items:
-        try:
-            it["road_lines"] = trafficmap.match_road((it.get("geometry") or {}).get("points"), it.get("highways"),
-                                                     it.get("road"), direction=it.get("direction"))
-        except Exception as e:
-            print(f"road match {it['id']}: {e}", flush=True)
-    sample_lines = {}
-    # a traffic map zoomed to each event on the wall, and to each sample (cached: re-drawn only when they change)
-    keep = []
+    # the real road each event is on (OSM ways matched by route number or name), its zoomed map, and the exact
+    # pixels the highlight covers on that map and on the Metro overview (rasterised the way the maps draw roads)
     from display.modules.bc_roads import SAMPLES
-    for key, v in SAMPLES.items():
-        it = v["item"]
-        try:
-            sample_lines[key] = trafficmap.match_road(it["geometry"]["points"], it.get("highways"), it.get("road"),
-                                                      direction=it.get("direction"))
-        except Exception as e:
-            print(f"sample road {key}: {e}", flush=True)
+    from hub.util import read_json as _rj
+    overview = _rj(maps.OUT / "roads_metro.json", {}) or {}
+    keep = []
 
-    def frame(lines, geom):                          # frame the matched road (else DriveBC's own geometry)
-        pts = [p for l in lines or [] for p in l]
-        return pts or (geom or {}).get("points")
-    targets = [(i["id"], frame(i.get("road_lines"), i.get("geometry"))) for i in items[:8]]
-    targets += [(f"sample-{k}", frame(sample_lines.get(k), v["item"]["geometry"])) for k, v in SAMPLES.items()]
-    for iid, pts in targets:
-        if not pts:
-            continue
-        name = "roadevt_" + re.sub(r"[^A-Za-z0-9_-]", "_", iid)
+    def prepare(iid, it):
         try:
-            trafficmap.render(name, trafficmap.event_area(pts), 448, 192)
-            keep.append(name)
+            match = trafficmap.match_road((it.get("geometry") or {}).get("points"), it.get("highways"), it.get("road"),
+                                          direction=it.get("direction"))
         except Exception as e:
-            print(f"event map {iid}: {e}", flush=True)
+            print(f"road match {iid}: {e}", flush=True)
+            match = {}
+        pts = [p for l in match.get("lines", []) for p in l] or (it.get("geometry") or {}).get("points")
+        hl = {}
+        if pts:
+            name = "roadevt_" + re.sub(r"[^A-Za-z0-9_-]", "_", iid)
+            try:
+                meta = trafficmap.render(name, trafficmap.event_area(pts), 448, 192)
+                keep.append(name)
+                if match:
+                    hl[name] = trafficmap.hl_pixels(meta, match)
+            except Exception as e:
+                print(f"event map {iid}: {e}", flush=True)
+        if match and overview:
+            hl["roads_metro"] = trafficmap.hl_pixels(overview, match)
+        return match.get("lines", []), hl
+
+    for it in items:
+        it["road_lines"], it["hl"] = prepare(it["id"], it) if it in items[:8] else ([], {})
+    sample_lines, sample_hl = {}, {}
+    for key, v in SAMPLES.items():
+        sample_lines[key], sample_hl[key] = prepare(f"sample-{key}", v["item"])
     maps.prune("roadevt_", keep)
     counts = {"metro_events": len(metro), "incidents": sum(i["type"] == "INCIDENT" for i in items),
               "closures": sum(i["closed"] for i in items)}
-    common.write("drivebc", {"items": items, "counts": counts, "home": list(common.home(cfg)), "sample_lines": sample_lines})
+    common.write("drivebc", {"items": items, "counts": counts, "home": list(common.home(cfg)), "sample_lines": sample_lines,
+                             "sample_hl": sample_hl})
     for i in items:
         print(f"{i['severity']} {i['kind']}: {i['road']} {i['direction']} — {i['description'][:90]}", flush=True)
     if st.get("takeover") == "closures":

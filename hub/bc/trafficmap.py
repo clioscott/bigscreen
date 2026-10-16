@@ -174,24 +174,27 @@ DIRS = {"northbound": (0, 1), "southbound": (0, -1), "eastbound": (1, 0), "westb
 
 
 def match_road(points, highways=(), name="", corridor_m=180.0, point_reach_m=450.0, direction=""):
-    """The real road an event is on: OSM ways with the event's route number (or its name) inside a corridor round
-    the event's geometry, cut to that corridor. Returns lines as [[lon, lat], …] (empty if nothing matches)."""
-    from shapely.geometry import LineString, MultiLineString, Point
+    """The real road an event is on: OSM ways with the event's route number (or its name) that pass through a
+    corridor round the event's geometry (one-way carriageways: the one running the event's direction).
+
+    Returns {"ways": [{"cls", "pts"}], "area": [[lon, lat], …], "lines": [[[lon, lat], …], …]} — the whole ways
+    (so the highlight can be rasterised exactly like the map draws them), the corridor, and the ways cut to it
+    (for framing and placement). Empty dict if nothing matches."""
+    from shapely.affinity import scale
+    from shapely.geometry import LineString, Point
     pts = [tuple(p[:2]) for p in points or []]
     if not pts:
-        return []
+        return {}
     lat0 = sum(p[1] for p in pts) / len(pts)
     deg = 1.0 / 111_000.0
     kx = math.cos(math.radians(lat0))
     geom = LineString(pts) if len(pts) > 1 else Point(pts[0])
     reach = corridor_m if len(pts) > 1 else point_reach_m
-    # buffer in metres (scale x by cos(lat) so the corridor is round on the ground)
-    from shapely.affinity import scale
     area = scale(scale(geom, xfact=kx, origin=(0, 0)).buffer(reach * deg), xfact=1 / kx, origin=(0, 0))
     nums = {str(h).upper() for h in highways or []}
     nm = (name or "").lower()
     minx, miny, maxx, maxy = area.bounds
-    out = []
+    found = []                                      # (cls, full coords, clipped parts)
     for src in SOURCES:
         for cls, ref, a, (x0, y0, x1, y1), onm in _roads(src):
             if x1 < minx or x0 > maxx or y1 < miny or y0 > maxy:
@@ -206,17 +209,60 @@ def match_road(points, highways=(), name="", corridor_m=180.0, point_reach_m=450
             seg = LineString(a).intersection(area)
             if seg.is_empty:
                 continue
-            parts = seg.geoms if isinstance(seg, MultiLineString) or hasattr(seg, "geoms") else [seg]
-            for g in parts:
-                if g.geom_type == "LineString" and g.length > 0:
-                    out.append([[round(x, 5), round(y, 5)] for x, y in g.coords])
-        if out:
+            parts = [g for g in getattr(seg, "geoms", [seg]) if g.geom_type == "LineString" and g.length > 0]
+            if parts:
+                found.append((cls, a, [[[round(x, 5), round(y, 5)] for x, y in g.coords] for g in parts]))
+        if found:
             break                                   # the Metro extract matched; the regional one would duplicate it
     v = DIRS.get((direction or "").lower())
-    if v and out:                                   # one-way carriageways: keep the ones running that way
-        def heading(l):
-            return (l[-1][0] - l[0][0]) * kx * v[0] + (l[-1][1] - l[0][1]) * v[1]
-        same = [l for l in out if heading(l) > 0]
+    if v and found:                                 # one-way carriageways: keep the ones running that way
+        def heading(lines):
+            return sum((l[-1][0] - l[0][0]) * kx * v[0] + (l[-1][1] - l[0][1]) * v[1] for l in lines)
+        same = [f for f in found if heading(f[2]) > 0]
         if same:
-            out = same
-    return out
+            found = same
+    if not found:
+        return {}
+    ring = list(area.exterior.coords) if area.geom_type == "Polygon" else list(area.convex_hull.exterior.coords)
+    return {"ways": [{"cls": c, "pts": [[float(x), float(y)] for x, y in a]} for c, a, _ in found],
+            "area": [[round(x, 6), round(y, 6)] for x, y in ring],
+            "lines": [l for _, _, ls in found for l in ls]}
+
+
+def hl_pixels(meta, match):
+    """The pixels of a rendered traffic map that the affected road covers: its ways drawn exactly as render()
+    draws them (same projection, same snapping to pixel centres, same PIL lines and widths), kept where they
+    fall inside the event's corridor. Returns a flat [x0, y0, x1, y1, …] list."""
+    from PIL import Image, ImageDraw
+    if not match or not match.get("ways"):
+        return []
+    w, h = meta["w"], meta["h"]
+    merc0, merc3, mpp = meta["merc"][0], meta["merc"][3], meta["mpp"]
+    R = 6378137.0
+    MAX_LAT = 85.05112878
+
+    def proj(lon, lat):                              # = hub.weather.geo.View.project_many
+        lats = np.clip(np.asarray(lat, dtype=np.float64), -MAX_LAT, MAX_LAT)
+        x = np.radians(np.asarray(lon, dtype=np.float64)) * R
+        y = np.log(np.tan(np.pi / 4 + np.radians(lats) / 2)) * R
+        return (x - merc0) / mpp, (merc3 - y) / mpp
+
+    road = Image.new("L", (w, h), 0)
+    d = ImageDraw.Draw(road)
+    kpp = meta["km_per_px"]
+    for wy in match["ways"]:
+        a = np.asarray(wy["pts"], dtype=np.float64)
+        xs, ys = proj(a[:, 0], a[:, 1])
+        px = np.stack([np.floor(xs) + 0.5, np.floor(ys) + 0.5], 1)
+        keep = np.ones(len(px), bool)
+        keep[1:] = np.any(np.diff(px, axis=0) != 0, axis=1)
+        px = px[keep]
+        if len(px) >= 2:
+            d.line([tuple(p) for p in px], fill=255, width=_width(wy["cls"], kpp))
+    corr = Image.new("L", (w, h), 0)
+    ring = np.asarray(match["area"], dtype=np.float64)
+    cx, cy = proj(ring[:, 0], ring[:, 1])
+    ImageDraw.Draw(corr).polygon(list(zip(cx.tolist(), cy.tolist())), fill=255)
+    m = (np.asarray(road) > 0) & (np.asarray(corr) > 0)
+    ys, xs = np.nonzero(m)
+    return np.stack([xs, ys], 1).astype(int).ravel().tolist()
