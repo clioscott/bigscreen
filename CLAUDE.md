@@ -79,6 +79,21 @@ once (`hold: false`), so the rotation resumes by itself.
 - Config: `modules.weather_maps.{areas,tracks,palettes}`; edited on the panel's Weather tab.
 - MSC usage policy: ≤ ~86k req/day, no bulk tile scraping, meaningful UA, show "ECCC" attribution (the map panel does).
 
+## BC alert screens
+
+Five full-wall takeovers beside the ECCC weather alert, each with its own job, display module, themes and panel page:
+Alert Ready (`hub/jobs/naad.py`, live TCP listener `hub/bc/naad_listener.py` started by `hub.main`), DriveBC
+(`drivebc.py`, Metro Vancouver only, webcam stills in `data/drivebc/`), earthquakes (`quakes.py`, USGS + NRCan),
+tsunami (`tsunami.py`, NTWC + DFO gauges), wildfire (`wildfire.py`, BCWS/EMCR, SW BC + Okanagan).
+- Display: `display/modules/bc_*.py` on the shared `bc_kit.py`; panels `naad_alert`, `road_alert`, `quake_alert`,
+  `tsunami_alert`, `fire_alert`; rotation rules `naad|roads|quakes|tsunami|wildfire`. Samples render labelled SAMPLE.
+- No clashes: NAAD drops ECCC messages and routes quake/tsunami/fire/road ones to those screens (cache
+  `naad_routed.json`); the weather alert job leaves tsunami alerts to the tsunami screen.
+- Maps: `hub/bc/maps.py` renders each screen's basemap into `data/bcmaps/` (bump `RENDER_VERSION` after changes).
+- Takeovers: `hub/bc/common.takeover` plays a panel once per new item id; set `BIGSCREEN_NO_PI=1` for dev runs.
+- Highway shields: `assets/icons/shields/shields.json`, pixel-hinted per size by `tools/build_shields.py` from the
+  Wikimedia SVGs (needs resvg-py, scikit-image; run outside the hub venv); drawn by `display/modules/shields.py`.
+
 ## Rules
 
 - Display tuning values in `system.display` came from exhaustive hardware testing — don't change them casually.

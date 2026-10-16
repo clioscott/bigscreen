@@ -52,6 +52,11 @@ export const SECTIONS = [
   ["Weather data", ["modules", "weather"]],
   ["Weather alerts", ["modules", "weather_alerts"]],
   ["Japan EEW", ["modules", "japan_eew"]],
+  ["Alert Ready", ["modules", "naad_alerts"]],
+  ["DriveBC", ["modules", "road_alerts"]],
+  ["Earthquakes", ["modules", "bc_quakes"]],
+  ["Tsunami", ["modules", "tsunami"]],
+  ["Wildfire", ["modules", "wildfire"]],
   ["Font audit", ["hub", "fonts"]],
   ["Display", ["system", "display"]],
   ["Night mode", ["system", "night_mode"]],
@@ -176,6 +181,11 @@ export const PANEL_TYPES = {
   map_full: { label: "Weather map (full width)", icon: "Radar", sub: "track", full: true, passes: true, passWord: "animation loop" },
   weather_alert: { label: "Weather alert (full screen)", icon: "Siren", full: true, passes: true, passWord: "pass through every alert",
     note: "Takes over the whole wall, ticker and clock included" },
+  naad_alert: { label: "Alert Ready (full screen)", icon: "Megaphone", full: true, passes: true, passWord: "pass through every alert", note: "Takes over the whole wall" },
+  road_alert: { label: "DriveBC (full screen)", icon: "Car", full: true, passes: true, passWord: "pass through every event", note: "Takes over the whole wall" },
+  quake_alert: { label: "Earthquakes (full screen)", icon: "Activity", full: true, passes: true, passWord: "pass through every quake", note: "Takes over the whole wall" },
+  tsunami_alert: { label: "Tsunami (full screen)", icon: "Waves", full: true, passes: true, passWord: "pass through every message", note: "Takes over the whole wall" },
+  fire_alert: { label: "Wildfire (full screen)", icon: "Flame", full: true, passes: true, passWord: "pass through every item", note: "Takes over the whole wall" },
   blank: { label: "Blank", icon: "Square", passes: false },
 };
 export const WEATHER_SCREENS = { current: "Current conditions", hourly: "Hourly forecast", forecast: "7-day forecast", warning: "Warnings" };
@@ -196,6 +206,11 @@ export const RULES = {
   hours: { label: "it's between certain hours", icon: "Clock", make: () => ({ from: "07:00", to: "22:00" }) },
   days: { label: "it's certain days", icon: "CalendarRange", make: () => ({ days: [0, 1, 2, 3, 4] }) },
   fresh: { label: "its data is fresh", icon: "RefreshCw", make: () => ({ max_age_min: 30 }) },
+  naad: { label: "an Alert Ready alert is in effect", icon: "Megaphone", make: () => ({}) },
+  roads: { label: "DriveBC has an incident or closure", icon: "Car", make: () => ({}) },
+  quakes: { label: "there's an earthquake to show", icon: "Activity", make: () => ({}) },
+  tsunami: { label: "a tsunami message is in effect", icon: "Waves", make: () => ({}) },
+  wildfire: { label: "there's a wildfire or evacuation to show", icon: "Flame", make: () => ({}) },
 };
 const LEGACY_WHEN = { calendar_has_events: [{ if: "calendar_events" }], no_events: [{ if: "calendar_events", not: true }],
   weather_has_alert: [{ if: "forecast_warning" }], weather_alert_active: [{ if: "alert" }] };
@@ -226,7 +241,7 @@ export function migrateRotation() {
     for (const side of ["left", "right"]) for (const e of lc[side] || []) {
       if (!Array.isArray(e.rules)) e.rules = clone(LEGACY_WHEN[e.when] || []);
       delete e.when;
-      if (e.panel === "weather_alert" && e.priority === undefined) e.priority = "next";
+      if (["weather_alert", "naad_alert", "road_alert", "quake_alert", "tsunami_alert", "fire_alert"].includes(e.panel) && e.priority === undefined) e.priority = "next";
     }
   }
 }

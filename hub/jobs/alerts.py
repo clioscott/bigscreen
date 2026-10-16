@@ -95,6 +95,10 @@ def run(cfg):
     allowed = set(acfg.get("hazards") or [h for h, _, _ in HAZARD_INFO])
     for a in alerts:
         a["hazard"] = hazard_of(a)
+    if (cfg["modules"].get("tsunami") or {}).get("enabled", True) is not False:
+        for a in alerts:                                   # tsunami alerts have their own screen
+            if "tsunami" in (a.get("name") or "").lower():
+                a["hazard"] = "_tsunami"
     skipped = [a for a in alerts if a["hazard"] not in allowed]
     alerts = [a for a in alerts if a["hazard"] in allowed]
     for a in skipped:

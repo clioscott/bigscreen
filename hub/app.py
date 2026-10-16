@@ -68,7 +68,8 @@ def put_config(payload: dict = Body(...)):
     saved = config.save(cfg, reason=reason)
     # Re-run fetchers whose inputs changed so the panel shows fresh results right away.
     for job, section in (("finance", "finance"), ("news", "headlines"), ("calendar", "calendar"),
-                         ("weather", "weather")):
+                         ("weather", "weather"), ("naad", "naad_alerts"), ("drivebc", "road_alerts"),
+                         ("quakes", "bc_quakes"), ("tsunami", "tsunami"), ("wildfire", "wildfire")):
         if before["modules"].get(section) != saved["modules"].get(section):
             _sched().run_now(job)
     sync.push_data()          # config.json rides along; the v2 display hot-reloads it
@@ -230,6 +231,93 @@ def quake_preview(name: str = "tokyo_bay", at: float = 20, scale: int = 2, theme
     bio = io.BytesIO()
     img.save(bio, "PNG")
     return Response(bio.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
+# --- BC alert screens (Alert Ready, DriveBC, earthquakes, tsunami, wildfire) --------------
+# src → (display module, job, config section)
+BC_SOURCES = {"naad": ("bc_naad", "naad", "naad_alerts"), "roads": ("bc_roads", "drivebc", "road_alerts"),
+              "quakes": ("bc_quake", "quakes", "bc_quakes"), "tsunami": ("bc_tsunami", "tsunami", "tsunami"),
+              "wildfire": ("bc_fire", "wildfire", "wildfire")}
+
+
+def _bc(src):
+    if src not in BC_SOURCES:
+        raise HTTPException(404, "unknown source")
+    import importlib
+    modname, job, section = BC_SOURCES[src]
+    return importlib.import_module(f"display.modules.{modname}"), importlib.import_module(f"hub.jobs.{job}"), job, section
+
+
+def _slim(v, depth=0):
+    """Data for the panel without the big geometry arrays."""
+    if isinstance(v, dict):
+        return {k: (f"[{len(x)}]" if k in ("rings", "polygons", "points", "recent", "wlo", "wlp", "allow") and isinstance(x, list)
+                    else _slim(x, depth + 1)) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_slim(x, depth + 1) for x in v[:60]]
+    return v
+
+
+@app.get("/api/bc/{src}")
+def bc_state(src: str):
+    mod, job_mod, job, section = _bc(src)
+    from hub.bc import common
+    cfg = config.load()
+    data = read_json(paths.DATA_DIR / f"{mod.Screen.DATA}.json", {}) or {}
+    out = {"settings": common.settings(cfg, section, job_mod.DEFAULTS), "defaults": job_mod.DEFAULTS, "section": section,
+           "panel": mod.Screen.PANEL, "data": _slim(data),
+           "themes": {k: {"label": v["label"], "hint": v["hint"]} for k, v in mod.THEMES.items()},
+           "samples": {k: v["label"] for k, v in mod.SAMPLES.items()},
+           "job": _sched().snapshot().get(job)}
+    if src == "naad":
+        from hub.bc import naad_listener
+        out["listener"] = {k: v for k, v in naad_listener.state.items()}
+        out["areas"] = {k: v["label"] for k, v in job_mod.AREAS.items()}
+    if src == "wildfire":
+        out["regions"] = {k: v["label"] for k, v in job_mod.REGIONS.items()}
+    return out
+
+
+@app.get("/api/bc/{src}/preview.png")
+def bc_preview(src: str, theme: str = "", sample: str = "", at: float = 4.0, scale: int = 2, real: int = 0, s: str = ""):
+    """A frame of the screen ``at`` seconds into an item — a sample, or the first real item with real=1."""
+    import json as _json
+    mod, job_mod, job, section = _bc(src)
+    from hub.bc import common
+    settings = common.settings(config.load(), section, job_mod.DEFAULTS)
+    if s:
+        try:
+            settings.update(_json.loads(s))
+        except ValueError:
+            raise HTTPException(400, "s must be JSON")
+    theme = theme if theme in mod.THEMES else (settings.get("theme") if settings.get("theme") in mod.THEMES else mod.Screen.DEFAULT_THEME)
+    data = read_json(paths.DATA_DIR / f"{mod.Screen.DATA}.json", {}) or {}
+    smp = None if real else (sample if sample in mod.SAMPLES else next(iter(mod.SAMPLES)))
+    frame = mod.render_preview(theme, smp, max(0.0, at), settings, data, str(paths.DATA_DIR))
+    k = max(1, min(4, scale))
+    img = Image.fromarray(frame).resize((frame.shape[1] * k, frame.shape[0] * k), Image.NEAREST)
+    bio = io.BytesIO()
+    img.save(bio, "PNG", compress_level=1)
+    return Response(bio.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/bc/{src}/test")
+def bc_test(src: str, payload: dict = Body(default={})):
+    """Play a sample (or the real items with real=true) on the wall once, in a theme, then back to the rotation."""
+    mod, _, _, _ = _bc(src)
+    entry = {"panel": mod.Screen.PANEL, "advance": "cycles", "cycles": 1, "max_sec": 300}
+    if payload.get("theme"):
+        entry["theme"] = payload["theme"]
+    if not payload.get("real"):
+        entry["sample"] = payload.get("sample") or next(iter(mod.SAMPLES))
+    return _display_call("/play", {"side": "right", "entry": entry, "hold": False})
+
+
+@app.post("/api/bc/{src}/run")
+def bc_run(src: str):
+    _, _, job, _ = _bc(src)
+    _sched().run_now(job)
+    return {"ok": True}
 
 
 # --- font audit -------------------------------------------------------------

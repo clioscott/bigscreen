@@ -18,6 +18,8 @@ def main():
     sched.start()
     from hub import quake
     quake.start()                              # Japan EEW listener (does nothing visible unless enabled)
+    from hub.bc import naad_listener
+    naad_listener.start(lambda jobs: [sched.run_now(j) for j in jobs if j in ("naad", "quakes", "tsunami")])
     log(f"hub up — config r{cfg.get('revision')}, state {paths.STATE_DIR}, panel :{port}")
     uvicorn.run(web.app, host="0.0.0.0", port=port, log_level="warning")
 

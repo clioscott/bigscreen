@@ -194,6 +194,16 @@ class Screen:
         if prev is not None and getattr(prev, "quake", None) is not None:
             self.quake.adopt(prev.quake)                        # keep a live earthquake across config reloads
         self.takeover_panels["quake"] = self.quake.draw
+        # BC alert screens (Alert Ready, DriveBC, earthquakes, tsunami, wildfire): full-wall takeovers like the weather alert
+        from display.modules import bc_fire, bc_naad, bc_quake, bc_roads, bc_tsunami
+        self.bc = {}
+        for rule, mod in (("naad", bc_naad), ("roads", bc_roads), ("quakes", bc_quake), ("tsunami", bc_tsunami),
+                          ("wildfire", bc_fire)):
+            scr = self._reuse(prev, mod.Screen.PANEL, (mod.Screen.SETTINGS,),
+                              lambda m=mod: m.Screen(cfg.modules.get(m.Screen.SETTINGS) or {}, loader))
+            setattr(self, mod.Screen.PANEL, scr)
+            self.bc[rule] = scr
+            self.takeover_panels[mod.Screen.PANEL] = scr.draw
         from display.modules.font_specimen import FontSpecimen
         self.takeover_panels["font_specimen"] = FontSpecimen().draw          # control panel → Fonts
 

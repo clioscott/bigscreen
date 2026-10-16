@@ -1,0 +1,146 @@
+// Shared page for the BC alert screens (Alert Ready, DriveBC, earthquakes, tsunami, wildfire).
+// Each page passes its own config: title, intro, settings fields and how to show its live items.
+import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import { store, api, fail, toast, ago, seed, clone } from "../core.js";
+
+export function makeBCPage(P) {
+  return {
+    setup() {
+      seed(["modules", P.section], { enabled: true });
+      const s = computed(() => store.draft.modules[P.section]);
+      const st = ref({ settings: {}, defaults: {}, themes: {}, samples: {}, data: { items: [] }, job: null });
+      const load = async () => { try { st.value = await api(`/api/bc/${P.src}`); } catch (e) { /* hub restarting */ } };
+      const val = (key) => (s.value[key] !== undefined ? s.value[key] : st.value.defaults?.[key]);
+      const set = (key, v) => { s.value[key] = v; };
+      const toggleIn = (key, item) => {
+        const cur = clone(val(key) || []);
+        const i = cur.indexOf(item);
+        if (i >= 0) cur.splice(i, 1); else cur.push(item);
+        set(key, cur);
+      };
+
+      // preview: a sample (or the real items) in the chosen theme, stepping through time
+      const view = ref(null);
+      const theme = computed(() => view.value || val("theme") || Object.keys(st.value.themes)[0] || "");
+      const sample = ref("");
+      const real = ref(false);
+      const t = ref(1);
+      const playing = ref(true);
+      let tick, poll;
+      onMounted(() => {
+        load();
+        poll = setInterval(load, 8000);
+        tick = setInterval(() => { if (playing.value) t.value = (t.value + 0.5) % 30; }, 500);
+      });
+      onBeforeUnmount(() => { clearInterval(tick); clearInterval(poll); });
+      const items = computed(() => st.value.data?.items || []);
+      const smp = computed(() => sample.value || Object.keys(st.value.samples)[0] || "");
+      const look = computed(() => encodeURIComponent(JSON.stringify(Object.fromEntries((P.fields || []).map((f) => [f.key, val(f.key)])))));
+      const preview = computed(() => `/api/bc/${P.src}/preview.png?theme=${theme.value}&sample=${smp.value}&real=${real.value ? 1 : 0}&at=${t.value.toFixed(1)}&scale=2&s=${look.value}`);
+      const pick = (id) => { set("theme", id); view.value = null; };
+      const testWall = async (opts = {}) => {
+        try {
+          await api(`/api/bc/${P.src}/test`, { json: { theme: opts.theme ?? theme.value, sample: smp.value, real: opts.real ?? real.value } });
+          toast(opts.real ?? real.value ? "Playing what's in effect on the wall once" : `Playing "${st.value.samples[smp.value]}" on the wall once`);
+        } catch (e) { fail(e); }
+      };
+      const stop = async () => { try { await api("/api/display/override/clear", { json: { side: "right" } }); toast("Back to the rotation"); } catch (e) { fail(e); } };
+      const runNow = async () => { try { await api(`/api/bc/${P.src}/run`, { method: "POST" }); toast("Fetching now"); setTimeout(load, 4000); } catch (e) { fail(e); } };
+
+      // rotation: is there an entry for this screen?
+      const lc = computed(() => store.draft.modules.layout_cycle || {});
+      const inRotation = computed(() => ["left", "right"].some((side) => (lc.value[side] || []).some((e) => e.panel === P.panel)));
+      const addToRotation = () => {
+        const right = store.draft.modules.layout_cycle.right = store.draft.modules.layout_cycle.right || [];
+        const at = right.findIndex((e) => e.panel === "weather_alert");
+        right.splice(at + 1, 0, { panel: P.panel, rules: [{ if: P.rule }], priority: "next", advance: "cycles", cycles: 1, max_sec: 600 });
+        toast("Added to the rotation — Save to keep it");
+      };
+      const health = computed(() => st.value.job?.health || "never");
+      return { P, s, st, val, set, toggleIn, theme, pick, view, sample, smp, real, t, playing, preview, testWall, stop, runNow,
+        items, inRotation, addToRotation, health, ago };
+    },
+    template: `<div class="page">
+      <div class="page-head"><div class="grow"><h1>{{ P.title }}</h1><p>{{ P.intro }}</p></div>
+        <Toggle :modelValue="val('enabled') !== false" @update:modelValue="v => set('enabled', v)"/></div>
+
+      <div class="two-col">
+        <div class="stack sticky">
+          <div class="card"><div class="card-head"><span class="live">PREVIEW</span>
+              <h3>{{ st.themes[theme]?.label }} · {{ real ? 'what is in effect' : st.samples[smp] }}</h3>
+              <button class="btn sm ghost icon-only" @click="playing = !playing" :title="playing ? 'Pause' : 'Play'"><Icon :name="playing ? 'Pause' : 'Play'" :size="14"/></button></div>
+            <div class="card-body stack">
+              <div style="background:#000; border-radius:8px; overflow:hidden"><img :src="preview" style="width:100%; image-rendering:pixelated; display:block" alt=""></div>
+              <div class="row" style="flex-wrap:wrap; gap:6px">
+                <button v-for="(lab, id) in st.samples" :key="id" class="btn sm" :class="{primary: !real && smp === id}" @click="sample = id; real = false; t = 1">{{ lab }}</button>
+                <button class="btn sm" :class="{primary: real}" :disabled="!items.length" @click="real = true; t = 1" :title="items.length ? '' : 'Nothing in effect right now'">
+                  <Icon name="Radio" :size="13"/>In effect ({{ items.length }})</button>
+              </div>
+              <div class="row">
+                <button class="btn primary" @click="testWall()"><Icon name="MonitorPlay" :size="15"/>Test on the wall</button>
+                <button class="btn ghost" @click="stop"><Icon name="Undo2" :size="15"/>Back to rotation</button>
+                <span class="faint mono" style="font-size:12px">+{{ t.toFixed(1) }} s</span>
+              </div>
+            </div></div>
+
+          <div class="card"><div class="card-head"><Icon name="Palette" :size="15"/><h3>Theme</h3>
+              <button class="btn sm" @click="testWall({ theme: 'tour' })"><Icon name="MonitorPlay" :size="13"/>Tour all on the wall</button></div>
+            <div class="list">
+              <div class="list-row" v-for="(th, id) in st.themes" :key="id" style="cursor:pointer" :style="theme === id ? {background: 'var(--accent-soft, rgba(255,255,255,.06))'} : {}"
+                   @click="pick(id)" @mouseenter="view = id" @mouseleave="view = null">
+                <span class="dot" :class="(val('theme')) === id ? 'ok' : ''"></span>
+                <span style="flex:1"><b>{{ th.label }}</b> <span class="faint" style="font-size:12px">— {{ th.hint }}</span></span>
+                <span class="pill" v-if="val('theme') === id">in use</span>
+              </div>
+              <div class="list-row" style="cursor:pointer" @click="pick('tour')"><span class="dot" :class="val('theme') === 'tour' ? 'ok' : ''"></span>
+                <span style="flex:1"><b>Rotate themes</b> <span class="faint" style="font-size:12px">— a different theme each time the screen comes round</span></span></div>
+            </div>
+            <div class="card-body faint" style="font-size:12.5px">Hover a theme to preview it; click to use it (Save to keep). Samples are labelled SAMPLE on the wall.</div>
+          </div>
+        </div>
+
+        <div class="stack">
+          <div class="card"><div class="card-head"><Icon name="Radio" :size="15"/><h3>Feed</h3>
+              <button class="btn sm" @click="runNow"><Icon name="RefreshCw" :size="13"/>Fetch now</button></div>
+            <div class="list">
+              <div class="list-row" v-for="src in P.sources" :key="src"><span class="dot" :class="health === 'ok' ? 'ok' : health === 'running' ? '' : 'bad'"></span><span style="flex:1">{{ src }}</span></div>
+              <div class="list-row" v-if="st.listener"><span class="dot" :class="st.listener.connected ? 'ok' : 'bad'"></span>
+                <span style="flex:1">Live stream {{ st.listener.connected || 'reconnecting' }}</span>
+                <span class="faint" style="font-size:12px">heartbeat {{ ago(st.listener.last_heartbeat ? Date.now() / 1000 - st.listener.last_heartbeat : null) }} · {{ st.listener.received }} received</span></div>
+              <div class="list-row"><span class="faint" style="font-size:12.5px; flex:1">{{ st.job?.message || 'not run yet' }}</span>
+                <span class="faint" style="font-size:12px">{{ st.job?.last_success ? ago(Date.now() / 1000 - st.job.last_success) : '' }}</span></div>
+            </div>
+            <div class="card-body" v-if="st.job?.error"><div class="callout" style="font-size:12px; white-space:pre-wrap">{{ st.job.error.slice(-400) }}</div></div>
+          </div>
+
+          <div class="card"><div class="card-head"><Icon name="Siren" :size="15"/><h3>On the wall now</h3><span class="pill">{{ items.length }}</span></div>
+            <div class="list" v-if="items.length">
+              <div class="list-row" v-for="it in items" :key="it.id">
+                <span class="pill" :style="P.chip(it).style">{{ P.chip(it).text }}</span>
+                <span style="flex:1">{{ P.line(it) }}</span>
+              </div></div>
+            <div class="card-body faint" v-else>{{ P.empty }}</div>
+          </div>
+
+          <div class="card"><div class="card-head"><Icon name="SlidersHorizontal" :size="15"/><h3>Settings</h3></div><div class="card-body stack">
+            <template v-for="f in P.fields" :key="f.key">
+              <ToggleRow v-if="f.type === 'toggle'" :modelValue="!!val(f.key)" @update:modelValue="v => set(f.key, v)" :label="f.label" :hint="f.hint"/>
+              <Field v-else-if="f.type === 'seg'" :label="f.label" :hint="f.hint"><Seg :modelValue="val(f.key)" @update:modelValue="v => set(f.key, v)" :options="f.options"/></Field>
+              <Field v-else-if="f.type === 'slider'" :label="f.label" :hint="f.hint"><Slider :modelValue="val(f.key)" @update:modelValue="v => set(f.key, v)" :min="f.min" :max="f.max" :step="f.step" :unit="f.unit || ''"/></Field>
+              <Field v-else-if="f.type === 'multi'" :label="f.label" :hint="f.hint"><div class="chips">
+                <span v-for="(lab, id) in (f.optionsFrom ? st[f.optionsFrom] : f.options)" :key="id" class="chip" :class="{off: !(val(f.key) || []).includes(id)}" style="cursor:pointer; padding-right:11px" @click="toggleIn(f.key, id)">{{ lab }}</span></div></Field>
+            </template>
+            <Field label="Each item stays on the wall for at least"><Slider :modelValue="val('dwell_sec')" @update:modelValue="v => set('dwell_sec', v)" :min="10" :max="90" :step="5" unit=" s"/></Field>
+            <div class="faint" style="font-size:12.5px">{{ P.note }}</div>
+          </div></div>
+
+          <div class="card"><div class="card-head"><Icon name="Repeat" :size="15"/><h3>Rotation</h3></div><div class="card-body stack">
+            <div v-if="inRotation" class="row"><span class="dot ok"></span>In the rotation: comes up next whenever there's something to show, then the rotation carries on.</div>
+            <div v-else class="row"><span class="dot bad"></span><span style="flex:1">Not in the rotation yet — it will only appear for takeovers.</span>
+              <button class="btn sm primary" @click="addToRotation"><Icon name="Plus" :size="13"/>Add to rotation</button></div>
+          </div></div>
+        </div>
+      </div>
+    </div>`,
+  };
+}

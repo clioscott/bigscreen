@@ -50,6 +50,7 @@ def _push_once():
                "--include=stock-icons/", "--include=stock-icons/*.png",
                "--include=alertmaps/", "--include=alertmaps/*.bin", "--include=alertmaps/*.mask", "--include=alertmaps/*.zones",
                "--include=quake/", "--include=quake/*.bin", "--include=alertpages/", "--include=alertpages/*.bin",
+               "--include=bcmaps/", "--include=bcmaps/*.bin", "--include=drivebc/", "--include=drivebc/*.bin",
                "--exclude=*",
                "--rsync-path", f"mkdir -p {remote_dir} && rsync",
                "-e", SSH, f"{paths.DATA_DIR}/", f"{target}:{remote_dir}/"]

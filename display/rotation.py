@@ -41,7 +41,7 @@ def normalise(raw) -> dict | None:
     e = {k: v for k, v in raw.items() if k not in ("when", "allowed_days", "allowed_hours")}
     e["panel"] = raw["panel"].strip()
     e["rules"] = legacy_rules(raw)
-    if e["panel"] == "weather_alert":
+    if e["panel"] in ("weather_alert", "naad_alert", "road_alert", "quake_alert", "tsunami_alert", "fire_alert"):
         e.setdefault("priority", "next")      # an alert that starts plays next ("priority": "" turns that off)
     return e
 

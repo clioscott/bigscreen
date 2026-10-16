@@ -26,6 +26,11 @@ JOBS = {
     "weather":  ("modules.weather.swob_refresh_interval_sec", 120, 90, "Weather"),
     "maps":     ("modules.weather_maps.job_interval_sec", 180, 600, "Weather maps & radar"),
     "alerts":   ("modules.weather_alerts.refresh_interval_sec", 120, 60, "Weather alerts"),
+    "naad":     ("modules.naad_alerts.refresh_interval_sec", 300, 120, "Alert Ready (NAAD)"),
+    "drivebc":  ("modules.road_alerts.refresh_interval_sec", 120, 120, "DriveBC"),
+    "quakes":   ("modules.bc_quakes.refresh_interval_sec", 60, 120, "Earthquakes"),
+    "tsunami":  ("modules.tsunami.refresh_interval_sec", 120, 120, "Tsunami"),
+    "wildfire": ("modules.wildfire.refresh_interval_sec", 600, 300, "Wildfire"),
 }
 # A job is "stale" when its last success is older than this many intervals.
 STALE_INTERVALS = 3

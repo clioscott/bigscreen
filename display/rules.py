@@ -13,6 +13,7 @@ An entry's ``rules`` is a list; all of them must hold. Each rule is ``{"if": <co
     {"if": "hours", "from": "07:00", "to": "22:00"}           local time in [from, to) (wraps past midnight)
     {"if": "days", "days": [0, 1, 2, 3, 4]}                   weekday (Mon = 0)
     {"if": "fresh", "max_age_min": 30}                        the entry's own data is no older than this
+    {"if": "naad"} / "roads" / "quakes" / "tsunami" / "wildfire"   that BC alert screen has something to show
 
 ``not: true`` inverts a rule ("doesn't show if …"). Rules are checked when the rotation picks the next screen,
 never mid-screen: a screen that started always plays to its end.
@@ -37,7 +38,10 @@ LEGACY = {
 
 # the data file each panel draws from, for "fresh"
 PANEL_DATA = {"calendar": "calendar", "client_calls_upcoming": "calendar", "client_calls_past": "calendar",
-              "headlines": "headlines", "weather": "weather", "weather_full": "weather", "weather_alert": "alerts"}
+              "headlines": "headlines", "weather": "weather", "weather_full": "weather", "weather_alert": "alerts",
+              "naad_alert": "naad", "road_alert": "drivebc", "quake_alert": "quakes", "tsunami_alert": "tsunami",
+              "fire_alert": "wildfire"}
+BC_RULES = ("naad", "roads", "quakes", "tsunami", "wildfire")
 
 _PRECIP_WORDS = ("rain", "drizzle", "shower", "snow", "flurr", "sleet", "hail", "pellet", "thunder")
 
@@ -156,6 +160,9 @@ class Env:
             return _in_window(_hm(r.get("from"), 0), _hm(r.get("to"), 24 * 60), now.hour * 60 + now.minute)
         if cond == "days":
             return datetime.now().weekday() in [int(d) for d in (r.get("days") or [])]
+        if cond in BC_RULES:
+            scr = getattr(self.s, "bc", {}).get(cond)
+            return bool(scr) and self._get(f"bc_{cond}", scr.active, 2.0)
         if cond == "fresh":
             age = self.data_age(entry)
             return age is not None and age <= float(r.get("max_age_min") or 30) * 60
