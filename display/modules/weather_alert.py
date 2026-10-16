@@ -41,6 +41,7 @@ from display.modules.alert_themes import (BORDERS, FAMILIES, HAZARD_PALETTE, PAL
                                           THEMES, resolve)
 
 W, H = 448, 192
+FORECAST_BG = (200, 80, 0)       # the FORECAST chip, as on the radar maps (weather_maps.MapPanel.forecast_bg)
 SCRAMBLE = "#%&@$*+=?ABCDEFGHJKLMNPQRSTUVWXYZ0123456789"
 PUNCT = ",.;:!?)%"
 
@@ -864,21 +865,26 @@ class AlertScreen:
         # footer: frame time, progress through the frames, unit, credit
         fy = H - foot + 3
         times = meta.get("times") or []
-        when = ""
+        when, future = "", meta.get("page_kind") == "forecast"
         if i < len(times):
             try:
                 from datetime import datetime, timezone
                 tt = datetime.strptime(times[i], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).astimezone()
                 when = tt.strftime("%a %-I %p").upper() if os.name != "nt" else tt.strftime("%a %I %p").upper()
+                future = tt.timestamp() > time.time() + 120         # this frame is still to come
             except ValueError:
                 when = ""
-        kind = meta.get("page_kind")
-        tag = "FORECAST" if kind == "forecast" else "OBSERVED"
-        sf.draw(c, m, fy, ctx.pal["strong"], f"{when}  {tag}")
+        lx = m + sf.draw(c, m, fy, ctx.pal["strong"], when) + sf.width("  ")
+        if future:                     # the radar maps' FORECAST chip: white on orange
+            tag = "FORECAST"
+            c.FillRect(lx - 2, fy - 1, sf.width(tag) + 4, sf.h + 2, Color(*FORECAST_BG))
+            lx += sf.draw(c, lx, fy, (255, 255, 255), tag) + 2
+        else:
+            lx += sf.draw(c, lx, fy, ctx.pal["dim"], "OBSERVED")
         unit = meta.get("unit") or ""
         right = (f"{meta.get('value_title') or ''} {unit}".strip() + "  · ECCC") if unit else "ECCC"
         sf.draw(c, W - m - sf.width(right), fy, ctx.pal["dim"], right)
-        bx0 = m + sf.width(f"{when}  {tag}") + 10
+        bx0 = lx + 10
         bx1 = W - m - sf.width(right) - 10
         if bx1 - bx0 > 20 and n > 1:
             by = fy + sf.h // 2
