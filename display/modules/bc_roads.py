@@ -321,38 +321,51 @@ def _grow(m, r):
     return out
 
 
+_GEOM = {}
+
+
+def _hl_geom(mp, item, width):
+    """Cached per event and map: the widened road's pixels, its dark edge, and each pixel's position along the
+    road's direction (for the stripes) — so a frame only recolours pixels."""
+    base = _hl_mask(mp, item)
+    key = (mp.meta.get("name"), mp.meta.get("sig"), item.get("id"), int(base.sum()), width)
+    g = _GEOM.get(key)
+    if g is None:
+        r = max(0, width // 2)
+        body = _grow(base, r)
+        edge = _grow(body, 1) & ~body
+        by, bx = np.nonzero(body)
+        ey, ex = np.nonzero(edge)
+        ux, uy = _hl_dir(base, item)
+        g = (bx, by, ex, ey, bx * ux + by * uy)
+        if len(_GEOM) > 24:
+            _GEOM.clear()
+        _GEOM[key] = g
+    return g
+
+
 def highlight(c, mp, item, now, ox=0, oy=0, width=3, animate=True, clip=(0, 0, W, H)):
     """The affected road, on the map's own road pixels: widened evenly by ``width // 2`` px each side, a dark
-    edge round it, and the alert colour alternating with a bright second colour in stripes that move along it
-    (a closure strobes the whole stretch on top)."""
-    base = _hl_mask(mp, item)
-    if not base.any():
+    edge round it, and the alert colour alternating with a bright second colour in stripes across the road that
+    move along it (a closure strobes the whole stretch on top)."""
+    bx, by, ex, ey, t = _hl_geom(mp, item, width)
+    if not len(bx):
         return
-    r = max(0, width // 2)
-    body = _grow(base, r)
-    edge = _grow(body, 1) & ~body
     x0, y0, x1, y1 = max(0, clip[0]), max(0, clip[1]), min(W, clip[2]), min(H, clip[3])
-    # the part of the map visible in the clip window
-    mx0, my0 = x0 - ox, y0 - oy
-    mx1, my1 = x1 - ox, y1 - oy
-    sx0, sy0 = max(0, mx0), max(0, my0)
-    sx1, sy1 = min(mp.w, mx1), min(mp.h, my1)
-    if sx1 <= sx0 or sy1 <= sy0:
-        return
-    tgt = c.buf[sy0 + oy:sy1 + oy, sx0 + ox:sx1 + ox]
-    e = edge[sy0:sy1, sx0:sx1]
-    bd = body[sy0:sy1, sx0:sx1]
-    tgt[e] = (0, 0, 0)
+    cx, cy = ex + ox, ey + oy
+    ok = (cx >= x0) & (cx < x1) & (cy >= y0) & (cy < y1)
+    c.buf[cy[ok], cx[ok]] = 0
+    cx, cy = bx + ox, by + oy
+    ok = (cx >= x0) & (cx < x1) & (cy >= y0) & (cy < y1)
+    cx, cy = cx[ok], cy[ok]
     col, alt = np.array(col_of(item), np.uint8), np.array(_alt(item), np.uint8)
     if animate and item.get("closed") and k.blink(now, 1.6, 0.18):
-        tgt[bd] = alt
+        c.buf[cy, cx] = alt
         return
-    yy, xx = np.mgrid[sy0:sy1, sx0:sx1]
-    ux, uy = _hl_dir(base, item)
     ph = now * 12 if animate else 0.0
-    stripe = ((np.floor((xx * ux + yy * uy + ph) / 4)).astype(int) % 2) == 0         # stripes across the road
-    tgt[bd & stripe] = col
-    tgt[bd & ~stripe] = alt
+    on = (np.floor((t[ok] + ph) / 4).astype(np.int64) % 2) == 0
+    c.buf[cy[on], cx[on]] = col
+    c.buf[cy[~on], cx[~on]] = alt
 
 
 def area_of(item):
@@ -373,10 +386,13 @@ def _panel(c, item, x, w, h_shield=56, big=True):
     k.box(c, x, 0, w, H, (10, 11, 15))
     k.box(c, x, 0, w, 3, col)
     y = 8
+    if not item.get("highways"):
+        h_shield = 30                                      # a street blade: the name itself, compact
     bw = hero(c, x + 8, y, item, h_shield, w - 50)
     big_icon(c, item, x + w - 32, y + 2, col)
     y += h_shield + 6
-    y += k.fit_text(c, item.get("road") or "", x + 8, y, w - 14, 34, ("h18", "h16", "lutb12", "hvb10"), WHITE) + 3
+    if item.get("highways"):                               # (a street blade already names the road)
+        y += k.fit_text(c, item.get("road") or "", x + 8, y, w - 14, 34, ("h18", "h16", "lutb12", "hvb10"), WHITE) + 3
     if area_of(item):
         y += k.fit_text(c, area_of(item), x + 8, y, w - 14, 16, ("lutb14", "lutb12", "hvb10"), (255, 225, 150)) + 2
     if item.get("direction"):
