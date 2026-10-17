@@ -680,9 +680,10 @@ class Screen(k.BCScreen):
     def extra_pages(self, item):
         return [] if item.get("kind") in ("eew", "detect") else ["shakemap", "report"]
 
-    def half_spec(self, item):
+    def half_spec(self, item, theme=None):
         eew = item.get("kind") == "eew"
         col = (255, 40, 40) if eew else mag_col(item.get("mag"))
+        theme = theme if theme in THEMES else self.DEFAULT_THEME
 
         def hero_(c, x, y, mw, mh):
             mt = _mag_text(item)
@@ -698,6 +699,16 @@ class Screen(k.BCScreen):
                 return
             ex, ey = mp.project(item["lat"], item["lon"])
             sx, sy = k.map_crop(c, mp, x, y, w, h, ex, ey)
+            if theme == "shakemap":
+                c.Blit(_half_shake(self, mp, item, sx, sy, w, h), x, y)
+            if theme == "pnsn":
+                for la, lo, m, t, dep in self.data().get("recent") or []:
+                    if abs(t - (item.get("time") or 0)) < 60:
+                        continue
+                    qx, qy = mp.project(la, lo)
+                    if 0 <= qx - sx < w and 0 <= qy - sy < h:
+                        qc = (130, 170, 210) if dep < 30 else (170, 140, 220)
+                        k.disc(c, x + qx - sx, y + qy - sy, 1, qc) if m >= 3.5 else k.box(c, x + qx - sx, y + qy - sy, 1, 1, qc)
             hx, hy = mp.project(_home(self)[1], _home(self)[0])
             if 0 <= hx - sx < w and 0 <= hy - sy < h:
                 k.icon_outlined(c, "house", int(x + hx - sx) - 8, int(y + hy - sy) - 7, (230, 230, 240))
@@ -708,20 +719,21 @@ class Screen(k.BCScreen):
             _star(c, px, py, 6, col if k.blink(now, 0.8, 0.7) else WHITE)
 
         if eew:
-            return {"label": "EARLY WARNING", "col": col, "chip": ("DROP COVER HOLD ON", (255, 200, 0)), "hero": None,
+            spec = {"label": "EARLY WARNING", "col": col, "chip": ("DROP COVER HOLD ON", (255, 200, 0)), "hero": None,
                     "title": item.get("headline") or "Earthquake early warning",
                     "lines": [(" · ".join(item.get("areas") or []), (230, 200, 200))],
                     "body": [Para(item.get("description") or "", "body", (220, 220, 225)),
                              Para(item.get("instruction") or "", "head", (255, 220, 120))], "map": map_}
-        i = mmi_i(item.get("mmi_home"))
-        return {"label": self.LABEL, "col": col, "chip": (f"{ROMAN[i]} {MMI_WORD[i].upper()}", MMI_COL[i]), "hero": hero_,
-                "title": _place(item),
-                "lines": [(_when(item), (200, 205, 220)), (f"Depth {float(item.get('depth') or 0):.0f} km", (200, 205, 220)),
-                          (f"Felt by {item['felt']:,} (DYFI)" if item.get("felt") else "", (255, 220, 120))],
-                "body": [Para(item.get("setting") or "", "body", (180, 200, 230)),
-                         Para("Estimated shaking: " + ", ".join(f"{cy['name']} {ROMAN[mmi_i(cy['mmi'])]}" for cy in (item.get("cities") or [])[:6]),
-                              "body", (220, 220, 225))], "map": map_}
-
+        else:
+            i = mmi_i(item.get("mmi_home"))
+            spec = {"label": self.LABEL, "col": col, "chip": (f"{ROMAN[i]} {MMI_WORD[i].upper()}", MMI_COL[i]), "hero": hero_,
+                    "title": _place(item),
+                    "lines": [(_when(item), (200, 205, 220)), (f"Depth {float(item.get('depth') or 0):.0f} km", (200, 205, 220)),
+                              (f"Felt by {item['felt']:,} (DYFI)" if item.get("felt") else "", (255, 220, 120))],
+                    "body": [Para(item.get("setting") or "", "body", (180, 200, 230)),
+                             Para("Estimated shaking: " + ", ".join(f"{cy['name']} {ROMAN[mmi_i(cy['mmi'])]}" for cy in (item.get("cities") or [])[:6]),
+                                  "body", (220, 220, 225))], "map": map_}
+        return HALF[theme](self, item, spec, col)
     def set_obs(self, body):
         """POST /bc_quake_obs from the hub: station readings once a second while a quake is fresh."""
         self.live, self.live_at = body, time.time()
@@ -750,6 +762,132 @@ class Screen(k.BCScreen):
         if item.get("kind") == "detect" or (_live(self) and 0 <= self._clock - t < 300):
             return max(base, t + 150 - self.t0)           # live readings: stay until the waves have passed
         return base
+
+
+# ------------------------------------------------------------------------------------------------ half-width looks
+def _half_shake(s, mp, item, sx, sy, w, h):
+    """The map crop with the estimated intensity field in ShakeMap colours (drawn once per item and crop)."""
+    def draw(cv):
+        mp.blit(cv, 0, 0, sx, sy, min(w, mp.w - sx), min(h, mp.h - sy))
+        f = _shake_field(mp, item)[sy:sy + h, sx:sx + w]
+        for i in range(2, 11):
+            sel = f == i
+            if sel.any():
+                k.tint(cv, sel, MMI_COL[i], 0.42)
+        e = np.zeros_like(f, bool)
+        e[:, 1:] |= f[:, 1:] != f[:, :-1]
+        e[1:, :] |= f[1:, :] != f[:-1, :]
+        k.paint(cv, e & (f >= 2), (230, 230, 230))
+    return k.half_layer(s, ("shake", item.get("id"), sx, sy, w, h), w, h, draw)
+
+
+def _cities(item, n=7):
+    def page(c, x, y, w, h, now, el):
+        k.text(c, k.font("lutb12"), x, y, WHITE, "Estimated shaking")
+        ty = y + 15
+        ty += _intensity_here(c, item, x, ty, w, k.font("hvb10")) + 3
+        for cty in (item.get("cities") or [])[:n]:
+            if ty > y + h - 13:
+                break
+            i = mmi_i(cty["mmi"])
+            k.box(c, x, ty + 1, 26, 12, MMI_COL[i])
+            k.text_c(c, k.font("hvb10"), x + 13, ty + 2, BLACK, ROMAN[i])
+            k.text(c, k.font("hv10"), x + 32, ty + 2, (220, 220, 230), cty["name"])
+            k.text_r(c, k.font("hv10"), x + w, ty + 2, (150, 155, 170), f"{cty['km']} km")
+            ty += 14
+    return page
+
+
+def _half_pnsn(s, item, spec, col):
+    """The network map first: the epicentre among 30 days of background quakes, a fact strip under it."""
+    base = spec["map"]
+
+    def map_(c, x, y, w, h, now):
+        base(c, x, y, w, h - 14, now)
+        k.box(c, x, y + h - 14, w, 14, (12, 16, 26))
+        k.text(c, k.font("hvb10"), x + 4, y + h - 12, col, f"M{_mag_text(item)}")
+        k.fit_text(c, f"{_place(item)} · {float(item.get('depth') or 0):.0f} km deep", x + 34, y + h - 12, w - 38, 11,
+                   ("hv10", "s8"), (220, 225, 235))
+
+    spec.update(map=map_, label="PNSN · EARTHQUAKE", look={"order": ("map", "summary", "text"), "head_bg": (12, 16, 26),
+                                                           "bg": (6, 8, 14)})
+    return spec
+
+
+def _half_shakemap(s, item, spec, col):
+    """ShakeMap colours: the intensity at home as the headline, the coloured field on the map, a city table."""
+    i = mmi_i(item.get("mmi_home"))
+
+    def summary(c, x, y, w, h, now, el):
+        k.box(c, x, y, 52, 46, MMI_COL[i])
+        k.text_c(c, k.font("h24"), x + 26, y + 4, BLACK, ROMAN[i] or "–")
+        k.text_c(c, k.font("s8"), x + 26, y + 34, BLACK, "AT HOME")
+        tx = x + 58
+        ty = y + k.fit_text(c, MMI_WORD[i] + " shaking", tx, y, w - 58, 18, ("h16", "lutb12", "hvb10"), MMI_COL[i]) + 2
+        ty += k.fit_text(c, f"M{_mag_text(item)}  {_place(item)}", tx, ty, w - 58, 28, ("lutb12", "hvb10", "s8"), WHITE) + 2
+        k.fit_text(c, _when(item), tx, ty, w - 58, 12, ("hv10", "s8"), (190, 195, 210))
+        lx, ly = x, y + h - 12
+        cw = max(10, min(22, w // 9))
+        for j in range(2, 11):
+            k.box(c, lx, ly, cw - 1, 10, MMI_COL[j])
+            k.text_c(c, k.font("s8"), lx + cw // 2, ly + 1, BLACK, ROMAN[j])
+            lx += cw
+
+    spec["chip"] = ("MMI", (230, 230, 230))
+    spec["body"] = spec["body"][:1] if item.get("kind") != "eew" else spec["body"]   # (the cities have their own page)
+    spec.update(summary=summary, custom={"cities": _cities(item)}, label="SHAKEMAP",
+                look={"order": ("summary", "map", "cities", "text"), "bg": (8, 9, 14), "head_bg": (8, 9, 14),
+                      "rule": (60, 70, 90)})
+    return spec
+
+
+def _half_report(s, item, spec, col):
+    """The report card: a seven-segment magnitude, the place, time and depth; the cities after."""
+    def summary(c, x, y, w, h, now, el):
+        mt = _mag_text(item)
+        k.box(c, x - 4, y - 2, 70, h + 5, (14, 16, 22))
+        k.seven_seg(c, x + 1, y + 4, mt, 16 if len(mt) <= 3 else 13, 32, 3, on=col, off=(36, 36, 44))
+        k.text(c, k.font("hvb10"), x, y + 42, (190, 195, 210), f"Mag {item.get('mag_type') or ''}".strip())
+        if item.get("felt"):
+            k.text(c, k.font("hvb10"), x, y + 58, (255, 220, 120), f"{item['felt']:,}")
+            k.text(c, k.font("s8"), x, y + 70, (150, 155, 170), "felt it")
+        tx = x + 72
+        ty = y + k.fit_text(c, _place(item), tx, y, w - 72, 36, ("h16", "lutb12", "hvb10"), WHITE) + 3
+        for lab, val in (("Time", k.day_hhmm(item.get("time"))), ("Depth", f"{float(item.get('depth') or 0):.0f} km"),
+                         ("Ago", k.ago(item.get("time")))):
+            k.text(c, k.font("hvb10"), tx, ty, (150, 160, 180), lab)
+            k.text(c, k.pick(("lut12", "hv10"), val, w - 72 - 40), tx + 40, ty - 1, (230, 230, 235), val)
+            ty += 14
+        _intensity_here(c, item, tx, ty + 2, w - 72, k.font("hvb10"))
+
+    spec["hero"] = None
+    spec["body"] = spec["body"][:1] if item.get("kind") != "eew" else spec["body"]   # (the cities have their own page)
+    spec.update(summary=summary, custom={"cities": _cities(item)}, label="EARTHQUAKE REPORT",
+                look={"order": ("summary", "cities", "text", "map"), "head_bg": (26, 30, 40), "rule": col})
+    return spec
+
+
+def _half_drop(s, item, spec, col):
+    """The early warning: a red EARTHQUAKE slab, DROP · COVER · HOLD ON in yellow, the S-wave countdown."""
+    def summary(c, x, y, w, h, now, el):
+        bw = (w - 4) // 3
+        for i, t in enumerate(("DROP", "COVER", "HOLD ON")):
+            bx = x + i * (bw + 2)
+            k.box(c, bx, y, bw, 24, (255, 200, 0))
+            k.text_c(c, k.pick(("h16", "lutb12", "hvb10"), t, bw - 4), bx + bw // 2, y + 5, BLACK, t)
+        ty = y + 28
+        used = countdown(c, item, now, x, ty, w, big=False) if item.get("lat") is not None else 0
+        ty += used + 2 if used else 0
+        k.fit_text(c, item.get("headline") or "Earthquake early warning", x, ty, w, y + h - ty - 12, ("lutb12", "hvb10", "s8"), WHITE)
+        k.fit_text(c, " · ".join(item.get("areas") or []), x, y + h - 11, w, 11, ("hv10", "s8"), (230, 200, 200))
+
+    spec.update(summary=summary, label="EARTHQUAKE", chip=None,
+                look={"head": "slab", "head_bg": (200, 0, 0), "head_fg": WHITE, "pulse": True, "head_h": 15, "label_font": "h13",
+                      "bg": BLACK, "border": "pulse", "border_col": (255, 200, 0)})
+    return spec
+
+
+HALF = {"pnsn": _half_pnsn, "shakemap": _half_shakemap, "report": _half_report, "drop": _half_drop}
 
 
 def render_preview(theme, sample=None, at=4.0, settings=None, data=None, data_dir=None):

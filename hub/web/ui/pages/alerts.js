@@ -72,7 +72,11 @@ export const Alerts = {
     const loadTl = async () => { try { tl.value = await api(`/api/alerts/timeline?${qs.value}`); } catch (e) { /* ignore */ } };
     let tlTimer;
     watch(qs, () => { clearTimeout(tlTimer); tlTimer = setTimeout(loadTl, 300); });
-    const live = computed(() => `/api/alerts/preview/${a.value.theme || "t01"}.png?at=${t.value.toFixed(2)}&scale=2&${qs.value}`);
+    const half = ref(false);                        // preview the half-width version (right zone, after the full-wall showings)
+    const live = computed(() => half.value
+      ? `/api/bc/weather/half.png?theme=${a.value.theme || "t01"}&sample=${a.value.sample || "rain"}&page=${Math.floor(t.value / 6)}&at=${(t.value % 6 + 1).toFixed(1)}&scale=2`
+      : `/api/alerts/preview/${a.value.theme || "t01"}.png?at=${t.value.toFixed(2)}&scale=2&${qs.value}`);
+    const showTheme = (id, h) => { a.value.theme = id; half.value = h; t.value = 0; };
     const page = computed(() => [...(tl.value.pages || [])].reverse().find((p) => t.value >= p.start) || tl.value.pages?.[0]);
     const jump = (p) => { t.value = p.start + 0.05; };
     const pickSample = (id) => { a.value.sample = id; useReal.value = false; };
@@ -331,7 +335,7 @@ export const Alerts = {
     onBeforeUnmount(() => { clearInterval(tick); clearInterval(tileTick); clearTimeout(tlTimer); clearTimeout(liveTimer); window.removeEventListener("keydown", onKey); });
 
     return { TABS, TYPES, DETAIL, DENSITY, VERDICTS, PER_LEVEL, tab, a, cat, current, hazardOf, levelColour, sampleLabel, sampleLevel,
-      useReal, tl, t, playing, live, page, jump, pickSample,
+      useReal, tl, t, playing, live, page, jump, pickSample, half, showTheme,
       layoutFilter, verdictFilter, themes, thumb, counts, approvedIds, verdict, setVerdict, setOpt, customised, resetStyle, fineTab,
       optImg, borderAt, revealAt, opts, fontName,
       wall, showLive, showReal, backToRotation,
@@ -373,10 +377,13 @@ export const Alerts = {
       <div class="stack sticky">
         <div class="card"><div class="card-head"><span class="live">PREVIEW</span>
           <h3>{{ current.name }} <span class="faint" style="font-weight:500">· {{ current.description }}</span></h3>
+          <Seg :modelValue="half" @update:modelValue="v => { half = v; t = 0; }" :options="[{value: false, label: 'Full wall'}, {value: true, label: 'Half width'}]"/>
           <span class="pill" :class="{ok: verdict(a.theme) === 'approved', bad: verdict(a.theme) === 'dropped'}">{{ verdict(a.theme) === 'unreviewed' ? 'not reviewed' : verdict(a.theme) }}</span></div>
           <div class="card-body stack">
             <div style="background:#000; border-radius:8px; overflow:hidden"><img :src="live" style="width:100%; image-rendering:pixelated; display:block" alt=""></div>
-            <div class="scrub">
+            <div v-if="half" class="faint" style="font-size:12px">The half-width version in this theme: the right half of the wall under the clock bar, once an alert
+              has had its full-wall showings (Rotation page → Alerts on the wall). A new page every 6 s.</div>
+            <div class="scrub" v-show="!half">
               <button class="btn sm ghost icon-only" @click="playing = !playing" :title="playing ? 'Pause' : 'Play'"><Icon :name="playing ? 'Pause' : 'Play'" :size="14"/></button>
               <div class="scrub-track">
                 <button v-for="(p, i) in tl.pages" :key="i" class="scrub-seg" :class="{on: page === p}" :style="{flex: p.hold + p.reveal}" @click="jump(p)"
@@ -413,6 +420,9 @@ export const Alerts = {
               <button v-for="th in themes" :key="th.id" class="theme-card" :class="{on: a.theme === th.id}" @click="a.theme = th.id" style="position:relative">
                 <img :src="thumb(th.id)" loading="lazy" alt="">
                 <span>{{ th.name }}</span><small class="faint">{{ th.description }}</small>
+                <span class="seg" @click.stop style="padding:2px; align-self:flex-start; margin-top:4px">
+                  <span role="button" class="seg-btn" :class="{on: a.theme === th.id && !half}" @click.stop="showTheme(th.id, false)" title="Preview the full-wall version">Full</span>
+                  <span role="button" class="seg-btn" :class="{on: a.theme === th.id && half}" @click.stop="showTheme(th.id, true)" title="Preview the half-width version">Half</span></span>
                 <span v-if="verdict(th.id) !== 'unreviewed'" class="pill" :class="verdict(th.id) === 'approved' ? 'ok' : 'bad'"
                   style="position:absolute; top:10px; right:10px; height:18px; padding:0 6px">{{ verdict(th.id) === 'approved' ? '✓' : '✗' }}</span>
               </button>

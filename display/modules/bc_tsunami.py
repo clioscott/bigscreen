@@ -381,8 +381,9 @@ class Screen(k.BCScreen):
     def extra_pages(self, item):
         return ["zones", "bulletin"]
 
-    def half_spec(self, item):
+    def half_spec(self, item, theme=None):
         col = col_of(item)
+        theme = theme if theme in THEMES else self.DEFAULT_THEME
 
         def hero_(c, x, y, mw, mh):
             k.icon(c, "wave", x, y, col, 32)
@@ -416,13 +417,168 @@ class Screen(k.BCScreen):
         body = [Para(e, "body", (215, 220, 230)) for e in _main_text(item)]
         if item.get("instruction") and item.get("level") != "information":
             body.append(Para(item["instruction"], "head", (255, 225, 120)))
-        return {"label": self.LABEL, "col": col, "chip": ((item.get("level") or "").upper(), col), "hero": hero_,
+        spec = {"label": self.LABEL, "col": col, "chip": ((item.get("level") or "").upper(), col), "hero": hero_,
                 "title": quake, "lines": [(_origin(item), (190, 200, 215)),
                                           (f"First wave {arr[0][0]} {arr[0][1]}" if arr else "", col)],
                 "body": body, "map": map_ if any(v != "none" for v in (item.get("zones") or {}).values()) else None}
+        return HALF[theme](self, item, spec, col)
 
     def dwell(self, item):
         return 45.0 if item.get("bc_threat") else max(float(self.settings.get("dwell_sec") or 30), 20.0)
+
+
+# ------------------------------------------------------------------------------------------------ half-width looks
+def _dark(item):
+    return item.get("level") in ("watch", "information")
+
+
+def _quake_line(item):
+    return " · ".join(v for v in (f"M{item['mag']:.1f}" if item.get("mag") else "", item.get("region") or "") if v)
+
+
+def _half_pacific(s, item, spec, col):
+    """The North Pacific first: the epicentre, hourly travel-time rings and the wave front now, then the details."""
+    def ocean(c, x, y, w, h, now, el):
+        x, y, w, h = x - 4, y - 2, w + 8, h + 5                  # the map runs to the panel's edges
+        mp = k.Map.load(s.data_dir, "tsunami_pacific")
+        if not mp or item.get("lat") is None:
+            return
+        ex, ey = mp.project(item["lat"], item["lon"])
+        bx, by = mp.project(50.0, -127.0)                       # frame the quake and the BC coast together
+        cx, cy = (ex + bx) / 2, (ey + by) / 2
+
+        def draw(cv):
+            sx, sy = int(max(0, min(mp.w - w, cx - w / 2))), int(max(0, min(mp.h - h, cy - h / 2)))
+            mp.blit(cv, 0, 0, sx, sy, min(w, mp.w - sx), min(h, mp.h - sy))
+            for hr in range(1, 10):
+                _ring_at(cv, mp, item["lat"], item["lon"], hr * SPEED_KMH, (30, 60, 100), -sx, -sy, dashed=True)
+            for z, ring in ZONE_POLY.items():
+                lv = (item.get("zones") or {}).get(z, "none")
+                if lv != "none":
+                    k.tint(cv, mp.poly_mask([ring])[sy:sy + h, sx:sx + w], LV_COL[lv], 0.55)
+        sx, sy = int(max(0, min(mp.w - w, cx - w / 2))), int(max(0, min(mp.h - h, cy - h / 2)))
+        c.Blit(k.half_layer(s, ("pac", item.get("id"), w, h), w, h, draw), x, y)
+        d = max(0.0, (now - (item.get("origin") or now)) / 3600.0 * SPEED_KMH)
+        if 0 < d < 9.5 * SPEED_KMH and item.get("level") != "information":
+            _ring_at(c, mp, item["lat"], item["lon"], d, k.dim(col, k.pulse(now, 1.5, 0.6, 1.0)), x - sx, y - sy, clip=(x, y, x + w, y + h))
+        px, py = x + ex - sx, y + ey - sy
+        if x <= px < x + w and y <= py < y + h:
+            k.disc(c, px, py, 3, col if k.blink(now, 0.8) else WHITE)
+            k.circle_clip(c, px, py, 6, col, (x, y, x + w, y + h))
+        f = k.font("hvb10")
+        k.box(c, x, y, k.tw(f, title_of(item)) + 8, 13, col)
+        k.text(c, f, x + 4, y + 1, BLACK if _dark(item) else WHITE, title_of(item))
+
+    spec.update(custom={"ocean": ocean}, look={"order": ("ocean", "summary", "text", "map"), "bg": (2, 8, 20),
+                                               "head_bg": (4, 16, 40), "rule": col})
+    return spec
+
+
+def _half_zones(s, item, spec, col):
+    """The BC coast by notification zone: a table of zones A–E in their alert colours, then the map."""
+    def summary(c, x, y, w, h, now, el):
+        t = title_of(item)
+        f = k.pick(("h16", "lutb12", "hvb10"), t, w - 6)
+        k.box(c, x - 4, y - 2, w + 8, f.h + 4, col)
+        k.text(c, f, x, y, BLACK if _dark(item) else WHITE, t)
+        ty = y + f.h + 5
+        for z in "ABCDE":
+            lv = (item.get("zones") or {}).get(z, "none")
+            zc = LV_COL[lv] if lv != "none" else (30, 40, 60)
+            k.disc(c, x + 6, ty + 6, 6, zc)
+            k.text_c(c, k.font("hvb10"), x + 6, ty + 1, BLACK if lv != "none" else (170, 180, 200), z)
+            zn = {"C": "West coast of the Island"}.get(z, ZONE_NAME[z])
+            k.text(c, k.pick(("hv10", "s8"), zn, w - 66), x + 16, ty + 1, WHITE if lv != "none" else (120, 130, 150), zn)
+            k.text_r(c, k.font("s8"), x + w, ty + 3, zc if lv != "none" else (90, 100, 120), lv.upper() if lv != "none" else "—")
+            ty += 15
+        arr = _arrival_rows(item, 1)
+        if arr and ty < y + h - 10:
+            k.fit_text(c, f"First wave {arr[0][0]} {arr[0][1]}", x, ty + 2, w, 12, ("hvb10", "s8"), col)
+
+    spec.update(summary=summary, label="TSUNAMI · BC ZONES",
+                look={"order": ("summary", "map", "text"), "bg": (4, 8, 16), "head_bg": (10, 20, 40), "rule": (40, 60, 90)})
+    return spec
+
+
+def _half_bulletin(s, item, spec, col):
+    """The official message: a slab in the level colour, the level bar, the earthquake's parameters."""
+    order = ["information", "watch", "advisory", "warning"]
+
+    def summary(c, x, y, w, h, now, el):
+        lv = item.get("level") or "information"
+        sw = (w - 3 * 2) // 4
+        for i, name in enumerate(order):
+            on = name == lv
+            bx = x + i * (sw + 2)
+            k.box(c, bx, y, sw, 14, LV_COL[name] if on else k.dim(LV_COL[name], 0.25))
+            k.text_c(c, k.font("s8"), bx + sw // 2, y + 3, BLACK if on else k.dim(LV_COL[name], 0.7), name.upper() if name != "information" else "INFO")
+        ty = y + 19
+        for lab, val in (("Magnitude", f"{item['mag']:.1f} {item.get('mag_type') or ''}".strip() if item.get("mag") else "—"),
+                         ("Region", item.get("region") or "—"), ("Origin", k.day_hhmm(item.get("origin"))),
+                         ("Depth", f"{item['depth_km']:.0f} km" if item.get("depth_km") else "—")):
+            k.text(c, k.font("hvb10"), x, ty, (150, 160, 180), lab.upper())
+            ty += k.fit_text(c, val, x + 72, ty - 1, w - 72, 24, ("lutb12", "hvb10", "s8"), WHITE) + 3
+        arr = _arrival_rows(item, 2)
+        for place, when in arr:
+            if ty > y + h - 12:
+                break
+            k.text(c, k.font("hv10"), x, ty, WHITE, place)
+            k.text_r(c, k.font("hvb10"), x + w, ty, col, when.split()[0])
+            ty += 12
+
+    num = f"No. {item['number']}" if item.get("number") else ""
+    spec.update(summary=summary, label=title_of(item), chip=(num, WHITE) if num else None,
+                look={"head": "slab", "head_bg": col, "head_fg": BLACK if _dark(item) else WHITE, "head_h": 15, "label_font": "h13",
+                      "bg": (6, 8, 12), "border": "double" if item.get("level") == "warning" else None})
+    return spec
+
+
+def _half_sign(s, item, spec, col):
+    """The tsunami hazard sign (or NO THREAT TO BC) beside the instruction in large type."""
+    threat = item.get("bc_threat") or item.get("level") in ("warning", "advisory", "watch")
+
+    def summary(c, x, y, w, h, now, el):
+        pw, ph = 74, h
+        plate = (0, 70, 160) if threat else (0, 110, 60)
+        k.box(c, x - 2, y - 1, pw, ph + 2, plate)
+        k.frame(c, x, y + 1, pw - 4, ph - 2, WHITE)
+        cx = x - 2 + pw // 2
+        k.icon(c, "wave", cx - 16, y + 8, WHITE, 32)
+        if threat:
+            k.icon(c, "run", cx - 8, y + 44, WHITE, 16)
+            k.text_c(c, k.font("hvb10"), cx, y + 66, WHITE, "TSUNAMI")
+            k.text_c(c, k.font("s8"), cx, y + 79, WHITE, "HAZARD ZONE")
+        else:
+            k.text_c(c, k.font("hvb10"), cx, y + 50, WHITE, "NO THREAT")
+            k.text_c(c, k.font("hvb10"), cx, y + 63, WHITE, "TO BC")
+        if threat:
+            frame_col = (255, 220, 0) if k.blink(now, 0.7) else plate
+            k.frame(c, x - 2, y - 1, pw, ph + 2, frame_col, 2)
+        tx, tw_ = x + pw + 4, w - pw - 4
+        head = "MOVE TO HIGH GROUND" if item.get("level") == "warning" else "STAY OFF BEACHES AND HARBOURS" if threat else title_of(item)
+        ty = y + k.fit_text(c, head, tx, y, tw_, 54, ("h16", "lutb14", "lutb12", "hvb10"), col) + 4
+        ty += k.fit_text(c, _quake_line(item), tx, ty, tw_, 28, ("lutb12", "hvb10", "s8"), WHITE) + 3
+        arr = _arrival_rows(item, 1)
+        if arr:
+            k.fit_text(c, f"First wave {arr[0][0]} {arr[0][1]}", tx, ty, tw_, y + h - ty, ("hvb10", "s8"), (255, 225, 120))
+
+    spec.update(summary=summary, look={"bg": (4, 6, 10), "head_bg": (0, 50, 120) if threat else (0, 80, 44), "rule": WHITE})
+    return spec
+
+
+def _ring_at(c, mp, lat, lon, d_km, col, ox, oy, dashed=False, clip=None):
+    prev = None
+    for i in range(0, 361, 4):
+        la, lo = _dest(lat, lon, d_km, i)
+        x, y = mp.project(la, lo)
+        x, y = x + ox, y + oy
+        if prev is not None and abs(x - prev[0]) < 120 and (not dashed or (i // 4) % 2 == 0):
+            if clip is None or (clip[0] <= x < clip[2] and clip[1] <= y < clip[3] and clip[0] <= prev[0] < clip[2] and clip[1] <= prev[1] < clip[3]):
+                k.line(c, prev[0], prev[1], x, y, col)
+        prev = (x, y)
+
+
+HALF = {"pacific": _half_pacific, "zones": _half_zones, "bulletin": _half_bulletin, "sign": _half_sign}
 
 
 def render_preview(theme, sample=None, at=4.0, settings=None, data=None, data_dir=None):

@@ -376,8 +376,9 @@ class Screen(k.BCScreen):
     def extra_pages(self, item):
         return ["phone"] if item.get("polygons") else ["teletype"]
 
-    def half_spec(self, item):
+    def half_spec(self, item, theme=None):
         col = sev_col(item)
+        theme = theme if theme in THEMES else self.DEFAULT_THEME
 
         def hero_(c, x, y, mw, mh):
             k.icon(c, icon_of(item), x, y, col, 32)
@@ -393,15 +394,132 @@ class Screen(k.BCScreen):
             m = self.state.get(key)
             if m is None:
                 m = self.state[key] = mp.poly_mask(item.get("polygons") or [])[sy:sy + h, sx:sx + w]
-            k.tint(c, m, col, 0.35, x, y)
-            k.paint(c, k.edge(m), k.dim(col, k.pulse(now, 1.0, 0.4, 1.0)), x, y)
+            tint = AMB if theme == "teletype" else col
+            k.tint(c, m, tint, 0.35, x, y)
+            k.paint(c, k.edge(m), k.dim(tint, k.pulse(now, 1.0, 0.4, 1.0)), x, y)
             hx, hy = mp.project(HOME[1], HOME[0])
             if 0 <= hx - sx < w and 0 <= hy - sy < h:
                 k.icon_outlined(c, "house", int(x + hx - sx) - 8, int(y + hy - sy) - 7, WHITE)
 
-        return {"label": self.LABEL, "col": col, "chip": ((item.get("severity") or "").upper(), col), "hero": hero_,
+        spec = {"label": self.LABEL, "col": col, "chip": ((item.get("severity") or "").upper(), col), "hero": hero_,
                 "title": title_of(item), "lines": [(_area_line(item), (220, 220, 230)), (_expires(item), (170, 170, 185))],
                 "body": _paras(item, WHITE, (210, 210, 215), (255, 220, 90)), "map": map_ if item.get("polygons") else None}
+        return HALF[theme](item, spec, col)
+
+
+# ------------------------------------------------------------------------------------------------ half-width looks
+def _half_alert_ready(item, spec, col):
+    """The red EMERGENCY ALERT slab (breathing), the event in capitals, the area on a dark red footer."""
+    def summary(c, x, y, w, h, now, el):
+        k.icon(c, icon_of(item), x, y + 1, col, 16)
+        ty = y + k.fit_text(c, title_of(item).upper(), x + 20, y, w - 20, 36, ("h16", "h14", "lutb12"), col) + 4
+        meta = f"{item.get('sender') or ''}  {_issued(item)}".strip()
+        ty += k.fit_text(c, meta, x, ty, w, 24, ("hv10", "s8"), (200, 200, 205)) + 3
+        hd = item.get("headline") or ""
+        if hd:
+            k.fit_text(c, hd, x, ty, w, y + h - 34 - ty, ("lutb12", "hvb10", "s8"), WHITE)
+        fy = y + h - 30
+        k.box(c, x - 4, fy, w + 8, 33, DRED)
+        k.text(c, k.font("hvb10"), x, fy + 3, (255, 160, 160), "AREA")
+        k.fit_text(c, _area_line(item), x + 34, fy + 3, w - 34, 14, ("hv10", "s8"), WHITE)
+        if _expires(item):
+            k.text(c, k.font("hv10"), x, fy + 17, (255, 200, 200), _expires(item))
+
+    spec.update(label="EMERGENCY ALERT", chip=("ALERTE D'URGENCE", (255, 200, 200)), summary=summary,
+                look={"head": "slab", "head_bg": RED, "head_fg": WHITE, "pulse": True, "head_h": 15, "label_font": "h13",
+                      "bg": BLACK, "ladder": {"head": "lutb12", "body": "lut12", "do": "lutb12", "small": "hv10"}})
+    return spec
+
+
+def _half_phone(item, spec, col):
+    """A phone notification: the card, the app row, the event in the severity colour."""
+    def summary(c, x, y, w, h, now, el):
+        ft = k.pick(("h16", "h14", "lutb12"), title_of(item), w)
+        k.text(c, ft, x, y, col, title_of(item))
+        ty = y + ft.h + 4
+        hd = item.get("headline") or ""
+        if hd:
+            ty += k.fit_text(c, hd, x, ty, w, 40, ("lutb12", "hvb10", "s8"), WHITE) + 4
+        ty += k.fit_text(c, _area_line(item), x, ty, w, 26, ("hv10", "s8"), (200, 200, 215)) + 3
+        foot = f"{item.get('sender') or ''}  {_expires(item)}".strip()
+        k.fit_text(c, foot, x, y + h - 11, w, 11, ("hv10", "s8"), (140, 140, 155))
+
+    spec["body"] = _paras(item, WHITE, (205, 205, 215), (255, 225, 120))
+    spec.update(label="Emergency alert", chip=(_issued(item), (150, 150, 165)), summary=summary,
+                look={"grad": ((14, 14, 22), (4, 4, 8)), "card": ((36, 36, 44), 5), "head": "line", "head_h": 14,
+                      "head_fg": (235, 235, 240), "rule": (60, 60, 72), "label_font": "lutb12",
+                      "dot_on": (235, 235, 240), "dot_off": (70, 70, 84), "map_frame": (60, 60, 72),
+                      "ladder": {"head": "lutb12", "body": "lut12", "do": "lutb12", "small": "hv10"}})
+    return spec
+
+
+def _half_teletype(item, spec, col):
+    """An amber terminal: the CAP fields as a table, then the message typed out in capitals."""
+    rows = [("EVENT", title_of(item).upper()), ("SEVERITY", (item.get("severity") or "").upper()),
+            ("URGENCY", (item.get("urgency") or "").upper()), ("CERTAINTY", (item.get("certainty") or "").upper()),
+            ("ISSUER", (item.get("sender") or "").upper()), ("ISSUED", _issued(item)),
+            ("EXPIRES", k.day_hhmm(item.get("expires")) or "-")]
+
+    def summary(c, x, y, w, h, now, el):
+        fk, fv = k.font("m10"), k.font("m10b")
+        ty = y
+        shown = int(el * 6) + 1                                   # the rows print one after another
+        for i, (name, val) in enumerate(rows):
+            if i >= shown:
+                break
+            k.text(c, fk, x, ty, AMB_D, name)
+            vl = k.wrap(fv, val, w - 62) or [""]
+            for j, ln in enumerate(vl[:2]):
+                k.text(c, fv, x + 62, ty + j * 11, col if name == "SEVERITY" else AMB, ln)
+            ty += 11 * min(2, len(vl)) + 2
+        if shown > len(rows):
+            k.text(c, fk, x, ty + 1, AMB_D, "AREA")
+            k.fit_text(c, " / ".join(item.get("areas") or []).upper(), x + 62, ty + 1, w - 62, y + h - ty - 1, ("m10b", "s8"), AMB)
+        if k.blink(now, 0.8):
+            k.box(c, x + w - 6, y + h - 10, 6, 10, AMB)
+
+    spec.update(label="NAAD ALERT RECEIVED", chip=("CAP-CP", AMB_D), summary=summary,
+                look={"bg": BLACK, "head": "term", "head_fg": AMB, "rule": AMB, "label_font": "m10b", "recolour": AMB,
+                      "upper": True, "type": 90, "dot_on": AMB, "dot_off": AMB_DD, "map_frame": AMB_DD,
+                      "ladder": {"head": "t12b", "body": "t12", "do": "t12b", "small": "m10"}})
+    spec["body"] = _paras(item, AMB, AMB, (255, 230, 150), upper=True)
+    return spec
+
+
+def _half_bulletin(item, spec, col):
+    """BC blue and gold: a fact column beside the title, the message in white, the instructions in gold."""
+    cw = 62
+
+    def summary(c, x, y, w, h, now, el):
+        k.box(c, x - 4, y - 2, cw, h + 5, BLUE)
+        k.box(c, x - 4 + cw, y - 2, 1, h + 5, GOLD)
+        k.icon(c, icon_of(item), x + (cw - 8 - 32) // 2, y + 2, GOLD, 32)
+        fy = y + 40
+        for lab, val, vc in (("SEVERITY", item.get("severity"), col), ("EXPIRES", k.day_hhmm(item.get("expires")) or "—", WHITE)):
+            if not val:
+                continue
+            k.text(c, k.font("s8"), x, fy, GOLD, lab)
+            k.fit_text(c, str(val), x, fy + 9, cw - 8, 24, ("hvb10", "s8"), vc)
+            fy += 32
+        tx = x + cw + 4
+        tw_ = w - cw - 4
+        ty = y + k.fit_text(c, title_of(item), tx, y, tw_, 40, ("h16", "h14", "lutb12", "hvb10"), GOLD) + 4
+        k.box(c, tx, ty, tw_, 1, (40, 60, 100))
+        ty += 4
+        hd = item.get("headline") or ""
+        if hd:
+            ty += k.fit_text(c, hd, tx, ty, tw_, 40, ("lutb12", "hvb10", "s8"), WHITE) + 4
+        k.fit_text(c, _area_line(item), tx, ty, tw_, y + h - ty, ("hv10", "s8"), (170, 190, 220))
+
+    spec["body"] = _paras(item, WHITE, (205, 215, 230), GOLD)
+    spec.update(label="PROVINCIAL ALERT", summary=summary,
+                look={"bg": (4, 10, 22), "head": "bar", "head_bg": BLUE, "head_fg": GOLD, "rule": GOLD, "title_col": GOLD,
+                      "dot_on": GOLD, "dot_off": (60, 80, 120),
+                      "ladder": {"head": "lutb12", "body": "lut12", "do": "lutb12", "small": "hv10"}})
+    return spec
+
+
+HALF = {"alert_ready": _half_alert_ready, "phone": _half_phone, "teletype": _half_teletype, "bulletin": _half_bulletin}
 
 
 def render_preview(theme, sample=None, at=4.0, settings=None, data=None, data_dir=None):

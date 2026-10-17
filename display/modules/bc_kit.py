@@ -639,8 +639,8 @@ class BCScreen:
         """Themes played after the main one the first time an item is shown (maps, more information)."""
         return []
 
-    def half_spec(self, item):
-        """The half-width version's content (see HalfPanel); None = no half-width version."""
+    def half_spec(self, item, theme=None):
+        """The half-width version's content in a theme's look (see HalfPanel); None = no half-width version."""
         return None
 
     def sample(self, key):
@@ -744,68 +744,282 @@ class BCScreen:
 
 
 # ================================================================================================ half-width
-class HalfPanel:
-    """The half-width version of an alert screen, for alerts past their full-wall showings (right zone, 223×134).
+HALF_LOOK = {
+    # ground: a colour, or a vertical gradient (top, bottom); "card": (colour, radius) puts the body in a rounded card
+    "bg": (6, 7, 10), "grad": None, "card": None,
+    # header: "bar" (tinted strip), "slab" (solid colour), "line" (accent text over a rule), "term" (terminal line),
+    # "tab" (ticket tab and perforation), "sign" (overhead-sign housing); head_bg / head_fg / rule override colours
+    "head": "bar", "head_h": 13, "head_bg": None, "head_fg": None, "rule": None, "label_font": "hvb10", "pulse": False,
+    # a frame round the whole panel (see _border) and a coloured column down the left (width, colour)
+    "border": None, "border_col": None, "side": None,
+    # type: the summary's title and lines, and the text pages (a font role or a BDF path per paragraph style)
+    "title_fonts": ("h16", "lutb14", "lutb12", "hvb10"), "title_col": WHITE, "title_h": 44,
+    "line_fonts": ("lutb12", "hvb10", "s8"),
+    "ladder": {"body": "lut12", "head": "lutb12", "small": "hv10", "do": "lutb12"},
+    "recolour": None, "upper": False, "type": 0,     # every text line in one colour · capitals · typed out (chars/s)
+    "order": ("summary", "text", "map"),            # page order; other names are the spec's "custom" pages
+    "map_frame": None,
+}
 
-    Built from the screen's ``half_spec(item)``::
+
+def round_box(c, x, y, w, h, col, r=5):
+    box(c, x + r, y, w - 2 * r, h, col)
+    box(c, x, y + r, w, h - 2 * r, col)
+    for i in range(r):
+        d = int(round(r - (r * r - (r - i) ** 2) ** 0.5))
+        box(c, x + d, y + i, w - 2 * d, 1, col)
+        box(c, x + d, y + h - 1 - i, w - 2 * d, 1, col)
+
+
+def border(c, x, y, w, h, style, col, now):
+    """The animated frames of the weather themes, in a half-width size (1-2 px)."""
+    if not style:
+        return
+    if style == "double":
+        frame(c, x, y, w, h, col)
+        frame(c, x + 2, y + 2, w - 4, h - 4, dim(col, 0.45))
+    elif style in ("pulse", "hazard", "textloop", "chase", "rails"):
+        frame(c, x, y, w, h, dim(col, pulse(now, 1.6, 0.35, 1.0)))
+    elif style == "glow":
+        frame(c, x, y, w, h, col)
+        frame(c, x + 1, y + 1, w - 2, h - 2, dim(col, 0.3))
+    elif style == "corners":
+        for cx, cy, sx, sy in ((x, y, 1, 1), (x + w - 1, y, -1, 1), (x, y + h - 1, 1, -1), (x + w - 1, y + h - 1, -1, -1)):
+            box(c, cx if sx > 0 else cx - 7, cy, 8, 1, col)
+            box(c, cx, cy if sy > 0 else cy - 7, 1, 8, col)
+    elif style == "bevel":
+        hi, lo = mix(col, WHITE, 0.3), dim(col, 0.35)
+        box(c, x, y, w, 1, hi)
+        box(c, x, y, 1, h, hi)
+        box(c, x, y + h - 1, w, 1, lo)
+        box(c, x + w - 1, y, 1, h, lo)
+    elif style == "notch":
+        frame(c, x, y, w, h, dim(col, 0.8))
+        for cx, cy in ((x, y), (x + w - 3, y), (x, y + h - 3), (x + w - 3, y + h - 3)):
+            box(c, cx, cy, 3, 3, BLACK)
+        for i in range(3):
+            for px_, py_ in ((x + i, y + 2 - i), (x + w - 3 + i, y + i), (x + i, y + h - 3 + i), (x + w - 1 - i, y + h - 3 + i)):
+                box(c, px_, py_, 1, 1, col)
+    elif style in ("lights", "comet", "scanbars"):
+        per = 2 * (w + h) - 4
+        pts = per
+        head = int(now * (60 if style == "comet" else 18)) % per
+
+        def at(i):
+            i %= per
+            if i < w:
+                return x + i, y
+            i -= w
+            if i < h - 1:
+                return x + w - 1, y + 1 + i
+            i -= h - 1
+            if i < w - 1:
+                return x + w - 2 - i, y + h - 1
+            return x, y + h - 2 - (i - (w - 1))
+        if style == "comet":
+            frame(c, x, y, w, h, dim(col, 0.25))
+            for j in range(40):
+                px_, py_ = at(head - j)
+                box(c, px_, py_, 1, 1, dim(col, 1 - j / 40))
+        else:
+            frame(c, x, y, w, h, dim(col, 0.2))
+            for i in range(0, pts, 4):
+                px_, py_ = at(i + head % 4)
+                box(c, px_, py_, 1, 1, col)
+
+
+class HalfPanel:
+    """The half-width version of an alert screen, for alerts past their full-wall showings (right zone, 223×134),
+    in the look of the theme the screen is set to (each theme has its own half-width design).
+
+    Built from the screen's ``half_spec(item, theme)``::
 
         {"label": "DRIVEBC", "col": accent, "chip": ("CLOSED", colour) | None,
          "hero": fn(c, x, y, max_w, max_h) -> (w, h)   (shield, magnitude, icon…),
          "title": str, "lines": [(text, colour)],        (the key facts, under the title)
          "body": [Para],                                 (the full text; paged, never cut)
-         "map": fn(c, x, y, w, h, now) | None}           (a map crop for this item)
+         "map": fn(c, x, y, w, h, now) | None,           (a map crop for this item)
+         "look": {...},                                  (the theme's design: HALF_LOOK keys)
+         "summary": fn(c, x, y, w, h, now, el) | None,   (the theme's own first page instead of hero/title/lines)
+         "custom": {name: fn(c, x, y, w, h, now, el)},   (more pages, placed by look["order"])
+         "lead": fn(c, x, y, w, h, now, el, items)}      (a page before the first item: every item at once)
 
-    Pages per item: summary, the text over as many pages as it needs, the map. One pass = every half-phase item.
+    Pages per item follow look["order"] (default summary, the text over as many pages as it needs, the map).
+    One pass = every half-phase item.
     """
-
-    HEAD = 13
 
     def __init__(self, screen):
         self.s = screen
         self.pages, self.idx, self.t0 = [], 0, 0.0
-        self._cache = {}
 
     def active(self):
         return self.s.active("half")
 
-    def _pages_for(self, it, w, h):
-        spec = self.s.half_spec(it)
+    def _spec(self, it, entry):
+        tid = None
+        try:
+            tid = self.s.theme_for(it, entry)
+        except Exception:
+            pass
+        spec = self.s.half_spec(it, tid)
+        if spec:
+            spec["look"] = dict(HALF_LOOK, **(spec.get("look") or {}))
+            spec["theme"] = tid
+        return spec
+
+    @staticmethod
+    def body_box(zone, lk):
+        """The content box under the header (x, y, w, h)."""
+        x, y, w, h = zone
+        top = y + lk["head_h"] + 2
+        left = x + 4 + (lk["side"][0] if lk.get("side") else 0)
+        right = x + w - 4
+        bottom = y + h - 3
+        if lk.get("card"):
+            left, right, top, bottom = left + 4, right - 4, top + 3, bottom - 3
+        if lk.get("border"):
+            left, right, bottom = left + 1, right - 2, bottom - 1
+        return left, top, right - left, bottom - top
+
+    def _pages_for(self, it, zone, entry):
+        spec = self._spec(it, entry)
         if not spec:
             return []
-        out = [("summary", it, spec, None)]
-        bh = h - self.HEAD - 8
-        ladder = {"body": "lut12", "head": "lutb12", "small": "hv10"}
-        page, used = [], 0
+        lk = spec["look"]
+        bx, by, bw, bh = self.body_box(zone, lk)
+        out = []
+        for name in lk["order"]:
+            if name == "summary":
+                out.append(("summary", it, spec, None))
+            elif name == "map":
+                if spec.get("map"):
+                    out.append(("map", it, spec, None))
+            elif name == "text":
+                out += [("text", it, spec, chunk) for chunk in self._text_pages(spec, bw, bh - 1)]
+            elif (spec.get("custom") or {}).get(name):
+                out.append((name, it, spec, None))
+        return out
+
+    @staticmethod
+    def _text_pages(spec, w, bh):
+        lk = spec["look"]
+        ladder = lk["ladder"]
+        pages, page, used = [], [], 0
         for para in spec.get("body") or []:
             if not para or not para.text:
                 continue
             f = font(ladder.get(para.style) or ladder["body"])
-            plines = [(f, para.col, 0, i * f.h, t) for i, t in enumerate(wrap(f, para.text, w - 8))]
+            t = para.text.upper() if lk["upper"] else para.text
+            colr = lk["recolour"] or para.col
+            plines = [(f, colr, 0, i * f.h, ln) for i, ln in enumerate(wrap(f, t, w))]
             ph = len(plines) * f.h
             gap = 3 if page else 0
             if page and used + gap + ph > bh and ph <= bh:          # starts a page of its own rather than split
-                out.append(("text", it, spec, page))
+                pages.append(page)
                 page, used, gap = [], 0, 0
-            for f_, col_, dx, dy, t in plines:                       # (split only when longer than a page)
+            for f_, col_, dx, dy, ln in plines:                      # (split only when longer than a page)
                 if page and used + gap + f_.h > bh:
-                    out.append(("text", it, spec, page))
+                    pages.append(page)
                     page, used, gap = [], 0, 0
-                page.append((f_, col_, dx, used + gap, t))
+                page.append((f_, col_, dx, used + gap, ln))
                 used += gap + f_.h
                 gap = 0
             used += 3
         if page:
-            out.append(("text", it, spec, page))
-        if spec.get("map"):
-            out.append(("map", it, spec, None))
-        return out
+            pages.append(page)
+        return pages
 
     def _dwell(self, page):
         kind, it, spec, chunk = page
         if kind == "text":
             words = sum(len(t[4].split()) for t in chunk)
             return max(7.0, min(22.0, 3.0 + words / 3.0))
-        return 8.0
+        if kind == "lead":
+            return max(8.0, min(20.0, 4.0 + 3.0 * len(chunk or [])))
+        return float((spec.get("dwell") or {}).get(kind, 8.0))
+
+    def _header(self, c, zone, spec, page, now):
+        x, y, w, h = zone
+        lk = spec["look"]
+        col = spec.get("col") or WHITE
+        hh = lk["head_h"]
+        style = lk["head"]
+        label = spec.get("label") or self.s.LABEL
+        fg = lk["head_fg"] or WHITE
+        rule = lk["rule"] or col
+        lf = font(lk["label_font"])
+        ly = y + max(0, (hh - lf.h) // 2)
+        lx = x + 3
+        if style == "slab":
+            bg = lk["head_bg"] or col
+            box(c, x, y, w, hh, dim(bg, pulse(now, 1.6, 0.75, 1.0)) if lk["pulse"] else bg)
+        elif style == "line":
+            fg = lk["head_fg"] or col
+            box(c, x, y + hh - 1, w, 1, rule)
+        elif style == "term":
+            fg = lk["head_fg"] or col
+            box(c, x, y + hh - 1, w, 1, dim(rule, 0.4))
+        elif style == "tab":
+            tw_ = tw(lf, label) + 10
+            box(c, x, y, tw_, hh, lk["head_bg"] or col)
+            fg = lk["head_fg"] or BLACK
+            lx = x + 5
+            for i in range(x + tw_ + 2, x + w, 4):                 # the perforation
+                box(c, i, y + hh - 2, 2, 1, dim(rule, 0.7))
+        elif style == "sign":
+            box(c, x, y, w, hh, (44, 46, 50))
+            frame(c, x, y, w, hh, (80, 82, 88))
+            fg = lk["head_fg"] or (255, 170, 0)
+        else:                                                       # "bar"
+            box(c, x, y, w, hh, lk["head_bg"] or dim(col, 0.35))
+            box(c, x, y + hh - 1, w, 1, rule)
+        text(c, lf, lx, ly, fg, label)
+        lx += tw(lf, label) + 3
+        # page dots, the chip, SAMPLE
+        dot_on = lk.get("dot_on") or (fg if style in ("slab", "tab") else WHITE)
+        dot_off = lk.get("dot_off") or (dim(fg, 0.45) if style in ("slab", "tab") else dim(col, 0.6))
+        if page[0] == "lead":
+            n, k_ = 1, 0
+        else:
+            pages_of_item = [pg for pg in self.pages if pg[1] is page[1]]
+            n, k_ = len(pages_of_item), pages_of_item.index(page) if page in pages_of_item else 0
+        dx = x + w - 4
+        dy = y + max(1, (hh - 3) // 2)
+        for j in reversed(range(n)):
+            box(c, dx - 3, dy, 3, 3, dot_on if j == k_ else dot_off)
+            dx -= 5
+        f = font("s8")
+        smp = (page[1] or {}).get("sample") or (page[0] == "lead" and any((i or {}).get("sample") for i in page[3] or []))
+        if spec.get("chip") and spec["chip"][0]:
+            t, cc = spec["chip"]
+            cw = tw(f, t) + 6
+            if dx - cw - 2 > lx + (tw(f, "SAMPLE") + 8 if smp else 0):
+                box(c, dx - cw - 2, y + (hh - 9) // 2, cw, 9, cc)
+                text(c, f, dx - cw + 1, y + (hh - 9) // 2, BLACK, t)
+        if smp:                                                     # in the header, never over the text
+            box(c, lx + 1, y + (hh - 9) // 2, tw(f, "SAMPLE") + 6, 9, (90, 0, 110))
+            text(c, f, lx + 4, y + (hh - 9) // 2, (255, 210, 255), "SAMPLE")
+
+    def _summary(self, c, box_, spec):
+        lk = spec["look"]
+        bx, by, bw, bh = box_
+        hw = hh = 0
+        if spec.get("hero"):
+            hw, hh = spec["hero"](c, bx, by + 2, 70, bh - 4)
+        tx = bx + (hw + 6 if hw else 0)
+        ty = by + 1
+        title = spec.get("title") or ""
+        title = title.upper() if lk["upper"] else title
+        ty += fit_text(c, title, tx, ty, bx + bw - tx, lk["title_h"], lk["title_fonts"], lk["title_col"]) + 3
+        for line_, lc in spec.get("lines") or []:
+            if not line_:
+                continue
+            line_ = line_.upper() if lk["upper"] else line_
+            lx = tx if ty < by + max(hh, 0) + 2 else bx
+            used = fit_text(c, line_, lx, ty, bx + bw - lx, 26, lk["line_fonts"], lk["recolour"] or lc)
+            ty += used + 2
+            if ty > by + bh - 8:
+                break
 
     def draw(self, c, zone, entry, transition, now=None):
         now = time.time() if now is None else now
@@ -814,68 +1028,86 @@ class HalfPanel:
         self.s._clock = now
         if transition or not self.pages:
             items = [self.s.sample(entry["sample"])] if entry.get("sample") else self.s.live_items("half")
-            self.pages = [pg for it in items for pg in self._pages_for(it, w, h)]
+            self.pages = [pg for it in items for pg in self._pages_for(it, zone, entry)]
+            first = self.pages[0][2] if self.pages else None
+            if first and first.get("lead"):
+                self.pages.insert(0, ("lead", None, first, items))
             self.idx, self.t0 = 0, now
         if not self.pages:
             box(c, x, y, w, h, BLACK)
             return "done"
         page = self.pages[min(self.idx, len(self.pages) - 1)]
         kind, it, spec, chunk = page
+        lk = spec["look"]
         el = now - self.t0
-        box(c, x, y, w, h, (6, 7, 10))
         col = spec.get("col") or WHITE
-        # header: source, chip, page dots
-        box(c, x, y, w, self.HEAD, dim(col, 0.35))
-        box(c, x, y + self.HEAD - 1, w, 1, col)
-        text(c, font("hvb10"), x + 3, y + 1, WHITE, spec.get("label") or self.s.LABEL)
-        pages_of_item = [pg for pg in self.pages if pg[1] is it]
-        n, k_ = len(pages_of_item), pages_of_item.index(page) if page in pages_of_item else 0
-        dx = x + w - 4
-        for j in reversed(range(n)):
-            box(c, dx - 3, y + 5, 3, 3, WHITE if j == k_ else dim(col, 0.6))
-            dx -= 5
-        if spec.get("chip"):
-            t, cc = spec["chip"]
-            f = font("s8")
-            cw = tw(f, t) + 6
-            box(c, dx - cw - 2, y + 2, cw, 9, cc)
-            text(c, f, dx - cw + 1, y + 2, BLACK, t)
-        top = y + self.HEAD + 2
-        if kind == "summary":
-            hx = x + 4
-            hw = hh = 0
-            if spec.get("hero"):
-                hw, hh = spec["hero"](c, hx, top + 2, 70, h - self.HEAD - 8)
-            tx = hx + (hw + 6 if hw else 0)
-            ty = top + 1
-            ty += fit_text(c, spec.get("title") or "", tx, ty, x + w - tx - 3, 44, ("h16", "lutb14", "lutb12", "hvb10"), WHITE) + 3
-            for line_, lc in spec.get("lines") or []:
-                if not line_:
-                    continue
-                lx = tx if ty < top + max(hh, 0) + 2 else hx
-                used = fit_text(c, line_, lx, ty, x + w - lx - 3, 26, ("lutb12", "hvb10", "s8"), lc)
-                ty += used + 2
-                if ty > y + h - 10:
-                    break
-        elif kind == "text":
-            draw_fit(c, chunk, x + 4, top + 1)
-        elif kind == "map":
-            spec["map"](c, x, top, w, y + h - top, now)
-        if it.get("sample"):                                     # in the header, never over the text
-            f = font("s8")
-            lx = x + 6 + tw(font("hvb10"), spec.get("label") or self.s.LABEL)
-            box(c, lx, y + 2, tw(f, "SAMPLE") + 6, 9, (90, 0, 110))
-            text(c, f, lx + 3, y + 2, (255, 210, 255), "SAMPLE")
+        if lk["grad"]:
+            gradient_v(c, x, y, w, h, *lk["grad"])
+        else:
+            box(c, x, y, w, h, lk["bg"])
+        hh = lk["head_h"]
+        if lk.get("side") and kind not in ("map",):
+            box(c, x, y + hh, lk["side"][0], h - hh, lk["side"][1])
+        if lk.get("card") and kind not in ("map",):
+            round_box(c, x + 3 + (lk["side"][0] if lk.get("side") else 0), y + hh + 2,
+                      w - 6 - (lk["side"][0] if lk.get("side") else 0), h - hh - 4, lk["card"][0], lk["card"][1])
+        bx, by, bw, bh = self.body_box(zone, lk)
+        try:
+            if kind == "summary":
+                (spec["summary"](c, bx, by, bw, bh, now, el) if spec.get("summary") else self._summary(c, (bx, by, bw, bh), spec))
+            elif kind == "text":
+                budget = int(el * lk["type"]) if lk["type"] else None
+                cx = cy = ch = None
+                for f, colr, dx, dy, s in chunk:
+                    if budget is not None:
+                        if budget <= 0:
+                            break
+                        s = s[:budget]
+                        budget -= len(s)
+                        cx, cy, ch, cc = bx + dx + tw(f, s) + 1, by + dy, f.h, colr
+                    text(c, f, bx + dx, by + dy, colr, s)
+                if cx is not None and blink(now, 0.8):
+                    box(c, cx, cy, max(3, ch // 2), ch, cc)
+            elif kind == "map":
+                spec["map"](c, x, y + hh, w, h - hh, now)
+                if lk["map_frame"]:
+                    frame(c, x, y + hh, w, h - hh, lk["map_frame"])
+            elif kind == "lead":
+                spec["lead"](c, bx, by, bw, bh, now, el, chunk)
+            else:
+                spec["custom"][kind](c, bx, by, bw, bh, now, el)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            text(c, font("s8"), bx, by, (255, 80, 80), f"{kind} page failed")
+        self._header(c, zone, spec, page, now)
+        border(c, x, y, w, h, lk["border"], lk["border_col"] or col, now)
         if el >= float(entry.get("page_sec") or self._dwell(page)):
             self.idx += 1
             self.t0 = now
             if self.idx >= len(self.pages):
                 from display.modules import alert_life
-                alert_life.seen_alive(self.s.source, [pg[1].get("id") for pg in self.pages if not pg[1].get("sample")])
+                alert_life.seen_alive(self.s.source, [pg[1].get("id") for pg in self.pages if pg[1] and not pg[1].get("sample")])
                 self.idx = 0
                 self.pages = []
+                self.s._tour = getattr(self.s, "_tour", 0) + 1
                 return "done"
         return None
+
+
+def half_layer(scr, key, w, h, draw):
+    """A w×h static picture for a half-width page, drawn once (``draw(c)`` at 0, 0 on a scratch canvas) and kept per
+    screen; blit it with ``c.Blit(layer, x, y)`` so a frame costs one copy."""
+    cache = scr.__dict__.setdefault("_half_layers", {})
+    hit = cache.get(key)
+    if hit is None:
+        from display.gfx import Canvas
+        if len(cache) > 24:
+            cache.clear()
+        cv = Canvas(W, H)
+        draw(cv)
+        hit = cache[key] = cv.buf[:h, :w].copy()
+    return hit
 
 
 def map_crop(c, mp, x, y, w, h, cx, cy):
@@ -896,7 +1128,8 @@ def sample_badge(c, pos=None):
     text(c, f, x + 3, y + 1, (255, 210, 255), "SAMPLE")
 
 
-def render_half(cls, sample=None, at=4.0, settings=None, data=None, data_dir=None, page=0, zone=(225, 41, 223, 134)):
+def render_half(cls, sample=None, at=4.0, settings=None, data=None, data_dir=None, page=0, zone=(225, 41, 223, 134),
+                theme=None):
     """A frame of the half-width version (for previews): ``page`` selects which of the item's pages."""
     from display.gfx import Canvas
     loader = StaticLoader({cls.DATA: data or {}}, data_dir)
@@ -904,6 +1137,8 @@ def render_half(cls, sample=None, at=4.0, settings=None, data=None, data_dir=Non
     hp = HalfPanel(scr)
     c = Canvas(W, H)
     entry = {"sample": sample or next(iter(cls.SAMPLES)), "page_sec": 10 ** 6}
+    if theme:
+        entry["theme"] = theme
     now = time.time()
     hp.draw(c, zone, entry, True, now=now - at)
     hp.idx = max(0, min(page, len(hp.pages) - 1))

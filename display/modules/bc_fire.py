@@ -348,9 +348,10 @@ class Screen(k.BCScreen):
             return ["evac"]
         return ["incident"] + (["evac"] if item.get("evacs") else [])
 
-    def half_spec(self, item):
+    def half_spec(self, item, theme=None):
         evac = item.get("kind") == "evac"
         col = EVAC_COL.get(item.get("status"), EVAC_COL["Alert"]) if evac else ST_COL.get(item.get("status"), ST_COL["ooc"])
+        theme = theme if theme in THEMES else self.DEFAULT_THEME
 
         def hero_(c, x, y, mw, mh):
             k.icon(c, "flame", x, y, col, 32)
@@ -370,14 +371,138 @@ class Screen(k.BCScreen):
                  if evac else [(_ha(item.get("ha")), WHITE), (item.get("where") or "", (220, 200, 180)),
                                (f"{item['km']} km away" if item.get("km") is not None else "", (190, 190, 200))])
         body = [Para(f"{lab}: {val}", "body", (225, 220, 215)) for lab, val in _facts(item) if val]
-        return {"label": self.LABEL, "col": col, "chip": chip, "hero": hero_, "title": item.get("name") or "",
+        spec = {"label": self.LABEL, "col": col, "chip": chip, "hero": hero_, "title": item.get("name") or "",
                 "lines": lines, "body": body, "map": map_}
+        return HALF[theme](self, item, spec, col)
 
     def theme_for(self, item, entry):
         tid = super().theme_for(item, entry)
         if item.get("kind") == "evac" and not (entry or {}).get("theme") and tid == "incident":
             return "evac"
         return tid
+
+
+# ------------------------------------------------------------------------------------------------ half-width looks
+def _half_situation(s, item, spec, col):
+    """The situation map first (perimeters, evacuation areas, every fire by stage), the counts beneath it."""
+    base = spec["map"]
+    ctx = _ctx(s, item)
+
+    def map_(c, x, y, w, h, now):
+        base(c, x, y, w, h - 13, now)
+        k.box(c, x, y + h - 13, w, 13, (16, 10, 6))
+        cx = x + 3
+        for st in ("ooc", "held", "uc"):
+            n = (ctx.get("counts") or {}).get(st, 0)
+            cx += k.chip(c, k.font("s8"), cx, y + h - 11, f"{n} {'held' if st == 'held' else ST_WORD[st].lower()}", ST_COL[st],
+                         BLACK if st != "ooc" else WHITE, 2, 0) + 3
+
+    spec.update(map=map_, label="WILDFIRES · SW BC", look={"order": ("map", "summary", "text"), "bg": (12, 8, 5),
+                                                          "head_bg": (16, 10, 6), "rule": BCWS})
+    return spec
+
+
+def _half_incident(s, item, spec, col):
+    """The BCWS incident card: an orange slab, the name large, the stage of control and the facts in a grid."""
+    def summary(c, x, y, w, h, now, el):
+        ty = y + k.fit_text(c, item.get("name") or "", x, y, w, 36, ("h18", "h16", "lutb12", "hvb10"), WHITE) + 3
+        _status_chip(c, k.font("m10b"), x, ty, item)
+        if item.get("km") is not None:
+            k.text_r(c, k.font("hvb10"), x + w, ty + 1, (220, 220, 230), f"{item['km']} km from home")
+        ty += 16
+        cw = w // 2
+        for i, (lab, val) in enumerate(_facts(item)[:6]):
+            cx, cy = x + (i % 2) * cw, ty + (i // 2) * 24
+            if cy > y + h - 20:
+                break
+            k.text(c, k.font("s8"), cx, cy, (210, 150, 100), lab.upper())
+            k.fit_text(c, str(val), cx, cy + 9, cw - 6, 13, ("hvb10", "s8"), WHITE)
+
+    hcol = EVAC_COL.get(item.get("status"), BCWS) if item.get("kind") == "evac" else BCWS
+    spec["body"] = [p for p in spec["body"] if not p.text.startswith(("Size:", "Fire no.:"))] or spec["body"]
+    spec.update(summary=summary, label="BC WILDFIRE SERVICE" if item.get("kind") == "fire" else "EMCR",
+                look={"head": "slab", "head_bg": hcol, "head_fg": WHITE, "head_h": 15, "label_font": "h13", "bg": (10, 8, 6)})
+    return spec
+
+
+def _half_danger(s, item, spec, col):
+    """The roadside fire danger sign, its needle settling on today's rating; the fires and bans beside it."""
+    ctx = _ctx(s, item)
+    rating = (ctx.get("danger_home") or ctx.get("danger") or "low").lower()
+    di = DANGER_IDX.get(rating, 0)
+    gw, gh, r = 104, 64, 50
+
+    def gauge(cv):
+        import numpy as np
+        k.box(cv, 0, 0, gw, gh + 20, (110, 70, 30))
+        k.frame(cv, 0, 0, gw, gh + 20, (60, 36, 14), 2)
+        k.text_c(cv, k.font("hvb10"), gw // 2, 3, WHITE, "FIRE DANGER")
+        cx, cy = gw / 2, gh + 6
+        yy, xx = np.mgrid[0:gh + 20, 0:gw]
+        dx, dy = xx + 0.5 - cx, cy - (yy + 0.5)
+        rad = np.hypot(dx, dy)
+        ang = np.arctan2(dy, dx)
+        ring = (rad >= r - 18) & (rad < r) & (dy >= 0)
+        for i, (word, dc) in enumerate(DANGER):
+            a0, a1 = math.pi - i * math.pi / 4, math.pi - (i + 1) * math.pi / 4
+            cv.buf[:gh + 20, :gw][ring & (ang <= a0) & (ang > a1)] = dc
+        k.text_c(cv, k.font("s8"), gw // 2, gh + 10, WHITE, rating.upper())
+
+    def summary(c, x, y, w, h, now, el):
+        c.Blit(k.half_layer(s, ("danger", rating), gw, gh + 20, gauge), x - 2, y)
+        cx, cy = x - 2 + gw / 2, y + gh + 6
+        target = math.pi - (di + 0.5) * math.pi / 4
+        a = target + 0.08 * math.sin(now * 3) * math.exp(-min(el, 6) / 2)
+        k.thick_line(c, cx, cy, cx + (r - 20) * math.cos(a), cy - (r - 20) * math.sin(a), BLACK, 2)
+        k.disc(c, cx, cy, 3, BLACK)
+        tx, tw_ = x + gw + 4, w - gw - 4
+        ty = y
+        counts = ctx.get("counts") or {}
+        for st in ("ooc", "held", "uc"):
+            k.box(c, tx, ty + 2, 7, 7, ST_COL[st])
+            k.text(c, k.pick(("hvb10", "s8"), f"{counts.get(st, 0)} {ST_WORD[st].lower()}", tw_ - 10), tx + 10, ty, WHITE,
+                   f"{counts.get(st, 0)} {ST_WORD[st].lower()}")
+            ty += 13
+        ty += 3
+        ty += k.fit_text(c, f"{item.get('name') or ''}: {_ha(item.get('ha'))}" if item.get("kind") == "fire" else (item.get("name") or ""),
+                         tx, ty, tw_, 26, ("hvb10", "s8"), (255, 210, 170)) + 3
+        bans = ctx.get("bans") or []
+        by = y + gh + 24
+        k.text(c, k.font("s8"), x, by, (210, 150, 100), "BANS & PROHIBITIONS")
+        k.fit_text(c, " · ".join(bans) if bans else "No campfire or open-burning bans in these regions", x, by + 10, w,
+                   y + h - by - 10, ("hv10", "s8"), WHITE)
+
+    spec.update(summary=summary, label="FIRE DANGER", chip=(rating.upper(), DANGER[di][1]),
+                look={"bg": (14, 9, 4), "head_bg": (60, 36, 14), "rule": (110, 70, 30)})
+    return spec
+
+
+def _half_evac(s, item, spec, col):
+    """The evacuation notice: ORDER (red) or ALERT (orange) slab, what to do now, the facts, then the map."""
+    ctx = _ctx(s, item)
+    ev = item if item.get("kind") == "evac" else next((e for e in ctx.get("evacs") or [] if e["id"] in (item.get("evacs") or [])), None)
+    if ev is None:
+        return _half_incident(s, item, spec, col)
+    ecol = EVAC_COL.get(ev["status"], EVAC_COL["Alert"])
+
+    def summary(c, x, y, w, h, now, el):
+        ty = y + k.fit_text(c, ev.get("name") or "", x, y, w, 36, ("h16", "lutb14", "lutb12", "hvb10"), WHITE) + 3
+        msg = "Leave the area now." if ev["status"] == "Order" else "Be ready to leave on short notice."
+        ty += k.fit_text(c, msg, x, ty, w, 28, ("lutb14", "lutb12", "hvb10"), ecol) + 4
+        for lab, val in _facts(ev):
+            if ty > y + h - 12:
+                break
+            k.text(c, k.font("hvb10"), x, ty, (210, 160, 130), lab)
+            ty += max(13, k.fit_text(c, str(val), x + 62, ty, w - 62, 24, ("hv10", "s8"), WHITE) + 2)
+
+    spec["body"] = [Para(f"{lab}: {val}", "body", (225, 220, 215)) for lab, val in _facts(ev) if val]
+    spec.update(summary=summary, label=f"EVACUATION {ev['status'].upper()}", chip=None,
+                look={"head": "slab", "head_bg": ecol, "head_fg": WHITE if ev["status"] == "Order" else BLACK, "head_h": 15,
+                      "label_font": "h13", "bg": (10, 6, 6), "pulse": ev["status"] == "Order"})
+    return spec
+
+
+HALF = {"situation": _half_situation, "incident": _half_incident, "danger": _half_danger, "evac": _half_evac}
 
 
 def render_preview(theme, sample=None, at=4.0, settings=None, data=None, data_dir=None):

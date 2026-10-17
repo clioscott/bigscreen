@@ -16,8 +16,8 @@ import numpy as np
 from display.modules import alert_brief, alert_life
 from display.modules import bc_kit as k
 from display.modules import pixel_icons as px
-from display.modules.alert_themes import HAZARD_PALETTE, SEVERITY
-from display.modules.bc_kit import Para
+from display.modules.alert_themes import FAMILIES, HAZARD_PALETTE, PALETTES, SEVERITY, THEMES, resolve
+from display.modules.bc_kit import BLACK, Para
 
 SOURCE = "weather"
 _MAPS = {}
@@ -82,15 +82,22 @@ class WeatherAlerts:
         return dict(base, id=f"sample-{key}", sample=True, test=True, status="issued", published=now - 600,
                     expires=now + 12 * 3600, event_end=now + 20 * 3600, map=smap)
 
-    def half_spec(self, a):
+    def theme_for(self, a, entry):
+        """The weather theme the half-width version is drawn in: the entry's, else the alert screen's own choice."""
+        tid = (entry or {}).get("theme")
+        return tid if tid in THEMES else self.scr.theme_id()
+
+    def half_spec(self, a, theme=None):
         b = alert_brief.brief(a)
         lvl = (a.get("type") or "statement").lower()
         lcol = SEVERITY.get(lvl, SEVERITY["statement"])
         hz = alert_brief.hazard_of(a)
-        hcol = (HAZARD_PALETTE.get(hz) or HAZARD_PALETTE["general"])[0]
+        hcol, hcol2 = HAZARD_PALETTE.get(hz) or HAZARD_PALETTE["general"]
+        th = self.scr.theme() if theme in (None, self.scr.theme_id()) else dict(resolve(theme))
+        lk, pal = half_look(th, hcol, lcol)
 
         def hero_(c, x, y, mw, mh):
-            px.draw(c, px.hazard(hz), x, y, hcol, size=24)
+            px.draw(c, px.hazard(hz), x, y, pal["icon"] if th.get("palette") != "blackout" else hcol, size=24)
             return 24, 24
 
         def map_(c, x, y, w, h, now):
@@ -111,14 +118,65 @@ class WeatherAlerts:
             if 0 <= hx - sx < w and 0 <= hy - sy < h:
                 k.icon_outlined(c, "house", int(x + hx - sx) - 8, int(y + hy - sy) - 7, (240, 240, 245))
 
+        role = {"lead": "strong", "impact": "impact", "advice": "advice", "regions": "dim"}
         body = []
         for p in alert_brief.paragraphs(b):
             style = p["style"]
-            col = {"lead": (255, 255, 255), "impact": (255, 210, 150), "advice": (255, 230, 120), "regions": (160, 175, 200)}.get(style, (215, 220, 230))
-            body.append(Para(p["text"], "head" if style in ("lead", "advice") else "small" if style == "regions" else "body", col))
+            body.append(Para(p["text"], "head" if style in ("lead", "advice") else "small" if style == "regions" else "body",
+                             pal[role.get(style, "text")]))
         title = (a.get("name") or "weather alert")
         title = title[:1].upper() + title[1:]
-        return {"label": self.LABEL, "col": lcol, "chip": (lvl.upper(), lcol), "hero": hero_, "title": title,
-                "lines": [(b.get("where") or "", (220, 225, 235)), (f"Until {b['until']}" if b.get("until") else "", (170, 175, 190)),
-                          (b.get("amount") or "", hcol)],
-                "body": body, "map": map_ if a.get("map") else None}
+        lines = [(b.get("where") or "", pal["text"]), (f"Until {b['until']}" if b.get("until") else "", pal["dim"])]
+        if th.get("structure") != "infographic":
+            lines.append((b.get("amount") or "", pal["amount"]))
+        summary = None
+        if th.get("structure") == "infographic" and b.get("amount"):
+
+            def summary(c, x, y, w, h, now, el):                     # big numbers: the amount is the headline
+                px.draw(c, px.hazard(hz), x, y, hcol, size=24)
+                t = title.upper() if lk["upper"] else title
+                ty = y + k.fit_text(c, t, x + 30, y + 2, w - 30, 30, lk["line_fonts"], pal["strong"]) + 6
+                ty = max(ty, y + 30)
+                amt = b["amount"].upper() if lk["upper"] else b["amount"]
+                ty += k.fit_text(c, amt, x, ty, w, 40, lk["title_fonts"], pal["amount"]) + 5
+                for line_, lc in lines:
+                    if line_ and ty < y + h - 10:
+                        ty += k.fit_text(c, line_.upper() if lk["upper"] else line_, x, ty, w, 26, lk["line_fonts"], lc) + 2
+        return {"summary": summary, "label": th.get("header") or self.LABEL, "col": lcol, "chip": (lvl.upper(), lcol), "hero": hero_, "title": title,
+                "lines": lines, "body": body, "map": map_ if a.get("map") else None, "look": lk}
+
+
+# the header style each weather layout's half-width version uses (see bc_kit.HalfPanel)
+HEADS = {"console": "bar", "headline": "slab", "ticket": "tab", "checklist": "line", "infographic": "bar", "sign": "sign",
+         "wire": "term", "poster": "slab", "kanban": "line", "strip": "bar", "rail": "bar", "deck": "line", "dossier": "tab"}
+
+
+def half_look(th, hcol, lcol):
+    """A weather theme as a half-width look: its palette (accents in the weather type's colour), its font family,
+    header text and capitals, its border; the header styled after its layout. Returns (look, palette colours)."""
+    pal = dict(PALETTES.get(th.get("palette")) or PALETTES["blackout"])
+    for key, v in list(pal.items()):
+        if v == "sev":
+            pal[key] = hcol
+    if pal.get("tint"):                                             # weather-tinted grounds
+        pal["bg"], pal["panel"] = k.dim(hcol, pal["tint"][0]), k.dim(hcol, pal["tint"][1])
+    fam = FAMILIES.get(th.get("family")) or FAMILIES["helvetica"]
+    step = next((s for s in fam["ladder"] if k.font(s[0]).h <= 13), fam["ladder"][-1])
+    reg, bold = step[0], step[1] or step[0]
+    titles = tuple(p for p, _ in fam["title"]) + (bold,)
+    key = fam["key"] if k.font(fam["key"]).h <= 13 else bold
+    st = th.get("structure")
+    head = HEADS.get(st, "bar")
+    lk = {"bg": pal["panel"] if st == "poster" else pal["bg"], "head": head, "label_font": key,
+          "head_h": max(13, k.font(key).h + 2), "head_bg": lcol if head in ("slab", "tab") else pal["panel"],
+          "head_fg": (BLACK if lcol in ((255, 210, 0),) else (255, 255, 255)) if head in ("slab", "tab") else pal["strong"],
+          "rule": pal["border"], "pulse": bool(th.get("pulse")) and head == "slab",
+          "border": th.get("border"), "border_col": pal["border"],
+          "title_fonts": titles, "title_col": pal["strong"], "line_fonts": (bold, reg, fam["small"]),
+          "ladder": {"body": reg, "head": bold, "small": fam["small"]}, "upper": bool(th.get("upper")),
+          "dot_on": pal["strong"], "dot_off": pal["dim"], "type": 80 if th.get("reveal") == "type" else 0}
+    if st in ("console", "rail"):
+        lk["side"] = (3 if st == "console" else 5, lcol)
+    if head == "sign":
+        lk["head_fg"] = (255, 170, 0)
+    return lk, pal

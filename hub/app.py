@@ -314,8 +314,9 @@ def bc_preview(src: str, theme: str = "", sample: str = "", at: float = 4.0, sca
 
 
 @app.get("/api/bc/{src}/half.png")
-def bc_half(src: str, sample: str = "", page: int = 0, at: float = 2.0, scale: int = 2):
-    """The half-width version (right zone) of a sample, one of its pages; ``src`` "weather" = the ECCC alerts."""
+def bc_half(src: str, sample: str = "", page: int = 0, at: float = 2.0, scale: int = 2, theme: str = ""):
+    """The half-width version (right zone) of a sample in a theme's look, one of its pages; ``src`` "weather" = the
+    ECCC alerts (weather themes t01…)."""
     from display.gfx import Canvas
     from display.modules import bc_kit as k
     zone = (225, 41, 223, 134)
@@ -335,6 +336,8 @@ def bc_half(src: str, sample: str = "", page: int = 0, at: float = 2.0, scale: i
     c = Canvas(448, 192)
     now = time.time()
     entry = {"sample": sample, "page_sec": 10 ** 6}
+    if theme:
+        entry["theme"] = theme
     hp.draw(c, zone, entry, True, now=now - at)
     if hp.pages:
         hp.idx, hp.t0 = page % len(hp.pages), now - at
@@ -353,8 +356,8 @@ def bc_test(src: str, payload: dict = Body(default={})):
     """Play a sample (or the real items with real=true) on the wall once, in a theme, then back to the rotation."""
     mod, _, _, _ = _bc(src)
     entry = {"panel": mod.Screen.PANEL + ("_half" if payload.get("half") else ""), "advance": "cycles", "cycles": 1, "max_sec": 300}
-    if payload.get("theme") and not payload.get("half"):
-        entry["theme"] = payload["theme"]
+    if payload.get("theme"):
+        entry["theme"] = payload["theme"]                # (the half-width version is drawn in that theme's look)
     if not payload.get("real"):
         entry["sample"] = payload.get("sample") or next(iter(mod.SAMPLES))
         entry["pages"] = True                            # a test shows the first-showing pages too

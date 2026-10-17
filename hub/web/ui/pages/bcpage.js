@@ -20,8 +20,10 @@ export function makeBCPage(P) {
       };
 
       // preview: a sample (or the real items) in the chosen theme, stepping through time
-      const view = ref(null);
-      const theme = computed(() => view.value || val("theme") || Object.keys(st.value.themes)[0] || "");
+      const view = ref(null);          // hovered theme
+      const pinned = ref(null);        // theme chosen with its Full / Half buttons (previewed until another is chosen)
+      const theme = computed(() => view.value || pinned.value || val("theme") || Object.keys(st.value.themes)[0] || "");
+      const realTheme = computed(() => theme.value === "tour" ? Object.keys(st.value.themes)[0] || "" : theme.value);
       const sample = ref("");
       const real = ref(false);
       const t = ref(1);
@@ -43,9 +45,10 @@ export function makeBCPage(P) {
       const half = ref(false);
       const halfPage = ref(0);
       const preview = computed(() => half.value
-        ? `/api/bc/${P.src}/half.png?sample=${smp.value}&page=${halfPage.value}&at=${t.value.toFixed(1)}&scale=2`
+        ? `/api/bc/${P.src}/half.png?theme=${realTheme.value}&sample=${smp.value}&page=${halfPage.value}&at=${t.value.toFixed(1)}&scale=2`
         : `/api/bc/${P.src}/preview.png?theme=${theme.value}&sample=${smp.value}&real=${real.value ? 1 : 0}&at=${t.value.toFixed(1)}&scale=2&s=${look.value}`);
-      const pick = (id) => { set("theme", id); view.value = null; };
+      const pick = (id) => { set("theme", id); view.value = null; pinned.value = null; };
+      const show = (id, h) => { pinned.value = id; view.value = null; half.value = h; halfPage.value = 0; t.value = 1; };
       const testWall = async (opts = {}) => {
         try {
           await api(`/api/bc/${P.src}/test`, { json: { theme: opts.theme ?? theme.value, sample: smp.value, real: opts.real ?? real.value, half: half.value } });
@@ -73,7 +76,7 @@ export function makeBCPage(P) {
       };
       const health = computed(() => st.value.job?.health || "never");
       return { P, s, st, val, set, toggleIn, theme, pick, view, sample, smp, real, t, playing, preview, testWall, stop, runNow,
-        items, inRotation, halfInRotation, addToRotation, health, ago, half, halfPage };
+        items, inRotation, halfInRotation, addToRotation, health, ago, half, halfPage, pinned, show, realTheme };
     },
     template: `<div class="page">
       <div class="page-head"><div class="grow"><h1>{{ P.title }}</h1><p>{{ P.intro }}</p></div>
@@ -82,11 +85,12 @@ export function makeBCPage(P) {
       <div class="two-col">
         <div class="stack sticky">
           <div class="card"><div class="card-head"><span class="live">PREVIEW</span>
-              <h3>{{ half ? 'Half width' : st.themes[theme]?.label }} · {{ real && !half ? 'what is in effect' : st.samples[smp] }}</h3>
+              <h3>{{ st.themes[realTheme]?.label }}{{ half ? ' (half width)' : '' }} · {{ real && !half ? 'what is in effect' : st.samples[smp] }}</h3>
               <Seg :modelValue="half" @update:modelValue="v => { half = v; halfPage = 0; t = 1; }" :options="[{value: false, label: 'Full wall'}, {value: true, label: 'Half width'}]"/>
               <button class="btn sm ghost icon-only" @click="playing = !playing" :title="playing ? 'Pause' : 'Play'"><Icon :name="playing ? 'Pause' : 'Play'" :size="14"/></button></div>
             <div class="card-body stack">
               <div style="background:#000; border-radius:8px; overflow:hidden"><img :src="preview" style="width:100%; image-rendering:pixelated; display:block" alt=""></div>
+              <div v-if="half" class="faint" style="font-size:12px">The right half of the wall, under the clock bar — what an alert turns into once it has had its full-wall showings.</div>
               <div class="row" style="flex-wrap:wrap; gap:6px">
                 <button v-for="(lab, id) in st.samples" :key="id" class="btn sm" :class="{primary: !real && smp === id}" @click="sample = id; real = false; t = 1">{{ lab }}</button>
                 <button class="btn sm" :class="{primary: real}" :disabled="!items.length" @click="real = true; t = 1" :title="items.length ? '' : 'Nothing in effect right now'">
@@ -107,11 +111,15 @@ export function makeBCPage(P) {
                 <span class="dot" :class="(val('theme')) === id ? 'ok' : ''"></span>
                 <span style="flex:1"><b>{{ th.label }}</b> <span class="faint" style="font-size:12px">— {{ th.hint }}</span></span>
                 <span class="pill" v-if="val('theme') === id">in use</span>
+                <div class="seg" @click.stop style="flex:none; padding:2px">
+                  <button :class="{on: pinned === id && !half}" @click="show(id, false)" style="height:22px; padding:0 9px; font-size:12px" title="Preview the full-wall version">Full</button>
+                  <button :class="{on: pinned === id && half}" @click="show(id, true)" style="height:22px; padding:0 9px; font-size:12px" title="Preview the half-width version">Half</button></div>
               </div>
               <div class="list-row" style="cursor:pointer" @click="pick('tour')"><span class="dot" :class="val('theme') === 'tour' ? 'ok' : ''"></span>
                 <span style="flex:1"><b>Rotate themes</b> <span class="faint" style="font-size:12px">— a different theme each time the screen comes round</span></span></div>
             </div>
-            <div class="card-body faint" style="font-size:12.5px">Hover a theme to preview it; click to use it (Save to keep). Samples are labelled SAMPLE on the wall.</div>
+            <div class="card-body faint" style="font-size:12.5px">Hover a theme to preview it, or use its Full / Half buttons to keep that version in the preview; click a theme to use it
+              (Save to keep). Each theme has its own half-width version too. Samples are labelled SAMPLE on the wall.</div>
           </div>
         </div>
 
