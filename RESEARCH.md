@@ -223,3 +223,40 @@ Defined but not seen firing: `Metro Vancouver - NW/NE/SE/SW`, and coastal-floodi
 Vancouver and Musqueam FN`, `… incl. West Vancouver and Bowen Island`, `Boundary Bay including Beach Grove`, `Mud and Semiahmoo
 Bay: South Surrey - White Rock - Semiahmoo FN`, `Shoreline of Howe Sound`. Note Bowen Island and Lions Bay (Metro Vancouver
 municipalities) fall in the Howe Sound alert region, and UBC/UEL (Electoral Area A) in the North Shore one.
+
+## Live seismometers for the BC earthquake screen (researched 2026-10-16)
+
+**Verdict: viable.** EarthScope's public ring server streams the CN (NRCan/CNSN) and UW (PNSN) stations around
+the Salish Sea in real time, free and without a login. Built as `hub/bc/seismo.py` (hub daemon thread) +
+`hub/bc/mseed.py` (miniSEED 2 / Steim decoder + SeedLink 3 client, no obspy) → `POST /bc_quake_obs` → `display/modules/bc_quake.py`.
+
+- **Server:** `rtserve.iris.washington.edu:18000` (alias `rtserve.earthscope.org`), RingServer 4.5.6, SeedLink 3.1/4.0,
+  DataLink, and HTTP on the same port (`/streams` lists ~44,700 streams with their buffer start/end; `/id`).
+  The buffer holds ~1.5–2 h, so `TIME` requests can backfill. Tested from MAGI-server.
+- **Other servers tried:** `seedlink.pnsn.org` doesn't resolve; `earthquakescanada.nrcan.gc.ca:18000` times out.
+  NRCan has no public real-time waveform server, and PNSN's goes through EarthScope. ShakeAlert/NRCan EEW
+  alerts are not public as data; their alerts reach us only through Alert Ready (NAAD).
+- **Coverage:** 563 vertical streams in the box 46.5–50.8 N, 127.5–120.5 W (CN, UW, CC, PB, UO, NV). CN stations
+  usually have both HHZ (broadband) and HNZ (accelerometer, 100 sps). UW has many HNZ strong-motion sites in schools
+  and fire halls (200 sps), plus ENZ/HHZ at network sites.
+- **Latency** (now − end of the newest record, measured 2026-10-16): CN 0.3–4 s (QEPB HHZ 0.7 s, VGZ HNZ 0.9 s,
+  BOIB 0.9 s); UW 2–10 s (school HNZ 2–5 s, HHZ/ENZ 5–10 s); PB borehole EHZ 2–21 s. Quiet signals compress
+  well, so their 512-byte records take longer to fill; during shaking the records fill faster and latency drops.
+- **Quirk:** CN records arrive twice on the ring (same start time); `Chan.feed` drops the duplicates.
+- **Etiquette:** EarthScope's real-time data is open; the asks are to select only the channels you need, send a
+  meaningful user agent, and avoid hammering the server. We open one connection to 35 channels (34 HNZ/ENZ + QEPB HHZ),
+  about 4–5 kB/s, and reconnect with backoff (5 s up to 5 min). Sensitivities come from the FDSN station service and are
+  cached for a week; replay data from FDSN dataselect, fetched once per event and cached.
+- **Processing:** 0.1 Hz one-pole high-pass, then the per-second peak |vertical acceleration| × 1.5 as a
+  horizontal proxy. That gives PGA, converted to MMI with Worden et al. (2012), kept continuous below I. A station
+  triggers when a second is ≥ 4× its own median of the previous minute and ≥ 0.15 cm/s². A *detection* needs
+  ≥ 4 stations triggered within 20 s. Lone triggers fade after the window. Background: quiet CN sites read
+  about −2, school sites about 0 to 1.3 (traffic).
+- **Replays (recorded data through the same code):** M4.5 Orcas Island, 2025-03-03: detected 9 s after origin
+  (6 stations, first ORCA), strongest IV at Orcas Island. M4.8 near Squamish, 2025-02-21: detected 15 s after origin,
+  III at Nanoose, QEPB ±1,075 µm/s. The USGS/NRCan catalogues typically list such events 1–5 min later.
+- **Limits:** vertical channels only, so intensity is a proxy, not a ShakeMap. No location or magnitude from the
+  stations (we show "first at <station>"), so the S-wave countdown still needs a catalogue item or an NRCan
+  warning. Detection takes over the wall only when stations within 80 km of home measured ≥ MMI 3
+  (`modules.bc_quakes.live.detect_takeover_mmi`); otherwise it only speeds up the quakes job (every 30 s for 5 min).
+  False-trigger rate under real-world noise is not yet measured; check `/api/bc/quakes` → `seismo.detections`.

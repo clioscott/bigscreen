@@ -15,6 +15,7 @@ North American seismology looks, unlike the Japan EEW screen:
 from __future__ import annotations
 
 import math
+import time
 
 import numpy as np
 
@@ -182,13 +183,158 @@ def _intensity_here(c, item, x, y, w, f=None):
     return 18 + f.h
 
 
+# ------------------------------------------------------------------------------------------------ live stations
+LIVE_TTL = 6.0                        # seconds a /bc_quake_obs push stays on the wall
+
+
+def _live(s, now=None):
+    """The latest station readings pushed by the hub (hub/bc/seismo.py), or None when stale."""
+    lv = getattr(s, "live", None)
+    if not lv or (now if now is not None else s._clock) - s.live_at > LIVE_TTL:
+        return None
+    return lv
+
+
+def int_col(v):
+    """Instrumental intensity → colour: dim blues below II (instruments only), ShakeMap colours above."""
+    v = float(v)
+    if v < 1.5:
+        return k.mix((22, 30, 52), (100, 125, 170), max(0.0, (v + 2.0) / 3.5))
+    lo = max(2, int(min(9, math.floor(v))))
+    return k.mix(MMI_COL[lo], MMI_COL[min(10, lo + 1)], max(0.0, min(1.0, v - lo)))
+
+
+def _stations(c, mp, lv, ox=0, clip=(0, 0, W, H)):
+    """Station dots coloured by the shaking they measure now (triggered ones bigger, ringed white)."""
+    x0, y0, x1, y1 = clip
+    for meta, v in sorted(zip(lv.get("stations") or [], lv.get("st") or []), key=lambda p: p[1][0] if p[1] else -9):
+        x, y = mp.project(meta[2], meta[3])
+        x, y = int(round(x + ox)), int(round(y))
+        if not (x0 + 4 <= x < x1 - 4 and y0 + 4 <= y < y1 - 4):
+            continue
+        if v is None:
+            k.box(c, x - 1, y - 1, 3, 3, BLACK)
+            k.box(c, x, y, 1, 1, (70, 70, 80))                      # no data
+            continue
+        r = 3 if v[2] or v[0] >= 2.5 else 2
+        k.disc(c, x, y, r + 1, WHITE if v[2] else BLACK)
+        k.disc(c, x, y, r, int_col(v[0]))
+
+
+def _peak(lv):
+    """(peak MMI, station name) measured this episode, or None."""
+    best = None
+    for meta, v in zip(lv.get("stations") or [], lv.get("st") or []):
+        if v and (best is None or v[1] > best[0]):
+            best = (v[1], meta[1])
+    return best
+
+
+def _trace(c, lv, x, y, w, h, label=True):
+    """The seismograph of the nearest broadband station: 40 s of 0.1-s min/max, newest on the right."""
+    tr = lv.get("trace") if lv else None
+    k.box(c, x, y, w, h, (4, 10, 6))
+    k.box(c, x, y, w, 1, (30, 60, 40))
+    mid = y + 1 + (h - 1) // 2
+    k.box(c, x, mid, w, 1, (18, 40, 26))
+    if not tr:
+        k.text(c, k.font("s8"), x + 3, y + 3, (80, 110, 90), "seismograph: no data")
+        return
+    mm = tr.get("mm") or []
+    n = len(mm)
+    half = (h - 3) / 2.0
+    for col in range(w):
+        a = int(col * n / w)
+        seg = [v for v in mm[a:max(a + 1, int((col + 1) * n / w))] if v]
+        if not seg:
+            continue
+        lo, hi = min(v[0] for v in seg), max(v[1] for v in seg)
+        ya, yb = int(round(mid - hi / 100.0 * half)), int(round(mid - lo / 100.0 * half))
+        k.box(c, x + col, ya, 1, max(1, yb - ya + 1), (90, 240, 130))
+    if label:
+        f = k.font("s8")
+        k.text(c, f, x + 2, y + 2, (150, 220, 170), tr.get("sta") or "")
+        full = tr.get("full") or 0
+        k.text_r(c, f, x + w - 2, y + 2, (110, 170, 130), f"±{full:.0f} µm/s" if full >= 10 else f"±{full:.1f} µm/s")
+
+
+def _replay_badge(c, item, pos):
+    if not item.get("replay"):
+        return
+    f = k.font("s8")
+    x, y = pos
+    k.box(c, x, y, k.tw(f, "REPLAY") + 6, f.h + 2, (0, 90, 120))
+    k.text(c, f, x + 3, y + 1, (200, 245, 255), "REPLAY")
+
+
+def _live_caption(c, lv):
+    pk = _peak(lv)
+    cap = "Live: CNSN + PNSN stations via EarthScope"
+    if pk and pk[0] >= 1.5:
+        cap += f"  ·  strongest {ROMAN[mmi_i(pk[0])]} at {pk[1]}"
+    k.shade(c, 0, H - 12, k.tw(k.font("s8"), cap) + 8, 12, 0.4)
+    k.text(c, k.font("s8"), 4, H - 10, (150, 165, 190), cap)
+
+
+def _detected(s, c, item, now, el):
+    """Stations triggered, nothing in the catalogues yet: the live network, the trace, what was measured."""
+    mp = k.Map.load(s.data_dir, "quake_swbc")
+    pw = 160
+    px_ = W - pw
+    lv = _live(s, now) or s.state.get("last_live") or {}
+    if lv:
+        s.state["last_live"] = lv
+
+    def static():
+        if mp:
+            mp.blit(c, 0, 0, 0, 0, W, H)
+            _recent(s, c, mp, {})
+            _rings(c, mp, _home(s))
+        k.shade(c, px_, 0, pw, H, 0.2)
+        k.box(c, px_, 0, 1, H, (60, 70, 90))
+
+    s.static(c, ("detect", item["id"]), static)
+    k.box(c, px_ + 4, 5, pw - 8, 20, (200, 0, 0) if k.blink(now, 0.7) else (110, 0, 0))
+    k.text_c(c, k.font("lutb12"), px_ + pw // 2, 9, WHITE, "SHAKING DETECTED")
+    d = lv.get("detect") or item
+    y = 30
+    for line, col in ((f"First at {d.get('first') or '?'}", (230, 230, 235)),
+                      (f"{d.get('stations') or 0} stations triggered", (190, 195, 210)),
+                      (f"{k.hhmm(item.get('time'), True)}  ·  {k.ago(item.get('time'))}", (190, 195, 210))):
+        k.text(c, k.pick(("hvb10", "hv10", "s8"), line, pw - 12), px_ + 6, y, col, line)
+        y += 13
+    k.fit_text(c, "Location and magnitude to follow from USGS / NRCan", px_ + 6, y + 2, pw - 12, 22, ("hv10", "s8"),
+               (150, 170, 200))
+    _trace(c, lv, px_ + 4, 96, pw - 8, 50)
+    if mp:
+        if d.get("first_lat") is not None:
+            fx, fy = mp.project(d["first_lat"], d["first_lon"])
+            for i in range(2):
+                r = ((now * 20) + i * 18) % 36 + 4
+                k.circle_clip(c, fx, fy, r, k.dim((255, 80, 60), max(0.2, 1 - r / 40)), (0, 0, px_, H))
+        if lv:
+            _stations(c, mp, lv, clip=(0, 0, px_, H))
+    pk = _peak(lv) if lv else None
+    if pk:
+        felt = pk[0] >= 1.5
+        t = f"{ROMAN[mmi_i(pk[0])]} {MMI_WORD[mmi_i(pk[0])]}" if felt else "Instruments only"
+        k.text(c, k.font("hv10"), px_ + 6, 152, (190, 190, 200), f"Strongest: {pk[1]}")
+        k.chip(c, k.font("hvb10"), px_ + 6, 166, t, int_col(pk[0]) if felt else (60, 70, 100), BLACK if felt else WHITE, 3, 1)
+    if lv:
+        _live_caption(c, lv)
+    _replay_badge(c, item, (px_ - 44, 4))
+
+
 # ------------------------------------------------------------------------------------------------ pnsn
 def _pnsn(s, c, item, now, el):
+    if item.get("kind") == "detect":
+        return _detected(s, c, item, now, el)
     mp = _pick_map(s, item)
     pw = 160
     px_ = W - pw
     col = mag_col(item.get("mag"))
     ex, ey = mp.project(item["lat"], item["lon"]) if mp else (W / 2, H / 2)
+    lv = _live(s, now)
 
     def static():
         if mp:
@@ -203,6 +349,14 @@ def _pnsn(s, c, item, now, el):
         k.seven_seg(c, px_ + 22, 6, mt, 18, 34, 3, on=col, off=(30, 30, 36))
         k.text(c, k.font("hv10"), px_ + 22 + len(mt) * 22 + 2, 32, (150, 160, 180), item.get("mag_type") or "")
         y = 46
+        if lv:                                            # live: room for the seismograph under the facts
+            y += k.fit_text(c, _place(item), px_ + 8, y, pw - 14, 22, ("lutb12", "hvb10", "s8"), WHITE) + 3
+            line = f"{_when(item)}  ·  {item.get('depth', 0):.0f} km deep"
+            if k.tw(k.font("s8"), line) > pw - 14:
+                line = _when(item)
+            k.text(c, k.pick(("hv10", "s8"), line, pw - 14), px_ + 8, y, (190, 195, 210), line)
+            _intensity_here(c, item, px_ + 4, H - 20, pw - 6, k.font("hvb10"))
+            return
         y += k.fit_text(c, _place(item), px_ + 8, y, pw - 14, 30, ("lutb12", "hvb10", "s8"), WHITE) + 4
         for line in (_when(item), f"Depth {item.get('depth', 0):.0f} km"):
             k.text(c, k.pick(("hv10", "s8"), line, pw - 14), px_ + 8, y, (190, 195, 210), line)
@@ -215,14 +369,20 @@ def _pnsn(s, c, item, now, el):
         _intensity_here(c, item, px_ + 4, H - 20, pw - 6, k.font("hvb10"))
         k.text(c, k.font("s8"), 4, H - 10, (120, 130, 150), f"{item.get('source', '')} · dots: last 30 days")
 
-    s.static(c, ("pnsn", item["id"]), static)
+    s.static(c, ("pnsn", item["id"], bool(lv)), static)
     if mp:
         _waves(c, mp, item, now, col, (0, 0, px_, H))
+        if lv:
+            _stations(c, mp, lv, clip=(0, 0, px_, H))
         _star(c, ex, ey, 7, col if k.blink(now, 0.8, 0.7) else WHITE)
+    if lv:
+        _trace(c, lv, px_ + 4, 84, pw - 8, 36)
+        _live_caption(c, lv)
     t = s_arrival(item)
     if t is not None and -60 < t - now:
         k.box(c, px_ + 2, H - 70, pw - 4, 48, (20, 6, 6))
         countdown(c, item, now, px_ + 8, H - 66, pw - 16)
+    _replay_badge(c, item, (px_ - 44, 4))
 
 
 # ------------------------------------------------------------------------------------------------ shakemap
@@ -431,9 +591,15 @@ def _drop_live(s, c, item, now, el):
             r2 = (v * tmp_el) ** 2 - dep ** 2
             if r2 > 0:
                 k.circle_clip(c, ex - sx, ey, math.sqrt(r2) / mp.km_per_px(), wc, (0, 0, mw, H))
+        lv = _live(s, now)
+        if lv:
+            _stations(c, mp, lv, ox=-sx, clip=(0, 0, mw, H - 30))
         _star(c, ex - sx, ey, 6, col if k.blink(now, 0.6) else WHITE)
         hx, hy = mp.project(_home(s)[1], _home(s)[0])
         k.icon_outlined(c, "house", int(hx - sx) - 8, int(hy) - 7, WHITE)
+        if lv:
+            _trace(c, lv, 0, H - 30, mw, 30)
+    _replay_badge(c, item, (4, 4))
     # the countdown
     y = 74
     if t_s is not None and t_s - now > 0:
@@ -508,7 +674,22 @@ class Screen(k.BCScreen):
     PANEL, DATA, SETTINGS = "quake_alert", "quakes", "bc_quakes"
     THEMES, SAMPLES, DEFAULT_THEME = THEMES, SAMPLES, "pnsn"
 
+    live, live_at, _clock = None, 0.0, 0.0
+
+    def set_obs(self, body):
+        """POST /bc_quake_obs from the hub: station readings once a second while a quake is fresh."""
+        self.live, self.live_at = body, time.time()
+
+    def live_items(self):
+        items = super().live_items()
+        it = (_live(self, time.time()) or {}).get("item")
+        if it and it.get("id") and not any(i.get("id") == it["id"] for i in items):
+            items = [it] + items                          # a detection (or replay) the catalogues haven't got
+        return items
+
     def theme_for(self, item, entry):
+        if item.get("kind") == "detect":
+            return "pnsn"
         if item.get("kind") == "eew":
             return "drop"
         tid = super().theme_for(item, entry)
@@ -518,7 +699,11 @@ class Screen(k.BCScreen):
         if item.get("kind") == "eew":
             t = s_arrival(item)
             return max(40.0, (t - item.get("time", 0)) + 60) if t else 40.0
-        return max(float(self.settings.get("dwell_sec") or 25), 20.0)
+        base = max(float(self.settings.get("dwell_sec") or 25), 20.0)
+        t = float(item.get("time") or self.t0)
+        if item.get("kind") == "detect" or (_live(self) and 0 <= self._clock - t < 300):
+            return max(base, t + 150 - self.t0)           # live readings: stay until the waves have passed
+        return base
 
 
 def render_preview(theme, sample=None, at=4.0, settings=None, data=None, data_dir=None):

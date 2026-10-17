@@ -170,6 +170,9 @@ def _make_handler(app):
             if u.path == "/quake_obs":
                 app.screen.quake.set_obs(body.get("v") or "", float(body.get("t") or 0))
                 return self._json({"ok": True})
+            if u.path == "/bc_quake_obs":                 # live BC seismometers (hub/bc/seismo.py)
+                app.screen.quake_alert.set_obs(body)
+                return self._json({"ok": True})
             if u.path == "/restart":
                 app.restart_requested = True
                 return self._json({"ok": True})

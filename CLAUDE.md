@@ -90,6 +90,9 @@ tsunami (`tsunami.py`, NTWC + DFO gauges), wildfire (`wildfire.py`, BCWS/EMCR, S
 - No clashes: NAAD drops ECCC messages and routes quake/tsunami/fire/road ones to those screens (cache
   `naad_routed.json`); the weather alert job leaves tsunami alerts to the tsunami screen.
 - Maps: `hub/bc/maps.py` renders each screen's basemap into `data/bcmaps/` (bump `RENDER_VERSION` after changes).
+- Live seismometers (quake screen): `hub/bc/seismo.py` thread reads 35 CN/UW channels from EarthScope SeedLink
+  (`hub/bc/mseed.py`, no obspy), pushes station intensities + QEPB trace to `/bc_quake_obs` only while a quake is fresh,
+  detects ≥ 4 triggered stations. Replay a recorded quake: `POST /api/bc/quakes/replay {"name": "orcas2025", "as": "quake|eew|detect"}`.
 - Takeovers: `hub/bc/common.takeover` plays a panel once per new item id; set `BIGSCREEN_NO_PI=1` for dev runs.
 - Highway shields: `assets/icons/shields/shields.json`, pixel-hinted per size by `tools/build_shields.py` from the
   Wikimedia SVGs (needs resvg-py, scikit-image; run outside the hub venv); drawn by `display/modules/shields.py`.

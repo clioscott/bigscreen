@@ -275,7 +275,19 @@ def bc_state(src: str):
         out["areas"] = {k: v["label"] for k, v in job_mod.AREAS.items()}
     if src == "wildfire":
         out["regions"] = {k: v["label"] for k, v in job_mod.REGIONS.items()}
+    if src == "quakes":
+        from hub.bc import seismo
+        out["seismo"] = {k: v for k, v in seismo.state.items() if k != "sens"}
+        out["replays"] = {k: v["label"] for k, v in seismo.REPLAYS.items()}
     return out
+
+
+@app.post("/api/bc/quakes/replay")
+def bc_quake_replay(payload: dict = Body(default={})):
+    """Replay a recorded quake through the live-seismometer pipeline (it takes over the wall at its origin)."""
+    from hub.bc import seismo
+    r = seismo.replay(payload.get("name") or "", payload.get("as") or "quake")
+    return {"ok": True, "origin_in_sec": r["origin_in_sec"], "records": r["records"], "item": r["item"]["id"]}
 
 
 @app.get("/api/bc/{src}/preview.png")
