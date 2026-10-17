@@ -338,6 +338,7 @@ def _monitor():
     detect_runs, taken = {}, set()
     while True:
         t0 = time.time()
+        later = []                                        # wall takeovers, sent after the readings they show
         try:
             if t0 - st_at > 10:
                 st, st_at = settings(), t0
@@ -354,7 +355,7 @@ def _monitor():
                 body["replay"], body["item"] = rp["label"], item
                 if item and not rp["played"]:
                     rp["played"] = True
-                    _play(item["id"])
+                    later.append(lambda i=item["id"]: _play(i))
                 why = "replay"
             elif _net is not None:
                 with _lock:
@@ -363,8 +364,10 @@ def _monitor():
                 if d and d["id"] not in detect_runs:
                     detect_runs[d["id"]] = t0
                     state["detections"] = ([dict(d)] + state["detections"])[:10]
-                if d and d["id"] not in taken and _detect_takeover(d, st):
+                if d and d["id"] not in taken and _detect_wanted(d, st):
                     taken.add(d["id"])
+                    later.append(lambda i=d["id"]: common.takeover("quake_alert", [i], "quakes_takeover", log=log,
+                                                                   entry_extra={"item": i}))
                 if d and _notify and int(t0 - detect_runs[d["id"]]) % 30 == 0 and t0 - detect_runs[d["id"]] < 300:
                     _notify(["quakes"])                   # the catalogues get it within minutes
                 if d and not fresh:                       # nothing in the catalogues yet: the detection is the item
@@ -379,6 +382,8 @@ def _monitor():
             if why and st.get("enabled") is not False and not __import__("os").environ.get("BIGSCREEN_NO_PI"):
                 code, _ = pi.display_post("/bc_quake_obs", {**body, "stations": _meta()}, timeout=2)
                 state["pushed_at"], state["push_error"] = t0, None if code < 400 else f"HTTP {code}"
+            for fn in later:
+                fn()
         except Exception as e:
             state["push_error"] = str(e)[:160]
         time.sleep(max(0.2, 1.0 - (time.time() - t0)))
@@ -388,13 +393,11 @@ def _meta():
     return [[m["sta"], m["name"], m["lat"], m["lon"], m["km"]] for m in (_net.meta if _net else Network({}).meta)]
 
 
-def _detect_takeover(d, st):
-    """Put the screen up for a detection felt near home (or anywhere when the threshold is 0)."""
+def _detect_wanted(d, st):
+    """Take the wall over for a detection felt near home (or any detection when the threshold is 0)? Checked
+    every second of the episode, as the shaking reaches more stations."""
     thr = float(st.get("detect_takeover_mmi") or 0)
-    if thr and (d.get("near_mmi") or -9) < thr:
-        return False                                      # checked again every second of the episode
-    common.takeover("quake_alert", [d["id"]], "quakes_takeover", log=log, entry_extra={"item": d["id"]})
-    return True
+    return not thr or (d.get("near_mmi") or -9) >= thr
 
 
 def start(notify=None):
