@@ -218,6 +218,15 @@ def _route_shields(c, mp, avoid=(), h=14, ox=0, oy=0, clip=(0, 0, W, H), block=(
             sh.draw(c, int(x - wd / 2), int(y - h / 2), a["num"], h, kind=a["kind"])
 
 
+def _queue_items(s):
+    """The distinct items of the screen's current pass (its queue holds (item, theme) pages)."""
+    out = []
+    for it, _ in s.queue or []:
+        if all(it is not o for o in out):
+            out.append(it)
+    return out
+
+
 def _cam(s, item):
     cam = item.get("cam")
     if not cam or not s.data_dir:
@@ -543,7 +552,7 @@ def _vms(s, c, item, now, el):
 def _overview(s, c, item, now, el):
     """Metro Vancouver with every current event's road highlighted; the list (shields, icons) beside."""
     mp = k.Map.load(s.data_dir, "roads_metro")
-    items = s.queue or [item]
+    items = _queue_items(s) or [item]
     lw = 164
 
     def static():
@@ -606,7 +615,7 @@ def _camera(s, c, item, now, el):
 
 def _board(s, c, item, now, el):
     """Every current event in rows with shields and icons; the one in focus expanded below."""
-    items = s.queue or [item]
+    items = _queue_items(s) or [item]
     cur = items.index(item) if item in items else 0
     row_h, top = 28, 20
     rows = max(1, min(len(items), 4))
@@ -692,6 +701,31 @@ THEMES = {
 class Screen(k.BCScreen):
     PANEL, DATA, SETTINGS = "road_alert", "drivebc", "road_alerts"
     THEMES, SAMPLES, DEFAULT_THEME = THEMES, SAMPLES, "map"
+    LABEL = "DRIVEBC"
+
+    def extra_pages(self, item):
+        return ["camera"] if item.get("cam") else ["vms"]
+
+    def half_spec(self, item):
+        col = col_of(item)
+
+        def hero_(c, x, y, mw, mh):
+            return hero(c, x, y, item, 40, mw), 40
+
+        def map_(c, x, y, w, h, now):
+            mp = _evt_map(self, item)
+            if not mp:
+                return
+            cx, cy = _hl_centre(mp, item)
+            sx, sy = k.map_crop(c, mp, x, y, w, h, cx, cy)
+            _route_shields(c, mp, avoid=_hl_avoid(mp, item, x - sx, y - sy), h=14, ox=x - sx, oy=y - sy, clip=(x, y, x + w, y + h))
+            highlight(c, mp, item, now, ox=x - sx, oy=y - sy, width=3, clip=(x, y, x + w, y + h))
+
+        title = item.get("road") or "" if item.get("highways") else (area_of(item) or item.get("road") or "")
+        lines = [(area_of(item) if item.get("highways") else "", (255, 225, 150)), (item.get("direction") or "", (200, 205, 220)),
+                 (word_of(item), col)]
+        return {"label": self.LABEL, "col": col, "chip": None, "hero": hero_, "title": title, "lines": lines,
+                "body": _desc(item), "map": map_}
 
     def sample(self, key):
         it = super().sample(key)
@@ -705,7 +739,7 @@ class Screen(k.BCScreen):
 
     def _queue(self, entry):
         if entry.get("sample") == "_all":                     # list previews: every sample at once
-            return [self.sample(key) for key in self.SAMPLES]
+            return [(self.sample(key), self.theme_for({}, entry)) for key in self.SAMPLES]
         return super()._queue(entry)
 
 

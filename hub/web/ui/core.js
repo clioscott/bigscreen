@@ -57,6 +57,7 @@ export const SECTIONS = [
   ["Earthquakes", ["modules", "bc_quakes"]],
   ["Tsunami", ["modules", "tsunami"]],
   ["Wildfire", ["modules", "wildfire"]],
+  ["Alerts on the wall", ["modules", "alert_lifecycle"]],
   ["Font audit", ["hub", "fonts"]],
   ["Display", ["system", "display"]],
   ["Night mode", ["system", "night_mode"]],
@@ -186,8 +187,17 @@ export const PANEL_TYPES = {
   quake_alert: { label: "Earthquakes (full screen)", icon: "Activity", full: true, passes: true, passWord: "pass through every quake", note: "Takes over the whole wall" },
   tsunami_alert: { label: "Tsunami (full screen)", icon: "Waves", full: true, passes: true, passWord: "pass through every message", note: "Takes over the whole wall" },
   fire_alert: { label: "Wildfire (full screen)", icon: "Flame", full: true, passes: true, passWord: "pass through every item", note: "Takes over the whole wall" },
+  weather_alert_half: { label: "Weather alert (half width)", icon: "Siren", passes: true, passWord: "pass through every alert", note: "Right side: alerts past their full-wall showings" },
+  naad_alert_half: { label: "Alert Ready (half width)", icon: "Megaphone", passes: true, passWord: "pass through every alert" },
+  road_alert_half: { label: "DriveBC (half width)", icon: "Car", passes: true, passWord: "pass through every event" },
+  quake_alert_half: { label: "Earthquakes (half width)", icon: "Activity", passes: true, passWord: "pass through every quake" },
+  tsunami_alert_half: { label: "Tsunami (half width)", icon: "Waves", passes: true, passWord: "pass through every message" },
+  fire_alert_half: { label: "Wildfire (half width)", icon: "Flame", passes: true, passWord: "pass through every item" },
   blank: { label: "Blank", icon: "Square", passes: false },
 };
+// the stage of an alert's life on the wall (display/modules/alert_life.py) a rule can ask for
+export const PHASES = { full: "new or still full-wall", half: "past its full-wall showings" };
+export const ALERT_RULES = ["alert", "naad", "roads", "quakes", "tsunami", "wildfire"];
 export const WEATHER_SCREENS = { current: "Current conditions", hourly: "Hourly forecast", forecast: "7-day forecast", warning: "Warnings" };
 
 // ---- rotation rules (display/rules.py evaluates them) ------------------------------
@@ -229,6 +239,7 @@ export function ruleText(r) {
   else if (r.if === "hours") s = `it's ${r.from}–${r.to}`;
   else if (r.if === "days") s = `it's ${(r.days || []).map((d) => DAYS[d]).join(", ") || "no day"}`;
   else if (r.if === "fresh") s = `its data is under ${r.max_age_min ?? 30} min old`;
+  if (r.phase && ALERT_RULES.includes(r.if)) s += ` (${PHASES[r.phase] || r.phase})`;
   return (r.not ? "not when " : "when ") + s;
 }
 
@@ -242,6 +253,7 @@ export function migrateRotation() {
       if (!Array.isArray(e.rules)) e.rules = clone(LEGACY_WHEN[e.when] || []);
       delete e.when;
       if (["weather_alert", "naad_alert", "road_alert", "quake_alert", "tsunami_alert", "fire_alert"].includes(e.panel) && e.priority === undefined) e.priority = "next";
+      if (e.panel?.endsWith("_alert_half")) e.priority = e.priority ?? "";
     }
   }
 }

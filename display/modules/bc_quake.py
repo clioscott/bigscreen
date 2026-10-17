@@ -675,13 +675,59 @@ class Screen(k.BCScreen):
     THEMES, SAMPLES, DEFAULT_THEME = THEMES, SAMPLES, "pnsn"
 
     live, live_at, _clock = None, 0.0, 0.0
+    LABEL = "EARTHQUAKE"
+
+    def extra_pages(self, item):
+        return [] if item.get("kind") in ("eew", "detect") else ["shakemap", "report"]
+
+    def half_spec(self, item):
+        eew = item.get("kind") == "eew"
+        col = (255, 40, 40) if eew else mag_col(item.get("mag"))
+
+        def hero_(c, x, y, mw, mh):
+            mt = _mag_text(item)
+            k.text(c, k.font("hvb10"), x, y, (170, 180, 200), "M")
+            k.seven_seg(c, x + 9, y + 2, mt, 12, 26, 3, on=col, off=(30, 30, 36))
+            return 9 + len(mt) * 15, 30
+
+        def map_(c, x, y, w, h, now):
+            if item.get("lat") is None:
+                return
+            mp = _pick_map(self, item)
+            if not mp:
+                return
+            ex, ey = mp.project(item["lat"], item["lon"])
+            sx, sy = k.map_crop(c, mp, x, y, w, h, ex, ey)
+            hx, hy = mp.project(_home(self)[1], _home(self)[0])
+            if 0 <= hx - sx < w and 0 <= hy - sy < h:
+                k.icon_outlined(c, "house", int(x + hx - sx) - 8, int(y + hy - sy) - 7, (230, 230, 240))
+            px, py = x + ex - sx, y + ey - sy
+            for i in range(3):
+                r = ((now * 18) + i * 14) % 42 + 4
+                k.circle_clip(c, px, py, r, k.dim(col, max(0.15, 1 - r / 46)), (x, y, x + w, y + h))
+            _star(c, px, py, 6, col if k.blink(now, 0.8, 0.7) else WHITE)
+
+        if eew:
+            return {"label": "EARLY WARNING", "col": col, "chip": ("DROP COVER HOLD ON", (255, 200, 0)), "hero": None,
+                    "title": item.get("headline") or "Earthquake early warning",
+                    "lines": [(" · ".join(item.get("areas") or []), (230, 200, 200))],
+                    "body": [Para(item.get("description") or "", "body", (220, 220, 225)),
+                             Para(item.get("instruction") or "", "head", (255, 220, 120))], "map": map_}
+        i = mmi_i(item.get("mmi_home"))
+        return {"label": self.LABEL, "col": col, "chip": (f"{ROMAN[i]} {MMI_WORD[i].upper()}", MMI_COL[i]), "hero": hero_,
+                "title": _place(item),
+                "lines": [(_when(item), (200, 205, 220)), (f"Depth {float(item.get('depth') or 0):.0f} km", (200, 205, 220)),
+                          (f"Felt by {item['felt']:,} (DYFI)" if item.get("felt") else "", (255, 220, 120))],
+                "body": [Para(item.get("setting") or "", "body", (180, 200, 230)),
+                         Para("Estimated shaking: " + ", ".join(f"{cy['name']} {ROMAN[mmi_i(cy['mmi'])]}" for cy in (item.get("cities") or [])[:6]),
+                              "body", (220, 220, 225))], "map": map_}
 
     def set_obs(self, body):
         """POST /bc_quake_obs from the hub: station readings once a second while a quake is fresh."""
         self.live, self.live_at = body, time.time()
 
-    def live_items(self):
-        items = super().live_items()
+    def all_items(self):
+        items = super().all_items()
         it = (_live(self, time.time()) or {}).get("item")
         if it and it.get("id") and not any(i.get("id") == it["id"] for i in items):
             items = [it] + items                          # a detection (or replay) the catalogues haven't got

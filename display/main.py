@@ -189,6 +189,13 @@ class Screen:
         self.alert_screen = keep("alert_screen", ("weather_alerts",),
                                  lambda: AlertScreen(cfg.modules.get("weather_alerts", {}) or {}, loader))
         self.takeover_panels["weather_alert"] = self.alert_screen.draw
+        # each alert's life on the wall: full-wall while new, then the half-width version (alert_life.py)
+        from display.modules import alert_life
+        from display.modules.bc_kit import HalfPanel
+        from display.modules.weather_alert_half import WeatherAlerts
+        alert_life.configure(cfg.modules.get("alert_lifecycle") or {})
+        self.weather_alerts = WeatherAlerts(self.alert_screen, getattr(loader, "data_dir", None))
+        self.panels["weather_alert_half"] = HalfPanel(self.weather_alerts).draw
         from display.modules.quake import QuakeScreen
         self.quake = QuakeScreen(getattr(loader, "data_dir", None), cfg.modules.get("japan_eew", {}) or {})
         if prev is not None and getattr(prev, "quake", None) is not None:
@@ -204,6 +211,7 @@ class Screen:
             setattr(self, mod.Screen.PANEL, scr)
             self.bc[rule] = scr
             self.takeover_panels[mod.Screen.PANEL] = scr.draw
+            self.panels[mod.Screen.PANEL + "_half"] = HalfPanel(scr).draw         # right zone, past the full showings
         from display.modules.font_specimen import FontSpecimen
         self.takeover_panels["font_specimen"] = FontSpecimen().draw          # control panel → Fonts
 

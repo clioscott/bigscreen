@@ -376,6 +376,50 @@ THEMES = {
 class Screen(k.BCScreen):
     PANEL, DATA, SETTINGS = "tsunami_alert", "tsunami", "tsunami"
     THEMES, SAMPLES, DEFAULT_THEME = THEMES, SAMPLES, "pacific"
+    LABEL = "TSUNAMI"
+
+    def extra_pages(self, item):
+        return ["zones", "bulletin"]
+
+    def half_spec(self, item):
+        col = col_of(item)
+
+        def hero_(c, x, y, mw, mh):
+            k.icon(c, "wave", x, y, col, 32)
+            return 32, 32
+
+        def map_(c, x, y, w, h, now):
+            mp = k.Map.load(self.data_dir, "tsunami_bc")
+            if not mp:
+                return
+            cx, cy = mp.project(49.6, -126.0)
+            sx, sy = k.map_crop(c, mp, x + max(0, (w - mp.w) // 2), y, w, h, cx, cy)
+            ox = x + max(0, (w - mp.w) // 2) - sx
+            key = ("half_zones", item.get("id"), sx, sy)
+            layers = self.state.get(key)
+            if layers is None:
+                water = (mp.img[..., 2].astype(int) > mp.img[..., 0].astype(int) + 20)
+                layers = self.state[key] = [(LV_COL[(item.get("zones") or {}).get(z, "none")], mp.poly_mask([ring]) & water)
+                                            for z, ring in ZONE_POLY.items() if (item.get("zones") or {}).get(z, "none") != "none"]
+            for lc, m in layers:
+                sub = m[sy:sy + h, sx:sx + min(w, mp.w)]
+                k.tint(c, sub, lc, 0.5 * k.pulse(now, 1.6, 0.6, 1.0), ox + sx, y)
+            for z, (la, lo) in ZONE_LABEL.items():
+                zx, zy = mp.project(la, lo)
+                lv = (item.get("zones") or {}).get(z, "none")
+                if 0 <= zy - sy < h:
+                    k.disc(c, ox + zx, y + zy - sy, 5, LV_COL[lv] if lv != "none" else (30, 40, 60))
+                    k.text_c(c, k.font("s8"), ox + zx, y + zy - sy - 4, BLACK if lv != "none" else (170, 180, 200), z)
+
+        arr = _arrival_rows(item, 1)
+        quake = " · ".join(v for v in (f"M{item['mag']:.1f}" if item.get("mag") else "", item.get("region") or "") if v)
+        body = [Para(e, "body", (215, 220, 230)) for e in _main_text(item)]
+        if item.get("instruction") and item.get("level") != "information":
+            body.append(Para(item["instruction"], "head", (255, 225, 120)))
+        return {"label": self.LABEL, "col": col, "chip": ((item.get("level") or "").upper(), col), "hero": hero_,
+                "title": quake, "lines": [(_origin(item), (190, 200, 215)),
+                                          (f"First wave {arr[0][0]} {arr[0][1]}" if arr else "", col)],
+                "body": body, "map": map_ if any(v != "none" for v in (item.get("zones") or {}).values()) else None}
 
     def dwell(self, item):
         return 45.0 if item.get("bc_threat") else max(float(self.settings.get("dwell_sec") or 30), 20.0)

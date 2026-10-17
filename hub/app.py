@@ -313,15 +313,51 @@ def bc_preview(src: str, theme: str = "", sample: str = "", at: float = 4.0, sca
     return Response(bio.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
+@app.get("/api/bc/{src}/half.png")
+def bc_half(src: str, sample: str = "", page: int = 0, at: float = 2.0, scale: int = 2):
+    """The half-width version (right zone) of a sample, one of its pages; ``src`` "weather" = the ECCC alerts."""
+    from display.gfx import Canvas
+    from display.modules import bc_kit as k
+    zone = (225, 41, 223, 134)
+    if src == "weather":
+        from display.modules.alert_samples import SAMPLES
+        from display.modules.weather_alert import AlertScreen
+        from display.modules.weather_alert_half import WeatherAlerts
+        data = read_json(paths.DATA_DIR / "alerts.json", {}) or {}
+        scr = WeatherAlerts(AlertScreen({}, k.StaticLoader({"alerts": data}, str(paths.DATA_DIR))), str(paths.DATA_DIR))
+        sample = sample if sample in SAMPLES else next(iter(SAMPLES))
+    else:
+        mod, job_mod, job, section = _bc(src)
+        data = read_json(paths.DATA_DIR / f"{mod.Screen.DATA}.json", {}) or {}
+        scr = mod.Screen({}, k.StaticLoader({mod.Screen.DATA: data}, str(paths.DATA_DIR)), str(paths.DATA_DIR))
+        sample = sample if sample in mod.SAMPLES else next(iter(mod.SAMPLES))
+    hp = k.HalfPanel(scr)
+    c = Canvas(448, 192)
+    now = time.time()
+    entry = {"sample": sample, "page_sec": 10 ** 6}
+    hp.draw(c, zone, entry, True, now=now - at)
+    if hp.pages:
+        hp.idx, hp.t0 = page % len(hp.pages), now - at
+        c.buf[:] = 0
+        hp.draw(c, zone, entry, False, now=now)
+    frame = c.buf[zone[1]:zone[1] + zone[3], zone[0]:zone[0] + zone[2]]
+    kk = max(1, min(4, scale))
+    img = Image.fromarray(frame).resize((frame.shape[1] * kk, frame.shape[0] * kk), Image.NEAREST)
+    bio = io.BytesIO()
+    img.save(bio, "PNG", compress_level=1)
+    return Response(bio.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store", "X-Pages": str(len(hp.pages))})
+
+
 @app.post("/api/bc/{src}/test")
 def bc_test(src: str, payload: dict = Body(default={})):
     """Play a sample (or the real items with real=true) on the wall once, in a theme, then back to the rotation."""
     mod, _, _, _ = _bc(src)
-    entry = {"panel": mod.Screen.PANEL, "advance": "cycles", "cycles": 1, "max_sec": 300}
-    if payload.get("theme"):
+    entry = {"panel": mod.Screen.PANEL + ("_half" if payload.get("half") else ""), "advance": "cycles", "cycles": 1, "max_sec": 300}
+    if payload.get("theme") and not payload.get("half"):
         entry["theme"] = payload["theme"]
     if not payload.get("real"):
         entry["sample"] = payload.get("sample") or next(iter(mod.SAMPLES))
+        entry["pages"] = True                            # a test shows the first-showing pages too
     return _display_call("/play", {"side": "right", "entry": entry, "hold": False})
 
 

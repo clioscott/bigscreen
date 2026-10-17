@@ -57,6 +57,7 @@ class Rotation:
         self.preview = None                  # {hold, until, resume}
         self.pending: list[int] = []         # priority entries waiting to play next
         self._prio_seen: dict = {}           # key -> rules held last check
+        self._prio_tok: dict = {}            # key -> the new-alert token last check (see Env.priority_token)
         self._prio_t = 0.0
         self._idle_t = 0.0
         self._last_t = None
@@ -82,11 +83,24 @@ class Rotation:
                 continue
             k = entry_key(e)
             ok = self._allows(e)
-            if ok and not self._prio_seen.get(k) and i not in self.pending:
-                cur_e = self.cur["entry"] if self.cur else None
-                if not (cur_e and entry_key(cur_e) == k):
-                    self.pending.append(i)
+            cur_e = self.cur["entry"] if self.cur else None
+            playing = bool(cur_e and entry_key(cur_e) == k)
+            if ok and not self._prio_seen.get(k) and i not in self.pending and not playing:
+                self.pending.append(i)
             self._prio_seen[k] = ok
+            # a new alert (never shown in full) also jumps the queue when the entry was already eligible
+            tok = None
+            if ok and self.env is not None and hasattr(self.env, "priority_token"):
+                try:
+                    tok = self.env.priority_token(e)
+                except Exception as ex:
+                    print(f"[rotation] priority token: {ex}")
+            if tok and tok != self._prio_tok.get(k):
+                if playing:
+                    continue                 # keep the old token: it triggers again once this pass ends
+                if i not in self.pending:
+                    self.pending.append(i)
+            self._prio_tok[k] = tok
 
     def _pick(self, now):
         while self.pending:

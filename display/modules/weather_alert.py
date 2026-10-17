@@ -548,13 +548,24 @@ class AlertScreen:
         now = time.time()
         key = (id(data), int(now // 30))              # same list object until new data or 30 s pass
         if getattr(self, "_alerts_cache", None) and self._alerts_cache[0] == key:
-            return self._alerts_cache[1]
-        if now - float(data.get("updated_utc") or 0) > 3 * 3600:       # hub down: don't show stale alerts
-            out = []
+            out = self._alerts_cache[1]
         else:
-            out = [a for a in data.get("alerts") or [] if not a.get("expires") or a["expires"] > now]
-            out.sort(key=lambda a: not alert_brief.mentions(a, self.home))     # stable: the wall's own city first
-        self._alerts_cache = (key, out)
+            if now - float(data.get("updated_utc") or 0) > 3 * 3600:       # hub down: don't show stale alerts
+                out = []
+            else:
+                out = [a for a in data.get("alerts") or [] if not a.get("expires") or a["expires"] > now]
+                out.sort(key=lambda a: not alert_brief.mentions(a, self.home))     # stable: the wall's own city first
+            self._alerts_cache = (key, out)
+        phase = (entry or {}).get("phase")
+        if phase in ("full", "new"):                     # the full-wall entry: alerts not yet down to half-width
+            from display.modules import alert_life
+            from display.modules.weather_alert_half import SOURCE, alert_id
+            key2 = (key, phase, int(now // 5))
+            if getattr(self, "_phase_cache", None) and self._phase_cache[0] == key2:
+                return self._phase_cache[1]
+            sub = [a for a in out if alert_life.in_phase(SOURCE, alert_id(a), phase)]
+            self._phase_cache = (key2, sub)
+            return sub
         return out
 
     def active(self):
@@ -767,7 +778,18 @@ class AlertScreen:
         if self._tour:
             self._tour, self._reveal_cap, self._fast, self._static = None, None, None, None
             self._tour_sample, self._sample, self._hold_cap, self._tour_k = None, None, None, 0
-        return self._draw(c, entry, transition, now)
+        if transition:
+            self._pass_ids = None
+        if getattr(self, "_pass_ids", None) is None and not (entry and entry.get("test")):
+            from display.modules.weather_alert_half import alert_id
+            self._pass_ids = [alert_id(a) for a in self.alerts(entry)]     # the alerts this pass is showing
+        r = self._draw(c, entry, transition, now)
+        if r == "done" and not (entry and entry.get("test")) and getattr(self, "_pass_ids", None):
+            from display.modules import alert_life
+            from display.modules.weather_alert_half import SOURCE
+            alert_life.shown(SOURCE, self._pass_ids)
+            self._pass_ids = None
+        return r
 
     def _sample_map(self):
         data = (self.loader.get_data("alerts") if self.loader else None) or {}

@@ -341,6 +341,37 @@ THEMES = {
 class Screen(k.BCScreen):
     PANEL, DATA, SETTINGS = "fire_alert", "wildfire", "wildfire"
     THEMES, SAMPLES, DEFAULT_THEME = THEMES, SAMPLES, "situation"
+    LABEL = "WILDFIRE"
+
+    def extra_pages(self, item):
+        if item.get("kind") == "evac":
+            return ["evac"]
+        return ["incident"] + (["evac"] if item.get("evacs") else [])
+
+    def half_spec(self, item):
+        evac = item.get("kind") == "evac"
+        col = EVAC_COL.get(item.get("status"), EVAC_COL["Alert"]) if evac else ST_COL.get(item.get("status"), ST_COL["ooc"])
+
+        def hero_(c, x, y, mw, mh):
+            k.icon(c, "flame", x, y, col, 32)
+            return 32, 32
+
+        def map_(c, x, y, w, h, now):
+            mp = k.Map.load(self.data_dir, "fire_south")
+            if not mp or item.get("lat") is None:
+                return
+            fx, fy = mp.project(item["lat"], item["lon"])
+            sx, sy = k.map_crop(c, mp, x, y, w, h, fx, fy)
+            _draw_region(self, c, mp, item, _ctx(self, item), x, y, sx, sy, w, h, big_icons=False)
+            k.circle_clip(c, x + fx - sx, y + fy - sy, 6 + 3 * k.pulse(now, 1.4, 0, 1), BCWS, (x, y, x + w, y + h))
+
+        chip = (f"EVAC {item['status'].upper()}" if evac else ST_WORD.get(item.get("status"), "ACTIVE"), col)
+        lines = ([(item.get("event") or "", (230, 200, 180)), (f"{item['homes']:,} homes" if item.get("homes") else "", WHITE)]
+                 if evac else [(_ha(item.get("ha")), WHITE), (item.get("where") or "", (220, 200, 180)),
+                               (f"{item['km']} km away" if item.get("km") is not None else "", (190, 190, 200))])
+        body = [Para(f"{lab}: {val}", "body", (225, 220, 215)) for lab, val in _facts(item) if val]
+        return {"label": self.LABEL, "col": col, "chip": chip, "hero": hero_, "title": item.get("name") or "",
+                "lines": lines, "body": body, "map": map_}
 
     def theme_for(self, item, entry):
         tid = super().theme_for(item, entry)

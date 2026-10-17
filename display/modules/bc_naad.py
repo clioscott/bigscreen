@@ -371,6 +371,37 @@ THEMES = {
 class Screen(k.BCScreen):
     PANEL, DATA, SETTINGS = "naad_alert", "naad", "naad_alerts"
     THEMES, SAMPLES, DEFAULT_THEME = THEMES, SAMPLES, "alert_ready"
+    LABEL = "ALERT READY"
+
+    def extra_pages(self, item):
+        return ["phone"] if item.get("polygons") else ["teletype"]
+
+    def half_spec(self, item):
+        col = sev_col(item)
+
+        def hero_(c, x, y, mw, mh):
+            k.icon(c, icon_of(item), x, y, col, 32)
+            return 32, 32
+
+        def map_(c, x, y, w, h, now):
+            mp = k.Map.load(self.data_dir, "naad_lm")
+            if not mp:
+                return
+            sx, sy = _crop_for(mp, item, w, h)
+            mp.blit(c, x, y, sx, sy, min(w, mp.w - sx), min(h, mp.h - sy))
+            key = ("half_mask", item.get("id"), sx, sy, w, h)
+            m = self.state.get(key)
+            if m is None:
+                m = self.state[key] = mp.poly_mask(item.get("polygons") or [])[sy:sy + h, sx:sx + w]
+            k.tint(c, m, col, 0.35, x, y)
+            k.paint(c, k.edge(m), k.dim(col, k.pulse(now, 1.0, 0.4, 1.0)), x, y)
+            hx, hy = mp.project(HOME[1], HOME[0])
+            if 0 <= hx - sx < w and 0 <= hy - sy < h:
+                k.icon_outlined(c, "house", int(x + hx - sx) - 8, int(y + hy - sy) - 7, WHITE)
+
+        return {"label": self.LABEL, "col": col, "chip": ((item.get("severity") or "").upper(), col), "hero": hero_,
+                "title": title_of(item), "lines": [(_area_line(item), (220, 220, 230)), (_expires(item), (170, 170, 185))],
+                "body": _paras(item, WHITE, (210, 210, 215), (255, 220, 90)), "map": map_ if item.get("polygons") else None}
 
 
 def render_preview(theme, sample=None, at=4.0, settings=None, data=None, data_dir=None):

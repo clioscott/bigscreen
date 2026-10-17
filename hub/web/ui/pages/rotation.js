@@ -1,6 +1,6 @@
 import { ref, computed } from "vue";
-import { store, toast, PANEL_TYPES, WEATHER_SCREENS, RULES, ALERT_LEVELS, HAZARDS, DAYS, ruleText, areaLabel, entryTitle,
-  playOnDisplay } from "../core.js";
+import { store, toast, seed, PANEL_TYPES, WEATHER_SCREENS, RULES, ALERT_LEVELS, HAZARDS, DAYS, ruleText, areaLabel, entryTitle,
+  playOnDisplay, PHASES, ALERT_RULES } from "../core.js";
 import { NowPlaying } from "../nowplaying.js";
 
 function entrySub(e) {
@@ -37,13 +37,15 @@ const RuleRow = {
     };
     const toggleIn = (list, v) => { const i = list.indexOf(v); if (i >= 0) list.splice(i, 1); else list.push(v); list.sort(); };
     const hazards = computed(() => props.r.hazards || (props.r.hazards = []));
-    return { setIf, toggleIn, hazards, RULES, ALERT_LEVELS, HAZARDS, DAYS, WITHIN };
+    return { setIf, toggleIn, hazards, RULES, ALERT_LEVELS, HAZARDS, DAYS, WITHIN, PHASES, ALERT_RULES };
   },
   template: `<div class="rule">
     <select class="input" :value="r.not ? 'not' : 'only'" @change="r.not = $event.target.value === 'not' || undefined">
       <option value="only">Only when</option><option value="not">Not when</option></select>
     <select class="input" :value="r.if" @change="setIf($event.target.value)">
       <option v-for="(t, id) in RULES" :key="id" :value="id">{{ t.label }}</option></select>
+    <select v-if="ALERT_RULES.includes(r.if)" class="input" v-model="r.phase" title="Which stage of an alert's life on the wall">
+      <option :value="undefined">any stage</option><option v-for="(l, id) in PHASES" :key="id" :value="id">{{ l }}</option></select>
     <template v-if="r.if === 'alert'">
       <select class="input" v-model="r.min_level"><option :value="undefined">any level</option>
         <option v-for="(l, id) in ALERT_LEVELS" :key="id" :value="id">{{ l.toLowerCase() }} or worse</option></select>
@@ -145,6 +147,7 @@ const SlotEditor = {
 export const Rotation = {
   components: { SlotEditor, NowPlaying },
   setup() {
+    const life = seed(["modules", "alert_lifecycle"], { full_showings: 3, full_minutes: 30, half: true });
     const cycle = computed(() => store.draft.modules.layout_cycle);
     const open = ref(null);   // "left:3"
     const disp = computed(() => store.display?.status?.panels || {});
@@ -173,13 +176,27 @@ export const Rotation = {
       open.value = null;
     };
     const play = (side, e, hold) => playOnDisplay(e, { side, hold });
-    return { cycle, open, isCurrent, waiting, add, remove, moveTo, play, entryTitle, entrySub, advanceText, ruleText, PANEL_TYPES };
+    return { cycle, open, isCurrent, waiting, add, remove, moveTo, play, entryTitle, entrySub, advanceText, ruleText, PANEL_TYPES,
+      life: computed(() => store.draft.modules.alert_lifecycle) };
   },
   template: `<div class="page">
     <div class="page-head"><div class="grow"><h1>Rotation</h1>
       <p>What each half of the wall cycles through, and when. Every screen plays to its end; rules decide which screens come up.
         ▶ plays a screen once and returns to the rotation; ⏸ holds it on the wall.</p></div></div>
     <NowPlaying/>
+    <div class="card" style="margin-bottom:16px"><div class="card-head"><Icon name="Siren" :size="16"/><h3>Alerts on the wall</h3></div>
+      <div class="card-body stack">
+        <div class="faint" style="font-size:12.5px">Every alert screen (weather, Alert Ready, DriveBC, earthquakes, tsunami, wildfire) follows the same life:
+          a new alert jumps the queue and plays full-wall with all its pages (maps, more information); then its full-wall screen comes round
+          in the rotation like any other; after the showings or the time below it moves to the half-width version on the right, so the
+          ticker and clock stay. Urgent ones (early warnings, tsunami warnings, evacuation orders…) still take over at once.</div>
+        <ToggleRow :modelValue="life.half !== false" @update:modelValue="v => life.half = v" label="Move alerts to the half-width version"
+          hint="Off: alerts stay full-wall for as long as they're in effect"/>
+        <div class="row" v-if="life.half !== false" style="gap:16px">
+          <Field label="Full-wall for"><Stepper :modelValue="life.full_showings" @update:modelValue="v => life.full_showings = v" :min="1" :max="20" unit=" showings"/></Field>
+          <Field label="or at most"><Stepper :modelValue="life.full_minutes" @update:modelValue="v => life.full_minutes = v" :min="5" :max="720" :step="5" unit=" min"/></Field>
+        </div>
+      </div></div>
     <div class="lanes">
       <div class="card" v-for="side in ['left','right']" :key="side">
         <div class="card-head"><Icon :name="side === 'left' ? 'PanelLeft' : 'PanelRight'" :size="17" style="color:var(--accent)"/>

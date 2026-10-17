@@ -591,6 +591,8 @@ class BCScreen:
     SAMPLES = {}          # id → {"label", "item": {...}}
     DEFAULT_THEME = ""
     FONT_ROLES = ()       # preloaded when the screen is built, not in the first frame of an alert
+    SOURCE = ""           # key in the shared alert lifecycle (display/modules/alert_life.py); defaults to PANEL
+    LABEL = ""            # source name on the half-width panel ("DRIVEBC", "EARTHQUAKE", …)
 
     def __init__(self, settings=None, loader=None, data_dir=None):
         self.settings = settings or {}
@@ -606,18 +608,40 @@ class BCScreen:
     def data(self):
         return (self.loader.get_data(self.DATA) if self.loader else None) or {}
 
-    def live_items(self):
-        """Items to show now (each a dict with at least "id")."""
+    def all_items(self):
+        """Items in effect now (each a dict with at least "id")."""
         return [i for i in (self.data().get("items") or []) if not i.get("expires") or i["expires"] > time.time()]
 
-    def active(self):
+    @property
+    def source(self):
+        return self.SOURCE or self.PANEL
+
+    def live_items(self, phase=None):
+        """Items in effect, optionally only those in a lifecycle phase ("full" = new or full, "half", "new")."""
+        from display.modules import alert_life
+        return [i for i in self.all_items() if alert_life.in_phase(self.source, i.get("id"), phase)]
+
+    def active(self, phase=None):
         if self.settings.get("enabled") is False:
             return False
         try:
-            return bool(self.live_items())
+            return bool(self.live_items(phase))
         except Exception as e:
             print(f"[bc] {self.PANEL}: {e}")
             return False
+
+    def new_token(self):
+        """Ids never shown in full (the rotation jumps the queue when this changes)."""
+        from display.modules import alert_life
+        return tuple(alert_life.new_ids(self.source, [i.get("id") for i in self.all_items()]))
+
+    def extra_pages(self, item):
+        """Themes played after the main one the first time an item is shown (maps, more information)."""
+        return []
+
+    def half_spec(self, item):
+        """The half-width version's content (see HalfPanel); None = no half-width version."""
+        return None
 
     def sample(self, key):
         smp = self.SAMPLES.get(key) or next(iter(self.SAMPLES.values()))
@@ -658,12 +682,28 @@ class BCScreen:
 
     # -- drawing ------------------------------------------------------------------------------------
     def _queue(self, entry):
+        """[(item, theme)] for one pass: every item in the entry's phase; an item shown for the first time also
+        gets its extra pages."""
+        from display.modules import alert_life
         if entry.get("sample"):
-            return [self.sample(entry["sample"])]
-        items = self.live_items()
-        if entry.get("item"):
-            items = [i for i in items if i.get("id") == entry["item"]] or items
-        return items
+            it = self.sample(entry["sample"])
+            items, first = [it], bool(entry.get("pages"))
+        else:
+            items = self.live_items(entry.get("phase") if entry.get("phase") in ("full", "new") else None)
+            if entry.get("item"):
+                items = [i for i in items if i.get("id") == entry["item"]] or items
+            first = None
+        out = []
+        for it in items:
+            main = self.theme_for(it, entry)
+            is_new = first if first is not None else alert_life.phase(self.source, it.get("id")) == "new"
+            pages = [main]
+            if is_new and not entry.get("theme"):
+                pages += [t for t in self.extra_pages(it) if t in self.THEMES and t != main]
+            elif is_new and entry.get("pages"):
+                pages += [t for t in self.extra_pages(it) if t in self.THEMES and t != main]
+            out += [(it, t) for t in pages]
+        return out
 
     def draw(self, c, zone, entry, transition, now=None):
         now = time.time() if now is None else now
@@ -676,8 +716,7 @@ class BCScreen:
             c.Clear()
             text(c, font("m13"), 8, 8, (160, 160, 170), "Nothing to show.")
             return "done"
-        item = self.queue[min(self.idx, len(self.queue) - 1)]
-        tid = self.theme_for(item, entry)
+        item, tid = self.queue[min(self.idx, len(self.queue) - 1)]
         el = now - self.t0
         try:
             self.THEMES[tid]["draw"](self, c, item, now, el)
@@ -693,11 +732,159 @@ class BCScreen:
             self.t0 = now
             self.state = {}
             if self.idx >= len(self.queue):
+                from display.modules import alert_life
+                real = sorted({it.get("id") for it, _ in self.queue if not it.get("sample")})
+                if real:
+                    alert_life.shown(self.source, real)
                 self.idx = 0
                 self._tour += 1
                 self.queue = self._queue(entry)
                 return "done"
         return None
+
+
+# ================================================================================================ half-width
+class HalfPanel:
+    """The half-width version of an alert screen, for alerts past their full-wall showings (right zone, 223×134).
+
+    Built from the screen's ``half_spec(item)``::
+
+        {"label": "DRIVEBC", "col": accent, "chip": ("CLOSED", colour) | None,
+         "hero": fn(c, x, y, max_w, max_h) -> (w, h)   (shield, magnitude, icon…),
+         "title": str, "lines": [(text, colour)],        (the key facts, under the title)
+         "body": [Para],                                 (the full text; paged, never cut)
+         "map": fn(c, x, y, w, h, now) | None}           (a map crop for this item)
+
+    Pages per item: summary, the text over as many pages as it needs, the map. One pass = every half-phase item.
+    """
+
+    HEAD = 13
+
+    def __init__(self, screen):
+        self.s = screen
+        self.pages, self.idx, self.t0 = [], 0, 0.0
+        self._cache = {}
+
+    def active(self):
+        return self.s.active("half")
+
+    def _pages_for(self, it, w, h):
+        spec = self.s.half_spec(it)
+        if not spec:
+            return []
+        out = [("summary", it, spec, None)]
+        bh = h - self.HEAD - 8
+        ladder = {"body": "lut12", "head": "lutb12", "small": "hv10"}
+        page, used = [], 0
+        for para in spec.get("body") or []:
+            if not para or not para.text:
+                continue
+            f = font(ladder.get(para.style) or ladder["body"])
+            plines = [(f, para.col, 0, i * f.h, t) for i, t in enumerate(wrap(f, para.text, w - 8))]
+            ph = len(plines) * f.h
+            gap = 3 if page else 0
+            if page and used + gap + ph > bh and ph <= bh:          # starts a page of its own rather than split
+                out.append(("text", it, spec, page))
+                page, used, gap = [], 0, 0
+            for f_, col_, dx, dy, t in plines:                       # (split only when longer than a page)
+                if page and used + gap + f_.h > bh:
+                    out.append(("text", it, spec, page))
+                    page, used, gap = [], 0, 0
+                page.append((f_, col_, dx, used + gap, t))
+                used += gap + f_.h
+                gap = 0
+            used += 3
+        if page:
+            out.append(("text", it, spec, page))
+        if spec.get("map"):
+            out.append(("map", it, spec, None))
+        return out
+
+    def _dwell(self, page):
+        kind, it, spec, chunk = page
+        if kind == "text":
+            words = sum(len(t[4].split()) for t in chunk)
+            return max(7.0, min(22.0, 3.0 + words / 3.0))
+        return 8.0
+
+    def draw(self, c, zone, entry, transition, now=None):
+        now = time.time() if now is None else now
+        x, y, w, h = zone
+        entry = entry or {}
+        self.s._clock = now
+        if transition or not self.pages:
+            items = [self.s.sample(entry["sample"])] if entry.get("sample") else self.s.live_items("half")
+            self.pages = [pg for it in items for pg in self._pages_for(it, w, h)]
+            self.idx, self.t0 = 0, now
+        if not self.pages:
+            box(c, x, y, w, h, BLACK)
+            return "done"
+        page = self.pages[min(self.idx, len(self.pages) - 1)]
+        kind, it, spec, chunk = page
+        el = now - self.t0
+        box(c, x, y, w, h, (6, 7, 10))
+        col = spec.get("col") or WHITE
+        # header: source, chip, page dots
+        box(c, x, y, w, self.HEAD, dim(col, 0.35))
+        box(c, x, y + self.HEAD - 1, w, 1, col)
+        text(c, font("hvb10"), x + 3, y + 1, WHITE, spec.get("label") or self.s.LABEL)
+        pages_of_item = [pg for pg in self.pages if pg[1] is it]
+        n, k_ = len(pages_of_item), pages_of_item.index(page) if page in pages_of_item else 0
+        dx = x + w - 4
+        for j in reversed(range(n)):
+            box(c, dx - 3, y + 5, 3, 3, WHITE if j == k_ else dim(col, 0.6))
+            dx -= 5
+        if spec.get("chip"):
+            t, cc = spec["chip"]
+            f = font("s8")
+            cw = tw(f, t) + 6
+            box(c, dx - cw - 2, y + 2, cw, 9, cc)
+            text(c, f, dx - cw + 1, y + 2, BLACK, t)
+        top = y + self.HEAD + 2
+        if kind == "summary":
+            hx = x + 4
+            hw = hh = 0
+            if spec.get("hero"):
+                hw, hh = spec["hero"](c, hx, top + 2, 70, h - self.HEAD - 8)
+            tx = hx + (hw + 6 if hw else 0)
+            ty = top + 1
+            ty += fit_text(c, spec.get("title") or "", tx, ty, x + w - tx - 3, 44, ("h16", "lutb14", "lutb12", "hvb10"), WHITE) + 3
+            for line_, lc in spec.get("lines") or []:
+                if not line_:
+                    continue
+                lx = tx if ty < top + max(hh, 0) + 2 else hx
+                used = fit_text(c, line_, lx, ty, x + w - lx - 3, 26, ("lutb12", "hvb10", "s8"), lc)
+                ty += used + 2
+                if ty > y + h - 10:
+                    break
+        elif kind == "text":
+            draw_fit(c, chunk, x + 4, top + 1)
+        elif kind == "map":
+            spec["map"](c, x, top, w, y + h - top, now)
+        if it.get("sample"):                                     # in the header, never over the text
+            f = font("s8")
+            lx = x + 6 + tw(font("hvb10"), spec.get("label") or self.s.LABEL)
+            box(c, lx, y + 2, tw(f, "SAMPLE") + 6, 9, (90, 0, 110))
+            text(c, f, lx + 3, y + 2, (255, 210, 255), "SAMPLE")
+        if el >= float(entry.get("page_sec") or self._dwell(page)):
+            self.idx += 1
+            self.t0 = now
+            if self.idx >= len(self.pages):
+                from display.modules import alert_life
+                alert_life.seen_alive(self.s.source, [pg[1].get("id") for pg in self.pages if not pg[1].get("sample")])
+                self.idx = 0
+                self.pages = []
+                return "done"
+        return None
+
+
+def map_crop(c, mp, x, y, w, h, cx, cy):
+    """Blit the w×h part of a map centred on map pixel (cx, cy); returns the crop origin (sx, sy)."""
+    sx = int(max(0, min(max(0, mp.w - w), cx - w / 2)))
+    sy = int(max(0, min(max(0, mp.h - h), cy - h / 2)))
+    ww, hh = min(w, mp.w - sx), min(h, mp.h - sy)
+    mp.blit(c, x, y, sx, sy, ww, hh)
+    return sx, sy
 
 
 def sample_badge(c, pos=None):
@@ -707,6 +894,22 @@ def sample_badge(c, pos=None):
     x, y = pos if pos else (W - w - 1, H - f.h - 3)
     box(c, x, y, w, f.h + 2, (90, 0, 110))
     text(c, f, x + 3, y + 1, (255, 210, 255), "SAMPLE")
+
+
+def render_half(cls, sample=None, at=4.0, settings=None, data=None, data_dir=None, page=0, zone=(225, 41, 223, 134)):
+    """A frame of the half-width version (for previews): ``page`` selects which of the item's pages."""
+    from display.gfx import Canvas
+    loader = StaticLoader({cls.DATA: data or {}}, data_dir)
+    scr = cls(dict(settings or {}), loader, data_dir)
+    hp = HalfPanel(scr)
+    c = Canvas(W, H)
+    entry = {"sample": sample or next(iter(cls.SAMPLES)), "page_sec": 10 ** 6}
+    now = time.time()
+    hp.draw(c, zone, entry, True, now=now - at)
+    hp.idx = max(0, min(page, len(hp.pages) - 1))
+    hp.t0 = now - at
+    hp.draw(c, zone, entry, False, now=now)
+    return c.buf, len(hp.pages)
 
 
 def render_preview(cls, theme, sample=None, at=4.0, settings=None, data=None, data_dir=None, frames=1):

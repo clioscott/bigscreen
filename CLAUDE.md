@@ -94,6 +94,11 @@ tsunami (`tsunami.py`, NTWC + DFO gauges), wildfire (`wildfire.py`, BCWS/EMCR, S
   (`hub/bc/mseed.py`, no obspy), pushes station intensities + QEPB trace to `/bc_quake_obs` only while a quake is fresh,
   detects ≥ 4 triggered stations. Replay a recorded quake: `POST /api/bc/quakes/replay {"name": "orcas2025", "as": "quake|eew|detect"}`.
 - Takeovers: `hub/bc/common.takeover` plays a panel once per new item id; set `BIGSCREEN_NO_PI=1` for dev runs.
+- Alert lifecycle (`display/modules/alert_life.py`, all six alert screens incl. the ECCC one): *new* → the full-wall
+  entry jumps the queue (rotation priority token) and plays every page (`extra_pages`); *full* → full-wall in the
+  rotation; after `modules.alert_lifecycle.full_showings` / `full_minutes` → *half*: the `<panel>_half` entries on
+  the right (`bc_kit.HalfPanel` + each screen's `half_spec`). Rules take `"phase": "full"|"half"`; state in
+  `/dev/shm/bigscreen-state/alert_life.json`. `tools/alert_lifecycle_rotation.py` set up the rotation entries.
 - Highway shields: `assets/icons/shields/shields.json`, pixel-hinted per size by `tools/build_shields.py` from the
   Wikimedia SVGs (needs resvg-py, scikit-image; run outside the hub venv); drawn by `display/modules/shields.py`.
 

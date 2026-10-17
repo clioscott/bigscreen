@@ -30,17 +30,25 @@ export function makeBCPage(P) {
       onMounted(() => {
         load();
         poll = setInterval(load, 8000);
-        tick = setInterval(() => { if (playing.value) t.value = (t.value + 0.5) % 30; }, 500);
+        tick = setInterval(() => {
+          if (!playing.value) return;
+          t.value = (t.value + 0.5) % 30;
+          if (half.value && Math.round(t.value * 2) % 12 === 0) halfPage.value = (halfPage.value + 1) % 8;      // next page every 6 s
+        }, 500);
       });
       onBeforeUnmount(() => { clearInterval(tick); clearInterval(poll); });
       const items = computed(() => st.value.data?.items || []);
       const smp = computed(() => sample.value || Object.keys(st.value.samples)[0] || "");
       const look = computed(() => encodeURIComponent(JSON.stringify(Object.fromEntries((P.fields || []).map((f) => [f.key, val(f.key)])))));
-      const preview = computed(() => `/api/bc/${P.src}/preview.png?theme=${theme.value}&sample=${smp.value}&real=${real.value ? 1 : 0}&at=${t.value.toFixed(1)}&scale=2&s=${look.value}`);
+      const half = ref(false);
+      const halfPage = ref(0);
+      const preview = computed(() => half.value
+        ? `/api/bc/${P.src}/half.png?sample=${smp.value}&page=${halfPage.value}&at=${t.value.toFixed(1)}&scale=2`
+        : `/api/bc/${P.src}/preview.png?theme=${theme.value}&sample=${smp.value}&real=${real.value ? 1 : 0}&at=${t.value.toFixed(1)}&scale=2&s=${look.value}`);
       const pick = (id) => { set("theme", id); view.value = null; };
       const testWall = async (opts = {}) => {
         try {
-          await api(`/api/bc/${P.src}/test`, { json: { theme: opts.theme ?? theme.value, sample: smp.value, real: opts.real ?? real.value } });
+          await api(`/api/bc/${P.src}/test`, { json: { theme: opts.theme ?? theme.value, sample: smp.value, real: opts.real ?? real.value, half: half.value } });
           toast(opts.real ?? real.value ? "Playing what's in effect on the wall once" : `Playing "${st.value.samples[smp.value]}" on the wall once`);
         } catch (e) { fail(e); }
       };
@@ -50,15 +58,22 @@ export function makeBCPage(P) {
       // rotation: is there an entry for this screen?
       const lc = computed(() => store.draft.modules.layout_cycle || {});
       const inRotation = computed(() => ["left", "right"].some((side) => (lc.value[side] || []).some((e) => e.panel === P.panel)));
+      const halfInRotation = computed(() => (lc.value.right || []).some((e) => e.panel === P.panel + "_half"));
       const addToRotation = () => {
         const right = store.draft.modules.layout_cycle.right = store.draft.modules.layout_cycle.right || [];
-        const at = right.findIndex((e) => e.panel === "weather_alert");
-        right.splice(at + 1, 0, { panel: P.panel, rules: [{ if: P.rule }], priority: "next", advance: "cycles", cycles: 1, max_sec: 600 });
+        if (!inRotation.value) {
+          const at = right.findIndex((e) => e.panel === "weather_alert");
+          right.splice(at + 1, 0, { panel: P.panel, rules: [{ if: P.rule, phase: "full" }], priority: "next", advance: "cycles", cycles: 1, max_sec: 600 });
+        }
+        if (!halfInRotation.value) {
+          const m = right.findIndex((e) => e.panel?.startsWith("map"));
+          right.splice(m >= 0 ? m : right.length, 0, { panel: P.panel + "_half", rules: [{ if: P.rule, phase: "half" }], advance: "cycles", cycles: 1, max_sec: 300 });
+        }
         toast("Added to the rotation — Save to keep it");
       };
       const health = computed(() => st.value.job?.health || "never");
       return { P, s, st, val, set, toggleIn, theme, pick, view, sample, smp, real, t, playing, preview, testWall, stop, runNow,
-        items, inRotation, addToRotation, health, ago };
+        items, inRotation, halfInRotation, addToRotation, health, ago, half, halfPage };
     },
     template: `<div class="page">
       <div class="page-head"><div class="grow"><h1>{{ P.title }}</h1><p>{{ P.intro }}</p></div>
@@ -67,7 +82,8 @@ export function makeBCPage(P) {
       <div class="two-col">
         <div class="stack sticky">
           <div class="card"><div class="card-head"><span class="live">PREVIEW</span>
-              <h3>{{ st.themes[theme]?.label }} · {{ real ? 'what is in effect' : st.samples[smp] }}</h3>
+              <h3>{{ half ? 'Half width' : st.themes[theme]?.label }} · {{ real && !half ? 'what is in effect' : st.samples[smp] }}</h3>
+              <Seg :modelValue="half" @update:modelValue="v => { half = v; halfPage = 0; t = 1; }" :options="[{value: false, label: 'Full wall'}, {value: true, label: 'Half width'}]"/>
               <button class="btn sm ghost icon-only" @click="playing = !playing" :title="playing ? 'Pause' : 'Play'"><Icon :name="playing ? 'Pause' : 'Play'" :size="14"/></button></div>
             <div class="card-body stack">
               <div style="background:#000; border-radius:8px; overflow:hidden"><img :src="preview" style="width:100%; image-rendering:pixelated; display:block" alt=""></div>
@@ -135,7 +151,10 @@ export function makeBCPage(P) {
           </div></div>
 
           <div class="card"><div class="card-head"><Icon name="Repeat" :size="15"/><h3>Rotation</h3></div><div class="card-body stack">
-            <div v-if="inRotation" class="row"><span class="dot ok"></span>In the rotation: comes up next whenever there's something to show, then the rotation carries on.</div>
+            <div v-if="inRotation && halfInRotation" class="row"><span class="dot ok"></span>In the rotation: a new alert jumps the queue full-wall, comes round full-wall
+              while it's fresh, then plays in the half-width version on the right (settings on the Rotation page).</div>
+            <div v-else-if="inRotation" class="row"><span class="dot ok"></span><span style="flex:1">Full-wall entry in the rotation; the half-width version isn't yet.</span>
+              <button class="btn sm primary" @click="addToRotation"><Icon name="Plus" :size="13"/>Add the half-width version</button></div>
             <div v-else class="row"><span class="dot bad"></span><span style="flex:1">Not in the rotation yet — it will only appear for takeovers.</span>
               <button class="btn sm primary" @click="addToRotation"><Icon name="Plus" :size="13"/>Add to rotation</button></div>
           </div></div>

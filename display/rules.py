@@ -14,6 +14,9 @@ An entry's ``rules`` is a list; all of them must hold. Each rule is ``{"if": <co
     {"if": "days", "days": [0, 1, 2, 3, 4]}                   weekday (Mon = 0)
     {"if": "fresh", "max_age_min": 30}                        the entry's own data is no older than this
     {"if": "naad"} / "roads" / "quakes" / "tsunami" / "wildfire"   that BC alert screen has something to show
+    … "phase": "full" | "half"                                  (alert and BC rules) only alerts at that stage of their
+                                                              life on the wall (display/modules/alert_life.py): "full" =
+                                                              new or not yet shown enough, "half" = past that
 
 ``not: true`` inverts a rule ("doesn't show if …"). Rules are checked when the rotation picks the next screen,
 never mid-screen: a screen that started always plays to its end.
@@ -40,7 +43,9 @@ LEGACY = {
 PANEL_DATA = {"calendar": "calendar", "client_calls_upcoming": "calendar", "client_calls_past": "calendar",
               "headlines": "headlines", "weather": "weather", "weather_full": "weather", "weather_alert": "alerts",
               "naad_alert": "naad", "road_alert": "drivebc", "quake_alert": "quakes", "tsunami_alert": "tsunami",
-              "fire_alert": "wildfire"}
+              "fire_alert": "wildfire", "weather_alert_half": "alerts", "naad_alert_half": "naad",
+              "road_alert_half": "drivebc", "quake_alert_half": "quakes", "tsunami_alert_half": "tsunami",
+              "fire_alert_half": "wildfire"}
 BC_RULES = ("naad", "roads", "quakes", "tsunami", "wildfire")
 
 _PRECIP_WORDS = ("rain", "drizzle", "shower", "snow", "flurr", "sleet", "hail", "pellet", "thunder")
@@ -95,9 +100,12 @@ class Env:
         def build():
             from display.modules import alert_brief
             out = []
+            from display.modules import alert_life
+            from display.modules.weather_alert_half import SOURCE, alert_id
             for a in self.s.alert_screen.alerts():
                 out.append({"level": a.get("type") or "statement", "hazard": alert_brief.hazard_of(a),
-                            "home": alert_brief.mentions(a, self.s.alert_screen.home)})
+                            "home": alert_brief.mentions(a, self.s.alert_screen.home),
+                            "phase": alert_life.phase(SOURCE, alert_id(a))})
             return out
         return self._get("alerts", build, 5.0)
 
@@ -131,8 +139,10 @@ class Env:
         if cond == "alert":
             lo = LEVELS.index(r["min_level"]) if r.get("min_level") in LEVELS else 0
             hz = set(r.get("hazards") or [])
+            ph = r.get("phase")
             return any((LEVELS.index(a["level"]) if a["level"] in LEVELS else 0) >= lo
                        and (not hz or a["hazard"] in hz) and (a["home"] or not r.get("home"))
+                       and (not ph or (a["phase"] in ("new", "full") if ph == "full" else a["phase"] == ph))
                        for a in self.alerts())
         if cond == "forecast_warning":
             w = self.weather()
@@ -162,11 +172,29 @@ class Env:
             return datetime.now().weekday() in [int(d) for d in (r.get("days") or [])]
         if cond in BC_RULES:
             scr = getattr(self.s, "bc", {}).get(cond)
-            return bool(scr) and self._get(f"bc_{cond}", scr.active, 2.0)
+            ph = r.get("phase")
+            return bool(scr) and self._get(f"bc_{cond}_{ph}", lambda: scr.active(ph), 2.0)
         if cond == "fresh":
             age = self.data_age(entry)
             return age is not None and age <= float(r.get("max_age_min") or 30) * 60
         return True
+
+    def priority_token(self, entry: dict):
+        """For an alert entry (full-wall phase): the ids of alerts never shown in full. When it changes, the
+        rotation plays the entry next, so every new alert jumps the queue even while older ones keep it eligible."""
+        for r in entry.get("rules") or []:
+            cond = r.get("if")
+            if r.get("not") or r.get("phase") == "half":
+                continue
+            if cond in BC_RULES:
+                scr = getattr(self.s, "bc", {}).get(cond)
+            elif cond == "alert":
+                scr = getattr(self.s, "weather_alerts", None)
+            else:
+                continue
+            if scr is not None:
+                return self._get(f"tok_{cond}", scr.new_token, 2.0) or None
+        return None
 
     def allows(self, entry: dict) -> bool:
         return all(self.check(r, entry) for r in entry.get("rules") or [])
