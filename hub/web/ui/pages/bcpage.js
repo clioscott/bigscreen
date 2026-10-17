@@ -1,6 +1,6 @@
 // Shared page for the BC alert screens (Alert Ready, DriveBC, earthquakes, tsunami, wildfire).
 // Each page passes its own config: title, intro, settings fields and how to show its live items.
-import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
 import { store, api, fail, toast, ago, seed, clone } from "../core.js";
 
 export function makeBCPage(P) {
@@ -34,8 +34,7 @@ export function makeBCPage(P) {
         poll = setInterval(load, 8000);
         tick = setInterval(() => {
           if (!playing.value) return;
-          t.value = (t.value + 0.5) % 30;
-          if (half.value && Math.round(t.value * 2) % 12 === 0) halfPage.value = (halfPage.value + 1) % 8;      // next page every 6 s
+          t.value = (t.value + 0.5) % (half.value ? Math.max(4, halfTl.value.total || 30) : 30);
         }, 500);
       });
       onBeforeUnmount(() => { clearInterval(tick); clearInterval(poll); });
@@ -43,12 +42,21 @@ export function makeBCPage(P) {
       const smp = computed(() => sample.value || Object.keys(st.value.samples)[0] || "");
       const look = computed(() => encodeURIComponent(JSON.stringify(Object.fromEntries((P.fields || []).map((f) => [f.key, val(f.key)])))));
       const half = ref(false);
-      const halfPage = ref(0);
+      // the half-width version's pages (summary, text, map…) and where the preview clock is in them
+      const halfTl = ref({ pages: [], total: 0 });
+      const loadHalf = async () => {
+        try { halfTl.value = await api(`/api/bc/${P.src}/half_pages?theme=${realTheme.value}&sample=${smp.value}`); } catch (e) { /* hub restarting */ }
+      };
+      const halfStarts = computed(() => { let a = 0; return halfTl.value.pages.map((p) => { const s0 = a; a += p.hold; return s0; }); });
+      const halfPage = computed(() => { let i = 0; halfStarts.value.forEach((s0, j) => { if (t.value >= s0) i = j; }); return i; });
+      const halfAt = computed(() => Math.max(0.5, t.value - (halfStarts.value[halfPage.value] || 0) + 0.5));
+      const jumpHalf = (i) => { t.value = (halfStarts.value[i] || 0) + 0.05; };
       const preview = computed(() => half.value
-        ? `/api/bc/${P.src}/half.png?theme=${realTheme.value}&sample=${smp.value}&page=${halfPage.value}&at=${t.value.toFixed(1)}&scale=2`
+        ? `/api/bc/${P.src}/half.png?theme=${realTheme.value}&sample=${smp.value}&page=${halfPage.value}&at=${halfAt.value.toFixed(1)}&scale=2`
         : `/api/bc/${P.src}/preview.png?theme=${theme.value}&sample=${smp.value}&real=${real.value ? 1 : 0}&at=${t.value.toFixed(1)}&scale=2&s=${look.value}`);
       const pick = (id) => { set("theme", id); view.value = null; pinned.value = null; };
-      const show = (id, h) => { pinned.value = id; view.value = null; half.value = h; halfPage.value = 0; t.value = 1; };
+      const show = (id, h) => { pinned.value = id; view.value = null; half.value = h; t.value = h ? 0 : 1; };
+      watch([half, realTheme, smp], () => { if (half.value) loadHalf(); });
       const testWall = async (opts = {}) => {
         try {
           await api(`/api/bc/${P.src}/test`, { json: { theme: opts.theme ?? theme.value, sample: smp.value, real: opts.real ?? real.value, half: half.value } });
@@ -76,7 +84,7 @@ export function makeBCPage(P) {
       };
       const health = computed(() => st.value.job?.health || "never");
       return { P, s, st, val, set, toggleIn, theme, pick, view, sample, smp, real, t, playing, preview, testWall, stop, runNow,
-        items, inRotation, halfInRotation, addToRotation, health, ago, half, halfPage, pinned, show, realTheme };
+        items, inRotation, halfInRotation, addToRotation, health, ago, half, halfPage, pinned, show, realTheme, halfTl, jumpHalf };
     },
     template: `<div class="page">
       <div class="page-head"><div class="grow"><h1>{{ P.title }}</h1><p>{{ P.intro }}</p></div>
@@ -86,10 +94,16 @@ export function makeBCPage(P) {
         <div class="stack sticky">
           <div class="card"><div class="card-head"><span class="live">PREVIEW</span>
               <h3>{{ st.themes[realTheme]?.label }}{{ half ? ' (half width)' : '' }} · {{ real && !half ? 'what is in effect' : st.samples[smp] }}</h3>
-              <Seg :modelValue="half" @update:modelValue="v => { half = v; halfPage = 0; t = 1; }" :options="[{value: false, label: 'Full wall'}, {value: true, label: 'Half width'}]"/>
+              <Seg :modelValue="half" @update:modelValue="v => { half = v; t = v ? 0 : 1; }" :options="[{value: false, label: 'Full wall'}, {value: true, label: 'Half width'}]"/>
               <button class="btn sm ghost icon-only" @click="playing = !playing" :title="playing ? 'Pause' : 'Play'"><Icon :name="playing ? 'Pause' : 'Play'" :size="14"/></button></div>
             <div class="card-body stack">
               <div style="background:#000; border-radius:8px; overflow:hidden"><img :src="preview" style="width:100%; image-rendering:pixelated; display:block" alt=""></div>
+              <div class="scrub" v-if="half && halfTl.pages.length">
+                <div class="scrub-track">
+                  <button v-for="(p, i) in halfTl.pages" :key="i" class="scrub-seg" :class="{on: halfPage === i}" :style="{flex: p.hold}" @click="jumpHalf(i)"
+                    :title="p.name + ' · holds ' + p.hold + ' s'">{{ p.name }}</button></div>
+                <span class="mono faint" style="font-size:12px; width:70px; text-align:right">{{ t.toFixed(0) }} / {{ Math.round(halfTl.total) }} s</span>
+              </div>
               <div v-if="half" class="faint" style="font-size:12px">The right half of the wall, under the clock bar — what an alert turns into once it has had its full-wall showings.</div>
               <div class="row" style="flex-wrap:wrap; gap:6px">
                 <button v-for="(lab, id) in st.samples" :key="id" class="btn sm" :class="{primary: !real && smp === id}" @click="sample = id; real = false; t = 1">{{ lab }}</button>

@@ -73,8 +73,16 @@ export const Alerts = {
     let tlTimer;
     watch(qs, () => { clearTimeout(tlTimer); tlTimer = setTimeout(loadTl, 300); });
     const half = ref(false);                        // preview the half-width version (right zone, after the full-wall showings)
+    const halfTl = ref({ pages: [], total: 0 });    // its pages (summary, text, map…) and how long each holds
+    const loadHalf = async () => {
+      try { halfTl.value = await api(`/api/bc/weather/half_pages?theme=${a.value.theme || "t01"}&sample=${a.value.sample || "rain"}`); } catch (e) { /* ignore */ }
+    };
+    watch(() => [half.value, a.value.theme, a.value.sample], () => { if (half.value) loadHalf(); });
+    const halfStarts = computed(() => { let x = 0; return halfTl.value.pages.map((p) => { const s0 = x; x += p.hold; return s0; }); });
+    const halfPage = computed(() => { let i = 0; halfStarts.value.forEach((s0, j) => { if (t.value >= s0) i = j; }); return i; });
+    const jumpHalf = (i) => { t.value = (halfStarts.value[i] || 0) + 0.05; };
     const live = computed(() => half.value
-      ? `/api/bc/weather/half.png?theme=${a.value.theme || "t01"}&sample=${a.value.sample || "rain"}&page=${Math.floor(t.value / 6)}&at=${(t.value % 6 + 1).toFixed(1)}&scale=2`
+      ? `/api/bc/weather/half.png?theme=${a.value.theme || "t01"}&sample=${a.value.sample || "rain"}&page=${halfPage.value}&at=${Math.max(0.5, t.value - (halfStarts.value[halfPage.value] || 0) + 0.5).toFixed(1)}&scale=2`
       : `/api/alerts/preview/${a.value.theme || "t01"}.png?at=${t.value.toFixed(2)}&scale=2&${qs.value}`);
     const showTheme = (id, h) => { a.value.theme = id; half.value = h; t.value = 0; };
     const page = computed(() => [...(tl.value.pages || [])].reverse().find((p) => t.value >= p.start) || tl.value.pages?.[0]);
@@ -329,13 +337,13 @@ export const Alerts = {
             if (auto.value) autoNext(); else rt.value = 0;
           }
         }
-        if (playing.value && tab.value === "design") t.value = (t.value + 0.5) % Math.max(4, tl.value.total || 30);
+        if (playing.value && tab.value === "design") t.value = (t.value + 0.5) % Math.max(4, (half.value ? halfTl.value.total : tl.value.total) || 30);
       }, 500);
     });
     onBeforeUnmount(() => { clearInterval(tick); clearInterval(tileTick); clearTimeout(tlTimer); clearTimeout(liveTimer); window.removeEventListener("keydown", onKey); });
 
     return { TABS, TYPES, DETAIL, DENSITY, VERDICTS, PER_LEVEL, tab, a, cat, current, hazardOf, levelColour, sampleLabel, sampleLevel,
-      useReal, tl, t, playing, live, page, jump, pickSample, half, showTheme,
+      useReal, tl, t, playing, live, page, jump, pickSample, half, showTheme, halfTl, halfPage, jumpHalf,
       layoutFilter, verdictFilter, themes, thumb, counts, approvedIds, verdict, setVerdict, setOpt, customised, resetStyle, fineTab,
       optImg, borderAt, revealAt, opts, fontName,
       wall, showLive, showReal, backToRotation,
@@ -381,8 +389,15 @@ export const Alerts = {
           <span class="pill" :class="{ok: verdict(a.theme) === 'approved', bad: verdict(a.theme) === 'dropped'}">{{ verdict(a.theme) === 'unreviewed' ? 'not reviewed' : verdict(a.theme) }}</span></div>
           <div class="card-body stack">
             <div style="background:#000; border-radius:8px; overflow:hidden"><img :src="live" style="width:100%; image-rendering:pixelated; display:block" alt=""></div>
+            <div class="scrub" v-if="half && halfTl.pages.length">
+              <button class="btn sm ghost icon-only" @click="playing = !playing" :title="playing ? 'Pause' : 'Play'"><Icon :name="playing ? 'Pause' : 'Play'" :size="14"/></button>
+              <div class="scrub-track">
+                <button v-for="(p, i) in halfTl.pages" :key="i" class="scrub-seg" :class="{on: halfPage === i}" :style="{flex: p.hold}" @click="jumpHalf(i)"
+                  :title="p.name + ' · holds ' + p.hold + ' s'">{{ p.name }}</button></div>
+              <span class="mono faint" style="font-size:12px; width:70px; text-align:right">{{ t.toFixed(0) }} / {{ Math.round(halfTl.total) }} s</span>
+            </div>
             <div v-if="half" class="faint" style="font-size:12px">The half-width version in this theme: the right half of the wall under the clock bar, once an alert
-              has had its full-wall showings (Rotation page → Alerts on the wall). A new page every 6 s.</div>
+              has had its full-wall showings (Rotation page → Alerts on the wall).</div>
             <div class="scrub" v-show="!half">
               <button class="btn sm ghost icon-only" @click="playing = !playing" :title="playing ? 'Pause' : 'Play'"><Icon :name="playing ? 'Pause' : 'Play'" :size="14"/></button>
               <div class="scrub-track">

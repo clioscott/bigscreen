@@ -313,13 +313,14 @@ def bc_preview(src: str, theme: str = "", sample: str = "", at: float = 4.0, sca
     return Response(bio.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
-@app.get("/api/bc/{src}/half.png")
-def bc_half(src: str, sample: str = "", page: int = 0, at: float = 2.0, scale: int = 2, theme: str = ""):
-    """The half-width version (right zone) of a sample in a theme's look, one of its pages; ``src`` "weather" = the
-    ECCC alerts (weather themes t01…)."""
+_HALF_ZONE = (225, 41, 223, 134)
+_HALF_NAMES = {"summary": "Summary", "map": "Map", "lead": "All events", "camera": "Camera", "cities": "Cities", "ocean": "Pacific"}
+
+
+def _half_panel(src, sample, theme, at=2.0):
+    """A half-width panel on a sample, laid out (its pages built) as the wall would at ``at`` seconds before now."""
     from display.gfx import Canvas
     from display.modules import bc_kit as k
-    zone = (225, 41, 223, 134)
     if src == "weather":
         from display.modules.alert_samples import SAMPLES
         from display.modules.weather_alert import AlertScreen
@@ -338,7 +339,36 @@ def bc_half(src: str, sample: str = "", page: int = 0, at: float = 2.0, scale: i
     entry = {"sample": sample, "page_sec": 10 ** 6}
     if theme:
         entry["theme"] = theme
-    hp.draw(c, zone, entry, True, now=now - at)
+    hp.draw(c, _HALF_ZONE, entry, True, now=now - at)
+    return hp, c, entry, now
+
+
+@app.get("/api/bc/{src}/half_pages")
+def bc_half_pages(src: str, sample: str = "", theme: str = ""):
+    """The pages of the half-width version (for the preview's page buttons): name and how long each holds."""
+    hp, _, _, _ = _half_panel(src, sample, theme)
+    out, n_text = [], 0
+    for pg in hp.pages:
+        kind = pg[0]
+        if kind == "text":
+            n_text += 1
+            name = f"Text {n_text}"
+        else:
+            name = _HALF_NAMES.get(kind, kind.replace("_", " ").title())
+        out.append({"name": name, "kind": kind, "hold": round(float(hp._dwell(pg)), 1)})
+    if sum(1 for p in out if p["kind"] == "text") == 1:
+        for p in out:
+            if p["kind"] == "text":
+                p["name"] = "Text"
+    return {"pages": out, "total": round(sum(p["hold"] for p in out), 1)}
+
+
+@app.get("/api/bc/{src}/half.png")
+def bc_half(src: str, sample: str = "", page: int = 0, at: float = 2.0, scale: int = 2, theme: str = ""):
+    """The half-width version (right zone) of a sample in a theme's look, one of its pages, ``at`` seconds into it;
+    ``src`` "weather" = the ECCC alerts (weather themes t01…)."""
+    hp, c, entry, now = _half_panel(src, sample, theme, at)
+    zone = _HALF_ZONE
     if hp.pages:
         hp.idx, hp.t0 = page % len(hp.pages), now - at
         c.buf[:] = 0
