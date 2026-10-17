@@ -711,7 +711,7 @@ class Screen(k.BCScreen):
         theme = theme if theme in THEMES else self.DEFAULT_THEME
 
         def hero_(c, x, y, mw, mh):
-            return hero(c, x, y, item, 40, mw), 40
+            return hero(c, x, y, item, HALF_SHIELD, mw), HALF_SHIELD
 
         def map_(c, x, y, w, h, now):
             mp = _evt_map(self, item)
@@ -719,7 +719,7 @@ class Screen(k.BCScreen):
                 return
             cx, cy = _hl_centre(mp, item)
             sx, sy = k.map_crop(c, mp, x, y, w, h, cx, cy)
-            _route_shields(c, mp, avoid=_hl_avoid(mp, item, x - sx, y - sy), h=14, ox=x - sx, oy=y - sy, clip=(x, y, x + w, y + h))
+            _route_shields(c, mp, avoid=_hl_avoid(mp, item, x - sx, y - sy), h=20, ox=x - sx, oy=y - sy, clip=(x, y, x + w, y + h))
             highlight(c, mp, item, now, ox=x - sx, oy=y - sy, width=3, clip=(x, y, x + w, y + h))
 
         title = item.get("road") or "" if item.get("highways") else (area_of(item) or item.get("road") or "")
@@ -746,6 +746,9 @@ class Screen(k.BCScreen):
 
 
 # ------------------------------------------------------------------------------------------------ half-width looks
+HALF_SHIELD = 48                      # the shield beside the title on the half-width summary (as big as the room allows)
+
+
 def _where_line(item):
     return " · ".join(v for v in (area_of(item), item.get("direction") or "") if v)
 
@@ -791,7 +794,7 @@ def _half_vms(s, item, spec, col):
     lines = sign_lines(item)
 
     def summary(c, x, y, w, h, now, el):
-        sh_ = 72
+        sh_ = 64
         k.box(c, x - 2, y, w + 4, sh_, (44, 46, 50))
         k.frame(c, x - 2, y, w + 4, sh_, (80, 82, 88))
         k.box(c, x + 6, y + 5, w - 12, sh_ - 10, BLACK)
@@ -799,16 +802,17 @@ def _half_vms(s, item, spec, col):
         for i, ln in enumerate(lines):
             f = next((k.font(r) for r in ("m16b", "m13b", "m10b") if k.tw(k.font(r), ln) <= fw), k.font("s8"))
             lit = not (i == 1 and (item.get("closed") or item.get("severity") == "MAJOR")) or k.blink(now, 1.0, 0.72)
-            k.text_c(c, f, x + w // 2, y + 8 + i * 21 + (16 - f.h) // 2, AMB if lit else AMB_DD, ln)
+            k.text_c(c, f, x + w // 2, y + 7 + i * 18 + (16 - f.h) // 2, AMB if lit else AMB_DD, ln)
         if item.get("closed") or item.get("severity") == "MAJOR":
             on = k.blink(now, 0.8)
             for bx, by, ph in ((x + 1, y + 14, on), (x + 1, y + sh_ - 14, not on), (x + w - 2, y + 14, not on), (x + w - 2, y + sh_ - 14, on)):
                 beacon(c, bx, by, ph, 2)
-        ty = y + sh_ + 5
-        bw = hero(c, x, ty, item, 30, 100)
+        ty = y + sh_ + 4
+        sh_h = max(24, min(48, y + h - ty))                    # the shield as big as the room under the sign allows
+        bw = hero(c, x, ty, item, sh_h, 110)
         tx = x + bw + 6
-        k.fit_text(c, item.get("road") or "", tx, ty, w - bw - 6, 16, ("lutb12", "hvb10", "s8"), WHITE)
-        k.fit_text(c, _where_line(item), tx, ty + 16, w - bw - 6, 14, ("hv10", "s8"), col)
+        k.fit_text(c, item.get("road") or "", tx, ty + 2, w - bw - 6, 30, ("lutb12", "hvb10", "s8"), WHITE)
+        k.fit_text(c, _where_line(item), tx, ty + 30, w - bw - 6, 14, ("hv10", "s8"), col)
 
     spec.update(summary=summary, look={"bg": (5, 6, 8), "head": "sign", "head_fg": AMB, "dot_on": AMB, "dot_off": AMB_DD,
                                        "ladder": {"body": "lut12", "small": "hv10"}})
@@ -820,24 +824,25 @@ def _half_overview(s, item, spec, col):
     def lead(c, x, y, w, h, now, el, items):
         mp = k.Map.load(s.data_dir, "roads_metro")
         items = [it for it in items if it] or [item]
-        mh = h - 18 * min(3, len(items)) - 3
+        rows = min(3, len(items))
+        mh = h - 24 * rows - 3
         if mp:
             pts = [_hl_centre(mp, it) for it in items]
             cx, cy = _centre(pts)
             sx, sy = k.map_crop(c, mp, x - 4, y - 2, w + 8, mh, cx, cy)
             clip = (x - 4, y - 2, x + w + 4, y - 2 + mh)
-            _route_shields(c, mp, avoid=[p for it in items for p in _hl_avoid(mp, it, x - 4 - sx, y - 2 - sy)], h=12,
+            _route_shields(c, mp, avoid=[p for it in items for p in _hl_avoid(mp, it, x - 4 - sx, y - 2 - sy)], h=18,
                            ox=x - 4 - sx, oy=y - 2 - sy, clip=clip)
             for it in items:
                 highlight(c, mp, it, now, ox=x - 4 - sx, oy=y - 2 - sy, width=2, clip=clip)
         ty = y - 2 + mh + 2
-        for it in items[:3]:
-            k.box(c, x - 4, ty, 3, 16, col_of(it))
-            hw_ = hero(c, x + 2, ty + 1, it, 14, 60)
+        for it in items[:rows]:
+            k.box(c, x - 4, ty, 3, 22, col_of(it))
+            hw_ = hero(c, x + 2, ty + 1, it, 20, 90)
             tx = x + hw_ + 8
-            k.text(c, k.pick(("hvb10", "s8"), it.get("road") or "", w - hw_ - 40), tx, ty + 3, WHITE, it.get("road") or "")
-            k.text_r(c, k.font("s8"), x + w, ty + 4, col_of(it), word_of(it))
-            ty += 18
+            k.text(c, k.pick(("hvb10", "s8"), it.get("road") or "", w - hw_ - 10), tx, ty, WHITE, it.get("road") or "")
+            k.text(c, k.font("s8"), tx, ty + 12, col_of(it), " · ".join(v for v in (word_of(it), area_of(it)) if v))
+            ty += 24
 
     spec.update(lead=lead, label="METRO TRAFFIC", look={"bg": (10, 11, 16), "head_bg": (10, 11, 16), "rule": (50, 56, 70)})
     return spec
@@ -868,26 +873,33 @@ def _half_camera(s, item, spec, col):
 def _half_board(s, item, spec, col):
     """The traffic desk: every event as a row first, then the one in focus as an expanded row and its text."""
     def row(c, x, y, w, it, on):
-        k.box(c, x - 4, y, w + 8, 20, (34, 36, 48) if on else (12, 13, 18))
-        k.box(c, x - 4, y, 3, 20, col_of(it))
-        hw_ = hero(c, x + 2, y + 2, it, 16, 70)
+        k.box(c, x - 4, y, w + 8, 26, (34, 36, 48) if on else (12, 13, 18))
+        k.box(c, x - 4, y, 3, 26, col_of(it))
+        hw_ = hero(c, x + 2, y + 2, it, 22, 90)
         tx = x + hw_ + 8
         name = it.get("road") or ""
-        k.text(c, k.pick(("lutb12", "hvb10", "s8"), name, w - hw_ - 12), tx, y + 1, WHITE if on else (190, 190, 200), name)
-        k.text(c, k.font("s8"), tx, y + 12, col_of(it), " · ".join(v for v in (word_of(it), area_of(it)) if v))
+        k.text(c, k.pick(("lutb12", "hvb10", "s8"), name, w - hw_ - 12), tx, y + 2, WHITE if on else (190, 190, 200), name)
+        k.text(c, k.font("s8"), tx, y + 16, col_of(it), " · ".join(v for v in (word_of(it), area_of(it)) if v))
 
     def lead(c, x, y, w, h, now, el, items):
         items = [it for it in items if it] or [item]
-        for i, it in enumerate(items[:5]):
-            row(c, x, y + i * 22, w, it, False)
+        for i, it in enumerate(items[:4]):
+            row(c, x, y + i * 29, w, it, False)
 
     def summary(c, x, y, w, h, now, el):
-        row(c, x, y, w, item, True)
-        ty = y + 24
-        if _where_line(item):
-            ty += k.fit_text(c, _where_line(item), x, ty, w, 14, ("lutb12", "hvb10"), (255, 225, 150)) + 2
-        k.text(c, k.font("hv10"), x, ty, (150, 155, 170), _updated(item))
-        big_icon(c, item, x + w - 24, y + h - 26, col)
+        # the event in focus as an expanded row: the shield as big as the row allows, then where and what
+        k.box(c, x - 4, y - 2, w + 8, 54, (34, 36, 48))
+        k.box(c, x - 4, y - 2, 3, 54, col)
+        bw = hero(c, x + 2, y + 1, item, 48, 110)
+        tx = x + bw + 8
+        ty = y + k.fit_text(c, item.get("road") or "", tx, y + 1, w - bw - 8, 30, ("lutb14", "lutb12", "hvb10"), WHITE) + 2
+        k.fit_text(c, _where_line(item), tx, ty, w - bw - 8, 14, ("hvb10", "s8"), (255, 225, 150))
+        ty = y + 58
+        f = k.pick(("h16", "lutb12", "hvb10"), word_of(item), w - 34)
+        k.box(c, x, ty, k.tw(f, word_of(item)) + 10, f.h + 4, col)
+        k.text(c, f, x + 5, ty + 2, BLACK, word_of(item))
+        big_icon(c, item, x + w - 24, ty, col)
+        k.text(c, k.font("hv10"), x, ty + f.h + 8, (150, 155, 170), _updated(item))
 
     spec.update(lead=lead, summary=summary, label="METRO VANCOUVER TRAFFIC",
                 look={"bg": (8, 9, 13), "head_bg": (20, 22, 30), "rule": col, "order": ("summary", "text", "map")})
