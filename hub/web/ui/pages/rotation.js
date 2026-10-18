@@ -9,7 +9,7 @@ function entrySub(e) {
     const tr = store.draft.modules.weather_maps?.tracks?.[e.track];
     if (tr) bits.push(areaLabel(tr.area, true));
   }
-  if (PANEL_TYPES[e.panel]?.full) bits.push(e.panel === "weather_alert" ? "whole wall" : "full width");
+  if (PANEL_TYPES[e.panel]?.full) bits.push(["weather_alert", "webcam_wall"].includes(e.panel) ? "whole wall" : "full width");
   if (e.priority === "next") bits.push("jumps the queue");
   return bits.join(" · ");
 }
@@ -21,7 +21,8 @@ function advanceText(e) {
   }
   return `${e.dwell_sec ?? 30} s`;
 }
-const sameEntry = (a, b) => a && b && a.panel === b.panel && (a.track || null) === (b.track || null) && (a.weather_screen || null) === (b.weather_screen || null);
+const sameEntry = (a, b) => a && b && a.panel === b.panel && (a.track || null) === (b.track || null) && (a.weather_screen || null) === (b.weather_screen || null)
+  && (a.cam || null) === (b.cam || null);
 
 const WITHIN = [{ value: 0, label: "right now" }, { value: 1, label: "within 1 h" }, { value: 3, label: "within 3 h" },
   { value: 6, label: "within 6 h" }, { value: 12, label: "within 12 h" }, { value: 24, label: "within 24 h" }];
@@ -87,8 +88,10 @@ const SlotEditor = {
       const pt = PANEL_TYPES[p];
       if (pt.sub === "track" && !e.track) e.track = tracks.value[0]?.[0] || Object.keys(store.draft.modules.weather_maps?.tracks || {})[0];
       if (pt.sub === "weather_screen" && !e.weather_screen) e.weather_screen = "current";
+      if (pt.sub === "cam" && !e.cam) e.cam = Object.keys(store.draft.modules.webcams?.cams || {})[0];
       if (pt.sub !== "track") delete e.track;
       if (pt.sub !== "weather_screen") delete e.weather_screen;
+      if (pt.sub !== "cam") delete e.cam;
       if (!pt.passes) { delete e.advance; delete e.cycles; delete e.max_sec; e.dwell_sec = e.dwell_sec ?? 30; }
     };
     const mode = computed({
@@ -105,7 +108,8 @@ const SlotEditor = {
     const addRule = () => rules.value.push({ if: "calendar_events", ...RULES.calendar_events.make() });
     const priority = computed({ get: () => props.e.priority === "next", set: (v) => { props.e.priority = v ? "next" : ""; } });
     const enabled = computed({ get: () => props.e.enabled !== false, set: (v) => { if (v) delete props.e.enabled; else props.e.enabled = false; } });
-    return { t, tracks, setPanel, mode, passes, defaultLoops, rules, addRule, priority, enabled, PANEL_TYPES, WEATHER_SCREENS };
+    const cams = computed(() => store.draft.modules.webcams?.cams || {});
+    return { t, tracks, cams, setPanel, mode, passes, defaultLoops, rules, addRule, priority, enabled, PANEL_TYPES, WEATHER_SCREENS };
   },
   template: `<div class="slot-editor">
     <div class="field"><div class="label">Panel</div>
@@ -116,6 +120,9 @@ const SlotEditor = {
         <option v-for="[id, tr] in tracks" :key="id" :value="id">{{ tr.label }}</option></select></Field>
       <Field v-if="t.sub === 'weather_screen'" label="Screen"><select class="input" v-model="e.weather_screen">
         <option v-for="(l, id) in WEATHER_SCREENS" :key="id" :value="id">{{ l }}</option></select></Field>
+      <Field v-if="t.sub === 'cam'" label="Webcam"><div class="row nowrap"><select class="input" v-model="e.cam">
+        <option v-for="(c, id) in cams" :key="id" :value="id">{{ c.label || id }}</option></select>
+        <a :href="'#/webcams/' + (e.cam || '')" class="btn sm ghost" title="Crop, colour and caption"><Icon name="Pencil" :size="14"/></a></div></Field>
     </div>
     <div class="field"><div class="label">When it comes up</div>
       <div class="rule-list">
@@ -203,7 +210,7 @@ export const Rotation = {
           <h3>{{ side === 'left' ? 'Left half' : 'Right half' }}</h3>
           <button class="btn sm" @click="add(side)"><Icon name="Plus" :size="14"/>Add</button></div>
         <div class="lane-items" v-sortable="{ list: cycle[side], handle: '.handle', onChange: () => open = null }">
-          <div v-for="(e, i) in cycle[side]" :key="side + i + e.panel + (e.track || '') + (e.weather_screen || '')">
+          <div v-for="(e, i) in cycle[side]" :key="side + i + e.panel + (e.track || '') + (e.weather_screen || '') + (e.cam || '')">
             <div class="slot" :class="{current: isCurrent(side, i), off: e.enabled === false, waiting: waiting(side, i)}">
               <span class="handle"><Icon name="GripVertical" :size="16"/></span>
               <span class="kind"><Icon :name="PANEL_TYPES[e.panel]?.icon || 'Square'" :size="18"/></span>

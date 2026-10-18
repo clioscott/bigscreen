@@ -49,6 +49,7 @@ export const SECTIONS = [
   ["Ticker", ["modules", "finance"]],
   ["Headlines", ["modules", "headlines"]],
   ["Weather maps", ["modules", "weather_maps"]],
+  ["Webcams", ["modules", "webcams"]],
   ["Weather data", ["modules", "weather"]],
   ["Weather alerts", ["modules", "weather_alerts"]],
   ["Japan EEW", ["modules", "japan_eew"]],
@@ -193,6 +194,9 @@ export const PANEL_TYPES = {
   quake_alert_half: { label: "Earthquakes (half width)", icon: "Activity", passes: true, passWord: "pass through every quake" },
   tsunami_alert_half: { label: "Tsunami (half width)", icon: "Waves", passes: true, passWord: "pass through every message" },
   fire_alert_half: { label: "Wildfire (half width)", icon: "Flame", passes: true, passWord: "pass through every item" },
+  webcam: { label: "Webcam", icon: "Video", sub: "cam", passes: false },
+  webcam_full: { label: "Webcam (full width)", icon: "Video", sub: "cam", full: true, passes: false },
+  webcam_wall: { label: "Webcam (whole wall)", icon: "Video", sub: "cam", full: true, passes: false, note: "Covers the ticker and clock too" },
   blank: { label: "Blank", icon: "Square", passes: false },
 };
 // the stage of an alert's life on the wall (display/modules/alert_life.py) a rule can ask for
@@ -282,6 +286,7 @@ export function entryTitle(e) {
     return tr ? tr.label : `Map: ${e.track || "?"}`;
   }
   if (e.panel === "weather" || e.panel === "weather_full") return WEATHER_SCREENS[e.weather_screen || "current"] || t?.label;
+  if (e.panel?.startsWith("webcam")) return store.draft?.modules?.webcams?.cams?.[e.cam]?.label || `Webcam: ${e.cam || "?"}`;
   if (e.panel === "quake") return "Earthquake warning";
   if (e.panel === "font_specimen") return "Font specimen";
   return t?.label || e.panel;
