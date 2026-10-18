@@ -48,7 +48,10 @@ export const Overview = {
       try { await api(`/api/jobs/${name}/run`, { method: "POST" }); toast("Started"); setTimeout(refreshStatus, 1500); } catch (e) { fail(e); }
     };
     const every = (s) => (s >= 120 ? `${Math.round(s / 60)} min` : `${s} s`);
-    return { store, jobs, disp, showing, health, runJob, ago, dur, every, now, JOB_ICONS, go };
+    const code = computed(() => store.status?.code || {});
+    const deploy = computed(() => code.value.last_deploy || {});
+    const repo = "https://github.com/clioscott/bigscreen";
+    return { store, jobs, disp, showing, health, runJob, ago, dur, every, now, JOB_ICONS, go, code, deploy, repo };
   },
   template: `<div class="page">
     <div class="page-head"><div class="grow"><h1>Overview</h1><p>What's on the display right now and how every data feed is doing.</p></div></div>
@@ -89,6 +92,19 @@ export const Overview = {
       <div class="card pad"><div class="kpi"><b>{{ disp ? disp.fps : '—' }}</b><span>frames per second on the panels</span></div></div>
       <div class="card pad"><div class="kpi"><b>{{ disp ? disp.draw_ms_p95 + ' ms' : '—' }}</b><span>95th-percentile draw time</span></div></div>
       <div class="card pad"><div class="kpi"><b>{{ store.status?.sync?.ok ? 'OK' : 'Check' }}</b><span>data sync to the Pi · {{ store.status?.sync?.at?.slice(11) || '—' }}</span></div></div>
+    </div>
+
+    <div class="section" v-if="code.running?.commit">
+      <div class="section-title"><Icon name="GitCommitHorizontal" :size="14"/>Deployed code</div>
+      <div class="card pad stack">
+        <div class="row nowrap"><a :href="repo + '/commit/' + code.running.commit" target="_blank" class="mono">{{ code.running.commit.slice(0, 7) }}</a>
+          <span style="flex:1">{{ code.running.subject }}</span>
+          <span class="pill" v-if="deploy.at" :class="deploy.ok ? 'ok' : 'bad'"><span class="dot" :class="deploy.ok ? 'ok' : 'bad'"></span>{{ deploy.ok ? 'deployed' : 'deploy failed' }} {{ ago(now - deploy.at) }}</span></div>
+        <div class="faint" style="font-size:12px" v-if="deploy.at">
+          Hub {{ deploy.hub || '—' }} · Pi {{ deploy.pi || '—' }}<template v-if="deploy.from"> · from {{ deploy.from.slice(0, 7) }}</template>
+          <template v-if="deploy.commit && deploy.commit !== code.running.commit"> · last deploy target {{ deploy.commit.slice(0, 7) }}</template></div>
+        <div v-if="deploy.ok === false && deploy.message" class="callout" style="font-size:12px; white-space: pre-wrap">{{ deploy.message }}</div>
+      </div>
     </div>
   </div>`,
 };

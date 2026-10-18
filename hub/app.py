@@ -461,6 +461,20 @@ def logs(hub: int = 0, display: int = 0):
 
 
 # --- status ------------------------------------------------------------------
+def _git_head():
+    """The commit this hub process runs (read once: a deploy restarts the hub)."""
+    import subprocess
+    try:
+        out = subprocess.run(["git", "-C", str(paths.REPO_DIR), "log", "-1", "--format=%H%x00%s%x00%ct"],
+                             capture_output=True, text=True, timeout=5).stdout.strip().split("\0")
+        return {"commit": out[0], "subject": out[1], "committed_at": int(out[2])}
+    except (OSError, IndexError, ValueError, subprocess.SubprocessError):
+        return {}
+
+
+RUNNING = _git_head()
+
+
 @app.get("/api/status")
 def status():
     cfg = config.load()
@@ -472,6 +486,7 @@ def status():
         "config_revision": cfg.get("revision"),
         "display": {"in_sync": in_sync, "applied_revision": applied.get("revision"),
                     "applied_at": applied.get("at")},
+        "code": {"running": RUNNING, "last_deploy": read_json(paths.STATE_DIR / "deploy.json", {}) or {}},
     }
 
 

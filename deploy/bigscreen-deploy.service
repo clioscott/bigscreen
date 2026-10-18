@@ -1,0 +1,12 @@
+[Unit]
+Description=BigScreen deploy - fast-forward ~/bigscreen to GitHub main, restart hub, update the Pi
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=scott
+WorkingDirectory=/home/scott/bigscreen
+ExecStart=/bin/bash /home/scott/bigscreen/deploy/bigscreen-deploy.sh
+TimeoutStartSec=600
+SyslogIdentifier=bigscreen-deploy
