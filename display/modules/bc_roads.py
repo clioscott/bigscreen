@@ -237,6 +237,75 @@ def _cam(s, item):
         return None
 
 
+# ------------------------------------------------------------------------------------------------ camera labels
+FACING = {"N": "NORTH", "NE": "NORTHEAST", "E": "EAST", "SE": "SOUTHEAST", "S": "SOUTH", "SW": "SOUTHWEST", "W": "WEST",
+          "NW": "NORTHWEST"}
+BEARING = {"N": 0, "NE": 45, "E": 90, "SE": 135, "S": 180, "SW": 225, "W": 270, "NW": 315}
+NOUN = {"crash": "crash", "fire": "fire", "debris": "debris", "slide": "slide", "flood": "flooding", "construction": "work zone"}
+
+
+def cam_place(cam):
+    """Where the camera is, from DriveBC's caption without its "looking north" ("Highway 1 at 176 Street overpass")."""
+    cap = re.sub(r"[,;]?\s*looking\b.*$", "", (cam.get("caption") or "").strip(), flags=re.I).rstrip(" .*")
+    return cap or re.sub(r"\s+-\s+[NSEW]{1,2}$", "", cam.get("name") or "")
+
+
+def cam_facing(cam):
+    """The compass point the camera looks towards ("E"), from DriveBC's orientation or its caption."""
+    o = (cam.get("orientation") or "").upper()
+    if o in FACING:
+        return o
+    m = re.search(r"looking\s+(north|south)?\s*(east|west)?", cam.get("caption") or "", re.I)
+    if m and (m.group(1) or m.group(2)):
+        return "".join(w[0].upper() for w in (m.group(1), m.group(2)) if w)
+    return ""
+
+
+def cam_distance(item, cam):
+    """"0.5 km W of the crash": how far the camera is from the event, and which way."""
+    km = cam.get("km")
+    if km is None:
+        return ""
+    pts = (item.get("geometry") or {}).get("points") or []
+    noun = "closure" if item.get("closed") else NOUN.get(item.get("kind"), "incident")
+    if pts and cam.get("lat") is not None and km >= 0.1:
+        lo, la = sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
+        return f"{km:g} km {k.bearing_word(la, lo, cam['lat'], cam['lon'])} of the {noun}"
+    return f"{km:g} km from the {noun}" if km >= 0.1 else f"At the {noun}"
+
+
+def compass(c, cx, cy, r, point, col):
+    """A small dial with its needle towards ``point`` (the way the camera faces)."""
+    k.circle(c, cx, cy, r, (150, 155, 170))
+    b = math.radians(BEARING.get(point, 0))
+    k.thick_line(c, cx, cy, int(round(cx + math.sin(b) * (r - 1))), int(round(cy - math.cos(b) * (r - 1))), col, 2)
+    k.box(c, cx, cy, 1, 1, WHITE)
+
+
+def cam_label(c, item, cam, x, y, w, big=True):
+    """The camera's location on one line; which way it faces (dial + word) and how far from the event on the next.
+    Drawn on a shaded strip at the bottom of the picture (y = the strip's top); returns the strip's height."""
+    h = 28 if big else 24
+    k.shade(c, x, y, w, h, 0.25)
+    f1 = ("lutb12", "hvb10", "s8") if big else ("hvb10", "s8")
+    k.fit_text(c, cam_place(cam), x + 4, y + 2, w - 8, 13 if big else 11, f1, WHITE)
+    ly = y + h - (12 if big else 11)
+    tx = x + 4
+    pt = cam_facing(cam)
+    if pt:
+        r = 5 if big else 4
+        compass(c, tx + r, ly + 4, r, pt, AMB)
+        tx += 2 * r + 4
+        f = k.font("hvb10" if big else "s8")
+        t = f"FACING {FACING[pt]}"
+        k.text(c, f, tx, ly, AMB, t)
+        tx += k.tw(f, t) + 6
+    dist = cam_distance(item, cam)
+    if dist:
+        k.fit_text(c, dist, tx, ly, x + w - 4 - tx, 11, ("hv10", "s8") if big else ("s8",), (205, 210, 225))
+    return h
+
+
 # ================================================================================================ themes
 # The road is the graphic: real shields large, plain side panels (with the hazard icon), and maps where the only
 # addition is the affected road itself — the OSM ways the event is on (matched by the hub) — drawn in alternating
@@ -596,9 +665,7 @@ def _camera(s, c, item, now, el):
     def static():
         if img is not None:
             c.Blit(img, 0, 0)
-            k.shade(c, 0, H - 15, iw, 15, 0.3)
-            k.fit_text(c, cam.get("caption") or cam.get("name") or "", 4, H - 13, iw - 70, 12, ("hv10", "s8"), (230, 230, 235))
-            k.text_r(c, k.font("s8"), iw - 4, H - 11, (200, 200, 210), f"{cam.get('km', '?')} km away")
+            cam_label(c, item, cam, 0, H - 28, iw)
         elif mp:
             mp.blit(c, 0, 0, sx, 0, iw, H)
             _route_shields(c, mp, avoid=_hl_avoid(mp, item, -sx), h=14, ox=-sx, clip=(0, 0, iw, H))
@@ -861,9 +928,7 @@ def _half_camera(s, item, spec, col):
         ih, iw = img.shape[:2]
         sx, sy = max(0, (iw - w) // 2), max(0, (ih - h) // 2)
         c.Blit(img[sy:sy + h, sx:sx + w], x + max(0, (w - iw) // 2), y)
-        k.shade(c, x, y + h - 13, w, 13, 0.3)
-        k.fit_text(c, cam.get("caption") or cam.get("name") or "", x + 3, y + h - 12, w - 60, 11, ("hv10", "s8"), (230, 230, 235))
-        k.text_r(c, k.font("s8"), x + w - 3, y + h - 10, (200, 200, 210), f"{cam.get('km', '?')} km away")
+        cam_label(c, item, cam, x, y + h - 24, w, big=False)
         k.box(c, x + 3, y + 3, 34, 11, BLACK)
         k.disc(c, x + 9, y + 8, 3, (255, 40, 40) if k.blink(now, 1.2) else (90, 0, 0))
         k.text(c, k.font("s8"), x + 14, y + 4, WHITE, "LIVE")

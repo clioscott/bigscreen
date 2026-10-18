@@ -146,7 +146,9 @@ def _fetch_cam(cam):
     np.ascontiguousarray(np.asarray(img), dtype=np.uint8).tofile(OUT / f"cam_{cam['id']}.bin")
     return {"id": cam["id"], "name": fold(cam.get("name") or ""), "caption": fold(cam.get("caption") or ""),
             "w": CAM_W, "h": CAM_H, "at": time.time(),
-            "updated": _ts(cam.get("last_update_modified")), "orientation": cam.get("orientation") or ""}
+            "updated": _ts(cam.get("last_update_modified")), "orientation": cam.get("orientation") or "",
+            "lon": ((cam.get("location") or {}).get("coordinates") or [None, None])[0],
+            "lat": ((cam.get("location") or {}).get("coordinates") or [None, None])[1]}
 
 
 def item_of(e):
