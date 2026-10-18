@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timezone
+from functools import lru_cache
 
 import numpy as np
 
@@ -51,6 +52,7 @@ DEFAULT_OVERLAY = {"style": "tag", "corner": "bl", "when": "always", "font": "sm
                             "daynight": False, "weather": False, "sun": False, "live": True, "credit": False,
                             "custom": False}}
 WHITE, BLACK = Color(255, 255, 255), Color(0, 0, 0)
+WX_MAX_AGE = 2 * 3600       # weather older than this isn't shown
 AMBER = (255, 170, 0)
 
 # 7×7 pixel icons; letters pick the colour
@@ -111,7 +113,9 @@ def _local_time(tz):
         return datetime.now()
 
 
+@lru_cache(maxsize=4096)
 def _tw(font, s):
+    """Text width in px (memoised: layouts measure the same strings every frame)."""
     return sum(max(0, font.CharacterWidth(ord(ch))) for ch in s)
 
 
@@ -124,18 +128,23 @@ def _shade(c, x, y, w, h, k):
 
 
 def _box(c, x, y, w, h, rgb, opacity, round_=False):
-    """A background box: the frame blended toward rgb by opacity; round_ trims the corner pixels."""
-    x0, y0, x1, y1 = max(0, x), max(0, y), min(c.width, x + w), min(c.height, y + h)
+    """A background box: the frame blended toward rgb by opacity; round_ trims the corner pixels. Clipped to the
+    caption's zone when drawing through _Zone."""
+    x0, y0 = max(x, getattr(c, "x0", 0), 0), max(y, getattr(c, "y0", 0), 0)
+    x1, y1 = min(x + w, getattr(c, "x1", c.width), c.width), min(y + h, getattr(c, "y1", c.height), c.height)
     if x1 <= x0 or y1 <= y0:
         return
+    if hasattr(c, "mark"):
+        c.mark(x0, y0, x1, y1)
     a = int(max(0.0, min(1.0, opacity)) * 256)
-    box = c.buf[y0:y1, x0:x1].astype(np.uint16)
+    buf = c.buf
+    box = buf[y0:y1, x0:x1].astype(np.uint16)
     out = ((box * (256 - a) + np.array(rgb, np.uint16) * a) >> 8).astype(np.uint8)
-    if round_ and w > 4 and h > 4:
-        keep = c.buf[y0:y1, x0:x1]
+    if round_ and w > 4 and h > 4 and (x0, y0, x1, y1) == (x, y, x + w, y + h):
+        keep = buf[y0:y1, x0:x1]
         for yy, xx in ((0, 0), (0, -1), (-1, 0), (-1, -1)):
             out[yy, xx] = keep[yy, xx]
-    c.buf[y0:y1, x0:x1] = out
+    buf[y0:y1, x0:x1] = out
 
 
 def _outlined(c, font, x, y, color, s):
@@ -164,10 +173,19 @@ def draw_icon(c, x, y, name):
     return 8
 
 
+@lru_cache(maxsize=4096)
 def _clip(font, s, width):
-    while s and _tw(font, s) > width:
-        s = s[:-1]
-    return s.rstrip(" ,·-/|")
+    """s cut to fit width px (memoised; a binary search over the prefix widths)."""
+    if _tw(font, s) <= width:
+        return s
+    lo, hi = 0, len(s)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if _tw(font, s[:mid]) <= width:
+            lo = mid
+        else:
+            hi = mid - 1
+    return s[:lo].rstrip(" ,·-/|")
 
 
 def _sep(font, name="dot"):
@@ -177,23 +195,35 @@ def _sep(font, name="dot"):
 
 def fit_detail(font, bits, width, drop=("credit", "place"), sep="dot"):
     """Join (kind, text) bits within width px, dropping kinds in `drop` order before cutting text."""
+    return _fit(font, tuple(tuple(b) for b in bits), width, tuple(drop), sep)[1]
+
+
+@lru_cache(maxsize=2048)
+def _fit(font, bits, width, drop, sep, icon_kind=None):
+    """(the bits kept, the line). A line that starts with icon_kind has 9 px less room (its icon goes in front)."""
     sp = _sep(font, sep)
-    bits = list(bits)
-    line = sp.join(v for _, v in bits)
+    kept = list(bits)
+
+    def room(ks):
+        return width - (9 if icon_kind and ks and ks[0][0] == icon_kind else 0)
+
+    line = sp.join(v for _, v in kept)
     for kind in drop:
-        if _tw(font, line) <= width:
+        if _tw(font, line) <= room(kept):
             break
-        bits = [b for b in bits if b[0] != kind] or bits
-        line = sp.join(v for _, v in bits)
-    return _clip(font, line, width)
+        kept = [b for b in kept if b[0] != kind] or kept
+        line = sp.join(v for _, v in kept)
+    return tuple(kept), _clip(font, line, max(0, room(kept)))
 
 
-def detail_lines(font, bits, width, mode="auto", sep="dot", max_lines=4):
-    """The details as lines for the `lines` setting: auto → 1, wrap → up to 2, stacked → one per section."""
+def detail_lines(font, bits, width, mode="auto", sep="dot", max_lines=4, icon_kind=None):
+    """The details as (first section's kind, text) lines for the `lines` setting: auto → 1, wrap → up to 2,
+    stacked → one per section. Lines starting with icon_kind (the weather, when it has an icon) leave room for it."""
+    bits = tuple(tuple(b) for b in bits)
     if not bits:
         return []
     if mode == "stacked":
-        return [_clip(font, v, width) for _, v in bits[:max_lines]]
+        return [(kd, _clip(font, v, width - (9 if kd == icon_kind else 0))) for kd, v in bits[:max_lines]]
     if mode == "wrap":
         sp = _sep(font, sep)
         lines, cur = [], []
@@ -208,9 +238,14 @@ def detail_lines(font, bits, width, mode="auto", sep="dot", max_lines=4):
                 cur.append(b)
         if cur and len(lines) < 2:
             lines.append(cur)
-        return [fit_detail(font, ln, width, DROP, sep) for ln in lines[:2]]
-    line = fit_detail(font, bits, width, DROP, sep)
-    return [line] if line else []
+        out = []
+        for ln in lines[:2]:
+            kept, text = _fit(font, tuple(ln), width, DROP, sep, icon_kind)
+            if text:
+                out.append((kept[0][0] if kept else None, text))
+        return out
+    kept, text = _fit(font, bits, width, DROP, sep, icon_kind)
+    return [(kept[0][0] if kept else None, text)] if text else []
 
 
 # --- content ------------------------------------------------------------------------------------------------------
@@ -239,6 +274,8 @@ class Content:
                 h, m = divmod(abs(mins), 60)
                 sec["offset"] = f"{'+' if mins > 0 else '-'}{h}h" + (f"{m:02d}" if m else "")
         wx = wx or {}
+        if wx and time.time() - float(wx.get("at") or 0) > WX_MAX_AGE:
+            wx = {}                                         # the weather job hasn't run for hours: don't show old data
         self.icon = None
         sec["weather"] = ""
         if sh.get("weather") and wx.get("temp") is not None:
@@ -293,17 +330,26 @@ def caption_lines(cam, ov, now_local=None):
 
 
 # --- visibility ---------------------------------------------------------------------------------------------------
+def _num(v, default, lo, hi):
+    try:
+        return max(lo, min(hi, float(v)))
+    except (TypeError, ValueError):
+        return default
+
+
 def visibility(ov, elapsed):
     """0-1: how visible the caption is `elapsed` s into a play."""
     when = ov.get("when", "always")
-    fade = ov.get("fade", True)
-    if when == "always":
+    fade = bool(ov.get("fade", True))
+    if when not in ("intro", "periodic"):
         return 1.0
     if when == "intro":
         start, length = 0.0, INTRO_SEC
     else:                                                   # periodic: the intro, then show_sec every every_min
-        period = max(30.0, float(ov.get("every_min", 3)) * 60)
-        length = max(3.0, float(ov.get("show_sec", 12)))
+        period = _num(ov.get("every_min"), 3, 0.5, 120) * 60
+        length = _num(ov.get("show_sec"), 12, 3, 600)
+        if length + FADE_SEC >= period:                     # shown longer than the gap: just stay up
+            return 1.0
         start = (elapsed // period) * period if elapsed >= length else 0.0
     t = elapsed - start
     if t < 0 or t > length + (FADE_SEC if fade else 0):
@@ -322,7 +368,7 @@ class Ctx:
     def __init__(self, c, zone, ov, font_for):
         self.c, self.ov = c, ov
         self.x, self.y, self.w, self.h = zone
-        size = ov.get("font", "small")
+        size = ov.get("font") if ov.get("font") in FONTS else "small"
         self.size = size
         self.T = font_for(FONTS.get(size, FONTS["small"]))            # the headline
         self.S = font_for(FONTS["tiny"] if size == "tiny" else FONTS["small"])   # details
@@ -330,12 +376,12 @@ class Ctx:
         self.accent = Color(*_hex(ov.get("accent"), (232, 32, 42)))
         self.text = Color(*_hex(ov.get("text"), (255, 255, 255)))
         self.bg = _hex(ov.get("bg"), (0, 0, 0))
-        self.op = float(ov.get("opacity", 0.7))
-        self.sep = ov.get("separator", "dot")
-        self.lines = ov.get("lines", "auto")
-        corner = ov.get("corner", "bl")
+        self.op = _num(ov.get("opacity"), 0.7, 0.0, 1.0)
+        self.sep = ov.get("separator") if ov.get("separator") in SEPARATORS else "dot"
+        self.lines = ov.get("lines") if ov.get("lines") in ("auto", "wrap", "stacked", "inline") else "auto"
+        corner = ov.get("corner") if ov.get("corner") in ("tl", "tc", "tr", "bl", "bc", "br") else "bl"
         self.top = corner[0] == "t"
-        self.align = {"l": "left", "c": "center", "r": "right"}.get(corner[1:2], "left")
+        self.align = {"l": "left", "c": "center", "r": "right"}[corner[1]]
         self.left = self.align == "left"
 
     def place(self, bw, bh, margin=1):
@@ -353,10 +399,12 @@ class Ctx:
         return w
 
     def details(self, ct, width, with_time=True, with_place=True):
-        return detail_lines(self.S, ct.bits(with_time, with_place), width, self.lines, self.sep)
+        """[(first kind, text)] detail lines for this caption's line mode."""
+        return detail_lines(self.S, ct.bits(with_time, with_place), width, self.lines, self.sep,
+                            icon_kind="weather" if ct.icon else None)
 
     def text_with_icon(self, f, x, y_top, ct, kind, text, color=None, put=None):
-        """Draw a detail line; a weather icon sits in front of the weather section when it starts the line."""
+        """Draw a detail line; the weather icon goes in front when the line starts with the weather."""
         put = put or graphics.DrawText
         color = color or self.text
         if kind == "weather" and ct.icon:
@@ -364,9 +412,47 @@ class Ctx:
             x += 9
         return put(self.c, f, x, y_top + f.baseline, color, text)
 
+class _Zone:
+    """The canvas as layouts see it: every draw is clipped to the caption's zone (a scrolling ticker can't spill into
+    the other half of the wall) and the area drawn is recorded (a fade blends only that box)."""
+
+    def __init__(self, c, zone):
+        self.c, self.buf, self.width, self.height = c, c.buf, c.width, c.height
+        self.x0, self.y0 = max(0, zone[0]), max(0, zone[1])
+        self.x1, self.y1 = min(c.width, zone[0] + zone[2]), min(c.height, zone[1] + zone[3])
+        self.bbox = None
+
+    def mark(self, x0, y0, x1, y1):
+        b = self.bbox
+        self.bbox = (x0, y0, x1, y1) if b is None else (min(b[0], x0), min(b[1], y0), max(b[2], x1), max(b[3], y1))
+
+    def BlitMask(self, mask, x, y, color):
+        h, w = mask.shape
+        sx0, sy0 = max(0, self.x0 - x), max(0, self.y0 - y)
+        ex, ey = min(w, self.x1 - x), min(h, self.y1 - y)
+        if ex <= sx0 or ey <= sy0:
+            return
+        self.c.BlitMask(mask[sy0:ey, sx0:ex], x + sx0, y + sy0, color)
+        self.mark(x + sx0, y + sy0, x + ex, y + ey)
+
+    def FillRect(self, x, y, w, h, color):
+        x0, y0, x1, y1 = max(x, self.x0), max(y, self.y0), min(x + w, self.x1), min(y + h, self.y1)
+        if x1 > x0 and y1 > y0:
+            self.c.FillRect(x0, y0, x1 - x0, y1 - y0, color)
+            self.mark(x0, y0, x1, y1)
+
+    def SetPixel(self, x, y, r, g, b):
+        if self.x0 <= x < self.x1 and self.y0 <= y < self.y1:
+            self.c.SetPixel(x, y, r, g, b)
+            self.mark(x, y, x + 1, y + 1)
+
 
 def draw_caption(c, zone, cam, elapsed, font_for, now_local=None, wx=None):
-    """Draw the webcam's caption over the frame in zone. font_for(path or size) -> a loaded Font."""
+    """Draw the webcam's caption over the frame in zone. font_for(path or size) -> a loaded Font.
+
+    The caption is rendered once into a transparent layer (cached until its text, settings or blink phase change,
+    about once a minute) and each frame only blends that layer over the video in the caption's box. The ticker,
+    which scrolls, draws directly."""
     ov = overlay_of(cam)
     style = ov.get("style", "tag")
     if style not in LAYOUT_FUNCS:
@@ -375,13 +461,103 @@ def draw_caption(c, zone, cam, elapsed, font_for, now_local=None, wx=None):
     if a <= 0:
         return
     x, y, w, h = zone
-    before = c.buf[max(0, y):y + h, max(0, x):x + w].copy() if a < 1 else None
+    if style != "ticker" and now_local is None:              # the same layer for 0.4 s: skip rebuilding the key
+        mk = (id(cam), id(font_for), w, h, int(time.time() * 2.5), (wx or {}).get("at"))
+        parts = _memo.get(mk)
+        if parts is None:
+            if len(_memo) > 32:
+                _memo.clear()
+            parts = _memo[mk] = _layer(style, ov, Content(cam, ov, None, wx=wx), w, h, font_for) or ()
+        _composite(c, x, y, parts, a)
+        return
     content = Content(cam, ov, now_local, wx=wx)
-    LAYOUT_FUNCS[style](Ctx(c, zone, ov, _font_loader(font_for)), content)
-    if before is not None:                                  # fading: blend the caption in
-        region = c.buf[max(0, y):y + h, max(0, x):x + w]
-        k = int(a * 256)
-        region[:] = ((before.astype(np.uint16) * (256 - k) + region.astype(np.uint16) * k) >> 8).astype(np.uint8)
+    if style == "ticker":
+        zc = _Zone(c, zone)
+        before = c.buf[zc.y0:zc.y1, zc.x0:zc.x1].copy() if a < 1 else None
+        LAYOUT_FUNCS[style](Ctx(zc, zone, ov, _font_loader(font_for)), content)
+        if before is not None and zc.bbox:
+            _blend_back(c, zc, before, a)
+        return
+    _composite(c, x, y, _layer(style, ov, content, w, h, font_for) or (), a)
+
+
+_memo: dict = {}
+
+
+def _composite(c, x, y, parts, a):
+    """Blend the cached layer parts over the frame at (x, y); a < 1 while fading."""
+    for (bx0, by0, bx1, by1), alpha, prem in parts:
+        X0, Y0, X1, Y1 = max(0, x + bx0), max(0, y + by0), min(c.width, x + bx1), min(c.height, y + by1)
+        if X1 <= X0 or Y1 <= Y0:
+            continue
+        sl = (slice(Y0 - y - by0, Y1 - y - by0), slice(X0 - x - bx0, X1 - x - bx0))
+        al, pm = alpha[sl], prem[sl]
+        region = c.buf[Y0:Y1, X0:X1]
+        if a >= 1:
+            region[:] = ((region.astype(np.uint16) * (255 - al) + pm) // 255).astype(np.uint8)
+        else:                                               # fading: the layer at a fraction of its strength
+            k = int(a * 256)
+            al2 = (al.astype(np.uint32) * k) >> 8
+            region[:] = ((region.astype(np.uint32) * (255 - al2) + ((pm.astype(np.uint32) * k) >> 8)) // 255
+                         ).astype(np.uint8)
+
+
+def _blend_back(c, zc, before, a):
+    x0, y0, x1, y1 = zc.bbox
+    region = c.buf[y0:y1, x0:x1]
+    old = before[y0 - zc.y0:y1 - zc.y0, x0 - zc.x0:x1 - zc.x0]
+    k = int(a * 256)
+    region[:] = ((old.astype(np.uint16) * (256 - k) + region.astype(np.uint16) * k) >> 8).astype(np.uint8)
+
+
+_layers: dict = {}           # key -> (bbox, alpha, premultiplied colour); a few per webcam
+BLINKING = ("dot", "clock")
+
+
+def _layer(style, ov, ct, w, h, font_for):
+    """The caption drawn onto black and onto white: the difference gives each pixel's opacity, the black one its
+    premultiplied colour. Returns parts [(bbox, alpha (h,w,1) uint16, premult*255 (h,w,3) uint16)], one per run of
+    rows that has something in it (a badge in the far corner doesn't make the whole zone a blend), or None."""
+    import json
+    from display.gfx import Canvas
+    blink = int(time.time() * 1.25) % 2 if style in BLINKING else 0
+    key = (style, json.dumps(ov, sort_keys=True, default=str), ct.title, tuple(ct.bits()), ct.icon, ct.night, ct.live,
+           ct.ampm, ct.clock(), w, h, blink, id(font_for))
+    hit = _layers.get(key)
+    if hit is not None:
+        return hit
+    fl = _font_loader(font_for)
+    planes = []
+    bbox = None
+    for bgv in (0, 255):
+        cv = Canvas(w, h)
+        cv.buf[:] = bgv
+        zc = _Zone(cv, (0, 0, w, h))
+        LAYOUT_FUNCS[style](Ctx(zc, (0, 0, w, h), ov, fl), ct)
+        planes.append(cv.buf.astype(np.int32))
+        if zc.bbox:
+            bbox = zc.bbox if bbox is None else (min(bbox[0], zc.bbox[0]), min(bbox[1], zc.bbox[1]),
+                                                 max(bbox[2], zc.bbox[2]), max(bbox[3], zc.bbox[3]))
+    if bbox is None:
+        out = None
+    else:
+        x0, y0, x1, y1 = bbox
+        A, B = planes[0][y0:y1, x0:x1], planes[1][y0:y1, x0:x1]
+        alpha = (255 - (B - A).max(axis=2, keepdims=True)).clip(0, 255)        # B - A = 255 × (1 − opacity)
+        rows = np.flatnonzero(alpha[..., 0].any(axis=1))
+        out = []
+        if rows.size:                                       # split into runs of rows with gaps of 3+ empty rows
+            breaks = np.flatnonzero(np.diff(rows) > 3)
+            for r0, r1 in zip(np.r_[rows[0], rows[breaks + 1]], np.r_[rows[breaks], rows[-1]] + 1):
+                cols = np.flatnonzero(alpha[r0:r1, :, 0].any(axis=0))
+                c0, c1 = cols[0], cols[-1] + 1
+                out.append(((x0 + c0, y0 + r0, x0 + c1, y0 + r1), alpha[r0:r1, c0:c1].astype(np.uint16),
+                            (A[r0:r1, c0:c1] * 255).clip(0, 65025).astype(np.uint16)))
+        out = out or None
+    if len(_layers) > 64:
+        _layers.clear()
+    _layers[key] = out
+    return out
 
 
 def _font_loader(font_for):
@@ -397,7 +573,7 @@ def _font_loader(font_for):
 
 # --- layouts ------------------------------------------------------------------------------------------------------
 def _headline_and_lines(k, ct, room, T=None):
-    """(headline text, detail lines) honouring lines=inline (details on the headline row)."""
+    """(headline text, [(kind, text)] detail lines), honouring lines=inline (details on the headline row)."""
     T = T or k.T
     if k.lines == "inline":                                # whole sections drop before anything is cut
         sp = _sep(T, k.sep)
@@ -415,7 +591,8 @@ def _l_tag(k, ct, outline=False):
     title, lines = _headline_and_lines(k, ct, room - (bw + 3 if bw else 0))
     if not (title or lines or bw):
         return
-    tw = max([(bw + 3 if bw else 0) + _tw(T, title)] + [_tw(S, ln) + (9 if ct.icon else 0) for ln in lines])
+    tw = max([(bw + 3 if bw else 0) + _tw(T, title)] +
+             [_tw(S, ln) + (9 if kd == "weather" and ct.icon else 0) for kd, ln in lines])
     box_w = min(k.w, pad * 2 + tw + (1 if not outline else 0))
     head_h = max(T.height if title else 0, S.height + 1 if bw else 0)
     box_h = pad * 2 + head_h + sum(S.height + 1 for _ in lines)
@@ -432,10 +609,8 @@ def _l_tag(k, ct, outline=False):
     if title:
         put(c, T, cx, ty + T.baseline, k.text, title)
     ty += head_h + 1
-    kinds = [b[0] for b in ct.bits()]
-    for i, ln in enumerate(lines):
-        first = kinds[i] if k.lines == "stacked" and i < len(kinds) else (kinds[0] if kinds and i == 0 else None)
-        k.text_with_icon(S, x0, ty, ct, first, ln, put=put)
+    for kd, ln in lines:
+        k.text_with_icon(S, x0, ty, ct, kd, ln, put=put)
         ty += S.height + 1
 
 
@@ -467,8 +642,8 @@ def _l_bar(k, ct):
     if title:
         graphics.DrawText(c, T, cx, by + pad + T.baseline, k.text, _clip(T, title, right - cx))
     ty = by + pad + head_h + 1
-    for ln in k.details(ct, right - (k.x + pad), with_time=not right_time)[:2] if k.lines != "inline" else []:
-        k.text_with_icon(S, k.x + pad, ty, ct, None, ln)
+    for kd, ln in k.details(ct, right - (k.x + pad), with_time=not right_time)[:2] if k.lines != "inline" else []:
+        k.text_with_icon(S, k.x + pad, ty, ct, kd, ln)
         ty += S.height + 1
 
 
@@ -498,7 +673,7 @@ def _l_lower_third(k, ct):
     if not (th or dh):
         return
     tw = (_tw(T, title) + 2 * padx + (bw + 4 if bw else 0)) if title else 0
-    dw = max([_tw(S, ln) + 2 * padx + (9 if ct.icon else 0) for ln in lines], default=0)
+    dw = max([_tw(S, ln) + 2 * padx + (9 if kd == "weather" and ct.icon else 0) for kd, ln in lines], default=0)
     W = max(tw, dw + (3 if title else 0))
     bx, by = k.place(W, th + dh, margin=3)
     tx = bx if k.align != "right" else bx + W - tw
@@ -511,10 +686,8 @@ def _l_lower_third(k, ct):
         dx = (bx + (3 if title else 0)) if k.align != "right" else bx + W - dw - (3 if title else 0)
         _box(c, dx, by + th, dw, dh, k.bg, k.op)
         ty = by + th + 1
-        kinds = [b[0] for b in ct.bits()]
-        for i, ln in enumerate(lines):
-            first = kinds[i] if k.lines == "stacked" and i < len(kinds) else (kinds[0] if kinds and i == 0 else None)
-            k.text_with_icon(S, dx + padx, ty, ct, first, ln)
+        for kd, ln in lines:
+            k.text_with_icon(S, dx + padx, ty, ct, kd, ln)
             ty += S.height + 1
 
 
@@ -523,8 +696,7 @@ def _l_split(k, ct):
     c, T, S, B = k.c, k.T, k.S, k.B
     pad = 2
     show_clock = bool(ct.time) and ct.headline_kind != "time"
-    lines = [] if k.lines == "inline" else k.details(ct, k.w // 2, with_time=not show_clock)
-    lines = [ln for ln in lines][:2]
+    lines = ([] if k.lines == "inline" else k.details(ct, k.w // 2, with_time=not show_clock))[:2]
     left_h = (T.height + 1 if ct.title else 0) + sum(S.height + 1 for _ in lines)
     bh = pad * 2 + max(left_h, B.height if show_clock else 0, S.height + 1)
     by = k.y if k.top else k.y + k.h - bh
@@ -559,7 +731,7 @@ def _l_split(k, ct):
         ty += max(T.height, S.height + 1) + 1
     used = {"weather", "date", "offset"} if show_clock else set()
     bits = [b for b in ct.bits(with_time=not show_clock) if b[0] not in used]
-    for ln in detail_lines(S, bits, right - (k.x + pad + 1), k.lines if k.lines != "inline" else "auto", k.sep)[:2]:
+    for kd, ln in detail_lines(S, bits, right - (k.x + pad + 1), k.lines if k.lines != "inline" else "auto", k.sep)[:2]:
         graphics.DrawText(c, S, k.x + pad + 1, ty + S.baseline, k.text, ln)
         ty += S.height + 1
 
@@ -575,8 +747,9 @@ def _l_postcard(k, ct):
     if title:
         _shadowed(c, T, k.x + (k.w - _tw(T, title)) // 2, ty + T.baseline, k.text, title)
         ty += T.height + 2
-    for ln in lines:
-        _outlined(c, S, k.x + (k.w - _tw(S, ln)) // 2, ty + S.baseline, k.text, ln)
+    for kd, ln in lines:
+        w_ = _tw(S, ln) + (9 if kd == "weather" and ct.icon else 0)
+        k.text_with_icon(S, k.x + (k.w - w_) // 2, ty, ct, kd, ln, put=_outlined)
         ty += S.height + 1
     if ct.live:                                             # LIVE in a top corner away from the text
         lw = _tw(S, "LIVE") + 4
@@ -624,17 +797,20 @@ def _l_chips(k, ct):
 
 
 def _l_clock(k, ct):
-    """A world clock: the local time big, the place (or headline) under it, then the other details; LIVE dot."""
+    """A world clock: the local time big, the name or place under it, then the other details; LIVE dot."""
     c, S, B = k.c, k.S, k.B
     pad = 3
     big = ct.time or "--:--"
     icon = (ct.icon if ct.icon else ("moon" if ct.night else "sun") if ct.night is not None else None)
-    head = ct.place if ct.headline_kind == "name" and ct.place else ct.title
-    head = _clip(S, head, k.w - 2 * pad - 2)
-    bits = [b for b in ct.bits(with_time=False) if not (b[0] == "place" and head == ct.place)]
+    if ct.headline_kind == "time":                          # the clock is the headline: name (or place) under it
+        head_kind = "name" if ct.sections.get("name") else "place"
+    else:
+        head_kind = ct.headline_kind
+    head = _clip(S, ct.sections.get(head_kind) or "", k.w - 2 * pad - 2)
+    bits = [b for b in ct.bits(with_time=False) if b[0] != head_kind]
     lines = detail_lines(S, bits, k.w - 2 * pad - 6, k.lines if k.lines != "inline" else "auto", k.sep)[:3]
     bw_ = (9 if icon else 0) + _tw(B, big) + (_tw(S, ct.ampm) + 1 if ct.ampm else 0)
-    box_w = min(k.w - 2, max([bw_, _tw(S, head)] + [_tw(S, s) for s in lines]) + 2 * pad + 6)
+    box_w = min(k.w - 2, max([bw_, _tw(S, head)] + [_tw(S, s) for _, s in lines]) + 2 * pad + 6)
     box_h = pad * 2 + B.height + (S.height + 1 if head else 0) + len(lines) * (S.height + 1)
     bx, by = k.place(box_w, box_h, margin=2)
     _box(c, bx, by, box_w, box_h, k.bg, k.op, round_=True)
@@ -649,8 +825,8 @@ def _l_clock(k, ct):
         on = int(time.time() * 1.25) % 2 == 0
         c.FillRect(bx + box_w - 6, by + 3, 3, 3, k.accent if on else Color(*(v // 3 for v in _rgb(k.accent))))
     ty += B.height + 1
-    for s in ([head] if head else []) + lines:
-        graphics.DrawText(c, S, bx + pad, ty + S.baseline, k.text, s)
+    for s_ in ([head] if head else []) + [t for _, t in lines]:
+        graphics.DrawText(c, S, bx + pad, ty + S.baseline, k.text, s_)
         ty += S.height + 1
 
 
@@ -669,6 +845,8 @@ def _l_signage(k, ct):
         if l or r:
             rows.append((S, l, r))
     rows = rows[:4]
+    maxw = k.w - 2 - 2 * pad
+    rows = [(f, l, _clip(f, r, max(0, maxw - min(_tw(f, l), maxw // 2) - 6))) for f, l, r in rows]
     box_w = min(k.w - 2, max(_tw(f, l) + _tw(f, r) + 10 for f, l, r in rows) + 2 * pad)
     box_h = pad * 2 + sum(f.height + 1 for f, _, _ in rows) - 1
     bx, by = k.place(box_w, box_h, margin=2)

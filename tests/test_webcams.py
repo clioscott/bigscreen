@@ -1,5 +1,7 @@
 """Webcams: crop maths, the frame wire format, captions, config validation and the rotation's "skip"."""
 
+import time
+
 import numpy as np
 import pytest
 
@@ -319,7 +321,7 @@ def test_buffer_memory_is_capped():
 # --- captions v2 (display/modules/webcam_caption.py) ------------------------------------------------------------
 from display.modules import webcam_caption as cap  # noqa: E402
 
-WX = {"temp": 17.6, "code": 2, "is_day": 1, "sunrise": [], "sunset": []}
+WX = {"temp": 17.6, "code": 2, "is_day": 1, "sunrise": [], "sunset": [], "at": time.time()}
 EVERYTHING = {k: True for k in cap.SECTIONS}
 
 
@@ -407,3 +409,95 @@ def test_webcam_location_validation():
     for bad in ({"lat": 100}, {"lon": "east"}):
         with pytest.raises(config.ConfigError):
             config.validate(_cfg({"cams": {"a": {**CAM, **bad}}}))
+
+
+
+# --- PR #13 review regressions ---------------------------------------------------------------------------------
+@pytest.mark.parametrize("bad", [{"opacity": None}, {"corner": ""}, {"corner": "middle"}, {"font": "huge"},
+                                 {"lines": 7}, {"separator": None}, {"every_min": "x", "when": "periodic"},
+                                 {"show_sec": None, "when": "periodic"}])
+def test_malformed_overlay_never_raises_while_drawing(bad):
+    cam = {**CAM, "overlay": {"style": "lower_third", **bad}}
+    wc.render_preview(cam, webcams.render(FRAME, 223, 134), (223, 134), 30.0, wx=WX)
+
+
+def test_overlay_validation():
+    from hub import config
+    config.validate(_cfg({"cams": {"a": {**CAM, "overlay": {"style": "split", "corner": "bc", "opacity": 0.5}}}}))
+    for bad in ({"style": "fancy"}, {"corner": ""}, {"opacity": None}, {"opacity": 2}, {"every_min": 0},
+                {"show": {"mood": True}}, {"order": "name"}):
+        with pytest.raises(config.ConfigError):
+            config.validate(_cfg({"cams": {"a": {**CAM, "overlay": bad}}}))
+
+
+def test_ticker_stays_inside_its_zone():
+    from display.gfx import Canvas
+    c = Canvas(448, 134)
+    c.buf[:] = 77
+    cam = {**CAM, "overlay": {"style": "ticker", "show": EVERYTHING, "custom_text": "x" * 40}}
+    fonts = {}
+
+    def font_for(p):
+        if p not in fonts:
+            fonts[p] = _font(p)
+        return fonts[p]
+    for t in range(0, 4000, 137):                           # many scroll positions
+        cap.draw_caption(c, (225, 0, 223, 134), cam, 1.0, font_for, wx=WX)
+    assert (c.buf[:, :225] == 77).all()                     # the left side is untouched
+
+
+def test_periodic_longer_than_the_gap_just_stays_up():
+    ov = {"when": "periodic", "show_sec": 60, "every_min": 1, "fade": True}
+    assert all(cap.visibility(ov, t) == 1.0 for t in (59.9, 60.0, 60.3, 60.7, 125))
+
+
+def test_clock_shows_the_name_and_never_the_time_twice():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    t = datetime(2026, 10, 19, 5, 41, tzinfo=ZoneInfo("Asia/Tokyo"))
+    drawn = []
+    real = cap.graphics.DrawText
+
+    def spy(c, f, x, y, col, s):
+        drawn.append(s)
+        return real(c, f, x, y, col, s)
+    cap.graphics.DrawText = spy
+    try:
+        for head in ("time", "name"):
+            drawn.clear()
+            cam = {**CAM, "overlay": {"style": "clock", "headline": head}}
+            from display.gfx import Canvas
+            ov = cap.overlay_of(cam)                        # one render of the layout (draw_caption caches two)
+            cap._l_clock(cap.Ctx(Canvas(223, 134), (0, 0, 223, 134), ov, _font), cap.Content(CAM, ov, now_local=t))
+            text = " ".join(drawn)
+            assert text.count("05:41") == 1 and "Shibuya Crossing" in text
+    finally:
+        cap.graphics.DrawText = real
+
+
+def test_stale_weather_is_not_shown():
+    ov = cap.overlay_of({"overlay": {"show": {"weather": True}}})
+    assert dict(cap.Content(CAM, ov, wx={**WX, "at": time.time() - 3 * 3600}).bits()).get("weather") is None
+    assert dict(cap.Content(CAM, ov, wx=WX).bits())["weather"] == "18°C"
+
+
+def test_fade_blends_only_the_caption():
+    from display.gfx import Canvas
+    c = Canvas(448, 192)
+    c.buf[:] = 90
+    cam = {**CAM, "overlay": {"style": "tag", "corner": "bl", "when": "intro", "fade": True}}
+    cap.draw_caption(c, (0, 0, 448, 192), cam, cap.INTRO_SEC + cap.FADE_SEC / 2, _font)
+    assert (c.buf[:100] == 90).all()                        # the top of the frame is untouched mid-fade
+    assert (c.buf[150:] != 90).any()                        # and the caption is there, half-faded
+
+
+def test_weather_icon_room_is_reserved():
+    from display.gfx import graphics
+    f = graphics.Font()
+    f.LoadFont(cap.FONTS["small"])
+    bits = (("weather", "18°C"), ("time", "05:41"))
+    need = cap._tw(f, "18°C · 05:41")
+    (kind, text), = cap.detail_lines(f, bits, need + 9, icon_kind="weather")
+    assert kind == "weather" and text == "18°C · 05:41"            # fits with the icon's 9 px counted
+    (kind, text), = cap.detail_lines(f, bits, need + 8, icon_kind="weather")
+    assert kind == "time"                                          # one px short: the weather drops, nothing overruns

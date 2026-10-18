@@ -339,9 +339,13 @@ const WebcamEditor = {
     const toggleShow = (k) => { ov.value.show[k] = !ov.value.show[k]; };
     // the detail sections that are on, in their order (drag to reorder; the headline isn't a detail)
     const orderOn = computed(() => (ov.value.order || []).filter((k) => ov.value.show[k] && k !== (ov.value.headline || "name")));
-    const reorder = () => {
-      const on = orderOn.value;                         // v-sortable reordered the on-list: rebuild the full order
-      ov.value.order = [...on, ...(ov.value.order || []).filter((k) => !on.includes(k))];
+    // a latitude/longitude field: empty clears it; anything that isn't a number in range is refused (not saved as null)
+    const setCoord = (key, ev, lim) => {
+      const raw = ev.target.value.trim().replace(",", ".");
+      if (raw === "") { delete cam.value[key]; return; }
+      const v = Number(raw);
+      if (!Number.isFinite(v) || Math.abs(v) > lim) { toast(`${key === "lat" ? "Latitude" : "Longitude"} must be a number between -${lim} and ${lim}`, "bad"); ev.target.value = cam.value[key] ?? ""; return; }
+      cam.value[key] = v;
     };
     const moveSection = (k, d) => {
       const o = ov.value.order;
@@ -353,7 +357,7 @@ const WebcamEditor = {
     };
     const customCrop = (s) => !!cam.value.crops?.[s];
     return { id, cam, shape, zone, ov, colour, probe, testing, test, used, addToRotation, play, remove, captionToAll, toggleShow, customCrop,
-      orderOn, moveSection, feedFor, feedPill, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
+      orderOn, moveSection, setCoord, feedFor, feedPill, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
   },
   template: `<div class="page" v-if="cam">
     <div class="page-head"><div class="grow">
@@ -380,8 +384,8 @@ const WebcamEditor = {
                 <datalist id="wc-tz"><option v-for="z in TIMEZONES" :key="z" :value="z"/></datalist></Field>
               <Field label="Frame rate" hint="Smoother costs the hub more"><Stepper v-model="cam.fps" :min="1" :max="30" unit=" fps"/></Field>
               <Field label="Location" hint="Latitude, longitude: for the caption's weather and sunrise/sunset">
-                <div class="row nowrap" style="gap:6px"><input class="input" style="width:50%" :value="cam.lat ?? ''" @change="cam.lat = $event.target.value === '' ? undefined : Number($event.target.value)" placeholder="49.2888">
-                  <input class="input" style="width:50%" :value="cam.lon ?? ''" @change="cam.lon = $event.target.value === '' ? undefined : Number($event.target.value)" placeholder="-123.1111"></div></Field>
+                <div class="row nowrap" style="gap:6px"><input class="input" style="width:50%" :value="cam.lat ?? ''" @change="setCoord('lat', $event, 90)" placeholder="49.2888">
+                  <input class="input" style="width:50%" :value="cam.lon ?? ''" @change="setCoord('lon', $event, 180)" placeholder="-123.1111"></div></Field>
             </div>
           </div></div>
 
@@ -429,7 +433,7 @@ const WebcamEditor = {
               <Field label="Sections" hint="Click to turn on or off" v-if="ov.style !== 'dot'"><div class="row" style="gap:6px">
                 <button v-for="(l, k) in SECTIONS" :key="k" type="button" class="chip" :class="{off: !ov.show[k]}" style="height:26px; padding:0 10px" @click="toggleShow(k)">{{ l }}</button></div></Field>
               <Field label="Your text" v-if="ov.show.custom"><input class="input" v-model="ov.custom_text" maxlength="40" placeholder="Scramble Crossing, from the Starbucks"></Field>
-              <div class="callout info" v-if="(ov.show.weather || ov.show.sun) && (cam.lat == null || cam.lon == null)" style="font-size:12.5px">
+              <div class="callout info" v-if="(ov.show.weather || ov.show.sun) && !(Number.isFinite(cam.lat) && Number.isFinite(cam.lon))" style="font-size:12.5px">
                 <Icon name="MapPin" :size="14"/> Weather and sunrise/sunset need this webcam's location (Source → Location).</div>
               <Field label="Order" hint="The details, top to bottom or left to right; the headline goes first" v-if="ov.style !== 'dot' && orderOn.length > 1">
                 <div class="wc-order"><div v-for="(k, i) in orderOn" :key="k" class="wc-order-item">
