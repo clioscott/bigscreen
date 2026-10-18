@@ -99,7 +99,7 @@ hot-reload on the wall, no restart needed.
 - **Tsunami**: 4 themes (North Pacific, BC zones, Bulletin, Hazard sign), 3 built-in samples.
 - **Wildfire**: 4 themes (Situation map, Incident card, Fire danger sign, Evacuation notice), 3 built-in samples.
 - **Japan EEW**: 12 themes (Kyoshin Monitor, JQuake style, TV broadcast, LED countdown, Departure board, Pachinko, Fever mode, Data terminal, 号外 extra edition, Seismograph lab, Arcade cabinet, Instrument panel).
-- **12 fetch jobs** on the hub, each a short-lived subprocess with a timeout:
+- **13 fetch jobs** on the hub, each a short-lived subprocess with a timeout:
   - `alerts`: Current ECCC alerts for the configured area → data/alerts.json
   - `bridges`: Bridges now: the latest DriveBC still from a camera on each Metro Vancouver bridge → data/bridges.json + tiles
   - `calendar`: Google Calendar events → data/calendar.json (v1 format, via the v1 CalendarService)
@@ -111,6 +111,7 @@ hot-reload on the wall, no restart needed.
   - `quakes`: Quakes that matter in south-west BC → data/quakes.json
   - `tsunami`: NTWC bulletins for the BC coast → data/tsunami.json
   - `weather`: Environment Canada citypage forecast + SWOB live observations → data/weather.json
+  - `webcam_weather`: Weather and sunrise/sunset at each webcam → data/webcam_weather.json (for the webcam captions)
   - `wildfire`: BC Wildfire Service data for south-west BC and the Okanagan → data/wildfire.json
 - **438 bitmap fonts**, always drawn at native size ([credits](assets/fonts/CREDITS.md)).
 <!-- /gen:features -->
@@ -118,9 +119,10 @@ hot-reload on the wall, no restart needed.
 **Live webcams**: video from YouTube live streams or any HLS / MJPEG / RTSP camera, as a rotation screen on one side, full
 width or the whole wall. The hub decodes each stream with ffmpeg (yt-dlp finds the video behind a YouTube page) and
 sends the Pi frames already cropped to its zone, so the Pi never decodes video. Each webcam keeps its own crop for every
-place on the wall, colour adjustments, and a caption (tag, bar, outlined text or a LIVE dot) naming the place, its local
-time and who runs the camera. Set up on the control panel's Webcams page, with a live preview of exactly what the wall
-will show.
+place on the wall, colour adjustments, and a caption in one of twelve layouts (lower third, split bar with a big clock,
+world clock, departure board, ticker, chips and more) built from the sections you pick and order: name, place, local
+time, weather and sunrise/sunset at the camera (Open-Meteo), date, time difference, your own line and who runs the
+camera. Set up on the control panel's Webcams page, with a live preview of exactly what the wall will show.
 
 ## Gallery
 

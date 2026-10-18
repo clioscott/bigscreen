@@ -226,7 +226,7 @@ class Screen:
         self.full_panels["bridges_full"] = self.bridges.draw
         self.takeover_panels["bridges_wall"] = self.bridges.draw
         from display.modules.webcam import WebcamPanel        # live video decoded by the hub (control panel → Webcams)
-        self.webcam = keep("webcam", ("webcams",), lambda: WebcamPanel(cfg))
+        self.webcam = keep("webcam", ("webcams",), lambda: WebcamPanel(cfg, getattr(loader, "data_dir", None)))
         self.panels["webcam"] = self.webcam.draw
         self.full_panels["webcam_full"] = self.webcam.draw
         self.takeover_panels["webcam_wall"] = self.webcam.draw

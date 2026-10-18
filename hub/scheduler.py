@@ -29,6 +29,7 @@ JOBS = {
     "naad":     ("modules.naad_alerts.refresh_interval_sec", 300, 120, "Alert Ready (NAAD)"),
     "drivebc":  ("modules.road_alerts.refresh_interval_sec", 120, 120, "DriveBC"),
     "bridges":  ("modules.bridges.refresh_interval_sec", 120, 90, "Bridges now"),
+    "webcam_weather": ("modules.webcams.weather_interval_sec", 900, 60, "Webcam weather"),
     "quakes":   ("modules.bc_quakes.refresh_interval_sec", 60, 120, "Earthquakes"),
     "tsunami":  ("modules.tsunami.refresh_interval_sec", 120, 120, "Tsunami"),
     "wildfire": ("modules.wildfire.refresh_interval_sec", 600, 300, "Wildfire"),

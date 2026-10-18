@@ -142,6 +142,35 @@ def validate(cfg):
     _validate_bridges(mods.get("bridges"))
 
 
+def _validate_overlay(name, ov):
+    """A webcam's caption settings (display/modules/webcam_caption.py); the display also parses them defensively."""
+    if ov is None:
+        return
+    if not isinstance(ov, dict):
+        raise ConfigError(f"webcam {name}: overlay must be an object")
+    from display.modules.webcam_caption import FONTS, LAYOUTS, SECTIONS, SEPARATORS
+    choices = {"style": LAYOUTS, "corner": ("tl", "tc", "tr", "bl", "bc", "br"), "font": tuple(FONTS),
+               "headline": ("name", "place", "custom", "time"), "lines": ("auto", "wrap", "stacked", "inline"),
+               "separator": tuple(SEPARATORS), "when": ("always", "intro", "periodic"), "time_format": ("24h", "12h")}
+    for key, allowed in choices.items():
+        if key in ov and ov[key] not in allowed:
+            raise ConfigError(f"webcam {name}: caption {key} must be one of {', '.join(allowed)}")
+    for key, lo, hi in (("opacity", 0, 1), ("show_sec", 3, 600), ("every_min", 0.5, 120)):
+        if key in ov:
+            try:
+                ok = lo <= float(ov[key]) <= hi
+            except (TypeError, ValueError):
+                ok = False
+            if not ok:
+                raise ConfigError(f"webcam {name}: caption {key} must be between {lo} and {hi}")
+    show = ov.get("show", {})
+    if not isinstance(show, dict) or any(k not in SECTIONS for k in show):
+        raise ConfigError(f"webcam {name}: caption show has an unknown section")
+    order = ov.get("order", [])
+    if not isinstance(order, list):
+        raise ConfigError(f"webcam {name}: caption order must be a list")
+
+
 def _validate_bridges(br):
     """modules.bridges (hub/jobs/bridges.py)."""
     if not br:
@@ -181,12 +210,22 @@ def _validate_webcams(wc):
             check_source(cam.get("source"))
         except SourceError as e:
             raise ConfigError(f"webcam {name}: {e}")
+        for key, lim in (("lat", 90), ("lon", 180)):
+            v = cam.get(key)
+            if v not in (None, ""):
+                try:
+                    ok = -lim <= float(v) <= lim
+                except (TypeError, ValueError):
+                    ok = False
+                if not ok:
+                    raise ConfigError(f"webcam {name}: {key} must be a number between -{lim} and {lim}")
         try:
             fps_ok = 1 <= float(cam.get("fps", 15)) <= 30
         except (TypeError, ValueError):
             fps_ok = False
         if not fps_ok:
             raise ConfigError(f"webcam {name}: frame rate must be 1–30")
+        _validate_overlay(name, cam.get("overlay"))
         crops = cam.get("crops") or {}
         if not isinstance(crops, dict):
             raise ConfigError(f"webcam {name}: crops must be an object")

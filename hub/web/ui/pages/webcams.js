@@ -10,15 +10,35 @@ export const SHAPES = {
   full: { label: "Full width", panel: "webcam_full", side: "right", icon: "RectangleHorizontal", note: "ticker and clock stay" },
   wall: { label: "Whole wall", panel: "webcam_wall", side: "right", icon: "Maximize", note: "covers the ticker and clock" },
 };
-const STYLES = [
-  { value: "tag", label: "Tag", icon: "Tag" }, { value: "bar", label: "Bar", icon: "PanelBottom" },
-  { value: "outline", label: "Outlined", icon: "Type" }, { value: "dot", label: "LIVE dot", icon: "CircleDot" },
-  { value: "none", label: "None", icon: "EyeOff" },
-];
+// caption layouts and sections (display/modules/webcam_caption.py draws them)
+const LAYOUTS = {
+  tag: { label: "Tag", icon: "Tag", note: "A box in a corner with an accent edge" },
+  bar: { label: "Bar", icon: "PanelBottom", note: "Full-width strip, time at the right" },
+  lower_third: { label: "Lower third", icon: "Tv", note: "TV news: name on an accent block, details under it" },
+  split: { label: "Split bar", icon: "Columns2", note: "Name and details left, a big local clock right" },
+  postcard: { label: "Postcard", icon: "Mail", note: "Big centred title with a shadow" },
+  chips: { label: "Chips", icon: "Tags", note: "A rounded chip for each section" },
+  clock: { label: "World clock", icon: "Clock", note: "Local time, big, with the place under it" },
+  signage: { label: "Departure board", icon: "TrainFront", note: "Amber lines on a dark board" },
+  ticker: { label: "Ticker", icon: "ChevronsLeft", note: "Name in a tab, details scrolling past" },
+  stack: { label: "Stack", icon: "List", note: "Each section on its own outlined line" },
+  outline: { label: "Outlined", icon: "Type", note: "Text with a black edge, no box" },
+  dot: { label: "LIVE dot", icon: "CircleDot", note: "Just a blinking dot and the time" },
+  none: { label: "None", icon: "EyeOff", note: "No caption" },
+};
 const FONTS = [{ value: "tiny", label: "Tiny" }, { value: "small", label: "Small" }, { value: "medium", label: "Medium" }, { value: "large", label: "Large" }];
-const SHOW = { name: "Name", place: "Place", time: "Local time", live: "LIVE badge", credit: "Credit" };
+const SECTIONS = { name: "Name", place: "Place", time: "Local time", weather: "Weather", sun: "Sunrise / sunset", date: "Date",
+  offset: "Time difference", daynight: "Day / night icon", live: "LIVE badge", credit: "Credit", custom: "Your text" };
+const ORDERABLE = ["name", "place", "time", "weather", "date", "offset", "sun", "custom", "credit"];
+const HEADLINES = [{ value: "name", label: "Name" }, { value: "place", label: "Place" }, { value: "custom", label: "Your text" }, { value: "time", label: "Time" }];
+const LINES = [{ value: "auto", label: "One line" }, { value: "wrap", label: "Wrap" }, { value: "stacked", label: "Stacked" }, { value: "inline", label: "Beside name" }];
+const SEPS = [{ value: "dot", label: "·" }, { value: "slash", label: "/" }, { value: "pipe", label: "|" }, { value: "dash", label: "-" }, { value: "space", label: "space" }];
+const POSITIONS = ["tl", "tc", "tr", "bl", "bc", "br"];
 const DEFAULT_OVERLAY = { style: "tag", corner: "bl", when: "always", font: "small", accent: "#e8202a", text: "#ffffff",
-  show: { name: true, place: true, time: true, live: true, credit: false } };
+  bg: "#000000", opacity: 0.7, time_format: "24h", fade: true, show_sec: 12, every_min: 3, custom_text: "", headline: "name",
+  lines: "auto", separator: "dot", uppercase: false, order: [...ORDERABLE],
+  show: { name: true, place: true, time: true, date: false, offset: false, daynight: false, weather: false, sun: false,
+    live: true, credit: false, custom: false } };
 const TIMEZONES = ["America/Vancouver", "America/Los_Angeles", "America/Denver", "America/Chicago", "America/New_York", "America/Halifax",
   "Pacific/Honolulu", "America/Anchorage", "Europe/London", "Europe/Paris", "Europe/Berlin", "Europe/Rome", "Atlantic/Reykjavik",
   "Africa/Johannesburg", "Africa/Windhoek", "Asia/Tokyo", "Asia/Seoul", "Asia/Hong_Kong", "Asia/Singapore", "Australia/Sydney", "Pacific/Auckland"];
@@ -97,7 +117,8 @@ const WebcamList = {
     const add = (from, open = true) => {
       const all = store.draft.modules.webcams.cams || (store.draft.modules.webcams.cams = {});
       const f = from || { label: "New webcam", source: { type: "youtube", url: "" } };
-      const base = clone({ label: f.label, place: f.place || "", credit: f.credit || "", tz: f.tz || "", source: f.source });
+      const base = clone({ label: f.label, place: f.place || "", credit: f.credit || "", tz: f.tz || "", source: f.source,
+        ...(f.lat != null ? { lat: f.lat, lon: f.lon } : {}) });
       let id = slug(base.label), n = 2;
       while (all[id]) id = `${slug(base.label)}_${n++}`;
       all[id] = { fps: 15, ...base, overlay: clone(DEFAULT_OVERLAY), crops: {} };
@@ -225,7 +246,7 @@ const CropEditor = {
 
 // --- the wall preview: the hub renders exactly what the display would draw, caption included ------------------------
 const WallPreview = {
-  props: { cam: Object, shape: String },
+  props: { cam: Object, shape: String, camId: String },
   setup(props) {
     const token = ref("");
     const zone = ref([448, 130]);
@@ -238,7 +259,7 @@ const WallPreview = {
       const fresh = srcKey !== lastSrc;
       lastSrc = srcKey;
       try {
-        const r = await api("/api/webcams/preview", { json: { token: fresh ? undefined : token.value || undefined, cam: clone(props.cam), shape: props.shape } });
+        const r = await api("/api/webcams/preview", { json: { token: fresh ? undefined : token.value || undefined, cam: clone(props.cam), shape: props.shape, id: props.camId } });
         zone.value = r.zone;
         if (r.token !== token.value) token.value = r.token;
         err.value = "";
@@ -275,6 +296,8 @@ const WebcamEditor = {
         c.source = c.source || { type: "youtube", url: "" };
         c.overlay = { ...clone(DEFAULT_OVERLAY), ...(c.overlay || {}) };
         c.overlay.show = { ...DEFAULT_OVERLAY.show, ...(c.overlay.show || {}) };
+        const ord = (c.overlay.order || []).filter((k) => ORDERABLE.includes(k));
+        c.overlay.order = [...ord, ...ORDERABLE.filter((k) => !ord.includes(k))];
         c.colour = c.colour || {};
         c.crops = c.crops || {};
       }
@@ -314,9 +337,27 @@ const WebcamEditor = {
       toast("Every webcam now uses this caption (save to keep it)");
     };
     const toggleShow = (k) => { ov.value.show[k] = !ov.value.show[k]; };
+    // the detail sections that are on, in their order (drag to reorder; the headline isn't a detail)
+    const orderOn = computed(() => (ov.value.order || []).filter((k) => ov.value.show[k] && k !== (ov.value.headline || "name")));
+    // a latitude/longitude field: empty clears it; anything that isn't a number in range is refused (not saved as null)
+    const setCoord = (key, ev, lim) => {
+      const raw = ev.target.value.trim().replace(",", ".");
+      if (raw === "") { delete cam.value[key]; return; }
+      const v = Number(raw);
+      if (!Number.isFinite(v) || Math.abs(v) > lim) { toast(`${key === "lat" ? "Latitude" : "Longitude"} must be a number between -${lim} and ${lim}`, "bad"); ev.target.value = cam.value[key] ?? ""; return; }
+      cam.value[key] = v;
+    };
+    const moveSection = (k, d) => {
+      const o = ov.value.order;
+      const on = orderOn.value;
+      const i = on.indexOf(k), j = i + d;
+      if (j < 0 || j >= on.length) return;
+      const a = o.indexOf(k), b = o.indexOf(on[j]);
+      [o[a], o[b]] = [o[b], o[a]];
+    };
     const customCrop = (s) => !!cam.value.crops?.[s];
     return { id, cam, shape, zone, ov, colour, probe, testing, test, used, addToRotation, play, remove, captionToAll, toggleShow, customCrop,
-      feedFor, feedPill, SHAPES, STYLES, FONTS, SHOW, TIMEZONES, go };
+      orderOn, moveSection, setCoord, feedFor, feedPill, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
   },
   template: `<div class="page" v-if="cam">
     <div class="page-head"><div class="grow">
@@ -342,6 +383,9 @@ const WebcamEditor = {
               <Field label="Time zone" hint="For the caption's local time"><input class="input" v-model.trim="cam.tz" list="wc-tz" placeholder="Asia/Tokyo">
                 <datalist id="wc-tz"><option v-for="z in TIMEZONES" :key="z" :value="z"/></datalist></Field>
               <Field label="Frame rate" hint="Smoother costs the hub more"><Stepper v-model="cam.fps" :min="1" :max="30" unit=" fps"/></Field>
+              <Field label="Location" hint="Latitude, longitude: for the caption's weather and sunrise/sunset">
+                <div class="row nowrap" style="gap:6px"><input class="input" style="width:50%" :value="cam.lat ?? ''" @change="setCoord('lat', $event, 90)" placeholder="49.2888">
+                  <input class="input" style="width:50%" :value="cam.lon ?? ''" @change="setCoord('lon', $event, 180)" placeholder="-123.1111"></div></Field>
             </div>
           </div></div>
 
@@ -361,7 +405,7 @@ const WebcamEditor = {
       <div class="stack sticky">
         <div class="card"><div class="card-head"><span class="live">LIVE</span><h3>On the wall · {{ SHAPES[shape].label.toLowerCase() }} ({{ zone[0] }}×{{ zone[1] }})</h3></div>
           <div class="card-body stack">
-            <WallPreview :cam="cam" :shape="shape"/>
+            <WallPreview :cam="cam" :shape="shape" :cam-id="id"/>
             <div class="faint" style="font-size:12px" v-if="SHAPES[shape].note">{{ SHAPES[shape].note }}</div>
             <div class="row">
               <button class="btn sm" @click="play(false)"><Icon name="Play" :size="14"/>Play once on the wall</button>
@@ -377,22 +421,47 @@ const WebcamEditor = {
         <div class="card"><div class="card-head"><Icon name="Captions" :size="16"/><h3>Caption</h3>
             <span class="spacer"></span><button class="btn sm ghost" @click="captionToAll" title="Copy this caption look to every webcam"><Icon name="Copy" :size="14"/>Use on all webcams</button></div>
           <div class="card-body stack">
-            <Seg v-model="ov.style" :options="STYLES"/>
+            <div class="wc-layouts"><button v-for="(l, k) in LAYOUTS" :key="k" type="button" class="wc-layout" :class="{on: ov.style === k}" @click="ov.style = k" :title="l.note">
+              <Icon :name="l.icon" :size="15"/><b>{{ l.label }}</b><span class="faint">{{ l.note }}</span></button></div>
             <template v-if="ov.style !== 'none'">
               <div class="row" style="gap:16px; align-items:flex-start">
-                <Field label="Corner"><div class="wc-corners">
-                  <button v-for="c in ['tl','tr','bl','br']" :key="c" type="button" :class="{on: ov.corner === c}" @click="ov.corner = c" :title="c"></button></div></Field>
+                <Field label="Position"><div class="wc-corners wc-six">
+                  <button v-for="c in POSITIONS" :key="c" type="button" :class="{on: ov.corner === c}" @click="ov.corner = c" :title="c"></button></div></Field>
+                <Field label="Headline" v-if="ov.style !== 'dot'"><Seg v-model="ov.headline" :options="HEADLINES"/></Field>
                 <Field label="Text size" v-if="ov.style !== 'dot'"><Seg v-model="ov.font" :options="FONTS"/></Field>
-                <Field label="Shows"><Seg v-model="ov.when" :options="[{value:'always', label:'Always'}, {value:'intro', label:'First 10 s'}]"/></Field>
               </div>
-              <Field label="What it says" v-if="ov.style !== 'dot'"><div class="row" style="gap:6px">
-                <button v-for="(l, k) in SHOW" :key="k" type="button" class="chip" :class="{off: !ov.show[k]}" style="height:26px; padding:0 10px" @click="toggleShow(k)">{{ l }}</button></div></Field>
-              <div class="row" style="gap:16px">
+              <Field label="Sections" hint="Click to turn on or off" v-if="ov.style !== 'dot'"><div class="row" style="gap:6px">
+                <button v-for="(l, k) in SECTIONS" :key="k" type="button" class="chip" :class="{off: !ov.show[k]}" style="height:26px; padding:0 10px" @click="toggleShow(k)">{{ l }}</button></div></Field>
+              <Field label="Your text" v-if="ov.show.custom"><input class="input" v-model="ov.custom_text" maxlength="40" placeholder="Scramble Crossing, from the Starbucks"></Field>
+              <div class="callout info" v-if="(ov.show.weather || ov.show.sun) && !(Number.isFinite(cam.lat) && Number.isFinite(cam.lon))" style="font-size:12.5px">
+                <Icon name="MapPin" :size="14"/> Weather and sunrise/sunset need this webcam's location (Source → Location).</div>
+              <Field label="Order" hint="The details, top to bottom or left to right; the headline goes first" v-if="ov.style !== 'dot' && orderOn.length > 1">
+                <div class="wc-order"><div v-for="(k, i) in orderOn" :key="k" class="wc-order-item">
+                  <span class="mono faint">{{ i + 1 }}</span>{{ SECTIONS[k] }}<span class="spacer"></span>
+                  <button class="btn sm ghost icon-only" @click="moveSection(k, -1)" :disabled="i === 0" title="Earlier"><Icon name="ChevronUp" :size="13"/></button>
+                  <button class="btn sm ghost icon-only" @click="moveSection(k, 1)" :disabled="i === orderOn.length - 1" title="Later"><Icon name="ChevronDown" :size="13"/></button></div></div></Field>
+              <div class="row" style="gap:16px; align-items:flex-start" v-if="ov.style !== 'dot'">
+                <Field label="Details"><Seg v-model="ov.lines" :options="LINES"/></Field>
+                <Field label="Separator"><Seg v-model="ov.separator" :options="SEPS"/></Field>
+                <Field label="Clock"><Seg v-model="ov.time_format" :options="[{value:'24h', label:'24 h'}, {value:'12h', label:'12 h'}]"/></Field>
+              </div>
+              <div class="row" style="gap:16px; align-items:flex-start">
                 <Field label="Accent"><ColorPick v-model="ov.accent"/></Field>
                 <Field label="Text" v-if="ov.style !== 'dot'"><ColorPick v-model="ov.text"/></Field>
+                <Field label="Background"><ColorPick v-model="ov.bg"/></Field>
+                <Field label="Background strength"><div style="width:150px"><Slider v-model="ov.opacity" :min="0" :max="1" :step="0.05" :format="v => Math.round(v * 100) + '%'"/></div></Field>
+              </div>
+              <ToggleRow v-if="ov.style !== 'dot'" v-model="ov.uppercase" label="ALL CAPS"/>
+              <div class="row" style="gap:16px; align-items:flex-start">
+                <Field label="Shows"><Seg v-model="ov.when" :options="[{value:'always', label:'Always'}, {value:'intro', label:'First 10 s'}, {value:'periodic', label:'Every few minutes'}]"/></Field>
+                <template v-if="ov.when === 'periodic'">
+                  <Field label="For"><Stepper v-model="ov.show_sec" :min="3" :max="60" unit=" s"/></Field>
+                  <Field label="Every"><Stepper v-model="ov.every_min" :min="1" :max="30" unit=" min"/></Field></template>
+                <Field label="Fade" v-if="ov.when !== 'always'"><Toggle v-model="ov.fade"/></Field>
               </div>
             </template>
-            <div class="faint" style="font-size:12px">Long lines drop the credit, then the place, before anything is cut.</div>
+            <div class="faint" style="font-size:12px">When space runs out, sections drop in this order before anything is cut: credit, your text,
+              sunrise/sunset, time difference, date, weather, place.</div>
           </div></div>
       </div>
     </div>

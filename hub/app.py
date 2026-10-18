@@ -72,7 +72,8 @@ def put_config(payload: dict = Body(...)):
     # Re-run fetchers whose inputs changed so the panel shows fresh results right away.
     for job, section in (("finance", "finance"), ("news", "headlines"), ("calendar", "calendar"),
                          ("weather", "weather"), ("naad", "naad_alerts"), ("drivebc", "road_alerts"),
-                         ("quakes", "bc_quakes"), ("tsunami", "tsunami"), ("wildfire", "wildfire")):
+                         ("quakes", "bc_quakes"), ("tsunami", "tsunami"), ("wildfire", "wildfire"),
+                         ("webcam_weather", "webcams")):
         if before["modules"].get(section) != saved["modules"].get(section):
             _sched().run_now(job)
     sync.push_data()          # config.json rides along; the v2 display hot-reloads it
@@ -840,7 +841,8 @@ def webcams_preview_set(payload: dict = Body(...)):
     token = str(payload.get("token") or "") or os.urandom(6).hex()
     if not re.fullmatch(r"[0-9a-f]{12}", token):
         raise HTTPException(400, "bad token")
-    _webcam_previews[token] = {"cam": cam, "shape": shape, "zone": zones[shape], "until": now + 3600,
+    _webcam_previews[token] = {"cam": cam, "id": str(payload.get("id") or ""), "shape": shape, "zone": zones[shape],
+                               "until": now + 3600,
                                "since": _webcam_previews.get(token, {}).get("since", now)}
     return {"token": token, "zone": zones[shape]}
 
@@ -865,8 +867,9 @@ async def webcams_preview(token: str):
         colour = {"brightness": q.get("b", 1), "contrast": q.get("c", 1), "saturation": q.get("s", 1)}
         if (cam_now.get("source") or {}) != (cam.get("source") or {}):
             frame = None                                     # source changed: the panel reopens the stream
+        wx = (read_json(paths.DATA_DIR / "webcam_weather.json", {}) or {}).get(cur.get("id") or "")
         img = wc.render_preview(cam_now, None if frame is None else webcams.render(frame, w, h, crop, colour),
-                                (w, h), time.time() - t0)
+                                (w, h), time.time() - t0, wx=wx)
         out = io.BytesIO()
         Image.fromarray(img).save(out, "PNG", compress_level=1)
         return _part(out.getvalue(), b"image/png")
