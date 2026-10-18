@@ -4,13 +4,8 @@ The hub decodes the stream (hub/webcams.py) and sends frames already cropped and
 only copies them to the canvas: no decoding here, ever. A reader thread per playing webcam keeps the newest
 frame; it hangs up a few seconds after the screen stops drawing it, and the hub then stops ffmpeg.
 
-On top goes a caption saying what the feed is and where it comes from, styled per webcam (``overlay``):
-    style    tag | bar | outline | dot | none
-    corner   tl | tr | bl | br                (bar: top or bottom edge)
-    show     name, place, time, live, credit  (booleans)
-    when     always | intro                   (intro: the first INTRO_SEC of each play)
-    font     tiny | small | medium | large
-    accent, text                              "#rrggbb"
+On top goes a caption saying what the feed is and where it comes from, styled per webcam (``overlay``): see
+display/modules/webcam_caption.py for the sections and layouts.
 """
 
 from __future__ import annotations
@@ -20,46 +15,19 @@ import os
 import socket
 import threading
 import time
-from datetime import datetime
 from urllib.parse import urlencode, urlparse
 
 import numpy as np
 
 from display.gfx import Color, graphics
+from display.modules.webcam_caption import (DEFAULT_OVERLAY, FONTS, INTRO_SEC, LAYOUTS, STYLES,  # noqa: F401
+                                            _outlined, _shade, _tw, caption_lines, draw_caption,
+                                            fit_detail, overlay_of)
 
 DEFAULT_HUB = "http://192.168.1.111:8800"
 IDLE_SEC = 3.0               # hang up when the screen hasn't drawn this webcam for this long
 GIVE_UP_SEC = 25.0           # no picture this long after the play started: skip to the next screen
-INTRO_SEC = 10.0
 MAGIC = b"BSWC"
-
-FONTS = {"tiny": "fonts/alert/tom-thumb.bdf", "small": "fonts/alert/5x8.bdf", "medium": "fonts/alert/6x10.bdf",
-         "large": "fonts/alert/7x13B.bdf"}
-STYLES = ("tag", "bar", "outline", "dot", "none")
-DEFAULT_OVERLAY = {"style": "tag", "corner": "bl", "when": "always", "font": "small", "accent": "#e8202a",
-                   "text": "#ffffff", "show": {"name": True, "place": True, "time": True, "live": True, "credit": False}}
-
-
-def overlay_of(cam: dict) -> dict:
-    o = {**DEFAULT_OVERLAY, **(cam.get("overlay") or {})}
-    o["show"] = {**DEFAULT_OVERLAY["show"], **((cam.get("overlay") or {}).get("show") or {})}
-    return o
-
-
-def _hex(s, default):
-    try:
-        s = str(s).lstrip("#")
-        return int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16)
-    except (ValueError, IndexError):
-        return default
-
-
-def _local_time(tz):
-    try:
-        from zoneinfo import ZoneInfo
-        return datetime.now(ZoneInfo(tz)) if tz else datetime.now()
-    except Exception:
-        return datetime.now()
 
 
 def stream_query(cam: dict, shape: str, w: int, h: int) -> dict:
@@ -186,11 +154,12 @@ class WebcamPanel:
         return st
 
     def font(self, size):
+        """A font by size name (tiny…large) or by path, cached."""
         f = self.fonts.get(size)
         if f is None:
             f = graphics.Font()
             try:
-                f.LoadFont(FONTS.get(size, FONTS["small"]))
+                f.LoadFont(FONTS.get(size, size))
             except Exception:
                 f.LoadFont(FONTS["small"])
             self.fonts[size] = f
@@ -238,141 +207,6 @@ class WebcamPanel:
         graphics.DrawText(c, f, x + max(2, (w - tw) // 2), y + h // 2, color, text)
 
 
-# --- caption ----------------------------------------------------------------------------------------------------
-def _tw(font, s):
-    return sum(max(0, font.CharacterWidth(ord(ch))) for ch in s)
-
-
-def _shade(c, x, y, w, h, k):
-    """Darken a box of the frame (the caption's see-through background)."""
-    x0, y0, x1, y1 = max(0, x), max(0, y), min(c.width, x + w), min(c.height, y + h)
-    if x1 > x0 and y1 > y0:
-        box = c.buf[y0:y1, x0:x1]
-        box[:] = (box.astype(np.uint16) * int(k * 256) >> 8).astype(np.uint8)
-
-
-def _outlined(c, font, x, y, color, s):
-    black = Color(0, 0, 0)
-    for dx, dy in ((1, 1), (-1, 1), (1, -1), (-1, -1), (1, 0), (-1, 0), (0, 1), (0, -1)):
-        graphics.DrawText(c, font, x + dx, y + dy, black, s)
-    return graphics.DrawText(c, font, x, y, color, s)
-
-
-def caption_lines(cam, ov, now_local=None):
-    """(title, detail bits): 'Shibuya Crossing' and [('place', 'Tokyo, Japan'), ('time', '04:12'), ('credit', 'FNN')]."""
-    sh = ov["show"]
-    title = (cam.get("label") or "") if sh.get("name") else ""
-    bits = []
-    if sh.get("place") and cam.get("place"):
-        bits.append(("place", cam["place"]))
-    if sh.get("time"):
-        t = now_local or _local_time(cam.get("tz"))
-        bits.append(("time", t.strftime("%H:%M")))
-    if sh.get("credit") and cam.get("credit"):
-        bits.append(("credit", cam["credit"]))
-    return title, bits
-
-
-def _clip(font, s, width):
-    while s and _tw(font, s) > width:
-        s = s[:-1]
-    return s.rstrip(" ,·-")
-
-
-def fit_detail(font, bits, width):
-    """The detail line within ``width`` px: drops the credit, then the place, before cutting text."""
-    sep = " · " if 0xB7 in getattr(font, "glyphs", {0xB7: 1}) else " - "
-    bits = list(bits)
-    line = sep.join(v for _, v in bits)
-    for drop in ("credit", "place"):
-        if _tw(font, line) <= width:
-            break
-        bits = [b for b in bits if b[0] != drop] or bits
-        line = sep.join(v for _, v in bits)
-    return _clip(font, line, width)
-
-
-def draw_caption(c, zone, cam, elapsed, font_for, now_local=None):
-    ov = overlay_of(cam)
-    style = ov.get("style", "tag")
-    if style == "none" or (ov.get("when") == "intro" and elapsed > INTRO_SEC):
-        return
-    x, y, w, h = zone
-    font = font_for(ov.get("font", "small"))
-    small = font_for("tiny") if ov.get("font") in ("medium", "large") else font
-    accent = Color(*_hex(ov.get("accent"), (232, 32, 42)))
-    text = Color(*_hex(ov.get("text"), (255, 255, 255)))
-    corner = ov.get("corner", "bl")
-    top, left = corner[0] == "t", corner[1] == "l"
-    live = ov["show"].get("live")
-    title, bits = caption_lines(cam, ov, now_local)
-    blink = int(time.time() * 1.25) % 2 == 0
-
-    if style == "dot":
-        r = 2
-        cx = x + 4 if left else x + w - 5
-        cy = y + 4 if top else y + h - 5
-        if blink:
-            c.FillRect(cx - r + 1, cy - r, 2 * r - 1, 2 * r + 1, accent)
-            c.FillRect(cx - r, cy - r + 1, 2 * r + 1, 2 * r - 1, accent)
-        if live:
-            lw = _tw(small, "LIVE")
-            lx = cx + 5 if left else cx - 5 - lw
-            _outlined(c, small, lx, cy - small.height // 2 + small.baseline, text, "LIVE")
-        return
-
-    pad = 2
-    lh = font.height
-    badge = "LIVE" if live else ""
-    bw = _tw(small, badge) + 4 if badge else 0
-    room = w - 2 * pad - 3 - (bw + 3 if bw else 0)
-    title = _clip(font, title, room)
-    detail = fit_detail(small, bits, room)
-    dh = small.height if detail else 0
-    gap = 1 if (title and detail) else 0
-    tw_ = max(_tw(font, title), _tw(small, detail))
-    box_w = min(w, pad * 2 + (bw + 3 if bw else 0) + tw_)
-    box_h = pad * 2 + max((lh if title else 0) + gap + dh, small.height + 1 if badge else 0)   # badge alone fits too
-    if not title and not detail and not badge:
-        return
-
-    if style == "bar":
-        bx, bw_full = x, w
-        by = y if top else y + h - box_h
-        _shade(c, bx, by, bw_full, box_h, 0.3)
-        c.FillRect(bx, by + box_h - 1 if top else by, bw_full, 1, accent)
-        cx = bx + pad
-        if badge:
-            c.FillRect(cx, by + pad, bw, small.height + 1, accent)
-            graphics.DrawText(c, small, cx + 2, by + pad + small.baseline, Color(255, 255, 255), badge)
-            cx += bw + 3
-        ty = by + pad
-        if title:
-            graphics.DrawText(c, font, cx, ty + font.baseline, text, title)
-            ty += lh + gap
-        if detail:
-            graphics.DrawText(c, small, cx, ty + small.baseline, text, detail)
-        return
-
-    bx = x + 1 if left else x + w - box_w - 1
-    by = y + 1 if top else y + h - box_h - 1
-    if style == "tag":
-        _shade(c, bx, by, box_w, box_h, 0.25)
-        c.FillRect(bx if left else bx + box_w - 1, by, 1, box_h, accent)
-    cx = bx + pad + (1 if style == "tag" and left else 0)
-    ty = by + pad
-    put = _outlined if style == "outline" else graphics.DrawText
-    if badge:
-        c.FillRect(cx, ty, bw, small.height + 1, accent)
-        graphics.DrawText(c, small, cx + 2, ty + small.baseline, Color(255, 255, 255), badge)
-        cx += bw + 3
-    if title:
-        put(c, font, cx, ty + font.baseline, text, title)
-        ty += lh + gap
-    if detail:
-        put(c, small, cx, ty + small.baseline, text, detail)
-
-
 def render_preview(cam: dict, frame, shape_zone, elapsed=0.0) -> np.ndarray:
     """The wall's pixels for one zone: a frame already cropped to the zone, plus the caption (control panel)."""
     from display.gfx import Canvas
@@ -386,7 +220,7 @@ def render_preview(cam: dict, frame, shape_zone, elapsed=0.0) -> np.ndarray:
         f = fonts.get(size)
         if f is None:
             f = fonts[size] = graphics.Font()
-            f.LoadFont(FONTS.get(size, FONTS["small"]))
+            f.LoadFont(FONTS.get(size, size))
         return f
 
     draw_caption(c, (0, 0, w, h), cam, elapsed, font_for)
