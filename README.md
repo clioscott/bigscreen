@@ -114,6 +114,13 @@ hot-reload on the wall, no restart needed.
 - **438 bitmap fonts**, always drawn at native size ([credits](assets/fonts/CREDITS.md)).
 <!-- /gen:features -->
 
+**Live webcams**: video from YouTube live streams or any HLS / MJPEG / RTSP camera, as a rotation screen on one side, full
+width or the whole wall. The hub decodes each stream with ffmpeg (yt-dlp finds the video behind a YouTube page) and
+sends the Pi frames already cropped to its zone, so the Pi never decodes video. Each webcam keeps its own crop for every
+place on the wall, colour adjustments, and a caption (tag, bar, outlined text or a LIVE dot) naming the place, its local
+time and who runs the camera. Set up on the control panel's Webcams page, with a live preview of exactly what the wall
+will show.
+
 ## Gallery
 
 <!-- gen:gallery -->
