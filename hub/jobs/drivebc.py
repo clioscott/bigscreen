@@ -279,7 +279,8 @@ def run(cfg):
     counts = {"metro_events": len(metro), "incidents": sum(i["type"] == "INCIDENT" for i in items),
               "closures": sum(i["closed"] for i in items)}
     common.write("drivebc", {"items": items, "counts": counts, "home": list(common.home(cfg)), "sample_lines": sample_lines,
-                             "sample_hl": sample_hl, "sample_cams": {k_: v for k_, v in sample_cams.items() if v}})
+                             "sample_hl": sample_hl,
+                             "sample_cams": {k_: v for k_, v in sample_cams.items() if v} if st.get("cameras") else {}})
     for i in items:
         print(f"{i['severity']} {i['kind']}: {i['road']} {i['direction']} — {i['description'][:90]}", flush=True)
     if st.get("takeover") == "closures":

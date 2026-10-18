@@ -1,7 +1,9 @@
 """Control panel HTTP API + static UI (served on hub.panel_port, default 8800)."""
 
 import io
+import os
 import re
+import threading
 import time
 from pathlib import Path
 
@@ -317,7 +319,7 @@ _PANEL_TILES = {"esri_dark": (_ESRI.format("World_Dark_Gray_Base"), "image/jpeg"
 def panel_tile(style: str, z: int, x: int, y: int):
     """Basemap tiles for the panel's maps, fetched by the hub and cached on disk."""
     from hub.weather import geo
-    if style not in _PANEL_TILES or not (0 <= z <= 18 and 0 <= x < 2 ** z and 0 <= y < 2 ** z):
+    if style not in _PANEL_TILES or not (0 <= z <= 16 and 0 <= x < 2 ** z and 0 <= y < 2 ** z):
         raise HTTPException(404, "no such tile")
     url, mime = _PANEL_TILES[style]
     path = geo.TILE_CACHE / f"panel_{style}" / str(z) / str(x) / f"{y}"
@@ -328,11 +330,13 @@ def panel_tile(style: str, z: int, x: int, y: int):
         except Exception as e:
             raise HTTPException(502, f"tile: {e}")
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(r.content)
+        tmp = path.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
+        tmp.write_bytes(r.content)
+        os.replace(tmp, path)                            # never a half-written tile in the cache
     return Response(path.read_bytes(), media_type=mime, headers={"Cache-Control": "max-age=604800"})
 
 
-_webcams = {"at": 0.0, "list": []}
+_webcams = {"at": 0.0, "list": [], "tried": 0.0}
 
 
 @app.get("/api/bc/roads/cameras")
@@ -341,10 +345,13 @@ def bc_road_cameras():
     the roads, and which camera each event and sample uses — for the panel's camera map."""
     from hub.bc import common
     from hub.jobs import drivebc
-    if time.time() - _webcams["at"] > 600:
+    if time.time() - _webcams["at"] > 600 and time.time() - _webcams["tried"] > 60:     # (a minute between failed tries)
+        _webcams["tried"] = time.time()
         try:
-            _webcams["list"] = common.session.get(f"{drivebc.API}/webcams/", timeout=40).json()
-            _webcams["at"] = time.time()
+            got = common.session.get(f"{drivebc.API}/webcams/", timeout=20).json()
+            if not isinstance(got, list):
+                raise ValueError("unexpected reply")
+            _webcams["list"], _webcams["at"] = got, time.time()
         except Exception as e:
             if not _webcams["list"]:
                 raise HTTPException(502, f"DriveBC webcams: {e}")

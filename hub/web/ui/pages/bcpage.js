@@ -34,7 +34,7 @@ export function makeBCPage(P) {
       let tick, poll;
       onMounted(() => {
         load();
-        poll = setInterval(load, 8000);
+        poll = setInterval(() => { load(); loadFull(); }, 8000);   // (pages change when the job finds a sample's camera)
         tick = setInterval(() => {
           if (!playing.value) return;
           t.value = (t.value + 0.5) % (half.value ? Math.max(4, halfTl.value.total || 30) : fullOn.value ? Math.max(4, fullTl.value.total) : 30);
@@ -73,7 +73,7 @@ export function makeBCPage(P) {
           : `/api/bc/${P.src}/preview.png?theme=${theme.value}&sample=${smp.value}&real=${real.value ? 1 : 0}&at=${t.value.toFixed(1)}&scale=2&s=${look.value}`);
       const pick = (id) => { set("theme", id); view.value = null; pinned.value = null; };
       const show = (id, h) => { pinned.value = id; view.value = null; half.value = h; t.value = h ? 0 : 1; };
-      watch(view, (v, old) => { if (fullOn.value && v !== old) t.value = 1; });   // hovering a theme starts at its first page
+      watch(view, (v, old) => { if (fullOn.value && v && v !== old) t.value = 1; });   // hovering a theme starts at its first page
       watch([half, realTheme, smp], () => { if (half.value) loadHalf(); });
       const testWall = async (opts = {}) => {
         try {

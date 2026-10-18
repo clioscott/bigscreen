@@ -228,13 +228,20 @@ def _queue_items(s):
 
 
 def _cam(s, item):
+    """The camera still (read once per still, not every frame)."""
     cam = item.get("cam")
     if not cam or not s.data_dir:
         return None
-    try:
-        return np.fromfile(os.path.join(s.data_dir, "drivebc", f"cam_{cam['id']}.bin"), dtype=np.uint8).reshape(cam["h"], cam["w"], 3)
-    except Exception:
-        return None
+    key = (cam.get("id"), cam.get("at"))
+    cache = s.__dict__.setdefault("_cam_imgs", {})
+    if key not in cache:
+        if len(cache) > 8:
+            cache.clear()
+        try:
+            cache[key] = np.fromfile(os.path.join(s.data_dir, "drivebc", f"cam_{cam['id']}.bin"), dtype=np.uint8).reshape(cam["h"], cam["w"], 3)
+        except Exception:
+            cache[key] = None
+    return cache[key]
 
 
 # ------------------------------------------------------------------------------------------------ camera labels
@@ -246,7 +253,7 @@ NOUN = {"crash": "crash", "fire": "fire", "debris": "debris", "slide": "slide", 
 
 def cam_place(cam):
     """Where the camera is, from DriveBC's caption without its "looking north" ("Highway 1 at 176 Street overpass")."""
-    cap = re.sub(r"[,;]?\s*looking\b.*$", "", (cam.get("caption") or "").strip(), flags=re.I).rstrip(" .*")
+    cap = re.sub(r"[,;]?\s*\blooking\b.*$", "", (cam.get("caption") or "").strip(), flags=re.I).rstrip(" .*")
     return cap or re.sub(r"\s+-\s+[NSEW]{1,2}$", "", cam.get("name") or "")
 
 
@@ -255,9 +262,9 @@ def cam_facing(cam):
     o = (cam.get("orientation") or "").upper()
     if o in FACING:
         return o
-    m = re.search(r"looking\s+(north|south)?\s*(east|west)?", cam.get("caption") or "", re.I)
-    if m and (m.group(1) or m.group(2)):
-        return "".join(w[0].upper() for w in (m.group(1), m.group(2)) if w)
+    for m in re.finditer(r"\blooking\s+(north|south)?[\s-]*(east|west)?", cam.get("caption") or "", re.I):
+        if m.group(1) or m.group(2):
+            return "".join(w[0].upper() for w in (m.group(1), m.group(2)) if w)
     return ""
 
 
@@ -759,7 +766,7 @@ THEMES = {
     "overview": {"label": "Metro overview", "hint": "Every current event's road highlighted on the Metro map, the list beside",
                  "draw": _overview, "badge": (4, H - 14), "dots": (-2, 5)},
     "camera": {"label": "Highway camera", "hint": "The nearest DriveBC camera full height (or the map), shield and details beside",
-               "draw": _camera, "badge": (4, 20), "dots": lambda s, it: (336 - 3 if _cam(s, it) is not None else 300 - 3, 4)},
+               "draw": _camera, "badge": (4, 20), "dots": lambda s, it: (336 - 3 if _cam(s, it) is not None else 300 - 3, 4)},   # (_cam is cached)
     "board": {"label": "Traffic desk", "hint": "Every current event in rows with shields; the one in focus expanded below",
               "draw": _board, "badge": (230, 3), "dots": (-2, H - 8)},
 }
@@ -927,8 +934,11 @@ def _half_camera(s, item, spec, col):
         x, y, w, h = x - 4, y - 2, w + 8, h + 5
         ih, iw = img.shape[:2]
         sx, sy = max(0, (iw - w) // 2), max(0, (ih - h) // 2)
-        c.Blit(img[sy:sy + h, sx:sx + w], x + max(0, (w - iw) // 2), y)
-        cam_label(c, item, cam, x, y + h - 24, w, big=False)
+
+        def still(cv):                                   # the picture and its label, drawn once per still
+            cv.Blit(img[sy:sy + h, sx:sx + w], max(0, (w - iw) // 2), 0)
+            cam_label(cv, item, cam, 0, h - 24, w, big=False)
+        c.Blit(k.half_layer(s, ("cam", item.get("id"), cam.get("id"), cam.get("at"), w, h), w, h, still), x, y)
         k.box(c, x + 3, y + 3, 34, 11, BLACK)
         k.disc(c, x + 9, y + 8, 3, (255, 40, 40) if k.blink(now, 1.2) else (90, 0, 0))
         k.text(c, k.font("s8"), x + 14, y + 4, WHITE, "LIVE")
