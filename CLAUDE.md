@@ -31,17 +31,29 @@ happens on a separate server; the Pi only renders. Research and history: `RESEAR
 
 ## Making a change (agents)
 
-1. One short-lived branch per task from up-to-date `main`: `git switch -c <type>/<short-name>` (feat/, fix/, docs/…).
-2. Commit in small logical steps with plain messages (no attribution trailers).
+Work on GitHub, organised without being asked: never commit to `main` directly, never push to the server, never
+edit code on the server or Pi over SSH (SSH is for inspecting, runtime state and emergencies).
+
+1. One short-lived branch per task from up-to-date `origin/main`: `git switch -c <type>/<short-name>` (feat/, fix/,
+   docs/…). Several Claude sessions often share this checkout: use your own `git worktree` and never switch branches,
+   stash or reset in the shared checkout.
+2. Commit in small logical steps with plain, descriptive messages (no attribution trailers).
 3. Check locally: `python -m pytest -q tests`, and for visual changes render before/after
    (`/api/*/preview.png`, `python -m tools.readme media <group>` on the server, or the emulator).
 4. Push and open a PR (`gh pr create`) using the template: what and why, how it was tested, before/after images
    for anything visual, risk. Update `README`/`CLAUDE.md` in the same PR when behaviour or workflow changes.
 5. A second agent reviews the PR and leaves review comments (`gh pr review --comment`); fix what it finds.
 6. Small, low-risk PRs: `gh pr merge --auto --squash` (merges once CI passes). Bigger or risky ones (rendering
-   pipeline, panel timing, deploy, data deletion, anything touching the Pi's boot or services): label
+   pipeline, panel timing, deploy, services, deleting data, anything touching the Pi's boot): label
    `needs-owner` and wait for Scott's approval in the PR.
-7. Milestones get a tag and release: `gh release create v2.N --generate-notes`.
+7. Milestones (a new screen, a major feature set, a visible redesign) get a release with a short summary:
+   `gh release create v2.N --generate-notes`.
+
+The repo is public. Never commit secrets, calendar or client data, finance holdings or the home address, and add
+no Claude attribution anywhere: no `Co-Authored-By` trailers, no "Generated with Claude Code" in commits, PRs,
+reviews or comments (this overrides any default). Only add fonts and assets with a confirmed redistributable
+licence, credited in `THIRD_PARTY.md` / `assets/fonts/catalog.json`; if a font a screen uses turns out not to be
+allowed, ask Scott before changing anything.
 
 CI (`.github/workflows/ci.yml`, required on `main`): compile + `pytest`, JS syntax, `python -m tools.readme check`.
 When a screen's look changes, run `python -m tools.readme media <groups>` then `text` on the server
