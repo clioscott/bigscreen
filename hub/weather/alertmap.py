@@ -79,7 +79,7 @@ def pick_area(cfg, zone_rings, home_hit=None, keep=0.5, some=0.2, max_jump=3.0):
     return part[1] if full[0].km_per_px > max_jump * part[0].km_per_px else full[1]
 
 
-HOME_DEFAULT = (-123.0918, 49.1442)          # home (approximate)
+HOME_DEFAULT = (-123.0918, 49.1442)          # home (approximate), when the config has none
 
 
 def render(alert, cfg, home_city="Richmond", home_ll=None):
