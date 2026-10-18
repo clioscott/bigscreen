@@ -477,7 +477,7 @@ def _panel(c, item, x, w, h_shield=56, big=True):
     big_icon(c, item, x + w - 32, y + 2, col)
     y += h_shield + 6
     if item.get("highways"):                               # (a street blade already names the road)
-        y += k.fit_text(c, item.get("road") or "", x + 8, y, w - 14, 34, ("h18", "h16", "lutb12", "hvb10"), WHITE) + 3
+        y += k.fit_text(c, item.get("road") or "", x + 8, y, w - 14, 34, ("h18", "h16", "h14", "lutb12", "hvb10"), WHITE) + 3
     if area_of(item):
         y += k.fit_text(c, area_of(item), x + 8, y, w - 14, 16, ("lutb14", "lutb12", "hvb10"), (255, 225, 150)) + 2
     if item.get("direction"):
@@ -488,7 +488,11 @@ def _panel(c, item, x, w, h_shield=56, big=True):
     lines_, _ = k.fit(_desc(item), w - 16, H - y - 14,
                       [{"body": "lut12", "small": "hv10"}, {"body": "hv10", "small": "s8"}, {"body": "s8", "small": "s8"}])
     k.draw_fit(c, lines_, x + 8, y)
-    k.text(c, k.font("s8"), x + 8, H - 10, (120, 125, 140), f"DriveBC · {_updated(item)}")
+    fs = k.font("s8")
+    t = k.day_hhmm(item.get("updated"))
+    tries = (f"DriveBC · Updated {t}", f"DriveBC · {t}", t) if t else ("DriveBC",)
+    foot = next((v for v in tries if k.tw(fs, v) <= w - 12), tries[-1])   # the narrow camera column drops "Updated"
+    k.text(c, fs, x + 8, H - 10, (120, 125, 140), foot)
 
 
 def _map(s, c, item, now, el):
