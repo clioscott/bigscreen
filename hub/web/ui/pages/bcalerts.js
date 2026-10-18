@@ -30,6 +30,8 @@ export const Naad = makeBCPage({
 export const Roads = makeBCPage({
   src: "roads", section: "road_alerts", panel: "road_alert", rule: "roads",
   title: "DriveBC",
+  tabs: [{ id: "screen", label: "Screen" }, { id: "cameras", label: "Camera map" }],
+  fullPages: true,
   intro: "Road incidents, closures and conditions in Metro Vancouver from DriveBC (the same events as BC's Open511 feed), each with the nearest DriveBC highway camera when there is one within a few kilometres. Highway shields are drawn as the real signs.",
   sources: ["DriveBC.ca — events and webcams"],
   fields: [

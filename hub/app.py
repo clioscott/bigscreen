@@ -290,9 +290,93 @@ def bc_quake_replay(payload: dict = Body(default={})):
     return {"ok": True, "origin_in_sec": r["origin_in_sec"], "records": r["records"], "item": r["item"]["id"]}
 
 
+@app.get("/api/bc/{src}/full_pages")
+def bc_full_pages(src: str, sample: str = "", theme: str = ""):
+    """The full-wall pages of a sample's first showing (its theme, then the extra pages such as the camera), for the
+    preview's page buttons: name, theme and how long each holds."""
+    mod, job_mod, job, section = _bc(src)
+    from display.modules import bc_kit as k
+    from hub.bc import common
+    settings = common.settings(config.load(), section, job_mod.DEFAULTS)
+    theme = theme if theme in mod.THEMES else (settings.get("theme") if settings.get("theme") in mod.THEMES else mod.Screen.DEFAULT_THEME)
+    sample = sample if sample in mod.SAMPLES else next(iter(mod.SAMPLES))
+    data = read_json(paths.DATA_DIR / f"{mod.Screen.DATA}.json", {}) or {}
+    ids = k.full_pages(mod.Screen, theme, sample, data, str(paths.DATA_DIR), settings)
+    scr = mod.Screen(settings, k.StaticLoader({mod.Screen.DATA: data}, str(paths.DATA_DIR)), str(paths.DATA_DIR))
+    hold = round(float(scr.dwell(scr.sample(sample))), 1)
+    out = [{"name": mod.THEMES[t]["label"], "theme": t, "hold": hold} for t in ids]
+    return {"pages": out, "total": round(sum(p["hold"] for p in out), 1)}
+
+
+_PANEL_TILES = {"dark": "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"}    # (CARTO refuses the browser itself)
+
+
+@app.get("/api/tiles/{style}/{z}/{x}/{y}.png")
+def panel_tile(style: str, z: int, x: int, y: int):
+    """Basemap tiles for the panel's maps, fetched by the hub and cached on disk."""
+    from hub.weather import geo
+    if style not in _PANEL_TILES or not (0 <= z <= 18 and 0 <= x < 2 ** z and 0 <= y < 2 ** z):
+        raise HTTPException(404, "no such tile")
+    path = geo.TILE_CACHE / f"panel_{style}" / str(z) / str(x) / f"{y}.png"
+    if not path.exists():
+        try:
+            r = geo._session.get(_PANEL_TILES[style].format(z=z, x=x, y=y), timeout=20)
+            r.raise_for_status()
+        except Exception as e:
+            raise HTTPException(502, f"tile: {e}")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(r.content)
+    return Response(path.read_bytes(), media_type="image/png", headers={"Cache-Control": "max-age=604800"})
+
+
+_webcams = {"at": 0.0, "list": []}
+
+
+@app.get("/api/bc/roads/cameras")
+def bc_road_cameras():
+    """Every DriveBC camera in and around the DriveBC screen's area (where it is, which way it looks), what is on
+    the roads, and which camera each event and sample uses — for the panel's camera map."""
+    from hub.bc import common
+    from hub.jobs import drivebc
+    if time.time() - _webcams["at"] > 600:
+        try:
+            _webcams["list"] = common.session.get(f"{drivebc.API}/webcams/", timeout=40).json()
+            _webcams["at"] = time.time()
+        except Exception as e:
+            if not _webcams["list"]:
+                raise HTTPException(502, f"DriveBC webcams: {e}")
+    st = common.settings(config.load(), "road_alerts", drivebc.DEFAULTS)
+    lo0, la0, lo1, la1 = [float(v) for v in st.get("bbox") or drivebc.DEFAULTS["bbox"]]
+    m = 0.08
+    cams = []
+    for c in _webcams["list"]:
+        lo, la = ((c.get("location") or {}).get("coordinates") or [None, None])[:2]
+        if lo is None or not (lo0 - m <= lo <= lo1 + m and la0 - m / 2 <= la <= la1 + m / 2):
+            continue
+        cams.append({"id": c["id"], "name": drivebc.fold(c.get("name") or ""), "caption": drivebc.fold(c.get("caption") or ""),
+                     "lat": la, "lon": lo, "orientation": c.get("orientation") or "", "highway": c.get("highway_display") or "",
+                     "on": bool(c.get("is_on", True)) and not c.get("marked_stale"), "delayed": bool(c.get("marked_delayed")),
+                     "updated": c.get("last_update_modified"),
+                     "image": "https://www.drivebc.ca" + ((c.get("links") or {}).get("imageDisplay") or f"/images/{c['id']}.jpg")})
+    data = read_json(paths.DATA_DIR / "drivebc.json", {}) or {}
+    from display.modules.bc_roads import SAMPLES, word_of
+
+    def event(it, label):
+        pts = (it.get("geometry") or {}).get("points") or []
+        return {"label": label, "kind": word_of(it), "closed": bool(it.get("closed")), "points": pts,
+                "cam": (it.get("cam") or {}).get("id"), "km": (it.get("cam") or {}).get("km")}
+    events = [event(it, f"{it.get('road')} {it.get('direction') or ''}".strip()) for it in data.get("items") or []]
+    samples = [dict(event(dict(v["item"], cam=(data.get("sample_cams") or {}).get(k_)), v["label"]), sample=k_)
+               for k_, v in SAMPLES.items()]
+    return {"cameras": cams, "events": events, "samples": samples, "bbox": [lo0, la0, lo1, la1],
+            "fetched": _webcams["at"]}
+
+
 @app.get("/api/bc/{src}/preview.png")
-def bc_preview(src: str, theme: str = "", sample: str = "", at: float = 4.0, scale: int = 2, real: int = 0, s: str = ""):
-    """A frame of the screen ``at`` seconds into an item — a sample, or the first real item with real=1."""
+def bc_preview(src: str, theme: str = "", sample: str = "", at: float = 4.0, scale: int = 2, real: int = 0, s: str = "",
+               page: int = -1):
+    """A frame of the screen ``at`` seconds into an item — a sample, or the first real item with real=1; ``page`` =
+    which page of the sample's first showing (see full_pages)."""
     import json as _json
     mod, job_mod, job, section = _bc(src)
     from hub.bc import common
@@ -305,7 +389,8 @@ def bc_preview(src: str, theme: str = "", sample: str = "", at: float = 4.0, sca
     theme = theme if theme in mod.THEMES else (settings.get("theme") if settings.get("theme") in mod.THEMES else mod.Screen.DEFAULT_THEME)
     data = read_json(paths.DATA_DIR / f"{mod.Screen.DATA}.json", {}) or {}
     smp = None if real else (sample if sample in mod.SAMPLES else next(iter(mod.SAMPLES)))
-    frame = mod.render_preview(theme, smp, max(0.0, at), settings, data, str(paths.DATA_DIR))
+    kw = {"page": page} if page >= 0 and smp and src == "roads" else {}
+    frame = mod.render_preview(theme, smp, max(0.0, at), settings, data, str(paths.DATA_DIR), **kw)
     k = max(1, min(4, scale))
     img = Image.fromarray(frame).resize((frame.shape[1] * k, frame.shape[0] * k), Image.NEAREST)
     bio = io.BytesIO()
