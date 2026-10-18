@@ -139,6 +139,28 @@ def validate(cfg):
                 raise ConfigError(f"track {tid}: fps must be 1–30")
 
     _validate_webcams(mods.get("webcams"))
+    _validate_bridges(mods.get("bridges"))
+
+
+def _validate_bridges(br):
+    """modules.bridges (hub/jobs/bridges.py)."""
+    if not br:
+        return
+    ps = br.get("page_sec")
+    if ps is not None and (isinstance(ps, bool) or not isinstance(ps, (int, float)) or not 2 <= ps <= 60):
+        raise ConfigError("bridges.page_sec must be 2–60 seconds")
+    cams = br.get("cams")
+    if cams is None:
+        return
+    if not isinstance(cams, list) or len(cams) > 12:
+        raise ConfigError("bridges.cams must be a list of at most 12 bridges")
+    for i, c in enumerate(cams):
+        if not isinstance(c, dict) or not str(c.get("label", "")).strip():
+            raise ConfigError(f"bridges.cams[{i}] needs a label")
+        ids = c.get("ids")
+        if not isinstance(ids, list) or not ids or not all(isinstance(x, int) and not isinstance(x, bool) and x > 0
+                                                            for x in ids):
+            raise ConfigError(f"bridge {c['label']}: pick a DriveBC camera")
 
 
 def _validate_webcams(wc):

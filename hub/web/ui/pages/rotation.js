@@ -9,7 +9,7 @@ function entrySub(e) {
     const tr = store.draft.modules.weather_maps?.tracks?.[e.track];
     if (tr) bits.push(areaLabel(tr.area, true));
   }
-  if (PANEL_TYPES[e.panel]?.full) bits.push(["weather_alert", "webcam_wall"].includes(e.panel) ? "whole wall" : "full width");
+  if (PANEL_TYPES[e.panel]?.full) bits.push(["weather_alert", "webcam_wall", "bridges_wall"].includes(e.panel) ? "whole wall" : "full width");
   if (e.priority === "next") bits.push("jumps the queue");
   return bits.join(" · ");
 }

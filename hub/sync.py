@@ -66,6 +66,15 @@ def _push_once():
                                capture_output=True, text=True, timeout=300)
             ok = ok and q.returncode == 0
             err = (err + " " + q.stderr.strip()[-300:]).strip()
+        bridges = paths.DATA_DIR / "bridges"
+        if bridges.is_dir():
+            # Bridges now tiles (hub/jobs/bridges.py): named by content, so --delete keeps /dev/shm from filling up
+            q = subprocess.run(["rsync", "-a", "--delete", "--timeout=30", "--include=*.bin", "--exclude=*",
+                                "--rsync-path", f"mkdir -p {remote_dir}/bridges && rsync",
+                                "-e", SSH, f"{bridges}/", f"{target}:{remote_dir}/bridges/"],
+                               capture_output=True, text=True, timeout=120)
+            ok = ok and q.returncode == 0
+            err = (err + " " + q.stderr.strip()[-300:]).strip()
         last_result.update(at=datetime.now().isoformat(timespec="seconds"), ok=ok, error=err)
     except Exception as e:
         last_result.update(at=datetime.now().isoformat(timespec="seconds"), ok=False, error=str(e))
