@@ -26,6 +26,7 @@ from datetime import datetime
 
 import numpy as np
 
+from common import places
 from display.gfx import Color, graphics
 from display.modules import pixel_icons as px
 from display.modules.weather_alert import FI
@@ -1130,6 +1131,63 @@ def map_crop(c, mp, x, y, w, h, cx, cy):
     ww, hh = min(w, mp.w - sx), min(h, mp.h - sy)
     mp.blit(c, x, y, sx, sy, ww, hh)
     return sx, sy
+
+
+def frame_crop(mp, w, h, pts, home, pad=12):
+    """Crop origin (sx, sy) of a w×h window on map ``mp`` showing the points ``pts`` [(lat, lon)] and a reference
+    place (common/places: home if it fits beside them, else the biggest nearby city that does, else the city
+    nearest them). Returns (sx, sy, ref); draw the reference with ``ref_marker``."""
+    xy = [mp.project(la, lo) for la, lo in pts]
+    x0, x1 = min(p[0] for p in xy), max(p[0] for p in xy)
+    y0, y1 = min(p[1] for p in xy), max(p[1] for p in xy)
+
+    def cost(p):
+        if not mp.inside(p[0], p[1], -pad):
+            return None
+        rx, ry = mp.project(*p)
+        bw, bh = max(x1, rx) - min(x0, rx), max(y1, ry) - min(y0, ry)
+        return bw * bh if bw <= w - 2 * pad and bh <= h - 2 * pad else None
+
+    ref = places.reference(cost, home, mp.unproject((x0 + x1) / 2, (y0 + y1) / 2))
+    if cost((ref["lat"], ref["lon"])) is not None:
+        rx, ry = mp.project(ref["lat"], ref["lon"])
+        x0, x1, y0, y1 = min(x0, rx), max(x1, rx), min(y0, ry), max(y1, ry)
+    sx = int(max(0, min(max(0, mp.w - w), (x0 + x1) / 2 - w / 2)))
+    sy = int(max(0, min(max(0, mp.h - h), (y0 + y1) / 2 - h / 2)))
+    return sx, sy, ref
+
+
+def ref_marker(c, mp, ref, x, y, sx, sy, w, h, col=(225, 225, 235)):
+    """A reference city on a map window at (x, y): a dot and its name, or, when it is off the window, its name and
+    distance on the edge facing it. Home in view draws nothing here (each screen draws its house)."""
+    if not ref:
+        return
+    f = font("s8")
+    rx, ry = mp.project(ref["lat"], ref["lon"])
+    px_, py_ = int(x + rx - sx), int(y + ry - sy)
+    inside = x + 2 <= px_ < x + w - 2 and y + 2 <= py_ < y + h - 2
+    if inside and ref.get("home"):
+        return
+    if inside:
+        box(c, px_ - 2, py_ - 2, 5, 5, BLACK)
+        box(c, px_ - 1, py_ - 1, 3, 3, col)
+        s = ref["name"]
+        tx = px_ + 5 if px_ + 5 + tw(f, s) < x + w - 1 else px_ - 5 - tw(f, s)
+        ty = int(max(y + 1, min(y + h - f.h - 1, py_ - f.h // 2)))
+    else:
+        cx, cy = x + w / 2, y + h / 2
+        dx, dy = px_ - cx, py_ - cy
+        lat, lon = mp.unproject(sx + w / 2, sy + h / 2)
+        d = f"{ref['name']} {places.km(lat, lon, ref['lat'], ref['lon']):.0f} km"
+        if abs(dx) * h >= abs(dy) * w:
+            s = f"{d} >" if dx > 0 else f"< {d}"
+        else:
+            s = f"{d} " + ("v" if dy > 0 else "^")
+        t = max(abs(dx) / max(1, w / 2 - 3), abs(dy) / max(1, h / 2 - 3), 1e-6)
+        tx = int(max(x + 2, min(x + w - 2 - tw(f, s), cx + dx / t - tw(f, s) / 2)))
+        ty = int(max(y + 2, min(y + h - 2 - f.h, cy + dy / t - f.h / 2)))
+    box(c, tx - 1, ty - 1, tw(f, s) + 2, f.h + 1, BLACK)
+    text(c, f, tx, ty, col, s)
 
 
 def page_dots(c, pos, groups, cur):
