@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import time
 
+from common import places
 from hub.bc import common
 from hub.jobs import _harness
 
@@ -159,7 +160,7 @@ def run(cfg):
             items.append({"kind": "fire", **f, "why": why,
                           "evacs": [e["id"] for e in evacs if common.km(e["lat"], e["lon"], f["lat"], f["lon"]) < 40]})
     items.sort(key=lambda i: (i["kind"] != "evac", i.get("status") != "Order", -(i.get("ha") or 0)))
-    # a zoomed map round each evacuation area on the wall (the regional map is ~1.3 km per LED)
+    # a zoomed map round each evacuation area on the wall (the regional map is ~1.1 km per LED)
     keep = []
     for e in [i for i in items if i["kind"] == "evac"][:6]:
         name = f"evac_{e['id']}"
@@ -167,9 +168,10 @@ def run(cfg):
             xs = [p[0] for r in e["rings"] for p in r]
             ys = [p[1] for r in e["rings"] for p in r]
             span_km = max((max(xs) - min(xs)) * 72.0, (max(ys) - min(ys)) * 111.0, 2.0)
+            # widened (up to 3×) to keep home, or else the biggest nearby city, in view
+            area, _ = places.zoom_area(list(zip(ys, xs)), 170, 150, (home[1], home[0]), max(0.05, span_km * 1.6 / 140))
             maps.ensure_custom(name, {**{k: v for k, v in maps.SPECS["fire_south"].items() if k not in ("area", "w", "h")},
-                                      "area": {"center": [e["lat"], e["lon"]], "km_per_px": round(max(0.05, span_km * 1.6 / 140), 3)},
-                                      "w": 170, "h": 150})
+                                      "area": area, "w": 170, "h": 150})
             keep.append(name)
         except Exception as ex:
             errors.append(f"evac map {e['id']}: {ex}")

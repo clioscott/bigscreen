@@ -33,6 +33,17 @@ def _ctx(s, item):
     return item.get("ctx") if item.get("sample") else s.data()
 
 
+def _home(ctx):
+    lon, lat = ctx.get("home") or [-123.0918, 49.1442]
+    return lat, lon
+
+
+def _pts(item):
+    """The item's area on the map: an evacuation's outline, or the fire."""
+    pts = [(la, lo) for r in item.get("rings") or [] for lo, la in r]
+    return pts or ([(item["lat"], item["lon"])] if item.get("lat") is not None else [])
+
+
 def _ha(v):
     v = float(v or 0)
     return f"{v:,.0f} ha" if v >= 10 else f"{v:.1f} ha"
@@ -66,8 +77,8 @@ def _draw_region(s, c, mp, item, ctx, ox=0, oy=0, sx=0, sy=0, w=W, h=H, big_icon
         else:
             k.box(c, x - 1, y - 1, 3, 3, BLACK)
             k.box(c, x, y, 1, 1, col) if (f.get("ha") or 0) < 1 else k.box(c, x - 1, y - 1, 3, 3, col)
-    home = ctx.get("home") or [-123.0918, 49.1442]
-    hx, hy = mp.project(home[1], home[0])
+    hla, hlo = _home(ctx)
+    hx, hy = mp.project(hla, hlo)
     if 0 <= hx - sx < w and 0 <= hy - sy < h:
         k.icon_outlined(c, "house", int(hx - sx + ox) - 8, int(hy - sy + oy) - 7, (220, 220, 230))
 
@@ -108,8 +119,12 @@ def _situation(s, c, item, now, el):
 
     def static():
         if mp:
-            mp.blit(c, 0, 0, 0, 0, px_, H)
-            _draw_region(s, c, mp, item, ctx, w=px_)
+            # fitted to the band between the heading (16 px) and the count chips (14 px)
+            sx, sy, ref = k.frame_crop(mp, px_, H - 30, _pts(item) or [_home(ctx)], _home(ctx))
+            sy = int(max(0, min(max(0, mp.h - H), sy - 16)))
+            mp.blit(c, 0, 0, sx, sy, px_, H)
+            _draw_region(s, c, mp, item, ctx, sx=sx, sy=sy, w=px_)
+            k.ref_marker(c, mp, ref, 0, 16, sx, sy + 16, px_, H - 30)
         # heading + counts over the map
         k.shade(c, 0, 0, px_, 16, 0.3)
         k.text(c, k.font("hvb10"), 4, 3, (255, 200, 150), "WILDFIRES · SW BC & OKANAGAN")
@@ -266,14 +281,11 @@ def _evac(s, c, item, now, el):
         local = k.Map.load(s.data_dir, f"evac_{ev['id']}") if not item.get("sample") else None
         mp = local or k.Map.load(s.data_dir, "fire_south")
         if mp:
-            pts = [mp.project(la, lo) for r in ev["rings"] for lo, la in r]
-            ex = sum(p[0] for p in pts) / len(pts)
-            ey = sum(p[1] for p in pts) / len(pts)
-            sx = int(max(0, min(max(0, mp.w - mw), ex - mw / 2)))
-            sy = int(max(0, min(max(0, mp.h - mh), ey - mh / 2)))
+            sx, sy, ref = k.frame_crop(mp, mw, mh, _pts(ev), _home(ctx))
             mx, my = W - mw - 6, 36
             mp.blit(c, mx, my, sx, sy, mw, mh)
             _draw_region(s, c, mp, item, ctx, mx, my, sx, sy, mw, mh, big_icons=False)
+            k.ref_marker(c, mp, ref, mx, my, sx, sy, mw, mh)
             k.frame(c, mx - 1, my - 1, mw + 2, mh + 2, (90, 60, 40))
 
     s.static(c, ("evac", item["id"], s.data().get("updated_utc")), static)
@@ -362,8 +374,11 @@ class Screen(k.BCScreen):
             if not mp or item.get("lat") is None:
                 return
             fx, fy = mp.project(item["lat"], item["lon"])
-            sx, sy = k.map_crop(c, mp, x, y, w, h, fx, fy)
-            _draw_region(self, c, mp, item, _ctx(self, item), x, y, sx, sy, w, h, big_icons=False)
+            ctx = _ctx(self, item)
+            sx, sy, ref = k.frame_crop(mp, w, h, _pts(item), _home(ctx), key=item.get("id"))
+            mp.blit(c, x, y, sx, sy, min(w, mp.w - sx), min(h, mp.h - sy))
+            _draw_region(self, c, mp, item, ctx, x, y, sx, sy, w, h, big_icons=False)
+            k.ref_marker(c, mp, ref, x, y, sx, sy, w, h)
             k.circle_clip(c, x + fx - sx, y + fy - sy, 6 + 3 * k.pulse(now, 1.4, 0, 1), BCWS, (x, y, x + w, y + h))
 
         chip = (f"EVAC {item['status'].upper()}" if evac else ST_WORD.get(item.get("status"), "ACTIVE"), col)

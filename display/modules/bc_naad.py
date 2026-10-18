@@ -146,11 +146,9 @@ def _shorten(f, s, w):
 
 # ------------------------------------------------------------------------------------------------ phone
 def _crop_for(mp, item, w, h):
-    """Map crop (sx, sy) of w×h centred on the alert's polygons (or home)."""
-    pts = [mp.project(la, lo) for ring in item.get("polygons") or [] for lo, la in ring] or [mp.project(HOME[1], HOME[0])]
-    cx = (min(p[0] for p in pts) + max(p[0] for p in pts)) / 2
-    cy = (min(p[1] for p in pts) + max(p[1] for p in pts)) / 2
-    return int(max(0, min(mp.w - w, cx - w / 2))), int(max(0, min(mp.h - h, cy - h / 2)))
+    """Map crop (sx, sy, ref) of w×h round the alert's polygons (or home), keeping home or a nearby city in view."""
+    pts = [(la, lo) for ring in item.get("polygons") or [] for lo, la in ring] or [(HOME[1], HOME[0])]
+    return k.frame_crop(mp, w, h, pts, (HOME[1], HOME[0]), key=item.get("id"))
 
 
 def _round_card(c, x, y, w, h, col, r=5):
@@ -190,7 +188,7 @@ def _phone(s, c, item, now, el):
         mx = W - mw - 4
         if mp:
             mh = 150
-            sx, sy = _crop_for(mp, item, mw, mh)
+            sx, sy, ref = _crop_for(mp, item, mw, mh)
             mp.blit(c, mx, 6, sx, sy, mw, mh)
             if item.get("polygons"):
                 m = mp.poly_mask(item["polygons"])[sy:sy + mh, sx:sx + mw]
@@ -200,6 +198,7 @@ def _phone(s, c, item, now, el):
             hx, hy = mp.project(HOME[1], HOME[0])
             if 0 <= hx - sx < mw and 0 <= hy - sy < mh:
                 k.icon_outlined(c, "house", mx + hx - sx - 8, 6 + hy - sy - 7, (255, 255, 255))
+            k.ref_marker(c, mp, ref, mx, 6, sx, sy, mw, mh)
             k.frame(c, mx - 1, 5, mw + 2, mh + 2, (60, 60, 72))
             ay = 6 + mh + 4
         else:
@@ -388,7 +387,7 @@ class Screen(k.BCScreen):
             mp = k.Map.load(self.data_dir, "naad_lm")
             if not mp:
                 return
-            sx, sy = _crop_for(mp, item, w, h)
+            sx, sy, ref = _crop_for(mp, item, w, h)
             mp.blit(c, x, y, sx, sy, min(w, mp.w - sx), min(h, mp.h - sy))
             key = ("half_mask", item.get("id"), sx, sy, w, h)
             m = self.state.get(key)
@@ -400,6 +399,7 @@ class Screen(k.BCScreen):
             hx, hy = mp.project(HOME[1], HOME[0])
             if 0 <= hx - sx < w and 0 <= hy - sy < h:
                 k.icon_outlined(c, "house", int(x + hx - sx) - 8, int(y + hy - sy) - 7, WHITE)
+            k.ref_marker(c, mp, ref, x, y, sx, sy, w, h)
 
         spec = {"label": self.LABEL, "col": col, "chip": ((item.get("severity") or "").upper(), col), "hero": hero_,
                 "title": title_of(item), "lines": [(_area_line(item), (220, 220, 230)), (_expires(item), (170, 170, 185))],

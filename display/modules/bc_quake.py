@@ -698,7 +698,8 @@ class Screen(k.BCScreen):
             if not mp:
                 return
             ex, ey = mp.project(item["lat"], item["lon"])
-            sx, sy = k.map_crop(c, mp, x, y, w, h, ex, ey)
+            sx, sy, ref = k.frame_crop(mp, w, h, [(item["lat"], item["lon"])], _home(self)[::-1], key=item.get("id"))
+            mp.blit(c, x, y, sx, sy, min(w, mp.w - sx), min(h, mp.h - sy))
             if theme == "shakemap":
                 c.Blit(_half_shake(self, mp, item, sx, sy, w, h), x, y)
             if theme == "pnsn":
@@ -712,6 +713,7 @@ class Screen(k.BCScreen):
             hx, hy = mp.project(_home(self)[1], _home(self)[0])
             if 0 <= hx - sx < w and 0 <= hy - sy < h:
                 k.icon_outlined(c, "house", int(x + hx - sx) - 8, int(y + hy - sy) - 7, (230, 230, 240))
+            k.ref_marker(c, mp, ref, x, y, sx, sy, w, h)
             px, py = x + ex - sx, y + ey - sy
             for i in range(3):
                 r = ((now * 18) + i * 14) % 42 + 4
