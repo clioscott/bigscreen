@@ -138,6 +138,34 @@ def validate(cfg):
             if not 1 <= float(t.get("fps", 8)) <= 30:
                 raise ConfigError(f"track {tid}: fps must be 1–30")
 
+    _validate_webcams(mods.get("webcams"))
+
+
+def _validate_webcams(wc):
+    """modules.webcams (hub/webcams.py, display/modules/webcam.py)."""
+    if not wc:
+        return
+    from hub.webcams import SourceError, check_source
+    for cid, cam in (wc.get("cams") or {}).items():
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", cid):
+            raise ConfigError(f"webcam id {cid!r}: letters, digits, _ and - only")
+        name = cam.get("label") or cid
+        try:
+            check_source(cam.get("source"))
+        except SourceError as e:
+            raise ConfigError(f"webcam {name}: {e}")
+        if not 1 <= float(cam.get("fps", 15)) <= 30:
+            raise ConfigError(f"webcam {name}: frame rate must be 1–30")
+        for shape, crop in (cam.get("crops") or {}).items():
+            if shape not in ("left", "right", "full", "wall"):
+                raise ConfigError(f"webcam {name}: unknown crop {shape!r}")
+            try:
+                ok = 0 <= float(crop["x"]) <= 1 and 0 <= float(crop["y"]) <= 1 and 0.02 <= float(crop["w"]) <= 1
+            except (KeyError, TypeError, ValueError):
+                ok = False
+            if not ok:
+                raise ConfigError(f"webcam {name}: the {shape} crop needs x, y and w between 0 and 1")
+
 
 def get_path(cfg, dotted, default=None):
     cur = cfg

@@ -1,5 +1,6 @@
 """Control panel HTTP API + static UI (served on hub.panel_port, default 8800)."""
 
+import asyncio
 import io
 import os
 import re
@@ -9,12 +10,12 @@ from pathlib import Path
 
 import requests
 from fastapi import Body, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 
 from common import logring
-from hub import config, paths, pi, sync
+from hub import config, paths, pi, sync, webcams
 from hub.jobs import news as news_job
 from hub.util import read_json
 
@@ -667,6 +668,162 @@ def display_headlines_jump(payload: dict = Body(default={})):
     """{"delta": 1|-1} or {"index": n}: show another headline category now (if headlines
     are off-screen: that one page, then the rotation resumes; or pinned with "hold_sec")."""
     return _display_call("/headlines/jump", payload)
+
+
+# --- webcams (live video; hub/webcams.py decodes, the Pi only blits) ------------
+def _webcam_zones():
+    """Pixel size of each place a webcam can play (display/main.py Screen: ticker 44 px + 1, bottom strip 17)."""
+    L = (config.load().get("layout") or {})
+    w, h = L.get("width", 448), L.get("height", 192)
+    main_h = h - 17 - (L.get("top_bar_height", 44) + 1)
+    cal_w = int(w * L.get("calendar_split_ratio", 0.66))
+    return {"left": [cal_w, main_h], "right": [w - cal_w - 1, main_h], "full": [w, main_h], "wall": [w, h]}
+
+
+def _webcam_feed(src, fps):
+    try:
+        return webcams.feed(src, fps)
+    except webcams.SourceError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/webcams/status")
+def webcams_status():
+    return {"feeds": webcams.describe(), "zones": _webcam_zones(), "max_feeds": webcams.MAX_FEEDS}
+
+
+@app.post("/api/webcams/probe")
+def webcams_probe(payload: dict = Body(...)):
+    """{"source": {...}} → {"ok", "title", "error"}: can the hub open this source? (YouTube: is it live?)"""
+    try:
+        kind, url = webcams.check_source(payload.get("source"))
+        _media, title = webcams.resolve(kind, url, fresh=True)
+        return {"ok": True, "title": title}
+    except webcams.SourceError as e:
+        return {"ok": False, "error": str(e)}
+
+
+async def _webcam_frames(f, make, min_gap=0.0):
+    """Yield make(frame) for every new frame of feed f while the client stays (it holds the feed open)."""
+    f.attach()
+    try:
+        seq, last, t0 = 0, 0.0, time.time()
+        while True:
+            if f.seq <= seq or time.time() - last < min_gap:
+                if f.state == "stopped":
+                    return
+                if f.frame is None and time.time() - t0 > 60:
+                    return                                   # never came up; the client retries if it still cares
+                await asyncio.sleep(0.02)
+                continue
+            seq, frame, last = f.seq, f.frame, time.time()
+            yield await asyncio.to_thread(make, frame, f)
+    finally:
+        f.detach()
+
+
+def _num(v, default, lo, hi):
+    try:
+        return max(lo, min(hi, float(v)))
+    except (TypeError, ValueError):
+        return default
+
+
+@app.get("/api/webcams/frames")
+async def webcams_frames(type: str, url: str, w: int, h: int, fps: int = 15, x: float | None = None,
+                         y: float | None = None, cw: float | None = None, b: float = 1.0, c: float = 1.0,
+                         s: float = 1.0):
+    """The Pi's feed: raw RGB frames already cropped and scaled to its zone (display/modules/webcam.py reads
+    them), each behind a 12-byte header (hub/webcams.py pack)."""
+    if not (8 <= w <= 448 and 8 <= h <= 192):
+        raise HTTPException(400, "w/h out of range")
+    f = _webcam_feed({"type": type, "url": url}, fps)
+    crop = {"x": x or 0, "y": y or 0, "w": cw} if cw else None
+    colour = {"brightness": _num(b, 1, 0.2, 3), "contrast": _num(c, 1, 0.2, 3), "saturation": _num(s, 1, 0, 3)}
+
+    def make(frame, feed):
+        return webcams.pack(webcams.render(frame, w, h, crop, colour), (time.time() - feed.frame_t) * 1000)
+
+    return StreamingResponse(_webcam_frames(f, make), media_type="application/octet-stream",
+                             headers={"Cache-Control": "no-store"})
+
+
+MJPEG = "multipart/x-mixed-replace; boundary=frame"
+
+
+def _part(data, kind):
+    return b"--frame\r\nContent-Type: " + kind + b"\r\nContent-Length: " + str(len(data)).encode() + b"\r\n\r\n" \
+        + data + b"\r\n"
+
+
+@app.get("/api/webcams/source.mjpeg")
+async def webcams_source(type: str, url: str, fps: int = 15):
+    """The whole source picture (what crops are cut from) as an MJPEG stream for the panel's crop editor."""
+    f = _webcam_feed({"type": type, "url": url}, fps)
+
+    def make(frame, _feed):
+        out = io.BytesIO()
+        Image.fromarray(frame).save(out, "JPEG", quality=80)
+        return _part(out.getvalue(), b"image/jpeg")
+
+    return StreamingResponse(_webcam_frames(f, make, min_gap=1 / 8), media_type=MJPEG,
+                             headers={"Cache-Control": "no-store"})
+
+
+_webcam_previews: dict = {}          # token -> {"cam", "zone", "until"}
+
+
+@app.post("/api/webcams/preview")
+def webcams_preview_set(payload: dict = Body(...)):
+    """{"token"?, "cam": {draft webcam}, "shape": "left|right|full|wall"} → {"token"}. The panel posts every edit
+    to the same token; the open preview stream picks it up on its next frame."""
+    cam, shape = payload.get("cam"), payload.get("shape", "full")
+    zones = _webcam_zones()
+    if not isinstance(cam, dict) or shape not in zones:
+        raise HTTPException(400, "needs cam and shape")
+    try:
+        webcams.check_source(cam.get("source"))
+    except webcams.SourceError as e:
+        raise HTTPException(400, str(e))
+    now = time.time()
+    for k in [k for k, v in _webcam_previews.items() if v["until"] < now]:
+        del _webcam_previews[k]
+    token = str(payload.get("token") or "") or os.urandom(6).hex()
+    if not re.fullmatch(r"[0-9a-f]{12}", token):
+        raise HTTPException(400, "bad token")
+    _webcam_previews[token] = {"cam": cam, "shape": shape, "zone": zones[shape], "until": now + 3600,
+                               "since": _webcam_previews.get(token, {}).get("since", now)}
+    return {"token": token, "zone": zones[shape]}
+
+
+@app.get("/api/webcams/preview/{token}.mjpeg")
+async def webcams_preview(token: str):
+    """What the wall would show for the token's draft webcam (crop, colour and caption), pixel for pixel,
+    as a stream of PNGs (show it with image-rendering: pixelated)."""
+    from display.modules import webcam as wc
+    p = _webcam_previews.get(token)
+    if not p:
+        raise HTTPException(404, "unknown preview")
+    cam = p["cam"]
+    f = _webcam_feed(cam.get("source"), cam.get("fps", 15))
+    t0 = time.time()
+
+    def make(frame, _feed):
+        cur = _webcam_previews.get(token) or p
+        cam_now, (w, h) = cur["cam"], cur["zone"]
+        q = wc.stream_query(cam_now, cur["shape"], w, h)
+        crop = {"x": q.get("x", 0), "y": q.get("y", 0), "w": q["cw"]} if "cw" in q else None
+        colour = {"brightness": q.get("b", 1), "contrast": q.get("c", 1), "saturation": q.get("s", 1)}
+        if (cam_now.get("source") or {}) != (cam.get("source") or {}):
+            frame = None                                     # source changed: the panel reopens the stream
+        img = wc.render_preview(cam_now, None if frame is None else webcams.render(frame, w, h, crop, colour),
+                                (w, h), time.time() - t0)
+        out = io.BytesIO()
+        Image.fromarray(img).save(out, "PNG", compress_level=1)
+        return _part(out.getvalue(), b"image/png")
+
+    return StreamingResponse(_webcam_frames(f, make, min_gap=1 / 10), media_type=MJPEG,
+                             headers={"Cache-Control": "no-store"})
 
 
 # --- finance -----------------------------------------------------------------
