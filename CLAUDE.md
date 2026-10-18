@@ -126,6 +126,10 @@ tsunami (`tsunami.py`, NTWC + DFO gauges), wildfire (`wildfire.py`, BCWS/EMCR, S
 - No clashes: NAAD drops ECCC messages and routes quake/tsunami/fire/road ones to those screens (cache
   `naad_routed.json`); the weather alert job leaves tsunami alerts to the tsunami screen.
 - Maps: `hub/bc/maps.py` renders each screen's basemap into `data/bcmaps/` (bump `RENDER_VERSION` after changes).
+- Reference place: every zoomed or cropped alert map keeps home in view, or, when fitting home would shrink the
+  alert area too far (> 3× zoom-out, or below 30 px for tiny areas), the biggest nearby BC city; failing that it
+  points to the nearest place from the map's edge. City list and rules: `common/places.py`; crops:
+  `bc_kit.frame_crop` + `ref_marker`; the wildfire evacuation zoom: `places.zoom_area`.
 - Live seismometers (quake screen): `hub/bc/seismo.py` thread reads 35 CN/UW channels from EarthScope SeedLink
   (`hub/bc/mseed.py`, no obspy), pushes station intensities + QEPB trace to `/bc_quake_obs` only while a quake is fresh,
   detects ≥ 4 triggered stations. Replay a recorded quake: `POST /api/bc/quakes/replay {"name": "orcas2025", "as": "quake|eew|detect"}`.
