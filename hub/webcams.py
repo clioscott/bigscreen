@@ -32,6 +32,7 @@ STALL_SEC = 20.0             # nothing decoded for this long: restart ffmpeg
 BUFFER_SEC = 3.5             # playout buffer for HLS (YouTube): longer than a segment, so fetching the next one never
                              # shows as a freeze
 BUFFER_SEC_LIVE = 0.3        # … for sources that already arrive in real time (RTSP, MJPEG)
+BUFFER_HEADROOM = 4.0        # frames kept beyond the buffer (about one long segment) before the oldest are dropped
 OPEN_SEC = 45.0              # … or no first frame this long after starting it
 RESOLVE_TTL = 3600.0         # YouTube manifest URLs last ~6 h; resolve again after an hour
 SCHEMES = {"http", "https", "rtsp", "rtsps", "rtmp", "rtmps"}
@@ -138,6 +139,8 @@ class Feed:
         self._new_run = False
         self.decoded_t = 0.0
         self.underflows = 0
+        self._stop = threading.Event()   # set by _run when the feed ends; the pacer exits on it
+        self._waiters = set()            # (event loop, asyncio.Event) of async readers, woken on every frame
         threading.Thread(target=self._run, name=f"webcam-{urlparse(url).netloc}", daemon=True).start()
         threading.Thread(target=self._pace, name="webcam-pacer", daemon=True).start()
 
@@ -151,6 +154,17 @@ class Feed:
         with self._lock:
             self.viewers = max(0, self.viewers - 1)
             self.last_view = time.time()
+
+    def add_waiter(self, loop, event):
+        with self._lock:
+            self._waiters.add((loop, event))
+
+    def remove_waiter(self, loop, event):
+        with self._lock:
+            self._waiters.discard((loop, event))
+
+    def _cap(self):
+        return int((self._buffer_sec + BUFFER_HEADROOM) * max(1, self.fps))
 
     def wanted(self):
         return self.viewers > 0 or time.time() - self.last_view < GRACE_SEC
@@ -196,6 +210,8 @@ class Feed:
                 if not self.wanted():                  # yt-dlp can take a while; nobody may be left
                     break
                 self._restart = False
+                with self._lock:
+                    self.state = "starting"            # the pacer makes it "live" with the first frame it shows
                 got = self._decode(media)
                 if self._restart:                      # a viewer wanted a higher frame rate: go again now
                     self.error = ""
@@ -211,14 +227,17 @@ class Feed:
                 self.error = f"{type(e).__name__}: {e}"
             if not self.wanted():
                 break
-            self.state = "retrying"
+            with self._lock:
+                self.state = "retrying"
             self.restarts += 1
             delay = (5, 15, 30, 60)[min(backoff, 3)]
             backoff += 1
             end = time.time() + delay
             while time.time() < end and self.wanted():
                 time.sleep(0.5)
-        self.state = "stopped"
+        with self._lock:
+            self.state = "stopped"
+        self._stop.set()
         _forget(self)
 
     def _decode(self, media) -> bool:
@@ -278,6 +297,8 @@ class Feed:
                 frame = np.frombuffer(bytes(buf), np.uint8).reshape(h, w, 3)
                 with self._buf_lock:
                     self._buf.append(frame)
+                    while len(self._buf) > self._cap():          # bounded memory, even while re-buffering
+                        self._buf.popleft()
                 self.decoded_t = time.time()
                 if not got:
                     got, self.error = True, ""
@@ -287,44 +308,52 @@ class Feed:
             proc.wait()
 
     def _pace(self):
-        """Publish buffered frames at an even 1/fps. Waits until the buffer holds _buffer_sec before starting (and
-        again whenever it runs dry); drops the oldest frames if the source runs ahead of the clock."""
-        t0, k = None, 0
-        while self.state != "stopped":
+        """Publish buffered frames at an even 1/fps, _buffer_sec behind. (Re)starts once frames have been arriving
+        for _buffer_sec, by time rather than count: an HLS segment lands all at once, and starting on its frame count
+        alone would leave no margin before the next one (a freeze per segment). Ends when the feed stops."""
+        t0, k, first = None, 0, None
+        while not self._stop.is_set():
             if self._new_run:
-                self._new_run, t0 = False, None
+                self._new_run, t0, first = False, None, None
             fps = max(1, self.fps)
-            want = max(1, int(self._buffer_sec * fps))
             if t0 is None:
                 with self._buf_lock:
                     n = len(self._buf)
-                if n < want:
-                    time.sleep(0.02)
+                now = time.time()
+                if not n:
+                    first = None
+                    self._stop.wait(0.02)
                     continue
-                t0, k = time.time(), 0
+                first = first or now
+                if now - first < self._buffer_sec and n < 2 * self._buffer_sec * fps:
+                    self._stop.wait(0.02)
+                    continue
+                t0, k = now, 0
             due = t0 + k / fps
             now = time.time()
             if due > now:
-                time.sleep(min(0.1, due - now))
+                self._stop.wait(min(0.1, due - now))
                 continue
             with self._buf_lock:
-                if not self._buf:
-                    frame = None
-                else:
-                    frame = self._buf.popleft()
-                    for _ in range(len(self._buf) - 2 * want):     # running ahead: catch up
-                        self._buf.popleft()
+                frame = self._buf.popleft() if self._buf else None
             if frame is None:                                     # ran dry: hold the picture and re-buffer
-                self.underflows += 1
-                t0 = None
+                if not self._new_run:                             # (a restart empties it on purpose)
+                    self.underflows += 1
+                t0 = first = None
                 continue
             with self._cond:
                 self.frame, self.frame_t = frame, now
                 self.seq += 1
+                if self.state == "starting":
+                    self.state = "live"
+                waiters = list(self._waiters)
                 self._cond.notify_all()
+            for loop, ev in waiters:
+                try:
+                    loop.call_soon_threadsafe(ev.set)
+                except RuntimeError:                              # that reader's loop is gone
+                    pass
             self._times = (self._times + [now])[-60:]
-            if self.state != "live":
-                self.state = "live"
             k += 1
             if now - due > 1.0:                                   # the clock slipped (a long pause): start over
                 t0, k = now, 0

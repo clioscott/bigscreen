@@ -704,22 +704,32 @@ def webcams_probe(payload: dict = Body(...)):
         return {"ok": False, "error": str(e)}
 
 
-async def _webcam_frames(f, make, min_gap=0.0):
-    """Yield make(frame) for every new frame of feed f while the client stays (it holds the feed open)."""
+async def _webcam_frames(f, make, fps=None):
+    """Yield make(frame) for the feed's frames while the client stays (it holds the feed open). Woken by the feed
+    on every frame (no polling, so the even timing survives), taking every n-th when the feed runs faster than fps."""
+    loop = asyncio.get_running_loop()
+    ev = asyncio.Event()
     f.attach()
+    f.add_waiter(loop, ev)
     try:
-        seq, last, t0 = 0, 0.0, time.time()
+        seq, t0 = 0, time.time()
         while True:
-            if f.seq <= seq or time.time() - last < min_gap:
-                if f.state == "stopped":
-                    return
-                if f.frame is None and time.time() - t0 > 60:
-                    return                                   # never came up; the client retries if it still cares
-                await asyncio.sleep(0.02)
+            ev.clear()
+            step = max(1, round(max(1, f.fps) / fps)) if fps else 1
+            if f.frame is not None and (seq == 0 or f.seq >= seq + step):
+                seq, frame = f.seq, f.frame
+                yield await asyncio.to_thread(make, frame, f)
                 continue
-            seq, frame, last = f.seq, f.frame, time.time()
-            yield await asyncio.to_thread(make, frame, f)
+            if f.state == "stopped":
+                return
+            if f.frame is None and time.time() - t0 > 60:
+                return                                       # never came up; the client retries if it still cares
+            try:
+                await asyncio.wait_for(ev.wait(), 1.0)
+            except asyncio.TimeoutError:
+                pass
     finally:
+        f.remove_waiter(loop, ev)
         f.detach()
 
 
@@ -746,7 +756,7 @@ async def webcams_frames(type: str, url: str, w: int, h: int, fps: int = 15, x: 
         return webcams.pack(webcams.render(frame, w, h, crop, colour), (time.time() - feed.frame_t) * 1000)
 
     fps = max(1, min(30, fps))                                # the feed may decode faster for another viewer
-    return StreamingResponse(_webcam_frames(f, make, min_gap=0.9 / fps), media_type="application/octet-stream",
+    return StreamingResponse(_webcam_frames(f, make, fps=fps), media_type="application/octet-stream",
                              headers={"Cache-Control": "no-store"})
 
 
@@ -805,7 +815,7 @@ async def webcams_source(type: str, url: str, fps: int = 15):
         Image.fromarray(frame).save(out, "JPEG", quality=80)
         return _part(out.getvalue(), b"image/jpeg")
 
-    return StreamingResponse(_webcam_frames(f, make, min_gap=1 / 8), media_type=MJPEG,
+    return StreamingResponse(_webcam_frames(f, make, fps=8), media_type=MJPEG,
                              headers={"Cache-Control": "no-store"})
 
 
@@ -861,7 +871,7 @@ async def webcams_preview(token: str):
         Image.fromarray(img).save(out, "PNG", compress_level=1)
         return _part(out.getvalue(), b"image/png")
 
-    return StreamingResponse(_webcam_frames(f, make, min_gap=1 / 10), media_type=MJPEG,
+    return StreamingResponse(_webcam_frames(f, make, fps=10), media_type=MJPEG,
                              headers={"Cache-Control": "no-store"})
 
 
