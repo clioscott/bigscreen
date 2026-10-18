@@ -2,6 +2,7 @@
 // its colour and its caption, and adding it to the rotation (panels webcam / webcam_full / webcam_wall).
 import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
 import { store, api, fail, toast, seed, go, clone, dirty, previewOnDisplay, playOnDisplay } from "../core.js";
+import { GALLERY, snap, thumb } from "./webcam_gallery.js";
 
 export const SHAPES = {
   left: { label: "Left side", panel: "webcam", side: "left", icon: "PanelLeft" },
@@ -21,13 +22,6 @@ const DEFAULT_OVERLAY = { style: "tag", corner: "bl", when: "always", font: "sma
 const TIMEZONES = ["America/Vancouver", "America/Los_Angeles", "America/Denver", "America/Chicago", "America/New_York", "America/Halifax",
   "Pacific/Honolulu", "America/Anchorage", "Europe/London", "Europe/Paris", "Europe/Berlin", "Europe/Rome", "Atlantic/Reykjavik",
   "Africa/Johannesburg", "Africa/Windhoek", "Asia/Tokyo", "Asia/Seoul", "Asia/Hong_Kong", "Asia/Singapore", "Australia/Sydney", "Pacific/Auckland"];
-// a few starting points; anything yt-dlp or ffmpeg can open works
-const SUGGESTIONS = [
-  { label: "Shibuya Crossing", place: "Tokyo, Japan", tz: "Asia/Tokyo", credit: "FNN",
-    source: { type: "youtube", url: "https://www.youtube.com/watch?v=dfVK7ld38Ys" } },
-  { label: "Canada Place", place: "Vancouver", tz: "America/Vancouver", credit: "Vancouver City Views",
-    source: { type: "youtube", url: "https://www.youtube.com/@VancouverCityViews/live" } },
-];
 
 const slug = (s) => (s || "webcam").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 32) || "webcam";
 const host = (u) => { try { return new URL(u).host.replace(/^www\./, ""); } catch { return u || ""; } };
@@ -56,25 +50,73 @@ function usedIn(id) {
   return out;
 }
 
+// A current still from the hub (/api/webcams/snapshot.jpg). The hub answers at once: the still, or 503 while it grabs
+// one (ask again after Retry-After), or 404 when the stream is down (then YouTube's thumbnail, or nothing).
+const youtubeId = (url) => { try { const u = new URL(url); return u.searchParams.get("v") || ""; } catch { return ""; } };
+const SnapImg = {
+  props: { source: Object },
+  setup(props) {
+    const url = ref("");
+    const state = ref("loading");
+    let alive = true, timer = null, blobUrl = "";
+    const load = async (tries = 0) => {
+      if (!alive || !props.source?.url) return;
+      try {
+        const r = await fetch(snap(props.source));
+        if (r.ok) {
+          const b = await r.blob();
+          if (!alive) return;
+          if (blobUrl) URL.revokeObjectURL(blobUrl);
+          url.value = blobUrl = URL.createObjectURL(b);
+          state.value = "ok";
+          return;
+        }
+        if (r.status === 503 && tries < 40) {
+          timer = setTimeout(() => load(tries + 1), 1000 * (Number(r.headers.get("Retry-After")) || 4));
+          return;
+        }
+      } catch {}
+      const id = props.source.type === "youtube" ? youtubeId(props.source.url) : "";
+      if (id) { url.value = thumb({ id }); state.value = "ok"; } else state.value = "none";
+    };
+    onMounted(() => load());
+    watch(() => props.source?.url, () => { clearTimeout(timer); state.value = "loading"; url.value = ""; load(); });
+    onBeforeUnmount(() => { alive = false; clearTimeout(timer); if (blobUrl) URL.revokeObjectURL(blobUrl); });
+    return { url, state };
+  },
+  template: `<img v-if="url" :src="url" alt=""><span v-else class="wc-snap-wait">{{ state === 'loading' ? 'live frame…' : '' }}</span>`,
+};
+
 // --- list ---------------------------------------------------------------------------------------------------
 const WebcamList = {
+  components: { SnapImg },
   setup() {
     const wc = seed(["modules", "webcams"], { cams: {} });
     const cams = computed(() => Object.entries(store.draft.modules.webcams.cams || {}));
     const { feedFor } = useStatus();
-    const add = (from) => {
+    const add = (from, open = true) => {
       const all = store.draft.modules.webcams.cams || (store.draft.modules.webcams.cams = {});
-      const base = clone(from || { label: "New webcam", source: { type: "youtube", url: "" } });
+      const f = from || { label: "New webcam", source: { type: "youtube", url: "" } };
+      const base = clone({ label: f.label, place: f.place || "", credit: f.credit || "", tz: f.tz || "", source: f.source });
       let id = slug(base.label), n = 2;
       while (all[id]) id = `${slug(base.label)}_${n++}`;
-      all[id] = { fps: 15, tz: "", place: "", credit: "", ...base, overlay: clone(DEFAULT_OVERLAY), crops: {} };
-      go(`webcams/${id}`);
+      all[id] = { fps: 15, ...base, overlay: clone(DEFAULT_OVERLAY), crops: {} };
+      if (open) go(`webcams/${id}`);
+      return id;
+    };
+    // the gallery: ready-made webcams; one you already have opens its page instead
+    const haveId = (c) => cams.value.find(([, x]) => x.source?.url === c.source.url)?.[0];
+    const pick = (c) => {
+      const have = haveId(c);
+      if (have) return go(`webcams/${have}`);
+      add(c, false);
+      toast(`Added ${c.label}. Save to keep it; open it to crop it or add it to the rotation.`);
     };
     const usedText = (id) => {
       const u = usedIn(id);
       return u.length ? `in the rotation ×${u.length}` : "not in the rotation";
     };
-    return { wc, cams, feedFor, feedPill, add, host, usedText, SUGGESTIONS, go };
+    return { wc, cams, feedFor, feedPill, add, host, usedText, go, GALLERY, haveId, pick };
   },
   template: `<div class="page">
     <div class="page-head"><div class="grow"><h1>Webcams</h1>
@@ -83,7 +125,7 @@ const WebcamList = {
       <button class="btn primary" @click="add()"><Icon name="Plus" :size="15"/>Add webcam</button></div>
     <div class="card">
       <div class="list-row" v-for="[id, cam] in cams" :key="id" style="cursor:pointer" @click="go('webcams/' + id)">
-        <Icon name="Video" :size="18" style="color:var(--accent)"/>
+        <span class="wc-row-thumb"><SnapImg v-if="cam.source?.url" :source="cam.source"/></span>
         <div class="grow" style="min-width:0"><b>{{ cam.label || id }}</b>
           <div class="faint ellipsis" style="font-size:12.5px">{{ [cam.place, host(cam.source?.url), usedText(id)].filter(Boolean).join(' · ') }}</div></div>
         <span class="pill" :class="feedPill(feedFor(cam)).cls">{{ feedPill(feedFor(cam)).text }}</span>
@@ -91,11 +133,16 @@ const WebcamList = {
       </div>
       <div class="empty" v-if="!cams.length">No webcams yet.</div>
     </div>
-    <div class="card" style="margin-top:16px"><div class="card-head"><Icon name="Sparkles" :size="16"/><h3>Ideas to start from</h3></div>
-      <div class="card-body row" style="gap:8px">
-        <button class="btn sm" v-for="s in SUGGESTIONS" :key="s.label" @click="add(s)"><Icon name="Plus" :size="14"/>{{ s.label }}<span class="faint">· {{ s.place }}</span></button>
-        <span class="faint" style="font-size:12.5px">Or paste any YouTube live page, or an HLS / MJPEG / RTSP stream URL.</span>
+    <div class="card" style="margin-top:16px" v-for="g in GALLERY" :key="g.group">
+      <div class="card-head"><Icon :name="g.icon" :size="16"/><h3>{{ g.group }}</h3><span class="faint" style="font-size:12px">live now · click to add</span></div>
+      <div class="card-body wc-gallery">
+        <button v-for="c in g.cams" :key="c.id" type="button" class="wc-pick" :class="{have: haveId(c)}" @click="pick(c)" :title="c.note">
+          <span class="wc-thumb"><SnapImg :source="c.source"/><span class="live">LIVE</span>
+            <span class="wc-have" v-if="haveId(c)"><Icon name="Check" :size="13"/>added</span></span>
+          <b>{{ c.label }}</b><span class="faint">{{ c.place }}</span><span class="faint wc-note">{{ c.note }}</span>
+        </button>
       </div></div>
+    <div class="faint" style="font-size:12.5px; margin-top:10px">Or use Add webcam with any YouTube live page, or an HLS / MJPEG / RTSP stream URL.</div>
   </div>`,
 };
 

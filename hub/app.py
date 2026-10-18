@@ -749,6 +749,43 @@ async def webcams_frames(type: str, url: str, w: int, h: int, fps: int = 15, x: 
                              headers={"Cache-Control": "no-store"})
 
 
+@app.get("/api/webcams/snapshot.jpg")
+def webcams_snapshot(type: str, url: str):
+    """A current still from any source (hub/webcams.py snapshot). Never waits for a grab: 503 + Retry-After while
+    one is being made, 404 when the source failed recently."""
+    try:
+        jpg, state = webcams.snapshot({"type": type, "url": url})
+    except webcams.SourceError as e:
+        raise HTTPException(400, str(e))
+    if jpg is None:
+        if state == "pending":
+            return JSONResponse({"detail": "grabbing a frame"}, status_code=503, headers={"Retry-After": "4"})
+        raise HTTPException(404, state)
+    return Response(jpg, media_type="image/jpeg", headers={"Cache-Control": "no-store", "X-Snapshot": state})
+
+
+_yt_thumbs: dict = {}               # video id -> (fetched at, jpeg bytes)
+YT_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
+
+
+@app.get("/api/webcams/thumb/{vid}.jpg")
+def webcams_thumb(vid: str):
+    """A YouTube live stream's current thumbnail, fetched by the hub (cached 10 min) for the panel's gallery."""
+    if not YT_ID.match(vid):
+        raise HTTPException(400, "bad video id")
+    hit = _yt_thumbs.get(vid)
+    if not hit or time.time() - hit[0] > 600:
+        try:
+            r = requests.get(f"https://i.ytimg.com/vi/{vid}/mqdefault_live.jpg", timeout=6)
+            r.raise_for_status()
+        except Exception as e:
+            raise HTTPException(502, f"no thumbnail: {e}")
+        if len(_yt_thumbs) > 200:
+            _yt_thumbs.clear()
+        hit = _yt_thumbs[vid] = (time.time(), r.content)
+    return Response(hit[1], media_type="image/jpeg", headers={"Cache-Control": "max-age=300"})
+
+
 MJPEG = "multipart/x-mixed-replace; boundary=frame"
 
 

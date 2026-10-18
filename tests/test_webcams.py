@@ -163,3 +163,62 @@ def test_config_validation_rejects_malformed_cams_cleanly():
 
 def test_hub_never_lets_ffmpeg_read_local_files():
     assert "file" not in webcams.PROTOCOLS.split(",") and "data" not in webcams.PROTOCOLS.split(",")
+
+
+def test_gallery_entries_are_valid_webcams():
+    """hub/web/ui/pages/webcam_gallery.js: every ready-made webcam passes config validation, no duplicates."""
+    import re
+    from pathlib import Path
+
+    from hub import config
+    js = (Path(__file__).resolve().parent.parent / "hub/web/ui/pages/webcam_gallery.js").read_text(encoding="utf-8")
+    ids = re.findall(r'\{ id: "([^"]+)", label: "([^"]+)"', js)
+    assert len(ids) >= 15
+    assert len({i for i, _ in ids}) == len(ids) and len({lbl for _, lbl in ids}) == len(ids)
+    cams = {f"c{n}": {"label": lbl, "source": {"type": "youtube", "url": f"https://www.youtube.com/watch?v={i}"}}
+            for n, (i, lbl) in enumerate(ids)}
+    config.validate(_cfg({"cams": cams}))
+    assert all(re.fullmatch(r"[A-Za-z0-9_-]{11}", i) for i, _ in ids)
+
+
+def _wait_idle(timeout=3.0):
+    import time
+    end = time.time() + timeout
+    while webcams._snap_busy and time.time() < end:
+        time.sleep(0.02)
+
+
+def test_snapshot_never_blocks_and_remembers_failures(monkeypatch):
+    """The panel's stills (review of #8): a request gets an answer at once; grabs run in the background."""
+    import os
+    import time
+
+    calls = []
+
+    def fake_grab(kind, url):
+        calls.append(url)
+        time.sleep(0.2)
+        if "dead" in url:
+            raise webcams.SourceError("stream offline")
+        p = webcams._snap_path(kind, url)
+        p.write_bytes(b"\xff\xd8jpeg")
+
+    monkeypatch.setattr(webcams, "_grab", fake_grab)
+    ok, dead = {"type": "stream", "url": "https://cam.example/ok.m3u8"}, {"type": "stream", "url": "https://cam.example/dead.m3u8"}
+    t0 = time.time()
+    assert webcams.snapshot(ok) == (None, "pending")
+    assert webcams.snapshot(ok) == (None, "pending")             # queued once, not twice
+    assert time.time() - t0 < 0.1
+    _wait_idle()
+    assert webcams.snapshot(ok) == (b"\xff\xd8jpeg", "fresh") and calls.count(ok["url"]) == 1
+
+    assert webcams.snapshot(dead)[1] == "pending"
+    _wait_idle()
+    assert webcams.snapshot(dead) == (None, "failed: stream offline")
+    assert calls.count(dead["url"]) == 1                          # not retried within SNAP_RETRY
+
+    p = webcams._snap_path("stream", ok["url"])                   # an old still is served while it's refreshed
+    os.utime(p, (time.time() - 2 * webcams.SNAP_TTL,) * 2)
+    assert webcams.snapshot(ok) == (b"\xff\xd8jpeg", "stale")
+    _wait_idle()
+    assert calls.count(ok["url"]) == 2
