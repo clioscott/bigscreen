@@ -318,6 +318,51 @@ def describe():
         return [f.describe() for f in _feeds.values()]
 
 
+# --- snapshots (the panel's gallery and list) -----------------------------------------------------------------
+SNAP_TTL = 3600.0
+_snap_slots = threading.Semaphore(2)     # ffmpegs grabbing a still at once
+
+
+def snapshot(src, max_age=SNAP_TTL) -> bytes:
+    """A current still (JPEG, 480 px wide) from a source, cached on disk for an hour; a stale one if grabbing
+    fails. Raises SourceError when there is nothing to show."""
+    import hashlib
+
+    from hub import paths
+    kind, url = check_source(src)
+    d = paths.CACHE_DIR / "webcam_snaps"
+    d.mkdir(parents=True, exist_ok=True)
+    path = d / (hashlib.sha1(f"{kind}|{url}".encode()).hexdigest()[:16] + ".jpg")
+
+    def fresh():
+        return path.exists() and time.time() - path.stat().st_mtime < max_age
+
+    if fresh():
+        return path.read_bytes()
+    with _snap_slots:
+        if fresh():                      # another request grabbed it while this one waited
+            return path.read_bytes()
+        try:
+            media, _ = resolve(kind, url)
+            args = ["ffmpeg", "-hide_banner", "-nostdin", "-nostats", "-loglevel", "error",
+                    "-protocol_whitelist", PROTOCOLS]
+            if kind == "youtube" or ".m3u8" in media:
+                args += ["-live_start_index", "-1"]
+            args += ["-i", media, "-frames:v", "1", "-vf", "scale=480:-2", "-f", "image2", "-c:v", "mjpeg",
+                     "-q:v", "4", "pipe:1"]
+            r = subprocess.run(args, capture_output=True, timeout=40)
+            if r.returncode or not r.stdout:
+                raise SourceError((r.stderr.decode("utf-8", "replace").strip().splitlines() or ["no picture"])[-1][:200])
+            tmp = path.with_suffix(".tmp")
+            tmp.write_bytes(r.stdout)
+            tmp.replace(path)
+            return r.stdout
+        except (SourceError, subprocess.TimeoutExpired, OSError) as e:
+            if path.exists():
+                return path.read_bytes()
+            raise e if isinstance(e, SourceError) else SourceError(f"no picture: {e}")
+
+
 # --- crop, scale, colour --------------------------------------------------------------------------------------
 def fit_crop(src_w, src_h, out_w, out_h) -> dict:
     """The largest centred crop with the output's shape."""

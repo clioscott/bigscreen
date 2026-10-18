@@ -128,6 +128,9 @@ once (`hold: false`), so the rotation resumes by itself.
 - Config `modules.webcams`: `hub_url` (default `http://192.168.1.111:8800`), `cams.<id>` = label, place, credit, tz,
   fps, source, `crops.{left,right,full,wall}` = {x, y, w} fractions (height follows the zone), colour, overlay.
   Panel page: Webcams. YouTube may need a JS runtime (deno) for yt-dlp some day; it works without one today.
+- Ready-made webcams: `hub/web/ui/pages/webcam_gallery.js` (YouTube ids; a restarted stream gets a new id). Cards show
+  real frames from `/api/webcams/snapshot.jpg` (ffmpeg still, cached an hour in `cache/webcam_snaps`), falling back to
+  `/api/webcams/thumb/{id}.jpg` (YouTube's thumbnail, fetched by the hub).
 
 ## BC alert screens
 

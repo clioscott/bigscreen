@@ -163,3 +163,19 @@ def test_config_validation_rejects_malformed_cams_cleanly():
 
 def test_hub_never_lets_ffmpeg_read_local_files():
     assert "file" not in webcams.PROTOCOLS.split(",") and "data" not in webcams.PROTOCOLS.split(",")
+
+
+def test_gallery_entries_are_valid_webcams():
+    """hub/web/ui/pages/webcam_gallery.js: every ready-made webcam passes config validation, no duplicates."""
+    import re
+    from pathlib import Path
+
+    from hub import config
+    js = (Path(__file__).resolve().parent.parent / "hub/web/ui/pages/webcam_gallery.js").read_text(encoding="utf-8")
+    ids = re.findall(r'\{ id: "([^"]+)", label: "([^"]+)"', js)
+    assert len(ids) >= 15
+    assert len({i for i, _ in ids}) == len(ids) and len({lbl for _, lbl in ids}) == len(ids)
+    cams = {f"c{n}": {"label": lbl, "source": {"type": "youtube", "url": f"https://www.youtube.com/watch?v={i}"}}
+            for n, (i, lbl) in enumerate(ids)}
+    config.validate(_cfg({"cams": cams}))
+    assert all(re.fullmatch(r"[A-Za-z0-9_-]{11}", i) for i, _ in ids)
