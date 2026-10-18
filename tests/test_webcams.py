@@ -613,3 +613,32 @@ def test_slot_and_line_size_validation_edges():
     for bad in ({"slots": {"name": [True, 1]}}, {"line_sizes": {"top": "big"}}):
         with pytest.raises(config.ConfigError):
             config.validate(_cfg({"cams": {"a": {**CAM, "overlay": {"style": "custom", **bad}}}}))
+
+
+# --- weather for previews of unsaved locations ------------------------------------------------------------------
+def test_preview_weather_uses_saved_data_or_fetches_for_a_new_location(monkeypatch, tmp_path):
+    import json
+    from hub import app as hub_app, paths
+    from hub.jobs import webcam_weather as job
+    (paths.DATA_DIR).mkdir(parents=True, exist_ok=True)
+    (paths.DATA_DIR / "webcam_weather.json").write_text(json.dumps(
+        {"cam1": {**WX, "temp": 5.0, "lat": 49.2888, "lon": -123.1111}}))
+    calls = []
+    monkeypatch.setattr(job, "fetch", lambda pts, timeout=30: calls.append(pts) or {k: {**WX, "temp": 30.0} for k in pts})
+    hub_app._wx_cache.clear()
+    assert hub_app._webcam_wx("cam1", {"lat": 49.2888, "lon": -123.1111})["temp"] == 5.0     # the job's data
+    assert hub_app._webcam_wx("cam1", {"lat": 35.6595, "lon": 139.7005})["temp"] == 30.0     # moved: fetched now
+    assert hub_app._webcam_wx("cam1", {"lat": 35.6595, "lon": 139.7005})["temp"] == 30.0     # …and cached
+    assert len(calls) == 1
+    assert hub_app._webcam_wx("cam1", {}) is None                                             # no location
+
+
+def test_wall_preview_carries_weather_for_unsaved_locations(monkeypatch):
+    from hub import app as hub_app
+    sent = {}
+    monkeypatch.setattr(hub_app, "_webcam_wx", lambda cid, cam: {**WX, "temp": 12.0} if cam.get("lat") is not None else None)
+    monkeypatch.setattr(hub_app, "_display_call", lambda path, payload: sent.update(payload) or {"ok": True})
+    hub_app.display_preview({"overlay": {"modules": {"webcams": {"cams": {"a": {"lat": 49.0, "lon": -123.0}, "b": {}}}}},
+                             "ttl_sec": 60})
+    cams = sent["overlay"]["modules"]["webcams"]["cams"]
+    assert cams["a"]["_wx"]["temp"] == 12.0 and "_wx" not in cams["b"]

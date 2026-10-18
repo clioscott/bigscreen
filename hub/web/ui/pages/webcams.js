@@ -363,6 +363,9 @@ const WebcamEditor = {
     // sections that will actually have text on the wall (the renderer skips empty ones)
     const hasText = (k) => ({ place: !!cam.value.place, credit: !!cam.value.credit, custom: !!ov.value.custom_text?.trim(),
       weather: Number.isFinite(cam.value.lat), sun: Number.isFinite(cam.value.lat) }[k] ?? true);
+    const needsLocation = computed(() => (ov.value.show.weather || ov.value.show.sun) && !(Number.isFinite(cam.value.lat) && Number.isFinite(cam.value.lon)));
+    const galleryLoc = computed(() => GALLERY.flatMap((g) => g.cams).find((g) => g.source.url === cam.value.source?.url && g.lat != null) || null);
+    const useGalleryLoc = () => { cam.value.lat = galleryLoc.value.lat; cam.value.lon = galleryLoc.value.lon; };
     const customRows = computed(() => (ov.value.order || []).filter((k) => ov.value.show[k] && hasText(k))
       .map((k) => ({ k, col: slotOf(k)[0], line: slotOf(k)[1] }))
       .sort((a, b) => a.col - b.col || a.line - b.line));
@@ -419,7 +422,7 @@ const WebcamEditor = {
     };
     const customCrop = (s) => !!cam.value.crops?.[s];
     return { id, cam, shape, zone, ov, colour, probe, testing, test, used, addToRotation, play, remove, captionToAll, toggleShow, customCrop,
-      orderOn, moveSection, setCoord, customRows, setSlot, moveInLine, sameLine, usedLines, usedCols, lineSize, setLineSize, colAlign,
+      orderOn, moveSection, setCoord, needsLocation, galleryLoc, useGalleryLoc, customRows, setSlot, moveInLine, sameLine, usedLines, usedCols, lineSize, setLineSize, colAlign,
       setColAlign, CONTAINERS, LINE_SIZES, ALIGNS, feedFor, feedPill, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
   },
   template: `<div class="page" v-if="cam">
@@ -469,6 +472,10 @@ const WebcamEditor = {
         <div class="card"><div class="card-head"><span class="live">LIVE</span><h3>On the wall · {{ SHAPES[shape].label.toLowerCase() }} ({{ zone[0] }}×{{ zone[1] }})</h3></div>
           <div class="card-body stack">
             <WallPreview :cam="cam" :shape="shape" :cam-id="id"/>
+            <div v-if="needsLocation" class="callout" style="font-size:12.5px"><Icon name="MapPin" :size="14"/>
+              <span>Weather and sunrise/sunset need this webcam's location.
+                <button v-if="galleryLoc" class="btn sm" style="margin-left:6px" @click="useGalleryLoc">Use {{ galleryLoc.label }}'s location</button>
+                <template v-else> Set it under Source → Location (latitude, longitude).</template></span></div>
             <div class="faint" style="font-size:12px" v-if="SHAPES[shape].note">{{ SHAPES[shape].note }}</div>
             <div class="row">
               <button class="btn sm" @click="play(false)"><Icon name="Play" :size="14"/>Play once on the wall</button>

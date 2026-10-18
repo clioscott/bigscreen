@@ -2,7 +2,8 @@
 
 Only webcams with a ``lat`` and ``lon`` are fetched, all in one Open-Meteo request (free, no key):
 the current temperature, weather code and day/night, and the next two days' sunrise and sunset.
-Output, keyed by webcam id: {"temp", "code", "is_day", "sunrise": [epoch, …], "sunset": [epoch, …], "at"}.
+Output, keyed by webcam id: {"temp", "code", "is_day", "sunrise": [epoch, …], "sunset": [epoch, …], "lat", "lon", "at"}.
+``fetch`` is also used by the hub's previews for a location that hasn't been saved (and fetched) yet.
 """
 
 from __future__ import annotations
@@ -22,36 +23,49 @@ def located(cfg) -> dict:
     cams = (((cfg.get("modules") or {}).get("webcams") or {}).get("cams") or {})
     out = {}
     for cid, cam in cams.items():
-        try:
-            lat, lon = float(cam["lat"]), float(cam["lon"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        if -90 <= lat <= 90 and -180 <= lon <= 180:
-            out[cid] = (round(lat, 4), round(lon, 4))
+        pt = point(cam)
+        if pt:
+            out[cid] = pt
+    return out
+
+
+def point(cam) -> tuple | None:
+    """(lat, lon) rounded to 4 places, or None when the webcam has no usable location."""
+    try:
+        lat, lon = float(cam["lat"]), float(cam["lon"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if -90 <= lat <= 90 and -180 <= lon <= 180:
+        return round(lat, 4), round(lon, 4)
+    return None
+
+
+def fetch(points: dict, timeout=30) -> dict:
+    """{key: (lat, lon)} → {key: weather}, in one request."""
+    if not points:
+        return {}
+    keys = list(points)
+    params = {"latitude": ",".join(str(points[k][0]) for k in keys),
+              "longitude": ",".join(str(points[k][1]) for k in keys),
+              "current": "temperature_2m,weather_code,is_day", "daily": "sunrise,sunset", "forecast_days": 2,
+              "timezone": "GMT", "timeformat": "unixtime"}
+    r = requests.get(URL, params=params, headers=UA, timeout=timeout)
+    r.raise_for_status()
+    data = r.json()
+    rows = data if isinstance(data, list) else [data]
+    out = {}
+    for key, row in zip(keys, rows):
+        cur, daily = row.get("current") or {}, row.get("daily") or {}
+        out[key] = {"temp": cur.get("temperature_2m"), "code": cur.get("weather_code"), "is_day": cur.get("is_day", 1),
+                    "sunrise": daily.get("sunrise") or [], "sunset": daily.get("sunset") or [],
+                    "lat": points[key][0], "lon": points[key][1], "at": time.time()}
     return out
 
 
 def run(cfg):
     from hub.util import atomic_write_json
-    cams = located(cfg)
-    out_path = paths.DATA_DIR / "webcam_weather.json"
-    if not cams:
-        atomic_write_json(out_path, {})
-        return {"ok": True, "webcams": 0}
-    ids = list(cams)
-    params = {"latitude": ",".join(str(cams[i][0]) for i in ids), "longitude": ",".join(str(cams[i][1]) for i in ids),
-              "current": "temperature_2m,weather_code,is_day", "daily": "sunrise,sunset", "forecast_days": 2,
-              "timezone": "GMT", "timeformat": "unixtime"}
-    r = requests.get(URL, params=params, headers=UA, timeout=30)
-    r.raise_for_status()
-    data = r.json()
-    rows = data if isinstance(data, list) else [data]
-    out = {}
-    for cid, row in zip(ids, rows):
-        cur, daily = row.get("current") or {}, row.get("daily") or {}
-        out[cid] = {"temp": cur.get("temperature_2m"), "code": cur.get("weather_code"), "is_day": cur.get("is_day", 1),
-                    "sunrise": daily.get("sunrise") or [], "sunset": daily.get("sunset") or [], "at": time.time()}
-    atomic_write_json(out_path, out)
+    out = fetch(located(cfg))
+    atomic_write_json(paths.DATA_DIR / "webcam_weather.json", out)
     return {"ok": True, "webcams": len(out)}
 
 
