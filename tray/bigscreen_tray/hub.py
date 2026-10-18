@@ -12,11 +12,12 @@ PANEL_LABELS = {
     "headlines": "Headlines", "weather": "Weather info", "weather_full": "Weather info (full width)",
     "map": "Weather map", "map_full": "Weather map (full width)", "weather_alert": "Weather alert (full screen)",
     "blank": "Blank", "quake": "Earthquake warning", "font_specimen": "Font specimen",
+    "webcam": "Webcam", "webcam_full": "Webcam (full width)", "webcam_wall": "Webcam (whole wall)",
 }
 WEATHER_SCREENS = {"current": "Current conditions", "hourly": "Hourly forecast", "forecast": "7-day forecast",
                    "warning": "Warnings"}
 SIDES = ("left", "right")
-ENTRY_KEYS = ("panel", "track", "weather_screen")          # what identifies an entry (display/rotation.py:entry_key)
+ENTRY_KEYS = ("panel", "track", "weather_screen", "cam")          # what identifies an entry (display/rotation.py:entry_key)
 
 
 class HubError(Exception):

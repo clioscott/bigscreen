@@ -18,6 +18,7 @@ How it plays:
   * A preview (``play``) shows any entry now. Played once, it runs by the entry's own rules and then the rotation
     resumes: the screen it interrupted starts again. With ``hold`` it repeats until stopped or ``ttl_sec`` passes.
   * Config reloads keep the position and the screen that's playing.
+  * A panel that can't show its entry (a webcam that won't come up) returns "skip": the screen ends at once.
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ DEFAULT_CAP = 1800.0
 
 
 def entry_key(e: dict):
-    return (e.get("panel"), e.get("track"), e.get("weather_screen"))
+    return (e.get("panel"), e.get("track"), e.get("weather_screen"), e.get("cam"))
 
 
 def normalise(raw) -> dict | None:
@@ -168,6 +169,12 @@ class Rotation:
                 c["visible"] += dt
                 if result == "done":
                     c["passes"] += 1
+            if visible and result == "skip":
+                if self.preview and c["source"] == "preview":
+                    self._end_preview(now)
+                else:
+                    self.cur = None
+                return
             if self.preview and c["source"] == "preview":
                 if not self.preview["hold"] and self._done(c):
                     self._end_preview(now)

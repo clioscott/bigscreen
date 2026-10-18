@@ -220,6 +220,11 @@ class Screen:
         self.weather_full = keep("weather_full", (), lambda: WeatherInfoPanel(cfg, loader, full=True))
         self.panels["weather"] = self.weather_half.draw
         self.full_panels["weather_full"] = self.weather_full.draw
+        from display.modules.webcam import WebcamPanel        # live video decoded by the hub (control panel → Webcams)
+        self.webcam = keep("webcam", ("webcams",), lambda: WebcamPanel(cfg))
+        self.panels["webcam"] = self.webcam.draw
+        self.full_panels["webcam_full"] = self.webcam.draw
+        self.takeover_panels["webcam_wall"] = self.webcam.draw
         if maps is not None:
             from display.modules.weather_maps import MapPanel
             self.map_panel = keep("map_panel", (), lambda: MapPanel(cfg, maps))
