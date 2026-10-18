@@ -283,9 +283,9 @@ class Feed:
             w, h = size_box[0]
             self.size = [w, h]
             n = w * h * 3
-            buf = bytearray(n)
-            view = memoryview(buf)
             while True:
+                frame = np.empty((h, w, 3), np.uint8)    # read straight into the frame: no per-frame copies
+                view = memoryview(frame).cast("B")
                 got_n = 0
                 while got_n < n:
                     k = proc.stdout.readinto(view[got_n:])
@@ -294,7 +294,6 @@ class Feed:
                             self.error = tail[-1][:300]
                         return got
                     got_n += k
-                frame = np.frombuffer(bytes(buf), np.uint8).reshape(h, w, 3)
                 with self._buf_lock:
                     self._buf.append(frame)
                     while len(self._buf) > self._cap():          # bounded memory, even while re-buffering
