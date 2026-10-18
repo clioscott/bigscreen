@@ -308,7 +308,9 @@ def bc_full_pages(src: str, sample: str = "", theme: str = ""):
     return {"pages": out, "total": round(sum(p["hold"] for p in out), 1)}
 
 
-_PANEL_TILES = {"dark": "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"}    # (CARTO refuses the browser itself)
+_ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/{}/MapServer/tile/{{z}}/{{y}}/{{x}}"
+_PANEL_TILES = {"esri_dark": (_ESRI.format("World_Dark_Gray_Base"), "image/jpeg"),
+                "esri_dark_labels": (_ESRI.format("World_Dark_Gray_Reference"), "image/png")}
 
 
 @app.get("/api/tiles/{style}/{z}/{x}/{y}.png")
@@ -317,16 +319,17 @@ def panel_tile(style: str, z: int, x: int, y: int):
     from hub.weather import geo
     if style not in _PANEL_TILES or not (0 <= z <= 18 and 0 <= x < 2 ** z and 0 <= y < 2 ** z):
         raise HTTPException(404, "no such tile")
-    path = geo.TILE_CACHE / f"panel_{style}" / str(z) / str(x) / f"{y}.png"
+    url, mime = _PANEL_TILES[style]
+    path = geo.TILE_CACHE / f"panel_{style}" / str(z) / str(x) / f"{y}"
     if not path.exists():
         try:
-            r = geo._session.get(_PANEL_TILES[style].format(z=z, x=x, y=y), timeout=20)
+            r = geo._session.get(url.format(z=z, x=x, y=y), timeout=20)
             r.raise_for_status()
         except Exception as e:
             raise HTTPException(502, f"tile: {e}")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(r.content)
-    return Response(path.read_bytes(), media_type="image/png", headers={"Cache-Control": "max-age=604800"})
+    return Response(path.read_bytes(), media_type=mime, headers={"Cache-Control": "max-age=604800"})
 
 
 _webcams = {"at": 0.0, "list": []}

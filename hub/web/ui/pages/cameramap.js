@@ -3,7 +3,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { api, fail } from "../core.js";
 
-const TILE = "/api/tiles/dark/{z}/{x}/{y}.png";             // via the hub (CARTO refuses the browser)
+const TILE = "/api/tiles/{layer}/{z}/{x}/{y}.png";          // Esri's dark grey canvas and its labels, via the hub's tile cache
 const BEARING = { N: 0, NE: 45, E: 90, SE: 135, S: 180, SW: 225, W: 270, NW: 315 };
 const LOOK = { N: "north", NE: "northeast", E: "east", SE: "southeast", S: "south", SW: "southwest", W: "west", NW: "northwest" };
 const COL = { event: "#ff8a1f", sample: "#c77dff", cam: "#7c8cff", off: "#5b6273" };
@@ -147,8 +147,10 @@ export const CameraMap = {
     <div style="display:flex; min-height:0">
       <div ref="el" @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up" @wheel="wheel"
            style="position:relative; flex:1; height:calc(100vh - 210px); min-height:420px; overflow:hidden; background:#0e1116; cursor:grab; touch-action:none; user-select:none">
-        <img v-for="t in tiles" :key="t.key" :src="t.src" draggable="false"
+        <img v-for="t in tiles" :key="t.key" :src="t.src.replace('{layer}', 'esri_dark')" draggable="false"
              :style="{position: 'absolute', left: t.x + 'px', top: t.y + 'px', width: '256px', height: '256px', pointerEvents: 'none'}" alt="">
+        <img v-for="t in tiles" :key="'n' + t.key" :src="t.src.replace('{layer}', 'esri_dark_labels')" draggable="false"
+             :style="{position: 'absolute', left: t.x + 'px', top: t.y + 'px', width: '256px', height: '256px', pointerEvents: 'none', opacity: .8}" alt="">
         <svg :width="size.w" :height="size.h" style="position:absolute; inset:0">
           <g v-for="(l, i) in lines" :key="'l' + i">
             <path v-if="l.pts.length > 1" :d="path(l.pts)" :stroke="l.col" stroke-width="5" fill="none" stroke-linecap="round" opacity=".85"/>
@@ -166,12 +168,12 @@ export const CameraMap = {
           <button class="btn sm icon-only" @click="zoomAt(-1, size.w / 2, size.h / 2)"><Icon name="Minus" :size="14"/></button>
         </div>
         <div style="position:absolute; left:10px; bottom:8px; display:flex; gap:12px; font-size:12px; white-space:nowrap; background:rgba(0,0,0,.6); padding:4px 9px; border-radius:7px" @pointerdown.stop>
-          <span><span class="dot" :style="{background: COL.event}"></span> on the wall</span>
-          <span v-if="showSamples"><span class="dot" :style="{background: COL.sample}"></span> used by a sample</span>
-          <span><span class="dot" :style="{background: COL.cam}"></span> camera (cone = where it points)</span>
-          <span><span class="dot" :style="{background: COL.off}"></span> offline</span>
+          <span><span class="dot" :style="{background: COL.event, display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%'}"></span> on the wall</span>
+          <span v-if="showSamples"><span class="dot" :style="{background: COL.sample, display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%'}"></span> used by a sample</span>
+          <span><span class="dot" :style="{background: COL.cam, display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%'}"></span> camera (cone = where it points)</span>
+          <span><span class="dot" :style="{background: COL.off, display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%'}"></span> offline</span>
         </div>
-        <div style="position:absolute; right:6px; bottom:4px; font-size:10.5px; color:#9aa" @pointerdown.stop>© OpenStreetMap contributors © CARTO · cameras: DriveBC</div>
+        <div style="position:absolute; right:6px; top:4px; font-size:10.5px; color:#9aa; background:rgba(0,0,0,.5); padding:1px 5px; border-radius:4px" @pointerdown.stop>Basemap © Esri, HERE, Garmin, © OpenStreetMap contributors · cameras: DriveBC</div>
         <div v-if="loading" style="position:absolute; inset:0; display:grid; place-items:center" class="faint">Loading cameras…</div>
       </div>
       <div style="width:340px; flex:none; border-left:1px solid var(--line); overflow:auto; height:calc(100vh - 210px); min-height:420px">
