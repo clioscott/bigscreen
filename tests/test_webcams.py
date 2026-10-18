@@ -222,3 +222,38 @@ def test_snapshot_never_blocks_and_remembers_failures(monkeypatch):
     assert webcams.snapshot(ok) == (b"\xff\xd8jpeg", "stale")
     _wait_idle()
     assert calls.count(ok["url"]) == 2
+
+
+def test_pacer_evens_out_bursty_hls_segments(monkeypatch):
+    """The stutter fix: frames arriving a segment at a time come out at an even 1/fps (no freeze per segment)."""
+    import time
+
+    monkeypatch.setattr(webcams, "BUFFER_SEC", 0.5)
+    fps, seg = 20, 0.4                                   # 8 frames per "segment", all at once
+
+    class Bursty(webcams.Feed):
+        def _run(self):
+            self._buffer_sec = webcams.BUFFER_SEC
+            n = 0
+            while self.state != "stopped" and n < 60:
+                with self._buf_lock:
+                    for _ in range(int(fps * seg)):
+                        self._buf.append(np.full((2, 2, 3), n % 256, np.uint8))
+                        n += 1
+                time.sleep(seg)
+
+    f = Bursty("stream", "https://cam.example/x.m3u8", fps)
+    try:
+        seen, times, seq = [], [], 0
+        end = time.time() + 2.5
+        while time.time() < end:
+            seq, frame = f.wait(seq, 0.5)
+            if frame is not None:
+                seen.append(int(frame[0, 0, 0]))
+                times.append(time.time())
+        gaps = [b - a for a, b in zip(times, times[1:])]
+        assert len(seen) >= 30 and seen == sorted(seen)          # in order, none skipped in bursts
+        assert max(gaps) < 3 / fps                               # never a segment-long freeze
+        assert f.underflows == 0
+    finally:
+        f.state = "stopped"

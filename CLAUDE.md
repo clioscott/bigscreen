@@ -118,8 +118,10 @@ once (`hold: false`), so the rotation resumes by itself.
 ## Webcams (live video)
 
 - `hub/webcams.py`: one ffmpeg per source (YouTube via `python -m yt_dlp`, or any URL ffmpeg opens), started when
-  someone watches and stopped `GRACE_SEC` after the last viewer; frames decoded at 640 px wide, read at real-time speed
-  (`-re`, else HLS segments arrive in bursts). Each viewer gets its own crop/scale/colour. At most `MAX_FEEDS` at once.
+  someone watches and stopped `GRACE_SEC` after the last viewer; frames decoded at 640 px wide as fast as they arrive
+  (HLS lands a segment at a time) into a playout buffer, and `_pace` publishes them at an even 1/fps `BUFFER_SEC` behind.
+  Don't go back to `-re`: it froze the picture while each next segment downloaded (the "stutter every few seconds").
+  Each viewer gets its own crop/scale/colour. At most `MAX_FEEDS` at once.
 - API (`hub/app.py`): `/api/webcams/frames` (raw RGB for the Pi, 12-byte header per frame), `source.mjpeg` (crop
   editor), `preview` + `preview/{token}.mjpeg` (exact wall render incl. caption), `probe`, `status`.
 - Display: `display/modules/webcam.py`, panels `webcam` (a side), `webcam_full`, `webcam_wall`; entry field `cam`.
