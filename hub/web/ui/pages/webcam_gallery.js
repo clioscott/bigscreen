@@ -1,4 +1,5 @@
-// Ready-made live webcams for the Webcams page (all 24/7 YouTube live streams, checked live 2026-10-18).
+// Ready-made live webcams for the Webcams page (all 24/7 YouTube live streams, checked live 2026-10-18; Mt Seymour,
+// White Rock Pier and Tofino Harbour need deno on the hub, see hub/webcams.py deno_path).
 // A stream that restarts gets a new video id: if one stops working, Test on its page says so, and the channel
 // usually has the new one under /streams.
 const yt = (id) => ({ type: "youtube", url: `https://www.youtube.com/watch?v=${id}` });
@@ -22,12 +23,18 @@ export const GALLERY = [
     { id: "JZ3UV60ykqc", label: "Long Beach", place: "Tofino", credit: "Long Beach Lodge", note: "Open Pacific surf beach" },
     { id: "Tbt6_787CB8", label: "Cox Bay", place: "Tofino", credit: "Pacific Sands", note: "Surf and sand, HD" },
     { id: "LqaP8m2OIqM", label: "Cox Bay Wide", place: "Tofino", credit: "Pacific Sands", note: "The whole bay from the resort" },
+    { id: "4MK3E9EWDSY", label: "White Rock Pier", place: "White Rock", credit: "City of White Rock", note: "The promenade and the long pier out into the bay" },
     { id: "6-cLoX0odoc", label: "Big Beach", place: "Ucluelet", credit: "UkeeTube", note: "Rocky shore through the trees, sunrise to sunset" },
     { id: "sLixr8cThJo", label: "Ross Bay", place: "Victoria", credit: "Ross Bay Live Webcam", note: "Looking out over the Strait of Juan de Fuca" },
+  ]},
+  { group: "Mountains & snow", icon: "MountainSnow", cams: [
+    { id: "vLawo-FrBKk", label: "Mystery Peak", place: "Mt Seymour", credit: "Mt Seymour", note: "Alpine meadow and the peaks beyond, from the top of the ski area" },
+    { id: "yQdKq9NuEa0", label: "Snow Stake", place: "Mt Seymour", credit: "Mt Seymour", note: "The Stoke-O-Meter snow board: how much fell overnight" },
   ]},
   { group: "Water & wildlife", icon: "Fish", cams: [
     { id: "9mg9PoFEX2U", label: "Sea Otters", place: "Vancouver Aquarium", credit: "Vancouver Aquarium", note: "The otter pool, from above" },
     { id: "_KXHUb0wFRE", label: "Sea Otters (cam 2)", place: "Vancouver Aquarium", credit: "Vancouver Aquarium", note: "The otters' rocky corner" },
+    { id: "_qN4aao5kWc", label: "Tofino Harbour", place: "Tofino", credit: "Tofino Sea Kayaking", note: "Docks, boats and the mountains of Clayoquot Sound" },
     { id: "gUR8_ZvxdHA", label: "Saturna Island", place: "Gulf Islands", credit: "Randy Mennie", note: "Ships passing in Boundary Pass" },
     { id: "VF2WmFgrtGg", label: "Departure Bay", place: "Nanaimo", credit: "Departure Bay LIVE", note: "BC Ferries coming and going" },
     { id: "MaYMrtIXxvA", label: "Cadboro Bay", place: "Victoria", credit: "Royal Victoria Yacht Club", note: "Marina and bay, wide angle" },
