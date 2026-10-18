@@ -106,7 +106,7 @@ export async function save(reason = "") {
   } catch (e) { fail(e); } finally { store.saving = false; }
 }
 
-export async function previewOnDisplay(seconds = 120) {
+export async function previewOnDisplay(seconds = 120, { hook = true } = {}) {
   const overlay = {};
   for (const { path } of dirty.value) {
     let o = overlay;
@@ -117,12 +117,15 @@ export async function previewOnDisplay(seconds = 120) {
     await api("/api/display/preview", { json: { overlay, ttl_sec: seconds } });
     store.preview = { until: Date.now() + seconds * 1000 };
     toast(`Showing your unsaved changes on the display for ${Math.round(seconds / 60)} min`);
+    // a page can register store.previewHook to put what it edits on the wall meanwhile (a webcam, say)
+    if (hook && store.previewHook) store.previewHook(seconds);
   } catch (e) { fail(e); }
 }
 export async function endPreview(keep) {
   try {
     if (keep) await save();
     await api("/api/display/preview/clear", { method: "POST" });
+    store.previewEndHook?.();
   } catch (e) { fail(e); }
   store.preview = null;
 }

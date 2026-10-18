@@ -14,6 +14,11 @@
     time_format 24h | 12h
     accent, text, bg  "#rrggbb"; opacity 0-1: how solid the background boxes are
     when        always | intro (the first INTRO_SEC of a play) | periodic (show_sec every every_min minutes)
+    custom layout only:
+    slots       {section: [column 1-3, line 1-4]}; sections sharing a line follow `order`
+    line_sizes  {"column.line": headline | detail | big}
+    columns     [{align: left | center | right}, …]; divider: true draws a line between columns
+    container   box | strip | outline | board
     fade        true: fade in and out instead of popping
 
 Weather and sunrise/sunset come from data/webcam_weather.json (hub/jobs/webcam_weather.py, for webcams with a lat/lon).
@@ -38,7 +43,7 @@ FONTS = {"tiny": "fonts/alert/tom-thumb.bdf", "small": "fonts/alert/5x8.bdf", "m
 BIG = {"tiny": "fonts/alert/6x10.bdf", "small": "fonts/alert/7x13B.bdf", "medium": "fonts/alert/7x13B.bdf",
        "large": "fonts/alert/9x15B.bdf"}     # clocks and the postcard title
 LAYOUTS = ("tag", "bar", "outline", "dot", "lower_third", "split", "postcard", "chips", "clock", "signage", "ticker",
-           "stack", "none")
+           "stack", "custom", "none")
 STYLES = LAYOUTS                             # older name
 SECTIONS = ("name", "place", "time", "date", "offset", "daynight", "weather", "sun", "live", "credit", "custom")
 ORDER = ("name", "place", "time", "weather", "date", "offset", "sun", "custom", "credit")    # default detail order
@@ -53,6 +58,8 @@ DEFAULT_OVERLAY = {"style": "tag", "corner": "bl", "when": "always", "font": "sm
                             "custom": False}}
 WHITE, BLACK = Color(255, 255, 255), Color(0, 0, 0)
 WX_MAX_AGE = 2 * 3600       # weather older than this isn't shown
+FIT_LINES = 3               # "fit" wraps onto up to this many lines before dropping sections
+_dropped = None             # a set while dropped_sections() records what the layout couldn't fit
 AMBER = (255, 170, 0)
 
 # 7×7 pixel icons; letters pick the colour
@@ -216,36 +223,67 @@ def _fit(font, bits, width, drop, sep, icon_kind=None):
     return tuple(kept), _clip(font, line, max(0, room(kept)))
 
 
-def detail_lines(font, bits, width, mode="auto", sep="dot", max_lines=4, icon_kind=None):
-    """The details as (first section's kind, text) lines for the `lines` setting: auto → 1, wrap → up to 2,
-    stacked → one per section. Lines starting with icon_kind (the weather, when it has an icon) leave room for it."""
+def _note_dropped(bits, kept_kinds):
+    if _dropped is not None:
+        _dropped.update(k for k, _ in bits if k not in kept_kinds)
+
+
+def detail_lines(font, bits, width, mode="auto", sep="dot", max_lines=FIT_LINES, icon_kind=None):
+    """The details as (first section's kind, text) lines for the `lines` setting:
+    auto / wrap → one line if everything fits, else wrapped onto up to max_lines (sections drop only after that);
+    stacked → one per section. Lines starting with icon_kind (the weather with its icon) leave room for it."""
     bits = tuple(tuple(b) for b in bits)
     if not bits:
         return []
     if mode == "stacked":
+        _note_dropped(bits, {k for k, _ in bits[:max_lines]})
         return [(kd, _clip(font, v, width - (9 if kd == icon_kind else 0))) for kd, v in bits[:max_lines]]
-    if mode == "wrap":
-        sp = _sep(font, sep)
-        lines, cur = [], []
-        for b in bits:
-            trial = sp.join(v for _, v in cur + [b])
-            if cur and _tw(font, trial) > width:
-                lines.append(cur)
-                cur = [b]
-                if len(lines) == 2:
-                    break
-            else:
-                cur.append(b)
-        if cur and len(lines) < 2:
-            lines.append(cur)
-        out = []
-        for ln in lines[:2]:
-            kept, text = _fit(font, tuple(ln), width, DROP, sep, icon_kind)
-            if text:
-                out.append((kept[0][0] if kept else None, text))
-        return out
     kept, text = _fit(font, bits, width, DROP, sep, icon_kind)
-    return [(kept[0][0] if kept else None, text)] if text else []
+    if len(kept) == len(bits) or max_lines <= 1:          # it all fits on one line (or one line is all there is)
+        _note_dropped(bits, {k for k, _ in kept})
+        return [(kept[0][0] if kept else None, text)] if text else []
+    sp = _sep(font, sep)
+    lines, cur = [], []
+    for b in bits:                                         # wrap: fill each line, then start the next
+        trial = sp.join(v for _, v in cur + [b])
+        room = width - (9 if icon_kind and (cur or [b])[0][0] == icon_kind else 0)
+        if cur and _tw(font, trial) > room:
+            lines.append(cur)
+            cur = [b]
+        else:
+            cur.append(b)
+    if cur:
+        lines.append(cur)
+    if len(lines) > max_lines:                             # still too much: the lowest-priority sections go
+        keep = list(bits)
+        for kind in DROP:
+            if len(_wrap_count(font, keep, width, sp, icon_kind)) <= max_lines:
+                break
+            keep = [b for b in keep if b[0] != kind] or keep
+        lines = _wrap_count(font, keep, width, sp, icon_kind)[:max_lines]
+    out, shown = [], set()
+    for ln in lines:
+        k2, t2 = _fit(font, tuple(ln), width, DROP, sep, icon_kind)
+        if t2:
+            out.append((k2[0][0] if k2 else None, t2))
+            shown.update(k for k, _ in k2)
+    _note_dropped(bits, shown)
+    return out
+
+
+def _wrap_count(font, bits, width, sp, icon_kind):
+    lines, cur = [], []
+    for b in bits:
+        trial = sp.join(v for _, v in cur + [b])
+        room = width - (9 if icon_kind and (cur or [b])[0][0] == icon_kind else 0)
+        if cur and _tw(font, trial) > room:
+            lines.append(cur)
+            cur = [b]
+        else:
+            cur.append(b)
+    if cur:
+        lines.append(cur)
+    return lines
 
 
 # --- content ------------------------------------------------------------------------------------------------------
@@ -510,6 +548,25 @@ def _blend_back(c, zc, before, a):
     region[:] = ((old.astype(np.uint16) * (256 - k) + region.astype(np.uint16) * k) >> 8).astype(np.uint8)
 
 
+def dropped_sections(cam, zone_size, font_for, wx=None):
+    """The sections turned on that this caption can't show at this size (the panel lists them)."""
+    global _dropped
+    from display.gfx import Canvas
+    ov = overlay_of(cam)
+    style = ov.get("style", "tag")
+    if style not in LAYOUT_FUNCS:
+        return []
+    w, h = zone_size
+    _dropped = set()
+    try:
+        ct = Content(cam, ov, wx=wx)
+        LAYOUT_FUNCS[style](Ctx(_Zone(Canvas(w, h), (0, 0, w, h)), (0, 0, w, h), ov, _font_loader(font_for)), ct)
+        out = sorted(_dropped)
+    finally:
+        _dropped = None
+    return out
+
+
 _layers: dict = {}           # key -> (bbox, alpha, premultiplied colour); a few per webcam
 BLINKING = ("dot", "clock")
 
@@ -578,8 +635,13 @@ def _headline_and_lines(k, ct, room, T=None):
     if k.lines == "inline":                                # whole sections drop before anything is cut
         sp = _sep(T, k.sep)
         title = _clip(T, ct.title, room)
-        rest = fit_detail(T, ct.bits(), room - _tw(T, title + sp), DROP, k.sep) if ct.bits() else ""
-        return (title + sp + rest) if rest and room - _tw(T, title + sp) > 20 else title, []
+        bits = tuple(ct.bits())
+        if bits and room - _tw(T, title + sp) > 20:
+            kept, rest = _fit(T, bits, room - _tw(T, title + sp), DROP, k.sep)
+            _note_dropped(bits, {kd for kd, _ in kept} if rest else set())
+            return (title + sp + rest) if rest else title, []
+        _note_dropped(bits, set())
+        return title, []
     return _clip(T, ct.title, room), k.details(ct, room)
 
 
@@ -911,6 +973,181 @@ def _l_stack(k, ct):
         ty += f.height + 1
 
 
-LAYOUT_FUNCS = {"tag": _l_tag, "outline": _l_outline, "bar": _l_bar, "dot": _l_dot, "lower_third": _l_lower_third,
+# --- custom: your own columns and lines ----------------------------------------------------------------------------
+FIELDS = ("live", "name", "place", "time", "weather", "date", "offset", "sun", "custom", "credit")
+DEFAULT_SLOTS = {"live": [1, 1], "name": [1, 1], "place": [1, 2], "time": [1, 2], "weather": [1, 3], "date": [1, 3],
+                 "offset": [1, 3], "sun": [1, 3], "custom": [1, 3], "credit": [1, 3]}
+LINE_SIZES = ("headline", "detail", "big")
+
+
+def custom_grid(ct, ov):
+    """{column: {line: [kind, …]}} for the sections that are on and have text, in the chosen order."""
+    slots = ov.get("slots") if isinstance(ov.get("slots"), dict) else {}
+    order = [k for k in (ov.get("order") or []) if k in FIELDS]
+    if "live" not in order:                                # older orders don't list LIVE: it leads, as on the page
+        order.insert(0, "live")
+    order += [k for k in FIELDS if k not in order]
+    grid = {}
+    for kind in order:
+        if kind == "live":
+            if not ct.live:
+                continue
+        elif not (ct.clock() if kind == "time" else ct.sections.get(kind)):
+            continue
+        slot = slots.get(kind, DEFAULT_SLOTS.get(kind, [1, 3]))
+        try:
+            col, line = max(1, min(3, int(slot[0]))), max(1, min(4, int(slot[1])))
+        except (TypeError, ValueError, IndexError):
+            col, line = DEFAULT_SLOTS.get(kind, [1, 3])
+        grid.setdefault(col, {}).setdefault(line, []).append(kind)
+    return grid
+
+
+def _l_custom(k, ct):
+    """Your arrangement: up to 3 columns × 4 lines, sections in the order you set; each line's size and each column's
+    alignment chosen per webcam. Container: box (in the chosen position), strip (full width), outline, or board."""
+    c, ov = k.c, k.ov
+    grid = custom_grid(ct, ov)
+    if not grid:
+        return
+    sizes = ov.get("line_sizes") if isinstance(ov.get("line_sizes"), dict) else {}
+    cols_cfg = ov.get("columns") if isinstance(ov.get("columns"), list) else []
+    container = ov.get("container") if ov.get("container") in ("box", "strip", "outline", "board") else "box"
+    divider = bool(ov.get("divider", True))
+    board = container == "board"
+    color = Color(*AMBER) if board and _rgb(k.accent) == _hex(DEFAULT_OVERLAY["accent"], None) else \
+        (k.accent if board else k.text)
+    put = _outlined if container == "outline" else graphics.DrawText
+    pad, gap = 3, 9
+    sp_name = k.sep
+
+    def font_of(col, line):
+        sz = sizes.get(f"{col}.{line}") or ("headline" if (col, line) == (min(grid), 1) else "detail")
+        return {"headline": k.T, "big": k.B}.get(sz, k.S)
+
+    def piece_width(f, kind):
+        if kind == "live":
+            return _tw(k.S, "LIVE") + 4
+        w_ = _tw(f, _text(ct, kind))
+        return w_ + (9 if kind == "weather" and ct.icon else 0)
+
+    def line_width(f, kinds):
+        return sum(piece_width(f, kd) for kd in kinds) + sum(_joint(f, a, b) for a, b in zip(kinds, kinds[1:]))
+
+    def _joint(f, a, b):                                   # a separator between sections; just a gap beside LIVE
+        return 3 if "live" in (a, b) else _tw(f, _sep(f, sp_name))
+
+    # measure: every column at its natural width; if they don't all fit, the widest give way first
+    cols = sorted(grid)
+    avail = k.w - 2 * pad - 2 - gap * (len(cols) - 1)
+    natural = {col: max(line_width(font_of(col, ln), grid[col][ln]) for ln in grid[col]) for col in cols}
+    room = dict(natural)
+    while sum(room.values()) > avail:
+        widest = max(room, key=room.get)
+        others = sum(v for c_, v in room.items() if c_ != widest)
+        new = max(30, avail - others) if avail - others < room[widest] else room[widest]
+        second = max([v for c_, v in room.items() if c_ != widest], default=0)
+        room[widest] = max(new, min(room[widest] - 1, second)) if new < second else new
+        if room[widest] == natural[widest] or room[widest] <= 30:
+            room[widest] = max(30, avail - others)
+            break
+    layout = []                                            # [(col, [(font, [kinds], width)], col_width)]
+    for col in cols:
+        lines = []
+        for ln in sorted(grid[col]):
+            f = font_of(col, ln)
+            kinds = list(grid[col][ln])
+            while kinds and line_width(f, kinds) > room[col]:
+                drop = next((d for d in DROP if d in kinds), None)
+                if drop is None or len(kinds) == 1:
+                    break
+                kinds.remove(drop)
+                _note_dropped([(drop, "")], set())
+            lines.append((f, kinds, min(line_width(f, kinds), room[col])))
+        layout.append((col, lines, max(w_ for _, _, w_ in lines)))
+    total_w = sum(cw for _, _, cw in layout) + gap * (len(layout) - 1)
+    total_h = max(sum(f.height + 1 for f, _, _ in lines) - 1 for _, lines, _ in layout)
+    box_w, box_h = total_w + 2 * pad + (1 if container == "box" else 0), total_h + 2 * pad
+
+    if container == "strip":
+        bx, by = k.x, (k.y if k.top else k.y + k.h - box_h)
+        _box(c, bx, by, k.w, box_h, k.bg, k.op)
+        c.FillRect(k.x, by + box_h - 1 if k.top else by, k.w, 1, k.accent)
+        # left-aligned columns flow from the left edge, right-aligned ones from the right
+        xs, left_x, right_x = {}, bx + pad + 1, bx + k.w - pad - 1
+        for i, (col, lines, cw) in enumerate(layout):
+            if _col_align(cols_cfg, col, i, len(layout)) == "right":
+                continue
+            xs[col] = left_x
+            left_x += cw + gap
+        for i, (col, lines, cw) in reversed(list(enumerate(layout))):
+            if col in xs:
+                continue
+            right_x -= cw
+            xs[col] = right_x
+            right_x -= gap
+    else:
+        bx, by = k.place(min(box_w, k.w - 2), box_h, margin=2)
+        if container == "box":
+            _box(c, bx, by, min(box_w, k.w - 2), box_h, k.bg, k.op)
+            c.FillRect(bx if k.align != "right" else bx + min(box_w, k.w - 2) - 1, by, 1, box_h, k.accent)
+        elif board:
+            _box(c, bx, by, min(box_w, k.w - 2), box_h, k.bg, max(k.op, 0.85))
+            dim = Color(*(v // 3 for v in _rgb(color)))
+            c.FillRect(bx, by, min(box_w, k.w - 2), 1, dim)
+            c.FillRect(bx, by + box_h - 1, min(box_w, k.w - 2), 1, dim)
+        xs, x = {}, bx + pad + (1 if container == "box" and k.align != "right" else 0)
+        for col, lines, cw in layout:
+            xs[col] = x
+            x += cw + gap
+
+    for i, (col, lines, cw) in enumerate(layout):
+        x0 = xs[col]
+        if divider and i > 0 and container != "outline":
+            c.FillRect(x0 - (gap + 1) // 2, by + 2, 1, box_h - 4, k.accent if not board else Color(*(v // 3 for v in _rgb(color))))
+        align = _col_align(cols_cfg, col, i, len(layout))
+        ty = by + pad
+        for f, kinds, w_ in lines:
+            x = x0 + (cw - w_ if align == "right" else (cw - w_) // 2 if align == "center" else 0)
+            _draw_line(k, ct, f, x, ty, kinds, w_, color, put)
+            ty += f.height + 1
+
+
+def _col_align(cols_cfg, col, index, count):
+    try:
+        a = cols_cfg[col - 1].get("align")
+    except (IndexError, AttributeError, TypeError):
+        a = None
+    if a in ("left", "center", "right"):
+        return a
+    return "right" if count > 1 and index == count - 1 else "left"   # a last column hugs the right by default
+
+
+def _text(ct, kind):
+    return ct.clock() if kind == "time" else ct.sections.get(kind, "")
+
+
+def _draw_line(k, ct, f, x, y_top, kinds, room, color, put):
+    """One line of pieces: LIVE badges, a weather icon before the weather, separators between; clipped to room."""
+    end = x + room
+    sp = _sep(f, k.sep)
+    for i, kind in enumerate(kinds):
+        if i:
+            if "live" in (kind, kinds[i - 1]):
+                x += 3
+            elif x < end:
+                x += put(k.c, f, x, y_top + f.baseline, color, sp)
+        if x >= end:
+            break
+        if kind == "live":
+            x += k.badge(x, y_top + max(0, (f.height - k.S.height - 1) // 2))
+            continue
+        if kind == "weather" and ct.icon:
+            draw_icon(k.c, x, y_top + (f.height - 7) // 2, ct.icon)
+            x += 9
+        x += put(k.c, f, x, y_top + f.baseline, color, _clip(f, _text(ct, kind), max(0, end - x)))
+
+
+LAYOUT_FUNCS = {"custom": _l_custom, "tag": _l_tag, "outline": _l_outline, "bar": _l_bar, "dot": _l_dot, "lower_third": _l_lower_third,
                 "split": _l_split, "postcard": _l_postcard, "chips": _l_chips, "clock": _l_clock,
                 "signage": _l_signage, "ticker": _l_ticker, "stack": _l_stack}

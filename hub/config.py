@@ -151,7 +151,8 @@ def _validate_overlay(name, ov):
     from display.modules.webcam_caption import FONTS, LAYOUTS, SECTIONS, SEPARATORS
     choices = {"style": LAYOUTS, "corner": ("tl", "tc", "tr", "bl", "bc", "br"), "font": tuple(FONTS),
                "headline": ("name", "place", "custom", "time"), "lines": ("auto", "wrap", "stacked", "inline"),
-               "separator": tuple(SEPARATORS), "when": ("always", "intro", "periodic"), "time_format": ("24h", "12h")}
+               "separator": tuple(SEPARATORS), "when": ("always", "intro", "periodic"), "time_format": ("24h", "12h"),
+               "container": ("box", "strip", "outline", "board")}
     for key, allowed in choices.items():
         if key in ov and ov[key] not in allowed:
             raise ConfigError(f"webcam {name}: caption {key} must be one of {', '.join(allowed)}")
@@ -169,6 +170,22 @@ def _validate_overlay(name, ov):
     order = ov.get("order", [])
     if not isinstance(order, list):
         raise ConfigError(f"webcam {name}: caption order must be a list")
+    from display.modules.webcam_caption import FIELDS, LINE_SIZES
+    slots = ov.get("slots", {})
+    if not isinstance(slots, dict):
+        raise ConfigError(f"webcam {name}: caption slots must be an object")
+    for kind, slot in slots.items():
+        ok = kind in FIELDS and isinstance(slot, list) and len(slot) == 2 and all(isinstance(v, int) for v in slot) \
+            and 1 <= slot[0] <= 3 and 1 <= slot[1] <= 4
+        if not ok:
+            raise ConfigError(f"webcam {name}: caption slot for {kind} must be [column 1-3, line 1-4]")
+    sizes = ov.get("line_sizes", {})
+    if not isinstance(sizes, dict) or any(v not in LINE_SIZES for v in sizes.values()):
+        raise ConfigError(f"webcam {name}: caption line sizes must be headline, detail or big")
+    cols = ov.get("columns", [])
+    if not isinstance(cols, list) or any(not isinstance(c, dict) or c.get("align", "left") not in ("left", "center", "right")
+                                         for c in cols):
+        raise ConfigError(f"webcam {name}: caption columns must be [{{align: left|center|right}}, …]")
 
 
 def _validate_bridges(br):

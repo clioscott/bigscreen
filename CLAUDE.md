@@ -129,7 +129,9 @@ once (`hold: false`), so the rotation resumes by itself.
   picture after `GIVE_UP_SEC` returns `"skip"` (display/rotation.py ends the screen at once).
 - Captions: `display/modules/webcam_caption.py` (its docstring lists every `overlay` key). Sections (`Content`) are
   formatted once, then a layout (`LAYOUT_FUNCS`: tag, bar, lower_third, split, postcard, chips, clock, signage, ticker,
-  stack, outline, dot) places them; long content drops sections in `DROP` order. Weather and sunrise/sunset come from
+  stack, outline, dot, custom) places them. Detail lines "fit" by wrapping onto up to `FIT_LINES` before sections drop
+  in `DROP` order; `dropped_sections()` tells the panel what didn't fit. Custom: `slots` {section: [column, line]},
+  `line_sizes`, `columns` (align), `container`, `divider`. Captions render into a cached transparent layer (`_layer`). Weather and sunrise/sunset come from
   `hub/jobs/webcam_weather.py` (Open-Meteo, every 15 min, webcams with lat/lon) → `data/webcam_weather.json`.
   Re-render every layout after changes: `tests/test_webcams.py` renders them all; look at real frames before shipping.
 - Config `modules.webcams`: `hub_url` (default `http://192.168.1.111:8800`), `cams.<id>` = label, place, credit, tz,

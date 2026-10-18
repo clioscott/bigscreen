@@ -844,7 +844,13 @@ def webcams_preview_set(payload: dict = Body(...)):
     _webcam_previews[token] = {"cam": cam, "id": str(payload.get("id") or ""), "shape": shape, "zone": zones[shape],
                                "until": now + 3600,
                                "since": _webcam_previews.get(token, {}).get("since", now)}
-    return {"token": token, "zone": zones[shape]}
+    from display.modules import webcam as wc
+    wx = (read_json(paths.DATA_DIR / "webcam_weather.json", {}) or {}).get(str(payload.get("id") or ""))
+    try:
+        dropped = wc.caption_dropped(cam, tuple(zones[shape]), wx)
+    except Exception:
+        dropped = []
+    return {"token": token, "zone": zones[shape], "dropped": dropped}
 
 
 @app.get("/api/webcams/preview/{token}.mjpeg")

@@ -499,5 +499,69 @@ def test_weather_icon_room_is_reserved():
     need = cap._tw(f, "18°C · 05:41")
     (kind, text), = cap.detail_lines(f, bits, need + 9, icon_kind="weather")
     assert kind == "weather" and text == "18°C · 05:41"            # fits with the icon's 9 px counted
-    (kind, text), = cap.detail_lines(f, bits, need + 8, icon_kind="weather")
-    assert kind == "time"                                          # one px short: the weather drops, nothing overruns
+    (kind, text), = cap.detail_lines(f, bits, need + 8, max_lines=1, icon_kind="weather")
+    assert kind == "time"                                          # one line only: the weather drops, nothing overruns
+    lines = cap.detail_lines(f, bits, need + 8, icon_kind="weather")
+    assert [k for k, _ in lines] == ["weather", "time"]           # fit: it wraps instead of dropping
+
+
+def test_fit_wraps_before_dropping_and_reports_what_did_not_fit():
+    cam = {**CAM, "overlay": {"style": "tag", "show": {"date": True, "offset": True, "credit": True}}}
+    from datetime import datetime
+    assert cap.dropped_sections(cam, (223, 134), _font) == []      # wraps onto more lines; nothing lost
+    tiny = {**CAM, "overlay": {"style": "bar", "show": {k: True for k in cap.SECTIONS}, "custom_text": "x" * 30}}
+    gone = cap.dropped_sections(tiny, (152, 130), _font, wx=WX)
+    assert gone and set(gone) <= set(cap.SECTIONS)                # a narrow bar can't fit them all: they're named
+
+
+def test_custom_layout_columns_lines_and_order():
+    from display.gfx import Canvas
+    ov = {"style": "custom", "show": {"weather": True, "date": True},
+          "slots": {"name": [1, 1], "live": [1, 1], "place": [1, 2], "time": [2, 1], "weather": [2, 2], "date": [1, 2]},
+          "order": ["date", "place"], "line_sizes": {"2.1": "big"}, "columns": [{}, {"align": "right"}]}
+    cam = {**CAM, "overlay": ov}
+    ct = cap.Content(CAM, cap.overlay_of(cam), wx=WX)
+    grid = cap.custom_grid(ct, cap.overlay_of(cam))
+    assert grid[1][1] == ["live", "name"] and grid[1][2] == ["date", "place"]   # your order within the line
+    assert grid[2] == {1: ["time"], 2: ["weather"]}
+    for container in ("box", "strip", "outline", "board"):
+        for zone in ((223, 134), (448, 192)):
+            c2 = {**cam, "overlay": {**ov, "container": container}}
+            frame = webcams.render(FRAME, *zone)
+            img = wc.render_preview(c2, frame, zone, 1.0, wx=WX)
+            assert not np.array_equal(img, frame)
+
+
+def test_custom_layout_validation():
+    from hub import config
+    good = {"style": "custom", "container": "strip", "slots": {"name": [1, 1], "time": [2, 1]},
+            "line_sizes": {"2.1": "big"}, "columns": [{}, {"align": "right"}]}
+    config.validate(_cfg({"cams": {"a": {**CAM, "overlay": good}}}))
+    for bad in ({"container": "bubble"}, {"slots": {"name": [4, 1]}}, {"slots": {"mood": [1, 1]}}, {"slots": {"name": "1,1"}},
+                {"line_sizes": {"1.1": "huge"}}, {"columns": [{"align": "up"}]}):
+        with pytest.raises(config.ConfigError):
+            config.validate(_cfg({"cams": {"a": {**CAM, "overlay": {**good, **bad}}}}))
+
+
+def test_preview_reports_sections_that_do_not_fit():
+    narrow = {**CAM, "overlay": {"style": "bar", "show": {k: True for k in cap.SECTIONS}, "custom_text": "x" * 30}}
+    assert wc.caption_dropped(narrow, (152, 130), WX)
+    assert wc.caption_dropped({**CAM, "overlay": {"style": "tag"}}, (448, 134), WX) == []
+
+
+def test_custom_layout_never_clips_text_that_fits():
+    """Measure and draw agree: with room to spare, the name isn't cut (it was, by a pixel after LIVE)."""
+    ov = cap.overlay_of({**CAM, "overlay": {"style": "custom", "slots": {"live": [1, 1], "name": [1, 1], "time": [2, 1]}}})
+    drawn = []
+    real = cap.graphics.DrawText
+
+    def spy(c, f, x, y, col, s):
+        drawn.append(s)
+        return real(c, f, x, y, col, s)
+    cap.graphics.DrawText = spy
+    try:
+        from display.gfx import Canvas
+        cap._l_custom(cap.Ctx(Canvas(448, 134), (0, 0, 448, 134), ov, _font), cap.Content(CAM, ov, wx=WX))
+    finally:
+        cap.graphics.DrawText = real
+    assert "Shibuya Crossing" in drawn

@@ -1,7 +1,7 @@
 // Webcams: live video sources (hub/webcams.py decodes them), how each is cropped for every place on the wall,
 // its colour and its caption, and adding it to the rotation (panels webcam / webcam_full / webcam_wall).
 import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
-import { store, api, fail, toast, seed, go, clone, dirty, previewOnDisplay, playOnDisplay } from "../core.js";
+import { store, api, fail, toast, seed, go, clone, dirty, previewOnDisplay, playOnDisplay, rotationAction } from "../core.js";
 import { GALLERY, snap, thumb } from "./webcam_gallery.js";
 
 export const SHAPES = {
@@ -22,6 +22,7 @@ const LAYOUTS = {
   signage: { label: "Departure board", icon: "TrainFront", note: "Amber lines on a dark board" },
   ticker: { label: "Ticker", icon: "ChevronsLeft", note: "Name in a tab, details scrolling past" },
   stack: { label: "Stack", icon: "List", note: "Each section on its own outlined line" },
+  custom: { label: "Custom", icon: "LayoutGrid", note: "Your own columns and lines" },
   outline: { label: "Outlined", icon: "Type", note: "Text with a black edge, no box" },
   dot: { label: "LIVE dot", icon: "CircleDot", note: "Just a blinking dot and the time" },
   none: { label: "None", icon: "EyeOff", note: "No caption" },
@@ -29,9 +30,15 @@ const LAYOUTS = {
 const FONTS = [{ value: "tiny", label: "Tiny" }, { value: "small", label: "Small" }, { value: "medium", label: "Medium" }, { value: "large", label: "Large" }];
 const SECTIONS = { name: "Name", place: "Place", time: "Local time", weather: "Weather", sun: "Sunrise / sunset", date: "Date",
   offset: "Time difference", daynight: "Day / night icon", live: "LIVE badge", credit: "Credit", custom: "Your text" };
-const ORDERABLE = ["name", "place", "time", "weather", "date", "offset", "sun", "custom", "credit"];
+const ORDERABLE = ["live", "name", "place", "time", "weather", "date", "offset", "sun", "custom", "credit"];
+// the Custom layout: where each section goes (column, line) to start with; mirrors webcam_caption.DEFAULT_SLOTS
+const DEFAULT_SLOTS = { live: [1, 1], name: [1, 1], place: [1, 2], time: [1, 2], weather: [1, 3], date: [1, 3], offset: [1, 3],
+  sun: [1, 3], custom: [1, 3], credit: [1, 3] };
+const CONTAINERS = [{ value: "box", label: "Box" }, { value: "strip", label: "Full-width strip" }, { value: "outline", label: "Outlined" }, { value: "board", label: "Board" }];
+const LINE_SIZES = [{ value: "headline", label: "Headline" }, { value: "detail", label: "Detail" }, { value: "big", label: "Big" }];
+const ALIGNS = [{ value: "left", label: "Left" }, { value: "center", label: "Centre" }, { value: "right", label: "Right" }];
 const HEADLINES = [{ value: "name", label: "Name" }, { value: "place", label: "Place" }, { value: "custom", label: "Your text" }, { value: "time", label: "Time" }];
-const LINES = [{ value: "auto", label: "One line" }, { value: "wrap", label: "Wrap" }, { value: "stacked", label: "Stacked" }, { value: "inline", label: "Beside name" }];
+const LINES = [{ value: "auto", label: "Fit (wraps if needed)" }, { value: "stacked", label: "One per line" }, { value: "inline", label: "Beside the headline" }];
 const SEPS = [{ value: "dot", label: "·" }, { value: "slash", label: "/" }, { value: "pipe", label: "|" }, { value: "dash", label: "-" }, { value: "space", label: "space" }];
 const POSITIONS = ["tl", "tc", "tr", "bl", "bc", "br"];
 const DEFAULT_OVERLAY = { style: "tag", corner: "bl", when: "always", font: "small", accent: "#e8202a", text: "#ffffff",
@@ -250,6 +257,7 @@ const WallPreview = {
   setup(props) {
     const token = ref("");
     const zone = ref([448, 130]);
+    const dropped = ref([]);
     const err = ref("");
     let pending = null, timer = null, lastSrc = "";
     const send = async () => {
@@ -261,6 +269,7 @@ const WallPreview = {
       try {
         const r = await api("/api/webcams/preview", { json: { token: fresh ? undefined : token.value || undefined, cam: clone(props.cam), shape: props.shape, id: props.camId } });
         zone.value = r.zone;
+        dropped.value = r.dropped || [];
         if (r.token !== token.value) token.value = r.token;
         err.value = "";
       } catch (e) { err.value = e.message; }
@@ -270,11 +279,14 @@ const WallPreview = {
     const img = ref(null);
     onBeforeUnmount(() => { clearTimeout(timer); if (img.value) img.value.src = ""; });
     const src = computed(() => token.value ? `/api/webcams/preview/${token.value}.mjpeg` : "");
-    return { src, zone, err, img };
+    return { src, zone, err, img, dropped, SECTIONS };
   },
   template: `<div class="led" :style="{maxWidth: Math.min(zone[0] * 3 + 22, 1366) + 'px'}">
     <img v-if="src" ref="img" :src="src" :style="{aspectRatio: zone[0] + ' / ' + zone[1]}" alt="">
-    <div v-else class="placeholder">{{ err || 'No source yet' }}</div></div>`,
+    <div v-else class="placeholder">{{ err || 'No source yet' }}</div></div>
+    <div v-if="dropped.length" class="callout" style="font-size:12.5px; margin-top:8px"><Icon name="EyeOff" :size="14"/>
+      <span>No room here for: <b>{{ dropped.map(k => SECTIONS[k] || k).join(', ') }}</b>. Try “Fit” or “One per line”, a smaller text size,
+        a wider place on the wall, or the Custom layout.</span></div>`,
 };
 
 // --- editor -------------------------------------------------------------------------------------------------------
@@ -322,7 +334,7 @@ const WebcamEditor = {
       toast(`Added to the ${s.side} rotation (${s.label.toLowerCase()}, 60 s). Save to keep it; Rotation has the rules.`);
     };
     const play = async (hold) => {
-      if (dirty.value.length) await previewOnDisplay();          // so the wall shows this crop and caption, not the saved ones
+      if (dirty.value.length) await previewOnDisplay(120, { hook: false });   // so the wall shows this crop and caption
       const s = SHAPES[shape.value];
       playOnDisplay(camEntry(id.value, shape.value), { side: s.side, hold });
     };
@@ -338,7 +350,42 @@ const WebcamEditor = {
     };
     const toggleShow = (k) => { ov.value.show[k] = !ov.value.show[k]; };
     // the detail sections that are on, in their order (drag to reorder; the headline isn't a detail)
-    const orderOn = computed(() => (ov.value.order || []).filter((k) => ov.value.show[k] && k !== (ov.value.headline || "name")));
+    const orderOn = computed(() => (ov.value.order || []).filter((k) => k !== "live" && ov.value.show[k] && k !== (ov.value.headline || "name")));
+    // --- the Custom layout: column and line for each section, order within a line, line sizes, column alignment ---
+    const slotOf = (k) => (ov.value.slots?.[k] || DEFAULT_SLOTS[k] || [1, 3]);
+    const setSlot = (k, i, v) => {
+      const slots = ov.value.slots || (ov.value.slots = {});
+      const cur = [...slotOf(k)];
+      cur[i] = v;
+      slots[k] = cur;
+    };
+    const customRows = computed(() => (ov.value.order || []).filter((k) => ov.value.show[k])
+      .map((k) => ({ k, col: slotOf(k)[0], line: slotOf(k)[1] }))
+      .sort((a, b) => a.col - b.col || a.line - b.line));
+    const moveInLine = (k, d) => {                        // swap with the neighbour on the same column and line
+      const same = customRows.value.filter((r) => r.col === slotOf(k)[0] && r.line === slotOf(k)[1]).map((r) => r.k);
+      const i = same.indexOf(k), j = i + d;
+      if (j < 0 || j >= same.length) return;
+      const o = ov.value.order, a = o.indexOf(k), b = o.indexOf(same[j]);
+      [o[a], o[b]] = [o[b], o[a]];
+    };
+    const sameLine = (k) => customRows.value.filter((r) => r.col === slotOf(k)[0] && r.line === slotOf(k)[1]).map((r) => r.k);
+    const usedLines = computed(() => [...new Set(customRows.value.map((r) => `${r.col}.${r.line}`))]);
+    const usedCols = computed(() => [...new Set(customRows.value.map((r) => r.col))].sort());
+    const lineSize = (key) => ov.value.line_sizes?.[key] || (key === `${usedCols.value[0] || 1}.1` ? "headline" : "detail");
+    const setLineSize = (key, v) => { (ov.value.line_sizes || (ov.value.line_sizes = {}))[key] = v; };
+    const colAlign = (c) => ov.value.columns?.[c - 1]?.align || (usedCols.value.length > 1 && c === usedCols.value.at(-1) ? "right" : "left");
+    const setColAlign = (c, v) => {
+      const cols = ov.value.columns || (ov.value.columns = []);
+      while (cols.length < c) cols.push({});
+      cols[c - 1] = { ...cols[c - 1], align: v };
+    };
+    // "Preview on display" (the save bar) puts this webcam on the wall for the preview, then releases it
+    onMounted(() => {
+      store.previewHook = (sec) => { const s = SHAPES[shape.value]; playOnDisplay(camEntry(id.value, shape.value), { side: s.side, hold: true, ttl: sec }); };
+      store.previewEndHook = () => rotationAction("stop", SHAPES[shape.value].side);
+    });
+    onBeforeUnmount(() => { store.previewHook = null; store.previewEndHook = null; });
     // a latitude/longitude field: empty clears it; anything that isn't a number in range is refused (not saved as null)
     const setCoord = (key, ev, lim) => {
       const raw = ev.target.value.trim().replace(",", ".");
@@ -357,7 +404,8 @@ const WebcamEditor = {
     };
     const customCrop = (s) => !!cam.value.crops?.[s];
     return { id, cam, shape, zone, ov, colour, probe, testing, test, used, addToRotation, play, remove, captionToAll, toggleShow, customCrop,
-      orderOn, moveSection, setCoord, feedFor, feedPill, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
+      orderOn, moveSection, setCoord, customRows, setSlot, moveInLine, sameLine, usedLines, usedCols, lineSize, setLineSize, colAlign,
+      setColAlign, CONTAINERS, LINE_SIZES, ALIGNS, feedFor, feedPill, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
   },
   template: `<div class="page" v-if="cam">
     <div class="page-head"><div class="grow">
@@ -427,21 +475,40 @@ const WebcamEditor = {
               <div class="row" style="gap:16px; align-items:flex-start">
                 <Field label="Position"><div class="wc-corners wc-six">
                   <button v-for="c in POSITIONS" :key="c" type="button" :class="{on: ov.corner === c}" @click="ov.corner = c" :title="c"></button></div></Field>
-                <Field label="Headline" v-if="ov.style !== 'dot'"><Seg v-model="ov.headline" :options="HEADLINES"/></Field>
+                <Field label="Headline" v-if="!['dot', 'custom'].includes(ov.style)"><Seg v-model="ov.headline" :options="HEADLINES"/></Field>
                 <Field label="Text size" v-if="ov.style !== 'dot'"><Seg v-model="ov.font" :options="FONTS"/></Field>
               </div>
               <Field label="Sections" hint="Click to turn on or off" v-if="ov.style !== 'dot'"><div class="row" style="gap:6px">
                 <button v-for="(l, k) in SECTIONS" :key="k" type="button" class="chip" :class="{off: !ov.show[k]}" style="height:26px; padding:0 10px" @click="toggleShow(k)">{{ l }}</button></div></Field>
+              <template v-if="ov.style === 'custom'">
+                <Field label="Arrangement" hint="Pick a column and line for each section; ↑↓ order sections that share a line">
+                  <table class="wc-arrange"><thead><tr><th>Section</th><th>Column</th><th>Line</th><th></th></tr></thead><tbody>
+                    <tr v-for="r in customRows" :key="r.k"><td>{{ SECTIONS[r.k] }}</td>
+                      <td><div class="seg mini"><button v-for="c in 3" :key="c" type="button" :class="{on: r.col === c}" @click="setSlot(r.k, 0, c)">{{ c }}</button></div></td>
+                      <td><div class="seg mini"><button v-for="l in 4" :key="l" type="button" :class="{on: r.line === l}" @click="setSlot(r.k, 1, l)">{{ l }}</button></div></td>
+                      <td class="nowrap"><template v-if="sameLine(r.k).length > 1">
+                        <button class="btn sm ghost icon-only" @click="moveInLine(r.k, -1)" :disabled="sameLine(r.k)[0] === r.k" title="Earlier in the line"><Icon name="ChevronLeft" :size="13"/></button>
+                        <button class="btn sm ghost icon-only" @click="moveInLine(r.k, 1)" :disabled="sameLine(r.k).at(-1) === r.k" title="Later in the line"><Icon name="ChevronRight" :size="13"/></button></template></td></tr>
+                  </tbody></table></Field>
+                <Field label="Line sizes"><div class="stack" style="gap:4px">
+                  <div v-for="key in usedLines" :key="key" class="row nowrap" style="gap:8px"><span class="mono faint" style="width:90px">col {{ key.split('.')[0] }} · line {{ key.split('.')[1] }}</span>
+                    <Seg :modelValue="lineSize(key)" @update:modelValue="v => setLineSize(key, v)" :options="LINE_SIZES"/></div></div></Field>
+                <div class="row" style="gap:16px; align-items:flex-start">
+                  <Field label="Container"><Seg v-model="ov.container" :options="CONTAINERS"/></Field>
+                  <Field v-for="c in usedCols" :key="c" :label="'Column ' + c"><Seg :modelValue="colAlign(c)" @update:modelValue="v => setColAlign(c, v)" :options="ALIGNS"/></Field>
+                  <Field label="Divider" v-if="usedCols.length > 1"><Toggle :modelValue="ov.divider !== false" @update:modelValue="v => ov.divider = v"/></Field>
+                </div>
+              </template>
               <Field label="Your text" v-if="ov.show.custom"><input class="input" v-model="ov.custom_text" maxlength="40" placeholder="Scramble Crossing, from the Starbucks"></Field>
               <div class="callout info" v-if="(ov.show.weather || ov.show.sun) && !(Number.isFinite(cam.lat) && Number.isFinite(cam.lon))" style="font-size:12.5px">
                 <Icon name="MapPin" :size="14"/> Weather and sunrise/sunset need this webcam's location (Source → Location).</div>
-              <Field label="Order" hint="The details, top to bottom or left to right; the headline goes first" v-if="ov.style !== 'dot' && orderOn.length > 1">
+              <Field label="Order" hint="The details, top to bottom or left to right; the headline goes first" v-if="!['dot', 'custom'].includes(ov.style) && orderOn.length > 1">
                 <div class="wc-order"><div v-for="(k, i) in orderOn" :key="k" class="wc-order-item">
                   <span class="mono faint">{{ i + 1 }}</span>{{ SECTIONS[k] }}<span class="spacer"></span>
                   <button class="btn sm ghost icon-only" @click="moveSection(k, -1)" :disabled="i === 0" title="Earlier"><Icon name="ChevronUp" :size="13"/></button>
                   <button class="btn sm ghost icon-only" @click="moveSection(k, 1)" :disabled="i === orderOn.length - 1" title="Later"><Icon name="ChevronDown" :size="13"/></button></div></div></Field>
               <div class="row" style="gap:16px; align-items:flex-start" v-if="ov.style !== 'dot'">
-                <Field label="Details"><Seg v-model="ov.lines" :options="LINES"/></Field>
+                <Field label="Details" v-if="ov.style !== 'custom'"><Seg :modelValue="ov.lines === 'wrap' ? 'auto' : ov.lines" @update:modelValue="v => ov.lines = v" :options="LINES"/></Field>
                 <Field label="Separator"><Seg v-model="ov.separator" :options="SEPS"/></Field>
                 <Field label="Clock"><Seg v-model="ov.time_format" :options="[{value:'24h', label:'24 h'}, {value:'12h', label:'12 h'}]"/></Field>
               </div>
