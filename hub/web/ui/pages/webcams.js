@@ -309,6 +309,7 @@ const WebcamEditor = {
         c.overlay = { ...clone(DEFAULT_OVERLAY), ...(c.overlay || {}) };
         c.overlay.show = { ...DEFAULT_OVERLAY.show, ...(c.overlay.show || {}) };
         const ord = (c.overlay.order || []).filter((k) => ORDERABLE.includes(k));
+        if (!ord.includes("live")) ord.unshift("live");      // older orders don't list LIVE: it leads (as on the wall)
         c.overlay.order = [...ord, ...ORDERABLE.filter((k) => !ord.includes(k))];
         c.colour = c.colour || {};
         c.crops = c.crops || {};
@@ -359,7 +360,10 @@ const WebcamEditor = {
       cur[i] = v;
       slots[k] = cur;
     };
-    const customRows = computed(() => (ov.value.order || []).filter((k) => ov.value.show[k])
+    // sections that will actually have text on the wall (the renderer skips empty ones)
+    const hasText = (k) => ({ place: !!cam.value.place, credit: !!cam.value.credit, custom: !!ov.value.custom_text?.trim(),
+      weather: Number.isFinite(cam.value.lat), sun: Number.isFinite(cam.value.lat) }[k] ?? true);
+    const customRows = computed(() => (ov.value.order || []).filter((k) => ov.value.show[k] && hasText(k))
       .map((k) => ({ k, col: slotOf(k)[0], line: slotOf(k)[1] }))
       .sort((a, b) => a.col - b.col || a.line - b.line));
     const moveInLine = (k, d) => {                        // swap with the neighbour on the same column and line
@@ -381,9 +385,20 @@ const WebcamEditor = {
       cols[c - 1] = { ...cols[c - 1], align: v };
     };
     // "Preview on display" (the save bar) puts this webcam on the wall for the preview, then releases it
+    let held = null;                                     // what the preview hook put on the wall
     onMounted(() => {
-      store.previewHook = (sec) => { const s = SHAPES[shape.value]; playOnDisplay(camEntry(id.value, shape.value), { side: s.side, hold: true, ttl: sec }); };
-      store.previewEndHook = () => rotationAction("stop", SHAPES[shape.value].side);
+      store.previewHook = (sec) => {
+        const s = SHAPES[shape.value];
+        const entry = camEntry(id.value, shape.value);
+        held = { side: s.side, panel: entry.panel, cam: id.value };
+        playOnDisplay(entry, { side: s.side, hold: true, ttl: sec });
+      };
+      store.previewEndHook = () => {                     // release it only if it's still what that side is playing
+        const h = held;
+        held = null;
+        const p = store.display?.status?.panels?.[h?.side]?.playing;
+        if (h && p?.source === "preview" && p.entry?.panel === h.panel && p.entry?.cam === h.cam) rotationAction("stop", h.side);
+      };
     });
     onBeforeUnmount(() => { store.previewHook = null; store.previewEndHook = null; });
     // a latitude/longitude field: empty clears it; anything that isn't a number in range is refused (not saved as null)

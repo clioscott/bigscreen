@@ -28,6 +28,7 @@ any text is cut.
 
 from __future__ import annotations
 
+import threading
 import time
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -59,7 +60,7 @@ DEFAULT_OVERLAY = {"style": "tag", "corner": "bl", "when": "always", "font": "sm
 WHITE, BLACK = Color(255, 255, 255), Color(0, 0, 0)
 WX_MAX_AGE = 2 * 3600       # weather older than this isn't shown
 FIT_LINES = 3               # "fit" wraps onto up to this many lines before dropping sections
-_dropped = None             # a set while dropped_sections() records what the layout couldn't fit
+_rec = threading.local()    # .dropped: a set while dropped_sections() records (per thread: the hub renders in many)
 AMBER = (255, 170, 0)
 
 # 7×7 pixel icons; letters pick the colour
@@ -224,8 +225,9 @@ def _fit(font, bits, width, drop, sep, icon_kind=None):
 
 
 def _note_dropped(bits, kept_kinds):
-    if _dropped is not None:
-        _dropped.update(k for k, _ in bits if k not in kept_kinds)
+    rec = getattr(_rec, "dropped", None)
+    if rec is not None:
+        rec.update(k for k, _ in bits if k not in kept_kinds)
 
 
 def detail_lines(font, bits, width, mode="auto", sep="dot", max_lines=FIT_LINES, icon_kind=None):
@@ -436,9 +438,10 @@ class Ctx:
         graphics.DrawText(self.c, f, x + 2, y + f.baseline, self.accent if inverse else WHITE, text)
         return w
 
-    def details(self, ct, width, with_time=True, with_place=True):
-        """[(first kind, text)] detail lines for this caption's line mode."""
-        return detail_lines(self.S, ct.bits(with_time, with_place), width, self.lines, self.sep,
+    def details(self, ct, width, with_time=True, with_place=True, max_lines=None):
+        """[(first kind, text)] detail lines for this caption's line mode (stacked: up to 4, fit: up to FIT_LINES)."""
+        n = max_lines or (4 if self.lines == "stacked" else FIT_LINES)
+        return detail_lines(self.S, ct.bits(with_time, with_place), width, self.lines, self.sep, max_lines=n,
                             icon_kind="weather" if ct.icon else None)
 
     def text_with_icon(self, f, x, y_top, ct, kind, text, color=None, put=None):
@@ -550,21 +553,19 @@ def _blend_back(c, zc, before, a):
 
 def dropped_sections(cam, zone_size, font_for, wx=None):
     """The sections turned on that this caption can't show at this size (the panel lists them)."""
-    global _dropped
     from display.gfx import Canvas
     ov = overlay_of(cam)
     style = ov.get("style", "tag")
     if style not in LAYOUT_FUNCS:
         return []
     w, h = zone_size
-    _dropped = set()
+    _rec.dropped = found = set()
     try:
         ct = Content(cam, ov, wx=wx)
         LAYOUT_FUNCS[style](Ctx(_Zone(Canvas(w, h), (0, 0, w, h)), (0, 0, w, h), ov, _font_loader(font_for)), ct)
-        out = sorted(_dropped)
     finally:
-        _dropped = None
-    return out
+        _rec.dropped = None
+    return sorted(found)
 
 
 _layers: dict = {}           # key -> (bbox, alpha, premultiplied colour); a few per webcam
@@ -686,7 +687,7 @@ def _l_bar(k, ct):
     right_time = ct.time and ct.headline_kind != "time"
     room_guess = k.w - 2 * pad - 40
     title, lines = _headline_and_lines(k, ct, room_guess)
-    lines = lines[:2]
+    lines = lines[:2]                                      # (height only; the drawn lines come from details() below)
     head_h = max(T.height if title else 0, S.height + 1 if ct.live else 0)
     bh = pad * 2 + head_h + sum(S.height + 1 for _ in lines)
     by = k.y if k.top else k.y + k.h - bh
@@ -704,7 +705,7 @@ def _l_bar(k, ct):
     if title:
         graphics.DrawText(c, T, cx, by + pad + T.baseline, k.text, _clip(T, title, right - cx))
     ty = by + pad + head_h + 1
-    for kd, ln in k.details(ct, right - (k.x + pad), with_time=not right_time)[:2] if k.lines != "inline" else []:
+    for kd, ln in k.details(ct, right - (k.x + pad), with_time=not right_time, max_lines=2) if k.lines != "inline" else []:
         k.text_with_icon(S, k.x + pad, ty, ct, kd, ln)
         ty += S.height + 1
 
@@ -758,7 +759,7 @@ def _l_split(k, ct):
     c, T, S, B = k.c, k.T, k.S, k.B
     pad = 2
     show_clock = bool(ct.time) and ct.headline_kind != "time"
-    lines = ([] if k.lines == "inline" else k.details(ct, k.w // 2, with_time=not show_clock))[:2]
+    lines = [] if k.lines == "inline" else k.details(ct, k.w // 2, with_time=not show_clock, max_lines=2)
     left_h = (T.height + 1 if ct.title else 0) + sum(S.height + 1 for _ in lines)
     bh = pad * 2 + max(left_h, B.height if show_clock else 0, S.height + 1)
     by = k.y if k.top else k.y + k.h - bh
@@ -793,7 +794,8 @@ def _l_split(k, ct):
         ty += max(T.height, S.height + 1) + 1
     used = {"weather", "date", "offset"} if show_clock else set()
     bits = [b for b in ct.bits(with_time=not show_clock) if b[0] not in used]
-    for kd, ln in detail_lines(S, bits, right - (k.x + pad + 1), k.lines if k.lines != "inline" else "auto", k.sep)[:2]:
+    for kd, ln in detail_lines(S, bits, right - (k.x + pad + 1), k.lines if k.lines != "inline" else "auto", k.sep,
+                               max_lines=2):
         graphics.DrawText(c, S, k.x + pad + 1, ty + S.baseline, k.text, ln)
         ty += S.height + 1
 
@@ -1042,15 +1044,16 @@ def _l_custom(k, ct):
     avail = k.w - 2 * pad - 2 - gap * (len(cols) - 1)
     natural = {col: max(line_width(font_of(col, ln), grid[col][ln]) for ln in grid[col]) for col in cols}
     room = dict(natural)
-    while sum(room.values()) > avail:
+    while sum(room.values()) > avail:                      # the widest gives way, down to the next widest…
         widest = max(room, key=room.get)
-        others = sum(v for c_, v in room.items() if c_ != widest)
-        new = max(30, avail - others) if avail - others < room[widest] else room[widest]
+        excess = sum(room.values()) - avail
         second = max([v for c_, v in room.items() if c_ != widest], default=0)
-        room[widest] = max(new, min(room[widest] - 1, second)) if new < second else new
-        if room[widest] == natural[widest] or room[widest] <= 30:
-            room[widest] = max(30, avail - others)
+        target = max(second, room[widest] - excess)
+        if target >= room[widest]:                         # …and when they're level, all share the space evenly
+            share = max(1, avail // len(room))
+            room = {c_: min(v, share) for c_, v in room.items()}
             break
+        room[widest] = target
     layout = []                                            # [(col, [(font, [kinds], width)], col_width)]
     for col in cols:
         lines = []
@@ -1084,7 +1087,7 @@ def _l_custom(k, ct):
             if col in xs:
                 continue
             right_x -= cw
-            xs[col] = right_x
+            xs[col] = max(right_x, left_x)                 # never over a left-flowing column
             right_x -= gap
     else:
         bx, by = k.place(min(box_w, k.w - 2), box_h, margin=2)

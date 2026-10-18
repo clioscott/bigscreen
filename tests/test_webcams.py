@@ -565,3 +565,51 @@ def test_custom_layout_never_clips_text_that_fits():
     finally:
         cap.graphics.DrawText = real
     assert "Shibuya Crossing" in drawn
+
+
+# --- PR #14 review regressions ---------------------------------------------------------------------------------
+def test_bar_reports_what_its_two_lines_cannot_hold():
+    cam = {**CAM, "overlay": {"style": "bar", "show": {k: True for k in cap.SECTIONS},
+                              "custom_text": "Scramble crossing, from the station"}}
+    assert {"custom", "credit"} & set(wc.caption_dropped(cam, (223, 134), WX))   # needs a third line: named, not lost
+
+
+def test_dropped_sections_is_safe_across_threads():
+    import threading
+    cams = [{**CAM, "overlay": {"style": s, "show": {k: True for k in cap.SECTIONS}}} for s in ("bar", "tag", "chips")]
+    errors = []
+
+    def run(c):
+        try:
+            for _ in range(20):
+                cap.dropped_sections(c, (152, 130), _font, WX)
+        except Exception as e:                              # noqa: BLE001
+            errors.append(e)
+    ts = [threading.Thread(target=run, args=(c,)) for c in cams * 2]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    assert not errors
+
+
+def test_custom_columns_fit_a_very_narrow_zone():
+    ov = {"style": "custom", "container": "strip", "show": {"weather": True, "date": True},
+          "slots": {"name": [1, 1], "time": [2, 1], "date": [3, 1], "place": [1, 2], "weather": [3, 2]}}
+    for w in (60, 100, 150):
+        img = wc.render_preview({**CAM, "overlay": ov}, webcams.render(FRAME, w, 130), (w, 130), 1.0, wx=WX)
+        assert img.shape == (130, w, 3)
+
+
+def test_one_per_line_shows_four_sections():
+    from display.gfx import Canvas
+    ov = cap.overlay_of({"overlay": {"lines": "stacked", "show": {"date": True, "offset": True, "credit": True}}})
+    k = cap.Ctx(Canvas(448, 192), (0, 0, 448, 192), ov, _font)
+    assert len(k.details(cap.Content(CAM, ov), 300)) == 4
+
+
+def test_slot_and_line_size_validation_edges():
+    from hub import config
+    for bad in ({"slots": {"name": [True, 1]}}, {"line_sizes": {"top": "big"}}):
+        with pytest.raises(config.ConfigError):
+            config.validate(_cfg({"cams": {"a": {**CAM, "overlay": {"style": "custom", **bad}}}}))
