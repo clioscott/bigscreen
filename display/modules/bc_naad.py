@@ -148,7 +148,7 @@ def _shorten(f, s, w):
 def _crop_for(mp, item, w, h):
     """Map crop (sx, sy, ref) of w×h round the alert's polygons (or home), keeping home or a nearby city in view."""
     pts = [(la, lo) for ring in item.get("polygons") or [] for lo, la in ring] or [(HOME[1], HOME[0])]
-    return k.frame_crop(mp, w, h, pts, (HOME[1], HOME[0]))
+    return k.frame_crop(mp, w, h, pts, (HOME[1], HOME[0]), key=item.get("id"))
 
 
 def _round_card(c, x, y, w, h, col, r=5):

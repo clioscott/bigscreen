@@ -119,7 +119,9 @@ def _situation(s, c, item, now, el):
 
     def static():
         if mp:
-            sx, sy, ref = k.frame_crop(mp, px_, H, _pts(item) or [_home(ctx)], _home(ctx))
+            # fitted to the band between the heading (16 px) and the count chips (14 px)
+            sx, sy, ref = k.frame_crop(mp, px_, H - 30, _pts(item) or [_home(ctx)], _home(ctx))
+            sy = int(max(0, min(max(0, mp.h - H), sy - 16)))
             mp.blit(c, 0, 0, sx, sy, px_, H)
             _draw_region(s, c, mp, item, ctx, sx=sx, sy=sy, w=px_)
             k.ref_marker(c, mp, ref, 0, 16, sx, sy + 16, px_, H - 30)
@@ -373,7 +375,7 @@ class Screen(k.BCScreen):
                 return
             fx, fy = mp.project(item["lat"], item["lon"])
             ctx = _ctx(self, item)
-            sx, sy, ref = k.frame_crop(mp, w, h, _pts(item), _home(ctx))
+            sx, sy, ref = k.frame_crop(mp, w, h, _pts(item), _home(ctx), key=item.get("id"))
             mp.blit(c, x, y, sx, sy, min(w, mp.w - sx), min(h, mp.h - sy))
             _draw_region(self, c, mp, item, ctx, x, y, sx, sy, w, h, big_icons=False)
             k.ref_marker(c, mp, ref, x, y, sx, sy, w, h)

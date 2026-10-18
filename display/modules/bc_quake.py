@@ -698,7 +698,7 @@ class Screen(k.BCScreen):
             if not mp:
                 return
             ex, ey = mp.project(item["lat"], item["lon"])
-            sx, sy, ref = k.frame_crop(mp, w, h, [(item["lat"], item["lon"])], _home(self)[::-1])
+            sx, sy, ref = k.frame_crop(mp, w, h, [(item["lat"], item["lon"])], _home(self)[::-1], key=item.get("id"))
             mp.blit(c, x, y, sx, sy, min(w, mp.w - sx), min(h, mp.h - sy))
             if theme == "shakemap":
                 c.Blit(_half_shake(self, mp, item, sx, sy, w, h), x, y)

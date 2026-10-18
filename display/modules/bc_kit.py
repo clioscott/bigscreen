@@ -1133,10 +1133,22 @@ def map_crop(c, mp, x, y, w, h, cx, cy):
     return sx, sy
 
 
-def frame_crop(mp, w, h, pts, home, pad=12):
+_CROPS = {}
+
+
+def frame_crop(mp, w, h, pts, home, pad=12, key=None):
     """Crop origin (sx, sy) of a w×h window on map ``mp`` showing the points ``pts`` [(lat, lon)] and a reference
     place (common/places: home if it fits beside them, else the biggest nearby city that does, else the city
-    nearest them). Returns (sx, sy, ref); draw the reference with ``ref_marker``."""
+    nearest them). Returns (sx, sy, ref); draw the reference with ``ref_marker``. Callers drawing every frame
+    pass ``key`` (the item's id) so the answer is worked out once per item, map and window."""
+    if key is not None:
+        ck = (key, mp.meta.get("name"), mp.meta.get("sig"), w, h, tuple(home or ()))
+        hit = _CROPS.get(ck)
+        if hit is None:
+            if len(_CROPS) > 200:
+                _CROPS.clear()
+            hit = _CROPS[ck] = frame_crop(mp, w, h, pts, home, pad)
+        return hit
     xy = [mp.project(la, lo) for la, lo in pts]
     x0, x1 = min(p[0] for p in xy), max(p[0] for p in xy)
     y0, y1 = min(p[1] for p in xy), max(p[1] for p in xy)
