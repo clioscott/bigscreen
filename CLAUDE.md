@@ -115,6 +115,20 @@ once (`hold: false`), so the rotation resumes by itself.
 - Config: `modules.weather_maps.{areas,tracks,palettes}`; edited on the panel's Weather tab.
 - MSC usage policy: ≤ ~86k req/day, no bulk tile scraping, meaningful UA, show "ECCC" attribution (the map panel does).
 
+## Webcams (live video)
+
+- `hub/webcams.py`: one ffmpeg per source (YouTube via `python -m yt_dlp`, or any URL ffmpeg opens), started when
+  someone watches and stopped `GRACE_SEC` after the last viewer; frames decoded at 640 px wide, read at real-time speed
+  (`-re`, else HLS segments arrive in bursts). Each viewer gets its own crop/scale/colour. At most `MAX_FEEDS` at once.
+- API (`hub/app.py`): `/api/webcams/frames` (raw RGB for the Pi, 12-byte header per frame), `source.mjpeg` (crop
+  editor), `preview` + `preview/{token}.mjpeg` (exact wall render incl. caption), `probe`, `status`.
+- Display: `display/modules/webcam.py`, panels `webcam` (a side), `webcam_full`, `webcam_wall`; entry field `cam`.
+  The Pi's reader thread runs on cores 0–1 and hangs up `IDLE_SEC` after the screen stops drawing it; a stream with no
+  picture after `GIVE_UP_SEC` returns `"skip"` (display/rotation.py ends the screen at once).
+- Config `modules.webcams`: `hub_url` (default `http://192.168.1.111:8800`), `cams.<id>` = label, place, credit, tz,
+  fps, source, `crops.{left,right,full,wall}` = {x, y, w} fractions (height follows the zone), colour, overlay.
+  Panel page: Webcams. YouTube may need a JS runtime (deno) for yt-dlp some day; it works without one today.
+
 ## BC alert screens
 
 Five full-wall takeovers beside the ECCC weather alert, each with its own job, display module, themes and panel page:
