@@ -613,3 +613,73 @@ def test_slot_and_line_size_validation_edges():
     for bad in ({"slots": {"name": [True, 1]}}, {"line_sizes": {"top": "big"}}):
         with pytest.raises(config.ConfigError):
             config.validate(_cfg({"cams": {"a": {**CAM, "overlay": {"style": "custom", **bad}}}}))
+
+
+# --- weather for previews of unsaved locations ------------------------------------------------------------------
+def _wx_env(monkeypatch, saved, fetch):
+    import json
+    from hub import app as hub_app, paths
+    from hub.jobs import webcam_weather as job
+    paths.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    (paths.DATA_DIR / "webcam_weather.json").write_text(json.dumps(saved))
+    monkeypatch.setattr(job, "fetch", fetch)
+    monkeypatch.setattr(hub_app, "WX_SETTLE", 0.05)
+    for d in (hub_app._wx_cache, hub_app._wx_failed, hub_app._wx_latest):
+        d.clear()
+    hub_app._wx_pending.clear()
+    return hub_app
+
+
+def _until(cond, timeout=2.0):
+    end = time.time() + timeout
+    while not cond() and time.time() < end:
+        time.sleep(0.02)
+    return cond()
+
+
+def test_preview_weather_never_blocks_and_fetches_the_settled_location(monkeypatch):
+    calls = []
+
+    def fetch(pts, timeout=30):
+        calls.append(dict(pts))
+        return {k: {**WX, "temp": 30.0} for k in pts}
+    hub_app = _wx_env(monkeypatch, {"cam1": {**WX, "temp": 5.0, "lat": 49.2888, "lon": -123.1111}}, fetch)
+    assert hub_app._webcam_wx("cam1", {"lat": 49.2888, "lon": -123.1111})["temp"] == 5.0     # the job's data
+    t0 = time.time()
+    for lat in (35.0, 35.6, 35.65, 35.6595):                                                  # typing a latitude
+        assert hub_app._webcam_wx("cam1", {"lat": lat, "lon": 139.7005}) is None             # answers at once
+    assert time.time() - t0 < 0.05
+    assert _until(lambda: hub_app._webcam_wx("cam1", {"lat": 35.6595, "lon": 139.7005}) is not None)
+    assert [list(c.values())[0][0] for c in calls] == [35.6595]                              # only the last one
+    assert hub_app._webcam_wx("cam1", {}) is None
+
+
+def test_failed_fetches_wait_and_never_show_the_old_places_weather(monkeypatch):
+    calls = []
+
+    def fetch(pts, timeout=30):
+        calls.append(pts)
+        raise OSError("open-meteo down")
+    hub_app = _wx_env(monkeypatch, {"cam1": {**WX, "temp": 5.0, "lat": 49.2888, "lon": -123.1111}}, fetch)
+    moved = {"lat": 35.6595, "lon": 139.7005}
+    assert hub_app._webcam_wx("cam1", moved, block=True) is None                              # not the old place's
+    assert hub_app._webcam_wx("cam1", moved) is None and len(calls) == 1                      # not retried yet
+
+
+def test_wall_preview_batches_weather_and_skips_webcams_without_it(monkeypatch):
+    calls = []
+
+    def fetch(pts, timeout=30):
+        calls.append(dict(pts))
+        return {k: {**WX, "temp": 12.0} for k in pts}
+    hub_app = _wx_env(monkeypatch, {}, fetch)
+    sent = {}
+    monkeypatch.setattr(hub_app, "_display_call", lambda path, payload: sent.update(payload) or {"ok": True})
+    on = {"overlay": {"show": {"weather": True}}}
+    hub_app.display_preview({"overlay": {"modules": {"webcams": {"cams": {
+        "a": {"lat": 49.0, "lon": -123.0, **on}, "b": {"lat": 35.0, "lon": 139.0, **on},
+        "c": {"lat": 48.0, "lon": -123.0}, "d": on}}}}, "ttl_sec": 60})
+    cams = sent["overlay"]["modules"]["webcams"]["cams"]
+    assert cams["a"]["_wx"]["temp"] == 12.0 and cams["b"]["_wx"]["temp"] == 12.0
+    assert "_wx" not in cams["c"] and "_wx" not in cams["d"]                                  # no weather shown / no place
+    assert len(calls) == 1 and len(calls[0]) == 2                                             # one request for both

@@ -656,6 +656,16 @@ def display_preview(payload: dict = Body(...)):
     overlay = payload.get("overlay")
     if not isinstance(overlay, dict):
         raise HTTPException(400, "overlay must be an object")
+    cams = (((overlay.get("modules") or {}).get("webcams") or {}).get("cams") or {})
+    shown = {cid: cam for cid, cam in (cams.items() if isinstance(cams, dict) else []) if isinstance(cam, dict) and _wants_wx(cam)}
+    from hub.jobs import webcam_weather as job
+    missing = {cid: job.point(cam) for cid, cam in shown.items() if job.point(cam) and not _webcam_wx(cid, cam)}
+    if missing:
+        _fetch_wx({pt: pt for pt in set(missing.values())}, timeout=8)   # one request for all of them
+    for cid, cam in shown.items():
+        wx = _webcam_wx(cid, cam)
+        if wx:
+            cam["_wx"] = wx                                # previews only: never saved (display/modules/webcam.py)
     return _display_call("/preview", {"overlay": overlay, "ttl_sec": int(payload.get("ttl_sec", 120))})
 
 
@@ -686,6 +696,69 @@ def _webcam_feed(src, fps):
         return webcams.feed(src, fps)
     except webcams.SourceError as e:
         raise HTTPException(503 if "already decoding" in str(e) else 400, str(e))
+
+
+_wx_cache: dict = {}                 # (lat, lon) -> weather fetched for previews of unsaved locations
+_wx_failed: dict = {}                # (lat, lon) -> when a fetch failed (not retried for a minute)
+_wx_latest: dict = {}                # webcam id -> the location last asked about (typing fetches only the last)
+_wx_pending: set = set()
+WX_TTL, WX_RETRY, WX_SETTLE = 900.0, 60.0, 1.0
+
+
+def _wants_wx(cam):
+    show = ((cam or {}).get("overlay") or {}).get("show") or {}
+    return bool(show.get("weather") or show.get("sun"))
+
+
+def _webcam_wx(cam_id, cam, block=False):
+    """The weather a caption preview should show: the job's data when it's for this location, else a recent fetch
+    for it. Never waits unless block: a missing location is fetched in the background (after WX_SETTLE, and only if
+    it's still the location asked about, so typing coordinates doesn't fetch every keystroke) and turns up on the
+    preview's next refresh. None without a location, or while fetching."""
+    from hub.jobs import webcam_weather as job
+    pt = job.point(cam or {})
+    if not pt:
+        return None
+    saved = (read_json(paths.DATA_DIR / "webcam_weather.json", {}) or {}).get(str(cam_id or ""))
+    if saved and (saved.get("lat"), saved.get("lon")) in (pt, (None, None)):
+        return saved
+    hit = _wx_cache.get(pt)
+    if hit and time.time() - hit.get("at", 0) < WX_TTL:
+        return hit
+    if time.time() - _wx_failed.get(pt, 0) < WX_RETRY:
+        return None
+    if block:
+        _fetch_wx({pt: pt}, timeout=8)
+        return _wx_cache.get(pt)
+    _wx_latest[str(cam_id or "")] = pt
+    if pt not in _wx_pending:
+        _wx_pending.add(pt)
+
+        def later():
+            try:
+                time.sleep(WX_SETTLE)
+                if _wx_latest.get(str(cam_id or "")) == pt:
+                    _fetch_wx({pt: pt}, timeout=8)
+            finally:
+                _wx_pending.discard(pt)
+        threading.Thread(target=later, name="webcam-wx", daemon=True).start()
+    return None
+
+
+def _fetch_wx(points, timeout=8):
+    """Fetch points into the cache in one request; failures are remembered for WX_RETRY."""
+    from hub.jobs import webcam_weather as job
+    try:
+        got = job.fetch(points, timeout=timeout)
+    except Exception:
+        for pt in points.values():
+            _wx_failed[pt] = time.time()
+        return
+    if len(_wx_cache) > 64:
+        _wx_cache.clear()
+    for pt in points.values():
+        if pt in got:
+            _wx_cache[pt] = got[pt]
 
 
 @app.get("/api/webcams/status")
@@ -841,16 +914,16 @@ def webcams_preview_set(payload: dict = Body(...)):
     token = str(payload.get("token") or "") or os.urandom(6).hex()
     if not re.fullmatch(r"[0-9a-f]{12}", token):
         raise HTTPException(400, "bad token")
-    _webcam_previews[token] = {"cam": cam, "id": str(payload.get("id") or ""), "shape": shape, "zone": zones[shape],
+    wx = _webcam_wx(payload.get("id"), cam) if _wants_wx(cam) else None
+    _webcam_previews[token] = {"cam": cam, "id": str(payload.get("id") or ""), "wx": wx, "shape": shape, "zone": zones[shape],
                                "until": now + 3600,
                                "since": _webcam_previews.get(token, {}).get("since", now)}
     from display.modules import webcam as wc
-    wx = (read_json(paths.DATA_DIR / "webcam_weather.json", {}) or {}).get(str(payload.get("id") or ""))
     try:
         dropped = wc.caption_dropped(cam, tuple(zones[shape]), wx)
     except Exception:
         dropped = []
-    return {"token": token, "zone": zones[shape], "dropped": dropped}
+    return {"token": token, "zone": zones[shape], "dropped": dropped, "has_weather": bool(wx)}
 
 
 @app.get("/api/webcams/preview/{token}.mjpeg")
@@ -873,7 +946,9 @@ async def webcams_preview(token: str):
         colour = {"brightness": q.get("b", 1), "contrast": q.get("c", 1), "saturation": q.get("s", 1)}
         if (cam_now.get("source") or {}) != (cam.get("source") or {}):
             frame = None                                     # source changed: the panel reopens the stream
-        wx = (read_json(paths.DATA_DIR / "webcam_weather.json", {}) or {}).get(cur.get("id") or "")
+        if time.time() - cur.get("wx_at", 0) > 20 and _wants_wx(cam_now):   # pick up fetched / newer weather
+            cur["wx"], cur["wx_at"] = _webcam_wx(cur.get("id"), cam_now), time.time()
+        wx = cur.get("wx")
         img = wc.render_preview(cam_now, None if frame is None else webcams.render(frame, w, h, crop, colour),
                                 (w, h), time.time() - t0, wx=wx)
         out = io.BytesIO()

@@ -199,7 +199,8 @@ class WebcamPanel:
                 self._centre(c, (x, y + 12, w, h), st.error[: max(8, w // 5)], Color(120, 60, 60))
             if now - max(started, st.frame_t) > GIVE_UP_SEC:      # a hiccup mid-play doesn't end a held webcam
                 return "skip"
-        draw_caption(c, zone, cam, now - started, self.font, wx=self._weather(now).get(entry.get("cam")))
+        wx = cam.get("_wx") or self._weather(now).get(entry.get("cam"))   # _wx: a preview of an unsaved location
+        draw_caption(c, zone, cam, now - started, self.font, wx=wx)
         return None
 
     def _weather(self, now):
