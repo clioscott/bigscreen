@@ -8,3 +8,6 @@ _snapshot/
 state/
 token.pickle
 credentials.json
+.venv-display/
+.claude/settings.local.json
+docs/media/*.tmp

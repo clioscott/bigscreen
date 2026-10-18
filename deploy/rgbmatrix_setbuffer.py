@@ -9,6 +9,8 @@ three uint8 fields (r, g, b), the same memory layout as the numpy array.
 Why: upstream SetImage() needs Image.getim() (Pillow >= 11) and reads Pillow's
 private struct layout; with Pillow 9.5 the v1 code fell back to per-pixel
 Python blits, which cost ~47% of the Pi's render time.
+
+The patched binding is rpi-rgb-led-matrix's (Henner Zeller and contributors, GPL-2.0); see THIRD_PARTY.md.
 """
 
 import sys

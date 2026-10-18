@@ -10,6 +10,10 @@ quirks, same fixed-point line algorithm) but draws into a numpy array, so:
 
 Fast paths the v1 code lacked: FillRect (slice assignment instead of one
 DrawLine per row), cached rendered strings, and Blit for icons/images.
+
+The BDF parsing and drawing follow rpi-rgb-led-matrix's lib/bdf-font.cc and
+lib/graphics.cc (Copyright (C) 2014 Henner Zeller <h.zeller@acm.org>, GPL-2.0);
+see THIRD_PARTY.md.
 """
 
 from __future__ import annotations

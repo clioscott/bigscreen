@@ -186,18 +186,6 @@
    "terminal"
   ]
  },
- "alert/ArtosSans-8.bdf": {
-  "family": "u8g2 pixel sans",
-  "origin": "u8g2 bundle",
-  "licence": "see u8g2",
-  "tags": []
- },
- "alert/Chroma48Medium-8.bdf": {
-  "family": "u8g2 pixel sans",
-  "origin": "u8g2 bundle",
-  "licence": "see u8g2",
-  "tags": []
- },
  "alert/Dina_r400-10.bdf": {
   "family": "Dina",
   "origin": "Jørgen Ibsen",
@@ -356,27 +344,6 @@
   "licence": "free",
   "tags": [
    "terminal"
-  ]
- },
- "alert/TorusSansBold-8.bdf": {
-  "family": "u8g2 pixel sans",
-  "origin": "u8g2 bundle",
-  "licence": "see u8g2",
-  "tags": []
- },
- "alert/VictoriaBold-8.bdf": {
-  "family": "u8g2 pixel sans",
-  "origin": "u8g2 bundle",
-  "licence": "see u8g2",
-  "tags": []
- },
- "alert/amstrad_cpc_extended.bdf": {
-  "family": "Amstrad CPC",
-  "origin": "u8g2 bundle (Amstrad CPC ROM)",
-  "licence": "see u8g2",
-  "tags": [
-   "retro computing",
-   "video game"
   ]
  },
  "alert/b12_b.bdf": {
@@ -1078,18 +1045,6 @@
   "licence": "free",
   "tags": []
  },
- "candidates/4thd.bdf": {
-  "family": "Bitocra",
-  "origin": "Tecate/bitmap-fonts collection",
-  "licence": "free",
-  "tags": []
- },
- "candidates/5thelement.bdf": {
-  "family": "Bitocra",
-  "origin": "Tecate/bitmap-fonts collection",
-  "licence": "free",
-  "tags": []
- },
  "candidates/anorexia.bdf": {
   "family": "Artwiz",
   "origin": "Tecate/bitmap-fonts collection",
@@ -1124,12 +1079,6 @@
    "retro computing"
   ]
  },
- "candidates/bitbuntu.bdf": {
-  "family": "Bitocra",
-  "origin": "Tecate/bitmap-fonts collection",
-  "licence": "free",
-  "tags": []
- },
  "candidates/bitocra-13.bdf": {
   "family": "Bitocra",
   "origin": "Tecate/bitmap-fonts collection",
@@ -1137,12 +1086,6 @@
   "tags": []
  },
  "candidates/boxxy-bold.bdf": {
-  "family": "Boxxy",
-  "origin": "Tecate/bitmap-fonts collection",
-  "licence": "free",
-  "tags": []
- },
- "candidates/boxxy.bdf": {
   "family": "Boxxy",
   "origin": "Tecate/bitmap-fonts collection",
   "licence": "free",
@@ -1311,20 +1254,6 @@
   "licence": "GPL",
   "tags": []
  },
- "candidates/gomme10x20n.bdf": {
-  "family": "Gomme",
-  "origin": "Tecate/bitmap-fonts collection",
-  "licence": "free",
-  "tags": []
- },
- "candidates/haxormedium-10.bdf": {
-  "family": "Haxor",
-  "origin": "Tecate/bitmap-fonts collection",
-  "licence": "MIT",
-  "tags": [
-   "terminal"
-  ]
- },
  "candidates/haxormedium-12.bdf": {
   "family": "Haxor",
   "origin": "Tecate/bitmap-fonts collection",
@@ -1339,85 +1268,6 @@
   "licence": "MIT",
   "tags": [
    "terminal"
-  ]
- },
- "candidates/haxornarrow-15.bdf": {
-  "family": "Haxor",
-  "origin": "Tecate/bitmap-fonts collection",
-  "licence": "MIT",
-  "tags": [
-   "terminal"
-  ]
- },
- "candidates/haxornarrow-17.bdf": {
-  "family": "Haxor",
-  "origin": "Tecate/bitmap-fonts collection",
-  "licence": "MIT",
-  "tags": [
-   "terminal"
-  ]
- },
- "candidates/ibm-ib8x8.bdf": {
-  "family": "IBM PC BIOS 8×8",
-  "origin": "IBM PC ROM fonts (farsil/ibmfonts)",
-  "licence": "free (ROM dumps)",
-  "tags": [
-   "retro computing",
-   "video game"
-  ]
- },
- "candidates/ibm-ic8x8.bdf": {
-  "family": "IBM CGA 8×8",
-  "origin": "IBM PC ROM fonts (farsil/ibmfonts)",
-  "licence": "free (ROM dumps)",
-  "tags": [
-   "retro computing",
-   "video game"
-  ]
- },
- "candidates/ibm-icl8x8.bdf": {
-  "family": "IBM CGA thin 8×8",
-  "origin": "IBM PC ROM fonts (farsil/ibmfonts)",
-  "licence": "free (ROM dumps)",
-  "tags": [
-   "retro computing",
-   "video game"
-  ]
- },
- "candidates/ibm-ie8x14.bdf": {
-  "family": "IBM EGA 8×14",
-  "origin": "IBM PC ROM fonts (farsil/ibmfonts)",
-  "licence": "free (ROM dumps)",
-  "tags": [
-   "retro computing",
-   "video game"
-  ]
- },
- "candidates/ibm-im9x14.bdf": {
-  "family": "IBM MDA 9×14",
-  "origin": "IBM PC ROM fonts (farsil/ibmfonts)",
-  "licence": "free (ROM dumps)",
-  "tags": [
-   "retro computing",
-   "video game"
-  ]
- },
- "candidates/ibm-iv8x16.bdf": {
-  "family": "IBM VGA 8×16",
-  "origin": "IBM PC ROM fonts (farsil/ibmfonts)",
-  "licence": "free (ROM dumps)",
-  "tags": [
-   "retro computing",
-   "video game"
-  ]
- },
- "candidates/ibm-iv9x16.bdf": {
-  "family": "IBM VGA 9×16",
-  "origin": "IBM PC ROM fonts (farsil/ibmfonts)",
-  "licence": "free (ROM dumps)",
-  "tags": [
-   "retro computing",
-   "video game"
   ]
  },
  "candidates/jmk-modd-06x11-bold.bdf": {
@@ -1620,22 +1470,6 @@
    "japanese"
   ]
  },
- "candidates/jp-knj10.bdf": {
-  "family": "knj10 (v1 kanji 10)",
-  "origin": "v1 font set",
-  "licence": "free",
-  "tags": [
-   "japanese"
-  ]
- },
- "candidates/jp-knj10b.bdf": {
-  "family": "knj10 bold",
-  "origin": "v1 font set",
-  "licence": "free",
-  "tags": [
-   "japanese"
-  ]
- },
  "candidates/jp-maru14.bdf": {
   "family": "Marumoji 丸文字 14",
   "origin": "xfonts-marumoji",
@@ -1795,22 +1629,6 @@
   "licence": "free",
   "tags": []
  },
- "candidates/kourier.bdf": {
-  "family": "Kourier",
-  "origin": "Tecate/bitmap-fonts collection",
-  "licence": "free",
-  "tags": [
-   "terminal"
-  ]
- },
- "candidates/kourierss.bdf": {
-  "family": "Kourier",
-  "origin": "Tecate/bitmap-fonts collection",
-  "licence": "free",
-  "tags": [
-   "terminal"
-  ]
- },
  "candidates/leggie.bdf": {
   "family": "Leggie",
   "origin": "Tecate/bitmap-fonts collection",
@@ -1831,31 +1649,7 @@
    "retro computing"
   ]
  },
- "candidates/lokaltog-fixed-10b-iso10646.bdf": {
-  "family": "Lokaltog fixed",
-  "origin": "Tecate/bitmap-fonts collection",
-  "licence": "free",
-  "tags": [
-   "terminal"
-  ]
- },
  "candidates/lokaltog-fixed-10r-iso10646.bdf": {
-  "family": "Lokaltog fixed",
-  "origin": "Tecate/bitmap-fonts collection",
-  "licence": "free",
-  "tags": [
-   "terminal"
-  ]
- },
- "candidates/lokaltog-fixed-12b-iso10646.bdf": {
-  "family": "Lokaltog fixed",
-  "origin": "Tecate/bitmap-fonts collection",
-  "licence": "free",
-  "tags": [
-   "terminal"
-  ]
- },
- "candidates/lokaltog-fixed-12r-iso10646.bdf": {
   "family": "Lokaltog fixed",
   "origin": "Tecate/bitmap-fonts collection",
   "licence": "free",
@@ -1881,18 +1675,6 @@
   "family": "Artwiz",
   "origin": "Tecate/bitmap-fonts collection",
   "licence": "GPL",
-  "tags": []
- },
- "candidates/montecarlobold.bdf": {
-  "family": "MonteCarlo",
-  "origin": "Tecate/bitmap-fonts collection",
-  "licence": "free",
-  "tags": []
- },
- "candidates/montecarlomedium.bdf": {
-  "family": "MonteCarlo",
-  "origin": "Tecate/bitmap-fonts collection",
-  "licence": "free",
   "tags": []
  },
  "candidates/mplus-f10b.bdf": {
@@ -1981,12 +1763,6 @@
  },
  "candidates/orp-medium.bdf": {
   "family": "ORP",
-  "origin": "Tecate/bitmap-fonts collection",
-  "licence": "free",
-  "tags": []
- },
- "candidates/progsole-10.bdf": {
-  "family": "Progsole",
   "origin": "Tecate/bitmap-fonts collection",
   "licence": "free",
   "tags": []
@@ -2161,18 +1937,6 @@
   "family": "Tewi",
   "origin": "Tecate/bitmap-fonts collection",
   "licence": "MIT",
-  "tags": []
- },
- "candidates/triskwelinebold-12.bdf": {
-  "family": "Triskweline",
-  "origin": "Tecate/bitmap-fonts collection",
-  "licence": "free",
-  "tags": []
- },
- "candidates/triskwelinenormal-12.bdf": {
-  "family": "Triskweline",
-  "origin": "Tecate/bitmap-fonts collection",
-  "licence": "free",
   "tags": []
  },
  "candidates/uushi.bdf": {
@@ -2883,30 +2647,6 @@
    "classic"
   ]
  },
- "candidates/zevv-peep-iso8859-1-07x14.bdf": {
-  "family": "Peep",
-  "origin": "Tecate/bitmap-fonts collection",
-  "licence": "free",
-  "tags": [
-   "terminal"
-  ]
- },
- "candidates/zevv-peep-iso8859-1-08x16.bdf": {
-  "family": "Peep",
-  "origin": "Tecate/bitmap-fonts collection",
-  "licence": "free",
-  "tags": [
-   "terminal"
-  ]
- },
- "candidates/zevv-peep-iso8859-1-10x20.bdf": {
-  "family": "Peep",
-  "origin": "Tecate/bitmap-fonts collection",
-  "licence": "free",
-  "tags": [
-   "terminal"
-  ]
- },
  "k12x8.bdf": {
   "family": "k12x8",
   "origin": "littlelimit.net (v1)",
@@ -3256,36 +2996,6 @@
    "terminal"
   ]
  },
- "candidates/u8-7segments-26x42.bdf": {
-  "family": "Seven-segment 26×42",
-  "origin": "u8g2",
-  "licence": "see u8g2",
-  "tags": [
-   "big numerals",
-   "commercial",
-   "digits only"
-  ]
- },
- "candidates/u8-7-seg-33x19.bdf": {
-  "family": "Seven-segment 19×33",
-  "origin": "u8g2",
-  "licence": "see u8g2",
-  "tags": [
-   "big numerals",
-   "commercial",
-   "digits only"
-  ]
- },
- "candidates/u8-7-seg-41x21.bdf": {
-  "family": "Seven-segment 21×41",
-  "origin": "u8g2",
-  "licence": "see u8g2",
-  "tags": [
-   "big numerals",
-   "commercial",
-   "digits only"
-  ]
- },
  "candidates/u8-profont10.bdf": {
   "family": "ProFont",
   "origin": "u8g2",
@@ -3311,24 +3021,6 @@
    "digits only",
    "video game"
   ]
- },
- "candidates/u8-victoriamedium-8.bdf": {
-  "family": "Victoria",
-  "origin": "u8g2",
-  "licence": "see u8g2",
-  "tags": []
- },
- "candidates/u8-artosserif-8.bdf": {
-  "family": "Artos serif",
-  "origin": "u8g2",
-  "licence": "see u8g2",
-  "tags": []
- },
- "candidates/u8-saikyosansbold-8.bdf": {
-  "family": "Saikyo sans",
-  "origin": "u8g2",
-  "licence": "see u8g2",
-  "tags": []
  },
  "candidates/u8-tiny5duo.bdf": {
   "family": "Tiny5 duo",
