@@ -222,3 +222,93 @@ def test_snapshot_never_blocks_and_remembers_failures(monkeypatch):
     assert webcams.snapshot(ok) == (b"\xff\xd8jpeg", "stale")
     _wait_idle()
     assert calls.count(ok["url"]) == 2
+
+
+def test_pacer_evens_out_bursty_hls_segments(monkeypatch):
+    """The stutter fix: frames arriving a segment at a time come out at an even 1/fps (no freeze per segment)."""
+    import time
+
+    monkeypatch.setattr(webcams, "BUFFER_SEC", 0.5)
+    fps, seg = 20, 0.4                                   # 8 frames per "segment", all at once
+
+    class Bursty(webcams.Feed):
+        def _run(self):
+            self._buffer_sec = webcams.BUFFER_SEC
+            n = 0
+            while self.state != "stopped" and n < 60:
+                with self._buf_lock:
+                    for _ in range(int(fps * seg)):
+                        self._buf.append(np.full((2, 2, 3), n % 256, np.uint8))
+                        n += 1
+                time.sleep(seg)
+
+    f = Bursty("stream", "https://cam.example/x.m3u8", fps)
+    try:
+        seen, times, seq = [], [], 0
+        end = time.time() + 2.5
+        while time.time() < end:
+            seq, frame = f.wait(seq, 0.5)
+            if frame is not None:
+                seen.append(int(frame[0, 0, 0]))
+                times.append(time.time())
+        gaps = [b - a for a, b in zip(times, times[1:])]
+        assert len(seen) >= 30 and seen == sorted(seen)          # in order, none skipped in bursts
+        assert max(gaps) < 3 / fps                               # never a segment-long freeze
+        assert f.underflows == 0
+    finally:
+        f._stop.set()
+
+
+def _segments(monkeypatch, buffer_sec, fps, seg, jitter, count):
+    """A feed whose frames arrive one HLS segment at a time, every seg s (± jitter), no backlog at the start."""
+    import random
+    import time
+
+    monkeypatch.setattr(webcams, "BUFFER_SEC", buffer_sec)
+    rnd = random.Random(7)
+
+    class Segments(webcams.Feed):
+        def _run(self):
+            self._buffer_sec = webcams.BUFFER_SEC
+            for s in range(count):
+                if self._stop.is_set():
+                    return
+                with self._buf_lock:
+                    self._buf.extend(np.full((2, 2, 3), s, np.uint8) for _ in range(int(fps * seg)))
+                time.sleep(seg + rnd.uniform(-jitter, jitter))
+
+    return Segments("stream", "https://cam.example/y.m3u8", fps)
+
+
+def test_rebuffering_waits_by_time_not_by_one_segment(monkeypatch):
+    """Review of #12: segments longer than the buffer must not restart playout with zero margin."""
+    import time
+    f = _segments(monkeypatch, buffer_sec=0.3, fps=20, seg=0.4, jitter=0.08, count=12)
+    try:
+        time.sleep(4.0)
+        assert f.underflows <= 1
+        assert f.state == "live"
+    finally:
+        f._stop.set()
+
+
+def test_buffer_memory_is_capped():
+    import time
+
+    class Flood(webcams.Feed):
+        def _run(self):
+            self._buffer_sec = 0.5
+            for _ in range(2000):
+                with self._buf_lock:
+                    self._buf.append(np.zeros((2, 2, 3), np.uint8))
+                    while len(self._buf) > self._cap():
+                        self._buf.popleft()
+            while not self._stop.is_set():
+                time.sleep(0.05)
+
+    f = Flood("stream", "https://cam.example/z.m3u8", 15)
+    try:
+        time.sleep(0.3)
+        assert len(f._buf) <= f._cap() == int((0.5 + webcams.BUFFER_HEADROOM) * 15)
+    finally:
+        f._stop.set()

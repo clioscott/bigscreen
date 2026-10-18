@@ -12,6 +12,7 @@ A crop is ``{"x", "y", "w"}`` in fractions of the source frame (left edge, top e
 from the zone's shape, so a crop never stretches the picture. No crop: the largest centred one that fits.
 """
 
+import collections
 import os
 import queue
 import re
@@ -27,7 +28,11 @@ from PIL import Image
 WORK_W = 640                 # decoded frames are this wide; crops come out of these
 MAX_FEEDS = 4                # ffmpegs at once
 GRACE_SEC = 30.0             # a feed outlives its last viewer by this long (the next play starts instantly)
-STALL_SEC = 20.0             # no frame for this long: restart ffmpeg
+STALL_SEC = 20.0             # nothing decoded for this long: restart ffmpeg
+BUFFER_SEC = 3.5             # playout buffer for HLS (YouTube): longer than a segment, so fetching the next one never
+                             # shows as a freeze
+BUFFER_SEC_LIVE = 0.3        # … for sources that already arrive in real time (RTSP, MJPEG)
+BUFFER_HEADROOM = 4.0        # frames kept beyond the buffer (about one long segment) before the oldest are dropped
 OPEN_SEC = 45.0              # … or no first frame this long after starting it
 RESOLVE_TTL = 3600.0         # YouTube manifest URLs last ~6 h; resolve again after an hour
 SCHEMES = {"http", "https", "rtsp", "rtsps", "rtmp", "rtmps"}
@@ -128,7 +133,16 @@ class Feed:
         self._restart = False
         self._lock = threading.Lock()
         self._cond = threading.Condition(self._lock)
+        self._buf = collections.deque()  # decoded frames waiting for their turn (the pacer publishes them)
+        self._buf_lock = threading.Lock()
+        self._buffer_sec = BUFFER_SEC
+        self._new_run = False
+        self.decoded_t = 0.0
+        self.underflows = 0
+        self._stop = threading.Event()   # set by _run when the feed ends; the pacer exits on it
+        self._waiters = set()            # (event loop, asyncio.Event) of async readers, woken on every frame
         threading.Thread(target=self._run, name=f"webcam-{urlparse(url).netloc}", daemon=True).start()
+        threading.Thread(target=self._pace, name="webcam-pacer", daemon=True).start()
 
     # viewers -------------------------------------------------------------------------------------------------
     def attach(self):
@@ -140,6 +154,17 @@ class Feed:
         with self._lock:
             self.viewers = max(0, self.viewers - 1)
             self.last_view = time.time()
+
+    def add_waiter(self, loop, event):
+        with self._lock:
+            self._waiters.add((loop, event))
+
+    def remove_waiter(self, loop, event):
+        with self._lock:
+            self._waiters.discard((loop, event))
+
+    def _cap(self):
+        return int((self._buffer_sec + BUFFER_HEADROOM) * max(1, self.fps))
 
     def wanted(self):
         return self.viewers > 0 or time.time() - self.last_view < GRACE_SEC
@@ -171,7 +196,8 @@ class Feed:
         return {"type": self.kind, "url": self.url, "fps": self.fps, "state": self.state, "error": self.error,
                 "title": self.title, "size": self.size, "viewers": self.viewers, "measured_fps": self.measured_fps(),
                 "age_sec": round(time.time() - self.frame_t, 1) if self.frame_t else None,
-                "uptime_sec": round(time.time() - self.started), "restarts": self.restarts}
+                "uptime_sec": round(time.time() - self.started), "restarts": self.restarts,
+                "buffered_sec": round(len(self._buf) / max(1, self.fps), 1), "underflows": self.underflows}
 
     # the ffmpeg loop ------------------------------------------------------------------------------------------
     def _run(self):
@@ -184,6 +210,8 @@ class Feed:
                 if not self.wanted():                  # yt-dlp can take a while; nobody may be left
                     break
                 self._restart = False
+                with self._lock:
+                    self.state = "starting"            # the pacer makes it "live" with the first frame it shows
                 got = self._decode(media)
                 if self._restart:                      # a viewer wanted a higher frame rate: go again now
                     self.error = ""
@@ -199,14 +227,17 @@ class Feed:
                 self.error = f"{type(e).__name__}: {e}"
             if not self.wanted():
                 break
-            self.state = "retrying"
+            with self._lock:
+                self.state = "retrying"
             self.restarts += 1
             delay = (5, 15, 30, 60)[min(backoff, 3)]
             backoff += 1
             end = time.time() + delay
             while time.time() < end and self.wanted():
                 time.sleep(0.5)
-        self.state = "stopped"
+        with self._lock:
+            self.state = "stopped"
+        self._stop.set()
         _forget(self)
 
     def _decode(self, media) -> bool:
@@ -218,11 +249,16 @@ class Feed:
             args += ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
                      "-user_agent", "BigScreen/2 (home LED wall)"]
             if self.kind == "youtube" or ".m3u8" in media:
-                # start at the live edge, and read at real-time speed: HLS comes in multi-second segments that
-                # ffmpeg would otherwise decode in a burst, then wait (the wall would see a few frames per segment)
-                args += ["-live_start_index", "-1", "-re"]
+                # HLS arrives a segment (2-5 s) at a time and ffmpeg decodes each as soon as it lands: the pacer
+                # (_pace) evens that out from a buffer. Starting two segments back fills the buffer at once.
+                # (Reading with -re instead froze the picture while every next segment downloaded.)
+                args += ["-live_start_index", "-2"]
+                self._buffer_sec = BUFFER_SEC
+            else:
+                self._buffer_sec = BUFFER_SEC_LIVE
         elif scheme.startswith("rtsp"):
             args += ["-rtsp_transport", "tcp"]
+            self._buffer_sec = BUFFER_SEC_LIVE
         args += ["-i", media, "-an", "-sn", "-dn", "-vf", f"fps={self.fps},scale={WORK_W}:-2:flags=area",
                  "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"]
         try:
@@ -230,6 +266,9 @@ class Feed:
         except FileNotFoundError:
             raise SourceError("ffmpeg is not installed on the hub")
         self._proc = proc
+        self._new_run = True                       # the pacer restarts its clock (the fps may have changed)
+        with self._buf_lock:
+            self._buf.clear()                      # frames from a previous run would play out of order
         size_box, tail = [], []
         threading.Thread(target=self._stderr, args=(proc, size_box, tail), daemon=True).start()
         threading.Thread(target=self._watchdog, args=(proc,), daemon=True).start()
@@ -256,18 +295,68 @@ class Feed:
                         return got
                     got_n += k
                 frame = np.frombuffer(bytes(buf), np.uint8).reshape(h, w, 3)
-                now = time.time()
-                with self._cond:
-                    self.frame, self.frame_t = frame, now
-                    self.seq += 1
-                    self._cond.notify_all()
-                self._times = (self._times + [now])[-60:]
+                with self._buf_lock:
+                    self._buf.append(frame)
+                    while len(self._buf) > self._cap():          # bounded memory, even while re-buffering
+                        self._buf.popleft()
+                self.decoded_t = time.time()
                 if not got:
-                    got, self.state, self.error = True, "live", ""
+                    got, self.error = True, ""
         finally:
             if proc.poll() is None:
                 proc.kill()
             proc.wait()
+
+    def _pace(self):
+        """Publish buffered frames at an even 1/fps, _buffer_sec behind. (Re)starts once frames have been arriving
+        for _buffer_sec, by time rather than count: an HLS segment lands all at once, and starting on its frame count
+        alone would leave no margin before the next one (a freeze per segment). Ends when the feed stops."""
+        t0, k, first = None, 0, None
+        while not self._stop.is_set():
+            if self._new_run:
+                self._new_run, t0, first = False, None, None
+            fps = max(1, self.fps)
+            if t0 is None:
+                with self._buf_lock:
+                    n = len(self._buf)
+                now = time.time()
+                if not n:
+                    first = None
+                    self._stop.wait(0.02)
+                    continue
+                first = first or now
+                if now - first < self._buffer_sec and n < 2 * self._buffer_sec * fps:
+                    self._stop.wait(0.02)
+                    continue
+                t0, k = now, 0
+            due = t0 + k / fps
+            now = time.time()
+            if due > now:
+                self._stop.wait(min(0.1, due - now))
+                continue
+            with self._buf_lock:
+                frame = self._buf.popleft() if self._buf else None
+            if frame is None:                                     # ran dry: hold the picture and re-buffer
+                if not self._new_run:                             # (a restart empties it on purpose)
+                    self.underflows += 1
+                t0 = first = None
+                continue
+            with self._cond:
+                self.frame, self.frame_t = frame, now
+                self.seq += 1
+                if self.state == "starting":
+                    self.state = "live"
+                waiters = list(self._waiters)
+                self._cond.notify_all()
+            for loop, ev in waiters:
+                try:
+                    loop.call_soon_threadsafe(ev.set)
+                except RuntimeError:                              # that reader's loop is gone
+                    pass
+            self._times = (self._times + [now])[-60:]
+            k += 1
+            if now - due > 1.0:                                   # the clock slipped (a long pause): start over
+                t0, k = now, 0
 
     def _stderr(self, proc, size_box, tail):
         for raw in iter(proc.stderr.readline, b""):
@@ -285,8 +374,8 @@ class Feed:
         run_start = time.time()
         while proc.poll() is None:
             time.sleep(1.0)
-            had_frame = self.frame_t > run_start
-            last = self.frame_t if had_frame else run_start
+            had_frame = self.decoded_t > run_start
+            last = self.decoded_t if had_frame else run_start
             limit = STALL_SEC if had_frame else OPEN_SEC
             if not self.wanted():
                 proc.kill()
