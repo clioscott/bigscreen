@@ -1,0 +1,884 @@
+[
+ {
+  "group": "wall",
+  "file": "wall-calendar-weather.gif",
+  "title": "Calendar + weather",
+  "caption": "",
+  "order": 0
+ },
+ {
+  "group": "wall",
+  "file": "wall-calendar-weather.png",
+  "title": "Calendar + weather",
+  "caption": "",
+  "order": 0
+ },
+ {
+  "group": "wall",
+  "file": "wall-calls-headlines.gif",
+  "title": "Client calls + headlines",
+  "caption": "",
+  "order": 1
+ },
+ {
+  "group": "wall",
+  "file": "wall-calls-headlines.png",
+  "title": "Client calls + headlines",
+  "caption": "",
+  "order": 1
+ },
+ {
+  "group": "wall",
+  "file": "wall-calendar-radar.gif",
+  "title": "Calendar + radar",
+  "caption": "",
+  "order": 2
+ },
+ {
+  "group": "wall",
+  "file": "wall-calendar-radar.png",
+  "title": "Calendar + radar",
+  "caption": "",
+  "order": 2
+ },
+ {
+  "group": "wall",
+  "file": "wall-past-totals.gif",
+  "title": "Past calls + rain totals",
+  "caption": "",
+  "order": 3
+ },
+ {
+  "group": "wall",
+  "file": "wall-past-totals.png",
+  "title": "Past calls + rain totals",
+  "caption": "",
+  "order": 3
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t01.gif",
+  "title": "Console",
+  "caption": "Fact column · Helvetica & Lucida · Blackout · Slow pulse · Line by line",
+  "order": 0
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t01.png",
+  "title": "Console",
+  "caption": "Fact column · Helvetica & Lucida · Blackout · Slow pulse · Line by line",
+  "order": 0
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t02.gif",
+  "title": "Headline",
+  "caption": "Where-first headline · Crox sans · Graphite · Double rule · Wipe",
+  "order": 1
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t02.png",
+  "title": "Headline",
+  "caption": "Where-first headline · Crox sans · Graphite · Double rule · Wipe",
+  "order": 1
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t03.gif",
+  "title": "Ticket",
+  "caption": "Ticket stub · Kakwa & Curie · Midnight · Corner brackets · Sections slide in",
+  "order": 2
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t03.png",
+  "title": "Ticket",
+  "caption": "Ticket stub · Kakwa & Curie · Midnight · Corner brackets · Sections slide in",
+  "order": 2
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t04.gif",
+  "title": "Checklist",
+  "caption": "Checklist · Schumacher Clean · Slate · Bevel · Cascade",
+  "order": 3
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t04.png",
+  "title": "Checklist",
+  "caption": "Checklist · Schumacher Clean · Slate · Bevel · Cascade",
+  "order": 3
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t05.gif",
+  "title": "Big Numbers",
+  "caption": "Big numbers · Terminus · Blackout · Notched tech frame · Cascade",
+  "order": 4
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t05.png",
+  "title": "Big Numbers",
+  "caption": "Big numbers · Terminus · Blackout · Notched tech frame · Cascade",
+  "order": 4
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t06.gif",
+  "title": "Overhead Sign",
+  "caption": "Overhead sign · Neep · Blackout · Chasing lights · Blinds",
+  "order": 5
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t06.png",
+  "title": "Overhead Sign",
+  "caption": "Overhead sign · Neep · Blackout · Chasing lights · Blinds",
+  "order": 5
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t07.gif",
+  "title": "Teletype",
+  "caption": "Wire bulletin · X11 fixed · Phosphor · Scan bars · Typewriter",
+  "order": 6
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t07.png",
+  "title": "Teletype",
+  "caption": "Wire bulletin · X11 fixed · Phosphor · Scan bars · Typewriter",
+  "order": 6
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t08.gif",
+  "title": "Colour Block",
+  "caption": "Colour block · Helvetica & Lucida · Graphite · Glow · Fade in",
+  "order": 7
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t08.png",
+  "title": "Colour Block",
+  "caption": "Colour block · Helvetica & Lucida · Graphite · Glow · Fade in",
+  "order": 7
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t09.gif",
+  "title": "Now Expect Do",
+  "caption": "Now / Expect / Do · M+ Latin · Cyanotype · Corner brackets · Sections slide in",
+  "order": 8
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t09.png",
+  "title": "Now Expect Do",
+  "caption": "Now / Expect / Do · M+ Latin · Cyanotype · Corner brackets · Sections slide in",
+  "order": 8
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t10.gif",
+  "title": "Strip",
+  "caption": "Grid header + number bar · Dina & ctrld · Oxide (weather-tinted) · Comet · Line by line",
+  "order": 9
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t10.png",
+  "title": "Strip",
+  "caption": "Grid header + number bar · Dina & ctrld · Oxide (weather-tinted) · Comet · Line by line",
+  "order": 9
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t11.gif",
+  "title": "Level Rail",
+  "caption": "Level rail · Gohu & Tewi · Violet hour · Double rule · Line by line",
+  "order": 10
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t11.png",
+  "title": "Level Rail",
+  "caption": "Level rail · Gohu & Tewi · Violet hour · Double rule · Line by line",
+  "order": 10
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t12.gif",
+  "title": "Instrument Deck",
+  "caption": "Instrument deck · Envy Code & Haxor · Midnight · Notched tech frame · Scan bar",
+  "order": 11
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t12.png",
+  "title": "Instrument Deck",
+  "caption": "Instrument deck · Envy Code & Haxor · Midnight · Notched tech frame · Scan bar",
+  "order": 11
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t13.gif",
+  "title": "Case File",
+  "caption": "Case file · Lucida Typewriter · Sodium lamp · Double rule · Typewriter",
+  "order": 12
+ },
+ {
+  "group": "alerts",
+  "file": "alert-t13.png",
+  "title": "Case File",
+  "caption": "Case file · Lucida Typewriter · Sodium lamp · Double rule · Typewriter",
+  "order": 12
+ },
+ {
+  "group": "half",
+  "file": "half-weather.gif",
+  "title": "Weather alert, half width",
+  "caption": "Every page in turn",
+  "order": -1
+ },
+ {
+  "group": "half",
+  "file": "half-weather-t01.png",
+  "title": "Weather alert · Console",
+  "caption": "",
+  "order": 0
+ },
+ {
+  "group": "half",
+  "file": "half-weather-t02.png",
+  "title": "Weather alert · Headline",
+  "caption": "",
+  "order": 1
+ },
+ {
+  "group": "half",
+  "file": "half-weather-t03.png",
+  "title": "Weather alert · Ticket",
+  "caption": "",
+  "order": 2
+ },
+ {
+  "group": "half",
+  "file": "half-weather-t04.png",
+  "title": "Weather alert · Checklist",
+  "caption": "",
+  "order": 3
+ },
+ {
+  "group": "half",
+  "file": "half-weather-t05.png",
+  "title": "Weather alert · Big Numbers",
+  "caption": "",
+  "order": 4
+ },
+ {
+  "group": "half",
+  "file": "half-weather-t06.png",
+  "title": "Weather alert · Overhead Sign",
+  "caption": "",
+  "order": 5
+ },
+ {
+  "group": "half",
+  "file": "half-weather-t07.png",
+  "title": "Weather alert · Teletype",
+  "caption": "",
+  "order": 6
+ },
+ {
+  "group": "half",
+  "file": "half-weather-t08.png",
+  "title": "Weather alert · Colour Block",
+  "caption": "",
+  "order": 7
+ },
+ {
+  "group": "half",
+  "file": "half-weather-t09.png",
+  "title": "Weather alert · Now Expect Do",
+  "caption": "",
+  "order": 8
+ },
+ {
+  "group": "half",
+  "file": "half-weather-t10.png",
+  "title": "Weather alert · Strip",
+  "caption": "",
+  "order": 9
+ },
+ {
+  "group": "half",
+  "file": "half-weather-t11.png",
+  "title": "Weather alert · Level Rail",
+  "caption": "",
+  "order": 10
+ },
+ {
+  "group": "half",
+  "file": "half-weather-t12.png",
+  "title": "Weather alert · Instrument Deck",
+  "caption": "",
+  "order": 11
+ },
+ {
+  "group": "half",
+  "file": "half-weather-t13.png",
+  "title": "Weather alert · Case File",
+  "caption": "",
+  "order": 12
+ },
+ {
+  "group": "half",
+  "file": "half-naad.gif",
+  "title": "Alert Ready, half width",
+  "caption": "",
+  "order": 99
+ },
+ {
+  "group": "half",
+  "file": "half-naad-p0.png",
+  "title": "Alert Ready · page 1",
+  "caption": "",
+  "order": 100
+ },
+ {
+  "group": "half",
+  "file": "half-naad-p1.png",
+  "title": "Alert Ready · page 2",
+  "caption": "",
+  "order": 101
+ },
+ {
+  "group": "half",
+  "file": "half-naad-p2.png",
+  "title": "Alert Ready · page 3",
+  "caption": "",
+  "order": 102
+ },
+ {
+  "group": "half",
+  "file": "half-naad-p3.png",
+  "title": "Alert Ready · page 4",
+  "caption": "",
+  "order": 103
+ },
+ {
+  "group": "half",
+  "file": "half-roads.gif",
+  "title": "DriveBC, half width",
+  "caption": "",
+  "order": 109
+ },
+ {
+  "group": "half",
+  "file": "half-roads-p0.png",
+  "title": "DriveBC · page 1",
+  "caption": "",
+  "order": 110
+ },
+ {
+  "group": "half",
+  "file": "half-roads-p1.png",
+  "title": "DriveBC · page 2",
+  "caption": "",
+  "order": 111
+ },
+ {
+  "group": "half",
+  "file": "half-roads-p2.png",
+  "title": "DriveBC · page 3",
+  "caption": "",
+  "order": 112
+ },
+ {
+  "group": "half",
+  "file": "half-quakes.gif",
+  "title": "Earthquakes, half width",
+  "caption": "",
+  "order": 119
+ },
+ {
+  "group": "half",
+  "file": "half-quakes-p0.png",
+  "title": "Earthquakes · page 1",
+  "caption": "",
+  "order": 120
+ },
+ {
+  "group": "half",
+  "file": "half-quakes-p1.png",
+  "title": "Earthquakes · page 2",
+  "caption": "",
+  "order": 121
+ },
+ {
+  "group": "half",
+  "file": "half-quakes-p2.png",
+  "title": "Earthquakes · page 3",
+  "caption": "",
+  "order": 122
+ },
+ {
+  "group": "half",
+  "file": "half-tsunami.gif",
+  "title": "Tsunami, half width",
+  "caption": "",
+  "order": 129
+ },
+ {
+  "group": "half",
+  "file": "half-tsunami-p0.png",
+  "title": "Tsunami · page 1",
+  "caption": "",
+  "order": 130
+ },
+ {
+  "group": "half",
+  "file": "half-tsunami-p1.png",
+  "title": "Tsunami · page 2",
+  "caption": "",
+  "order": 131
+ },
+ {
+  "group": "half",
+  "file": "half-tsunami-p2.png",
+  "title": "Tsunami · page 3",
+  "caption": "",
+  "order": 132
+ },
+ {
+  "group": "half",
+  "file": "half-wildfire.gif",
+  "title": "Wildfire, half width",
+  "caption": "",
+  "order": 139
+ },
+ {
+  "group": "half",
+  "file": "half-wildfire-p0.png",
+  "title": "Wildfire · page 1",
+  "caption": "",
+  "order": 140
+ },
+ {
+  "group": "half",
+  "file": "half-wildfire-p1.png",
+  "title": "Wildfire · page 2",
+  "caption": "",
+  "order": 141
+ },
+ {
+  "group": "half",
+  "file": "half-wildfire-p2.png",
+  "title": "Wildfire · page 3",
+  "caption": "",
+  "order": 142
+ },
+ {
+  "group": "bc",
+  "file": "bc-naad.gif",
+  "title": "Alert Ready",
+  "caption": "Alert Ready broadcast",
+  "order": 0
+ },
+ {
+  "group": "bc",
+  "file": "bc-naad-alert_ready.png",
+  "title": "Alert Ready · Alert Ready broadcast",
+  "caption": "Attention flashes, then the red EMERGENCY ALERT slab and the whole message",
+  "order": 1
+ },
+ {
+  "group": "bc",
+  "file": "bc-naad-phone.png",
+  "title": "Alert Ready · Phone alert",
+  "caption": "The wireless alert as a phone notification card, beside a map of the area",
+  "order": 2
+ },
+ {
+  "group": "bc",
+  "file": "bc-naad-teletype.png",
+  "title": "Alert Ready · CAP teletype",
+  "caption": "Amber terminal: every CAP field as a table, the message typed out",
+  "order": 3
+ },
+ {
+  "group": "bc",
+  "file": "bc-naad-bulletin.png",
+  "title": "Alert Ready · Provincial bulletin",
+  "caption": "BC blue and gold: a fact column, the title, the message and the areas",
+  "order": 4
+ },
+ {
+  "group": "bc",
+  "file": "bc-roads.gif",
+  "title": "DriveBC",
+  "caption": "Incident map",
+  "order": 100
+ },
+ {
+  "group": "bc",
+  "file": "bc-roads-map.png",
+  "title": "DriveBC · Incident map",
+  "caption": "The map zoomed to the event, the affected road highlighted; shield, icon and details beside",
+  "order": 101
+ },
+ {
+  "group": "bc",
+  "file": "bc-roads-hero.png",
+  "title": "DriveBC · Shield headline",
+  "caption": "A 64-px shield, the road and what is wrong in large type; the map beside",
+  "order": 102
+ },
+ {
+  "group": "bc",
+  "file": "bc-roads-vms.png",
+  "title": "DriveBC · Overhead sign",
+  "caption": "An amber variable-message sign; the big shield, icon and details beneath",
+  "order": 103
+ },
+ {
+  "group": "bc",
+  "file": "bc-roads-overview.png",
+  "title": "DriveBC · Metro overview",
+  "caption": "Every current event's road highlighted on the Metro map, the list beside",
+  "order": 104
+ },
+ {
+  "group": "bc",
+  "file": "bc-roads-camera.png",
+  "title": "DriveBC · Highway camera",
+  "caption": "The nearest DriveBC camera full height (or the map), shield and details beside",
+  "order": 105
+ },
+ {
+  "group": "bc",
+  "file": "bc-roads-board.png",
+  "title": "DriveBC · Traffic desk",
+  "caption": "Every current event in rows with shields; the one in focus expanded below",
+  "order": 106
+ },
+ {
+  "group": "bc",
+  "file": "bc-quakes.gif",
+  "title": "Earthquakes",
+  "caption": "Network map",
+  "order": 200
+ },
+ {
+  "group": "bc",
+  "file": "bc-quakes-pnsn.png",
+  "title": "Earthquakes · Network map",
+  "caption": "Epicentre, 30 days of background quakes and distance rings round home; facts panel",
+  "order": 201
+ },
+ {
+  "group": "bc",
+  "file": "bc-quakes-shakemap.png",
+  "title": "Earthquakes · ShakeMap",
+  "caption": "Estimated intensity field in ShakeMap colours, with a city table",
+  "order": 202
+ },
+ {
+  "group": "bc",
+  "file": "bc-quakes-report.png",
+  "title": "Earthquakes · Earthquake report",
+  "caption": "Report card: magnitude, place, time, depth, setting, felt reports, city intensities",
+  "order": 203
+ },
+ {
+  "group": "bc",
+  "file": "bc-quakes-drop.png",
+  "title": "Earthquakes · Early warning",
+  "caption": "DROP · COVER · HOLD ON with the warning text (always used for NRCan warnings)",
+  "order": 204
+ },
+ {
+  "group": "bc",
+  "file": "bc-tsunami.gif",
+  "title": "Tsunami",
+  "caption": "North Pacific",
+  "order": 300
+ },
+ {
+  "group": "bc",
+  "file": "bc-tsunami-pacific.png",
+  "title": "Tsunami · North Pacific",
+  "caption": "Epicentre, hourly travel-time rings and the wave front now; the BC coast in alert colours",
+  "order": 301
+ },
+ {
+  "group": "bc",
+  "file": "bc-tsunami-zones.png",
+  "title": "Tsunami · BC zones",
+  "caption": "The BC coast by notification zone A–E, tide gauge readings, first-wave times",
+  "order": 302
+ },
+ {
+  "group": "bc",
+  "file": "bc-tsunami-bulletin.png",
+  "title": "Tsunami · Bulletin",
+  "caption": "The official message: level bar, evaluation, earthquake parameters, arrivals",
+  "order": 303
+ },
+ {
+  "group": "bc",
+  "file": "bc-tsunami-sign.png",
+  "title": "Tsunami · Hazard sign",
+  "caption": "Tsunami sign with MOVE TO HIGH GROUND — or NO THREAT TO BC for information statements",
+  "order": 304
+ },
+ {
+  "group": "bc",
+  "file": "bc-wildfire.gif",
+  "title": "Wildfire",
+  "caption": "Situation map",
+  "order": 400
+ },
+ {
+  "group": "bc",
+  "file": "bc-wildfire-situation.png",
+  "title": "Wildfire · Situation map",
+  "caption": "Perimeters, evacuation areas and every fire by stage of control; the item's details",
+  "order": 401
+ },
+ {
+  "group": "bc",
+  "file": "bc-wildfire-incident.png",
+  "title": "Wildfire · Incident card",
+  "caption": "BCWS-style card: name, size, stage of control, cause, discovery, evacuations",
+  "order": 402
+ },
+ {
+  "group": "bc",
+  "file": "bc-wildfire-danger.png",
+  "title": "Wildfire · Fire danger sign",
+  "caption": "The roadside danger sign with its needle on today's rating, fires and bans",
+  "order": 403
+ },
+ {
+  "group": "bc",
+  "file": "bc-wildfire-evac.png",
+  "title": "Wildfire · Evacuation notice",
+  "caption": "Order or alert: the area, who issued it, homes and people, the map",
+  "order": 404
+ },
+ {
+  "group": "eew",
+  "file": "eew.gif",
+  "title": "Kyoshin Monitor",
+  "caption": "Tokyo Bay test scenario, 4–24 s after origin",
+  "order": 0
+ },
+ {
+  "group": "eew",
+  "file": "eew-kmoni.png",
+  "title": "Kyoshin Monitor",
+  "caption": "Station dots and waves; epicentre, magnitude, Tokyo countdown, seismograph",
+  "order": 1
+ },
+ {
+  "group": "eew",
+  "file": "eew-jquake.png",
+  "title": "JQuake style",
+  "caption": "Bulletin card (規模 / 深さ / 最大震度), Tokyo dial, intensity meter",
+  "order": 2
+ },
+ {
+  "group": "eew",
+  "file": "eew-broadcast.png",
+  "title": "TV broadcast",
+  "caption": "Full-wall map, red title box, bulletin panel, crawl",
+  "order": 3
+ },
+ {
+  "group": "eew",
+  "file": "eew-segment.png",
+  "title": "LED countdown",
+  "caption": "Giant seven-segment seconds until the S wave reaches Tokyo",
+  "order": 4
+ },
+ {
+  "group": "eew",
+  "file": "eew-departures.png",
+  "title": "Departure board",
+  "caption": "Amber railway-board rows: epicentre, magnitude, depth, Tokyo",
+  "order": 5
+ },
+ {
+  "group": "eew",
+  "file": "eew-pachinko.png",
+  "title": "Pachinko",
+  "caption": "Ticker, shaking map, slot reel, katakana banner, graphs, seismograph",
+  "order": 6
+ },
+ {
+  "group": "eew",
+  "file": "eew-fever.png",
+  "title": "Fever mode",
+  "caption": "Full-wall map, every panel floating on it, two tickers, rainbow",
+  "order": 7
+ },
+ {
+  "group": "eew",
+  "file": "eew-terminal.png",
+  "title": "Data terminal",
+  "caption": "Green CRT with Tokyo / station readouts and a live data log",
+  "order": 8
+ },
+ {
+  "group": "eew",
+  "file": "eew-gogai.png",
+  "title": "号外 extra edition",
+  "caption": "Newspaper extra: vertical mincho headlines, Tokyo, seismograph",
+  "order": 9
+ },
+ {
+  "group": "eew",
+  "file": "eew-seismo.png",
+  "title": "Seismograph lab",
+  "caption": "The nearest station's trace, traces at the strongest cities, Tokyo",
+  "order": 10
+ },
+ {
+  "group": "eew",
+  "file": "eew-arcade.png",
+  "title": "Arcade cabinet",
+  "caption": "Neon rings, Retro Pixel scoreboard, katakana banner, chasing lights",
+  "order": 11
+ },
+ {
+  "group": "eew",
+  "file": "eew-instruments.png",
+  "title": "Instrument panel",
+  "caption": "Tokyo countdown dial, intensity meter, histogram, M updates",
+  "order": 12
+ },
+ {
+  "group": "maps",
+  "file": "map-goes.gif",
+  "title": "GOES-West",
+  "caption": "286 frames",
+  "order": 0
+ },
+ {
+  "group": "maps",
+  "file": "map-goes_day_night.gif",
+  "title": "GOES-West (PNW)",
+  "caption": "286 frames",
+  "order": 1
+ },
+ {
+  "group": "maps",
+  "file": "map-map1.gif",
+  "title": "Metro Vancouver Rain Accum.",
+  "caption": "480 frames",
+  "order": 2
+ },
+ {
+  "group": "maps",
+  "file": "map-precip_forecast.gif",
+  "title": "Radar(Fcst)",
+  "caption": "43 frames",
+  "order": 3
+ },
+ {
+  "group": "maps",
+  "file": "map-precip_radar.gif",
+  "title": "Radar(Live)",
+  "caption": "491 frames",
+  "order": 4
+ },
+ {
+  "group": "maps",
+  "file": "map-precip_totals.gif",
+  "title": "Radar(Accum)",
+  "caption": "480 frames",
+  "order": 5
+ },
+ {
+  "group": "panel",
+  "file": "panel-overview.png",
+  "title": "Overview",
+  "caption": "",
+  "order": 0
+ },
+ {
+  "group": "panel",
+  "file": "panel-rotation.png",
+  "title": "Rotation",
+  "caption": "",
+  "order": 1
+ },
+ {
+  "group": "panel",
+  "file": "panel-maps.png",
+  "title": "Weather maps",
+  "caption": "",
+  "order": 2
+ },
+ {
+  "group": "panel",
+  "file": "panel-alerts.png",
+  "title": "Weather alerts",
+  "caption": "",
+  "order": 3
+ },
+ {
+  "group": "panel",
+  "file": "panel-naad.png",
+  "title": "Alert Ready",
+  "caption": "",
+  "order": 4
+ },
+ {
+  "group": "panel",
+  "file": "panel-roads.png",
+  "title": "DriveBC",
+  "caption": "",
+  "order": 5
+ },
+ {
+  "group": "panel",
+  "file": "panel-quakes.png",
+  "title": "Earthquakes",
+  "caption": "",
+  "order": 6
+ },
+ {
+  "group": "panel",
+  "file": "panel-quake.png",
+  "title": "Japan EEW",
+  "caption": "",
+  "order": 7
+ },
+ {
+  "group": "panel",
+  "file": "panel-fonts.png",
+  "title": "Fonts",
+  "caption": "",
+  "order": 8
+ },
+ {
+  "group": "panel",
+  "file": "panel-colours.png",
+  "title": "Colour scales",
+  "caption": "",
+  "order": 9
+ },
+ {
+  "group": "panel",
+  "file": "panel-display.png",
+  "title": "Display",
+  "caption": "",
+  "order": 10
+ }
+]

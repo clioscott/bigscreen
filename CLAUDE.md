@@ -12,8 +12,10 @@ happens on a separate server; the Pi only renders. Research and history: `RESEAR
 
 ## Where things live
 
-- **Canonical repo: `~/bigscreen` on the server.** It accepts pushes (`receive.denyCurrentBranch=updateInstead`),
-  so a push updates the working tree directly. This Windows folder is a clone with remote `server`.
+- **Canonical repo: GitHub `clioscott/bigscreen` (public).** Never commit secrets, personal data (calendar, client
+  names, holdings, the home address) or Claude attribution (no `Co-Authored-By`/"Generated with" lines anywhere).
+- The server's `~/bigscreen` is a deploy checkout of GitHub `main` (it no longer accepts pushes); the Pi's
+  `~/bigscreen` pulls from the server's. This Windows folder is a clone with remote `origin` = GitHub.
 - **Runtime state: `~/bigscreen-state/` on the server** (not in git): `config.json` (the single config),
   `config-backups/`, `status.json`, `data/` (synced to the Pi), `secrets/` (Google token), `cache/`.
 - Pi reads data from `/dev/shm/bigscreen` (tmpfs), rsynced by `hub/sync.py` after every successful job.
@@ -23,15 +25,37 @@ happens on a separate server; the Pi only renders. Research and history: `RESEAR
 - `hub/main.py` starts the scheduler + FastAPI app (`hub/app.py`, UI in `hub/web/`, plain JS, no build).
 - Jobs in `hub/jobs/` run as **one subprocess per fetch** (`python -m hub.jobs.<name>`) with a timeout;
   never make a job a long-lived loop (v1's finance worker leaked to 8.7 GB that way).
-- Job health → `status.json` → Status tab. A job is "stale" after 3 missed intervals.
+- Job health → `status.json` → the control panel's Overview (also shows the deployed commit). A job is "stale" after 3 missed intervals.
 - Service: `bigscreen-hub` (system unit, user scott). `sudo systemctl restart bigscreen-hub` is passwordless.
 - Logs: `journalctl -u bigscreen-hub -f`.
 
+## Making a change (agents)
+
+1. One short-lived branch per task from up-to-date `main`: `git switch -c <type>/<short-name>` (feat/, fix/, docs/…).
+2. Commit in small logical steps with plain messages (no attribution trailers).
+3. Check locally: `python -m pytest -q tests`, and for visual changes render before/after
+   (`/api/*/preview.png`, `python -m tools.readme media <group>` on the server, or the emulator).
+4. Push and open a PR (`gh pr create`) using the template: what and why, how it was tested, before/after images
+   for anything visual, risk. Update `README`/`CLAUDE.md` in the same PR when behaviour or workflow changes.
+5. A second agent reviews the PR and leaves review comments (`gh pr review --comment`); fix what it finds.
+6. Small, low-risk PRs: `gh pr merge --auto --squash` (merges once CI passes). Bigger or risky ones (rendering
+   pipeline, panel timing, deploy, data deletion, anything touching the Pi's boot or services): label
+   `needs-owner` and wait for Scott's approval in the PR.
+7. Milestones get a tag and release: `gh release create v2.N --generate-notes`.
+
+CI (`.github/workflows/ci.yml`, required on `main`): compile + `pytest`, JS syntax, `python -m tools.readme check`.
+When a screen's look changes, run `python -m tools.readme media <groups>` then `text` on the server
+(see `docs/README-media.md`) and commit `docs/media`, `README.md` and `assets/fonts/CREDITS.md`.
+
 ## Deploying a change
 
-    git push server main                          # from Windows, updates ~/bigscreen on the server
-    ssh scott@192.168.1.111 'sudo systemctl restart bigscreen-hub'
-    # if requirements changed: ssh ... 'cd ~/bigscreen && .venv/bin/pip install -r requirements-hub.txt'
+Merging to `main` is deploying. `bigscreen-deploy.timer` on the server (every minute, `deploy/bigscreen-deploy.sh`)
+fetches GitHub `main`; when it moved it fast-forwards `~/bigscreen`, pip-installs if `requirements-hub.txt` changed,
+restarts `bigscreen-hub`, then `git pull`s the Pi and restarts `bigscreen-display` if `display/`, `common/` or
+`assets/` changed. Docs-only merges restart nothing. Log: `~/bigscreen-state/deploy.log`; the last deploy is in
+`deploy.json` and on the control panel's Overview ("Deployed code"). A dirty tree or non-fast-forward stops the
+deploy and is reported there — never fix it with a reset; commit or stash the stray change instead.
+Urgent fix: push straight to `main` as admin (bypasses the ruleset) — the timer still deploys it.
 
 ## Display (Pi)
 
@@ -49,7 +73,7 @@ happens on a separate server; the Pi only renders. Research and history: `RESEAR
   the next one, previews resume the rotation) and `display/rules.py` (the conditions). Entries live in
   `modules.layout_cycle.{left,right}` with `rules`; legacy `when` still works.
 - Emulate anywhere: `BIGSCREEN_DATA_DIR=… python -m display.main --emulate --port 8799`.
-- Update the Pi: `ssh scott@192.168.1.100 'cd ~/bigscreen && git pull && sudo systemctl restart bigscreen-display'`.
+- The deploy timer updates the Pi; by hand: `ssh scott@192.168.1.100 'cd ~/bigscreen && git pull && sudo systemctl restart bigscreen-display'`.
 
 **Since 2026-10-09 v2 drives the panels** (`bigscreen-display` enabled at boot; hub `hub.display_mode = "v2"`,
 so saves hot-reload — no restart). Pi boot line has `isolcpus=2,3`: render thread pinned to core 2, rgbmatrix
