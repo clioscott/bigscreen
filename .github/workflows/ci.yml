@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python (compile + tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"          # the Pi's Python; the server runs 3.13
+          cache: pip
+          cache-dependency-path: requirements-hub.txt
+      - name: Install
+        run: pip install -r requirements-hub.txt pytest
+      - name: Compile every Python file
+        run: python -m compileall -q -x '/(\.venv|_snapshot)/' display hub common tools tests tray deploy
+      - name: Tests
+        run: python -m pytest -q tests
+
+  javascript:
+    name: JavaScript syntax
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: node --check (ES modules)
+        run: |
+          status=0; tmp=$(mktemp -d)
+          for f in $(git ls-files 'hub/web/**/*.js' ':!hub/web/vendor/*'); do
+            cp "$f" "$tmp/check.mjs"              # .mjs: parse as an ES module
+            node --check "$tmp/check.mjs" || { echo "::error file=$f::syntax error"; status=1; }
+          done
+          exit $status
+
+  readme:
+    name: README generated sections
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: pip install numpy pillow
+      - name: Check
+        run: python -m tools.readme check
