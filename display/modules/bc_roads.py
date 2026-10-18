@@ -228,13 +228,89 @@ def _queue_items(s):
 
 
 def _cam(s, item):
+    """The camera still (read once per still, not every frame)."""
     cam = item.get("cam")
     if not cam or not s.data_dir:
         return None
-    try:
-        return np.fromfile(os.path.join(s.data_dir, "drivebc", f"cam_{cam['id']}.bin"), dtype=np.uint8).reshape(cam["h"], cam["w"], 3)
-    except Exception:
-        return None
+    key = (cam.get("id"), cam.get("at"))
+    cache = s.__dict__.setdefault("_cam_imgs", {})
+    if key not in cache:
+        if len(cache) > 8:
+            cache.clear()
+        try:
+            cache[key] = np.fromfile(os.path.join(s.data_dir, "drivebc", f"cam_{cam['id']}.bin"), dtype=np.uint8).reshape(cam["h"], cam["w"], 3)
+        except Exception:
+            cache[key] = None
+    return cache[key]
+
+
+# ------------------------------------------------------------------------------------------------ camera labels
+FACING = {"N": "NORTH", "NE": "NORTHEAST", "E": "EAST", "SE": "SOUTHEAST", "S": "SOUTH", "SW": "SOUTHWEST", "W": "WEST",
+          "NW": "NORTHWEST"}
+BEARING = {"N": 0, "NE": 45, "E": 90, "SE": 135, "S": 180, "SW": 225, "W": 270, "NW": 315}
+NOUN = {"crash": "crash", "fire": "fire", "debris": "debris", "slide": "slide", "flood": "flooding", "construction": "work zone"}
+
+
+def cam_place(cam):
+    """Where the camera is, from DriveBC's caption without its "looking north" ("Highway 1 at 176 Street overpass")."""
+    cap = re.sub(r"[,;]?\s*\blooking\b.*$", "", (cam.get("caption") or "").strip(), flags=re.I).rstrip(" .*")
+    return cap or re.sub(r"\s+-\s+[NSEW]{1,2}$", "", cam.get("name") or "")
+
+
+def cam_facing(cam):
+    """The compass point the camera looks towards ("E"), from DriveBC's orientation or its caption."""
+    o = (cam.get("orientation") or "").upper()
+    if o in FACING:
+        return o
+    for m in re.finditer(r"\blooking\s+(north|south)?[\s-]*(east|west)?", cam.get("caption") or "", re.I):
+        if m.group(1) or m.group(2):
+            return "".join(w[0].upper() for w in (m.group(1), m.group(2)) if w)
+    return ""
+
+
+def cam_distance(item, cam):
+    """"0.5 km W of the crash": how far the camera is from the event, and which way."""
+    km = cam.get("km")
+    if km is None:
+        return ""
+    pts = (item.get("geometry") or {}).get("points") or []
+    noun = "closure" if item.get("closed") else NOUN.get(item.get("kind"), "incident")
+    if pts and cam.get("lat") is not None and km >= 0.1:
+        lo, la = sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
+        return f"{km:g} km {k.bearing_word(la, lo, cam['lat'], cam['lon'])} of the {noun}"
+    return f"{km:g} km from the {noun}" if km >= 0.1 else f"At the {noun}"
+
+
+def compass(c, cx, cy, r, point, col):
+    """A small dial with its needle towards ``point`` (the way the camera faces)."""
+    k.circle(c, cx, cy, r, (150, 155, 170))
+    b = math.radians(BEARING.get(point, 0))
+    k.thick_line(c, cx, cy, int(round(cx + math.sin(b) * (r - 1))), int(round(cy - math.cos(b) * (r - 1))), col, 2)
+    k.box(c, cx, cy, 1, 1, WHITE)
+
+
+def cam_label(c, item, cam, x, y, w, big=True):
+    """The camera's location on one line; which way it faces (dial + word) and how far from the event on the next.
+    Drawn on a shaded strip at the bottom of the picture (y = the strip's top); returns the strip's height."""
+    h = 28 if big else 24
+    k.shade(c, x, y, w, h, 0.25)
+    f1 = ("lutb12", "hvb10", "s8") if big else ("hvb10", "s8")
+    k.fit_text(c, cam_place(cam), x + 4, y + 2, w - 8, 13 if big else 11, f1, WHITE)
+    ly = y + h - (12 if big else 11)
+    tx = x + 4
+    pt = cam_facing(cam)
+    if pt:
+        r = 5 if big else 4
+        compass(c, tx + r, ly + 4, r, pt, AMB)
+        tx += 2 * r + 4
+        f = k.font("hvb10" if big else "s8")
+        t = f"FACING {FACING[pt]}"
+        k.text(c, f, tx, ly, AMB, t)
+        tx += k.tw(f, t) + 6
+    dist = cam_distance(item, cam)
+    if dist:
+        k.fit_text(c, dist, tx, ly, x + w - 4 - tx, 11, ("hv10", "s8") if big else ("s8",), (205, 210, 225))
+    return h
 
 
 # ================================================================================================ themes
@@ -596,9 +672,7 @@ def _camera(s, c, item, now, el):
     def static():
         if img is not None:
             c.Blit(img, 0, 0)
-            k.shade(c, 0, H - 15, iw, 15, 0.3)
-            k.fit_text(c, cam.get("caption") or cam.get("name") or "", 4, H - 13, iw - 70, 12, ("hv10", "s8"), (230, 230, 235))
-            k.text_r(c, k.font("s8"), iw - 4, H - 11, (200, 200, 210), f"{cam.get('km', '?')} km away")
+            cam_label(c, item, cam, 0, H - 28, iw)
         elif mp:
             mp.blit(c, 0, 0, sx, 0, iw, H)
             _route_shields(c, mp, avoid=_hl_avoid(mp, item, -sx), h=14, ox=-sx, clip=(0, 0, iw, H))
@@ -684,17 +758,17 @@ SAMPLES = {
 
 THEMES = {
     "map": {"label": "Incident map", "hint": "The map zoomed to the event, the affected road highlighted; shield, icon and details beside",
-            "draw": _map, "badge": (W - 50, H - 12)},
+            "draw": _map, "badge": (W - 50, H - 12), "dots": (-2, 4)},
     "hero": {"label": "Shield headline", "hint": "A 64-px shield, the road and what is wrong in large type; the map beside",
-             "draw": _hero, "badge": (W - 50, H - 12)},
+             "draw": _hero, "badge": (W - 50, H - 12), "dots": (-2, 2)},
     "vms": {"label": "Overhead sign", "hint": "An amber variable-message sign; the big shield, icon and details beneath",
-            "draw": _vms, "badge": (W - 96, H - 12)},
+            "draw": _vms, "badge": (W - 96, H - 12), "dots": (-2, H - 8)},
     "overview": {"label": "Metro overview", "hint": "Every current event's road highlighted on the Metro map, the list beside",
-                 "draw": _overview, "badge": (4, H - 14)},
+                 "draw": _overview, "badge": (4, H - 14), "dots": (-2, 5)},
     "camera": {"label": "Highway camera", "hint": "The nearest DriveBC camera full height (or the map), shield and details beside",
-               "draw": _camera, "badge": (4, 20)},
+               "draw": _camera, "badge": (4, 20), "dots": lambda s, it: (336 - 3 if _cam(s, it) is not None else 300 - 3, 4)},   # (_cam is cached)
     "board": {"label": "Traffic desk", "hint": "Every current event in rows with shields; the one in focus expanded below",
-              "draw": _board, "badge": (230, 3)},
+              "draw": _board, "badge": (230, 3), "dots": (-2, H - 8)},
 }
 
 
@@ -734,6 +808,9 @@ class Screen(k.BCScreen):
         d = self.data()
         it.setdefault("road_lines", (d.get("sample_lines") or {}).get(key) or [])
         it.setdefault("hl", (d.get("sample_hl") or {}).get(key) or {})
+        cam = (d.get("sample_cams") or {}).get(key)          # a real camera near the sample's road (the hub fetches it)
+        if cam:
+            it.setdefault("cam", cam)
         return it
 
     def dwell(self, item):
@@ -857,10 +934,11 @@ def _half_camera(s, item, spec, col):
         x, y, w, h = x - 4, y - 2, w + 8, h + 5
         ih, iw = img.shape[:2]
         sx, sy = max(0, (iw - w) // 2), max(0, (ih - h) // 2)
-        c.Blit(img[sy:sy + h, sx:sx + w], x + max(0, (w - iw) // 2), y)
-        k.shade(c, x, y + h - 13, w, 13, 0.3)
-        k.fit_text(c, cam.get("caption") or cam.get("name") or "", x + 3, y + h - 12, w - 60, 11, ("hv10", "s8"), (230, 230, 235))
-        k.text_r(c, k.font("s8"), x + w - 3, y + h - 10, (200, 200, 210), f"{cam.get('km', '?')} km away")
+
+        def still(cv):                                   # the picture and its label, drawn once per still
+            cv.Blit(img[sy:sy + h, sx:sx + w], max(0, (w - iw) // 2), 0)
+            cam_label(cv, item, cam, 0, h - 24, w, big=False)
+        c.Blit(k.half_layer(s, ("cam", item.get("id"), cam.get("id"), cam.get("at"), w, h), w, h, still), x, y)
         k.box(c, x + 3, y + 3, 34, 11, BLACK)
         k.disc(c, x + 9, y + 8, 3, (255, 40, 40) if k.blink(now, 1.2) else (90, 0, 0))
         k.text(c, k.font("s8"), x + 14, y + 4, WHITE, "LIVE")
@@ -910,5 +988,5 @@ HALF = {"map": _half_map, "hero": _half_hero, "vms": _half_vms, "overview": _hal
         "board": _half_board}
 
 
-def render_preview(theme, sample=None, at=4.0, settings=None, data=None, data_dir=None):
-    return k.render_preview(Screen, theme, sample, at, settings, data, data_dir)
+def render_preview(theme, sample=None, at=4.0, settings=None, data=None, data_dir=None, page=None):
+    return k.render_preview(Screen, theme, sample, at, settings, data, data_dir, page=page)

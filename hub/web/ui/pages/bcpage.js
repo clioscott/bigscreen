@@ -2,10 +2,13 @@
 // Each page passes its own config: title, intro, settings fields and how to show its live items.
 import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
 import { store, api, fail, toast, ago, seed, clone } from "../core.js";
+import { CameraMap } from "./cameramap.js";
 
 export function makeBCPage(P) {
   return {
+    components: { CameraMap },
     setup() {
+      const tab = ref((P.tabs || [])[0]?.id || "screen");
       seed(["modules", P.section], { enabled: true });
       const s = computed(() => store.draft.modules[P.section]);
       const st = ref({ settings: {}, defaults: {}, themes: {}, samples: {}, data: { items: [] }, job: null });
@@ -31,10 +34,10 @@ export function makeBCPage(P) {
       let tick, poll;
       onMounted(() => {
         load();
-        poll = setInterval(load, 8000);
+        poll = setInterval(() => { load(); loadFull(); }, 8000);   // (pages change when the job finds a sample's camera)
         tick = setInterval(() => {
           if (!playing.value) return;
-          t.value = (t.value + 0.5) % (half.value ? Math.max(4, halfTl.value.total || 30) : 30);
+          t.value = (t.value + 0.5) % (half.value ? Math.max(4, halfTl.value.total || 30) : fullOn.value ? Math.max(4, fullTl.value.total) : 30);
         }, 500);
       });
       onBeforeUnmount(() => { clearInterval(tick); clearInterval(poll); });
@@ -51,11 +54,26 @@ export function makeBCPage(P) {
       const halfPage = computed(() => { let i = 0; halfStarts.value.forEach((s0, j) => { if (t.value >= s0) i = j; }); return i; });
       const halfAt = computed(() => Math.max(0.5, t.value - (halfStarts.value[halfPage.value] || 0) + 0.5));
       const jumpHalf = (i) => { t.value = (halfStarts.value[i] || 0) + 0.05; };
+      // the full-wall pages of a sample's first showing (the theme, then e.g. the nearest camera), when the screen has them
+      const fullTl = ref({ pages: [], total: 0 });
+      const loadFull = async () => {
+        if (!P.fullPages) return;
+        try { fullTl.value = await api(`/api/bc/${P.src}/full_pages?theme=${realTheme.value}&sample=${smp.value}`); } catch (e) { /* hub restarting */ }
+      };
+      const fullOn = computed(() => !!P.fullPages && !half.value && !real.value && fullTl.value.pages.length > 1);
+      const fullStarts = computed(() => { let a = 0; return fullTl.value.pages.map((p) => { const s0 = a; a += p.hold; return s0; }); });
+      const fullPage = computed(() => { let i = 0; fullStarts.value.forEach((s0, j) => { if (t.value >= s0) i = j; }); return i; });
+      const fullAt = computed(() => Math.max(0.5, t.value - (fullStarts.value[fullPage.value] || 0) + 0.5));
+      const jumpFull = (i) => { t.value = (fullStarts.value[i] || 0) + 0.05; };
+      watch([realTheme, smp], loadFull, { immediate: true });
       const preview = computed(() => half.value
         ? `/api/bc/${P.src}/half.png?theme=${realTheme.value}&sample=${smp.value}&page=${halfPage.value}&at=${halfAt.value.toFixed(1)}&scale=2`
-        : `/api/bc/${P.src}/preview.png?theme=${theme.value}&sample=${smp.value}&real=${real.value ? 1 : 0}&at=${t.value.toFixed(1)}&scale=2&s=${look.value}`);
+        : fullOn.value
+          ? `/api/bc/${P.src}/preview.png?theme=${realTheme.value}&sample=${smp.value}&page=${fullPage.value}&at=${fullAt.value.toFixed(1)}&scale=2&s=${look.value}`
+          : `/api/bc/${P.src}/preview.png?theme=${theme.value}&sample=${smp.value}&real=${real.value ? 1 : 0}&at=${t.value.toFixed(1)}&scale=2&s=${look.value}`);
       const pick = (id) => { set("theme", id); view.value = null; pinned.value = null; };
       const show = (id, h) => { pinned.value = id; view.value = null; half.value = h; t.value = h ? 0 : 1; };
+      watch(view, (v, old) => { if (fullOn.value && v && v !== old) t.value = 1; });   // hovering a theme starts at its first page
       watch([half, realTheme, smp], () => { if (half.value) loadHalf(); });
       const testWall = async (opts = {}) => {
         try {
@@ -84,13 +102,16 @@ export function makeBCPage(P) {
       };
       const health = computed(() => st.value.job?.health || "never");
       return { P, s, st, val, set, toggleIn, theme, pick, view, sample, smp, real, t, playing, preview, testWall, stop, runNow,
-        items, inRotation, halfInRotation, addToRotation, health, ago, half, halfPage, pinned, show, realTheme, halfTl, jumpHalf };
+        items, inRotation, halfInRotation, addToRotation, health, ago, half, halfPage, pinned, show, realTheme, halfTl, jumpHalf,
+        tab, fullTl, fullOn, fullPage, jumpFull };
     },
     template: `<div class="page">
       <div class="page-head"><div class="grow"><h1>{{ P.title }}</h1><p>{{ P.intro }}</p></div>
+        <Seg v-if="P.tabs" v-model="tab" :options="P.tabs.map(x => ({value: x.id, label: x.label}))"/>
         <Toggle :modelValue="val('enabled') !== false" @update:modelValue="v => set('enabled', v)"/></div>
 
-      <div class="two-col">
+      <CameraMap v-if="tab === 'cameras'"/>
+      <div class="two-col" v-else>
         <div class="stack sticky">
           <div class="card"><div class="card-head"><span class="live">PREVIEW</span>
               <h3>{{ st.themes[realTheme]?.label }}{{ half ? ' (half width)' : '' }} · {{ real && !half ? 'what is in effect' : st.samples[smp] }}</h3>
@@ -104,6 +125,13 @@ export function makeBCPage(P) {
                     :title="p.name + ' · holds ' + p.hold + ' s'">{{ p.name }}</button></div>
                 <span class="mono faint" style="font-size:12px; width:70px; text-align:right">{{ t.toFixed(0) }} / {{ Math.round(halfTl.total) }} s</span>
               </div>
+              <div class="scrub" v-if="fullOn">
+                <div class="scrub-track">
+                  <button v-for="(p, i) in fullTl.pages" :key="i" class="scrub-seg" :class="{on: fullPage === i}" :style="{flex: p.hold}" @click="jumpFull(i)"
+                    :title="p.name + ' · holds ' + p.hold + ' s'">{{ i ? p.name : 'Main · ' + p.name }}</button></div>
+                <span class="mono faint" style="font-size:12px; width:70px; text-align:right">{{ t.toFixed(0) }} / {{ Math.round(fullTl.total) }} s</span>
+              </div>
+              <div v-if="fullOn" class="faint" style="font-size:12px">A new event's first showing: the theme, then the extra pages. Later showings are the theme alone.</div>
               <div v-if="half" class="faint" style="font-size:12px">The right half of the wall, under the clock bar — what an alert turns into once it has had its full-wall showings.</div>
               <div class="row" style="flex-wrap:wrap; gap:6px">
                 <button v-for="(lab, id) in st.samples" :key="id" class="btn sm" :class="{primary: !real && smp === id}" @click="sample = id; real = false; t = 1">{{ lab }}</button>
