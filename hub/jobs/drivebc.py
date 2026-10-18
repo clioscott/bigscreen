@@ -189,38 +189,59 @@ def run(cfg):
     items = [item_of(e) for e in metro if wanted(e, st, now)]
     rank = {"CLOSURE": 0, "MAJOR": 1, "MODERATE": 2, "MINOR": 3}
     items.sort(key=lambda i: (not i["closed"], i["type"] != "INCIDENT", rank.get(i["severity"], 4), -(i["updated"] or 0)))
-    # cameras (only for what's on the wall; DriveBC refreshes stills every few minutes)
-    if st.get("cameras") and items:
-        try:
-            cams = common.session.get(f"{API}/webcams/", timeout=40).json()
-        except Exception as e:
-            print(f"webcams: {e}", flush=True)
-            cams = []
-        prev = {i["id"]: i.get("cam") for i in (common.cache("drivebc_cams", {}) or {}).get("items", [])}
-        keep = set()
-        for it in items[:8]:
-            src = next((e for e in metro if e["id"] == it["id"]), None)
-            got = _nearest_cam(cams, src) if src else None
-            if not got:
-                continue
-            cam, dist = got
-            old = prev.get(it["id"])
+    # cameras: the nearest one for what's on the wall (DriveBC refreshes stills every few minutes), and for each
+    # sample so the previews show a real camera too (those refreshed less often)
+    from display.modules.bc_roads import SAMPLES
+    old_cams = common.cache("drivebc_cams", {}) or {}
+    sample_cams = old_cams.get("samples") or {}
+    if st.get("cameras"):
+        prev = {i["id"]: i.get("cam") for i in old_cams.get("items", [])}
+        stale_samples = now - (old_cams.get("samples_at") or 0) > 1800 or not set(SAMPLES) <= set(sample_cams)
+        cams = []
+        if items or stale_samples:
             try:
-                if old and old.get("id") == cam["id"] and now - old.get("at", 0) < 240 and (OUT / f"cam_{cam['id']}.bin").exists():
-                    it["cam"] = old
-                else:
-                    it["cam"] = _fetch_cam(cam)
-                it["cam"]["km"] = dist
-                keep.add(f"cam_{cam['id']}.bin")
+                cams = common.session.get(f"{API}/webcams/", timeout=40).json()
             except Exception as e:
-                print(f"camera {cam.get('id')}: {e}", flush=True)
+                print(f"webcams: {e}", flush=True)
+        keep = set()
+        samples_at = old_cams.get("samples_at")
+
+        def attach(key, ev, old, max_age):
+            got = _nearest_cam(cams, ev)
+            if not got:
+                return None
+            cam, dist = got
+            try:
+                if old and old.get("id") == cam["id"] and now - old.get("at", 0) < max_age and (OUT / f"cam_{cam['id']}.bin").exists():
+                    out = old
+                else:
+                    out = _fetch_cam(cam)
+                out["km"] = dist
+                keep.add(f"cam_{cam['id']}.bin")
+                return out
+            except Exception as e:
+                print(f"camera {cam.get('id')} ({key}): {e}", flush=True)
+                return None
+        if cams:
+            for it in items[:8]:
+                src = next((e for e in metro if e["id"] == it["id"]), None)
+                cam = attach(it["id"], src, prev.get(it["id"]), 240) if src else None
+                if cam:
+                    it["cam"] = cam
+            if stale_samples:
+                sample_cams = {}
+                for key, v in SAMPLES.items():
+                    pts = (v["item"].get("geometry") or {}).get("points") or []
+                    sample_cams[key] = attach(key, {"location": {"type": "LineString", "coordinates": pts}}, None, 0)
+                samples_at = now
+        keep |= {f"cam_{c['id']}.bin" for c in sample_cams.values() if c}
         for p in OUT.glob("cam_*.bin"):
             if p.name not in keep:
                 p.unlink(missing_ok=True)
-        common.save_cache("drivebc_cams", {"items": [{"id": i["id"], "cam": i.get("cam")} for i in items]})
+        common.save_cache("drivebc_cams", {"items": [{"id": i["id"], "cam": i.get("cam")} for i in items], "samples": sample_cams,
+                                           "samples_at": samples_at})
     # the real road each event is on (OSM ways matched by route number or name), its zoomed map, and the exact
     # pixels the highlight covers on that map and on the Metro overview (rasterised the way the maps draw roads)
-    from display.modules.bc_roads import SAMPLES
     from hub.util import read_json as _rj
     overview = _rj(maps.OUT / "roads_metro.json", {}) or {}
     keep = []
@@ -256,7 +277,7 @@ def run(cfg):
     counts = {"metro_events": len(metro), "incidents": sum(i["type"] == "INCIDENT" for i in items),
               "closures": sum(i["closed"] for i in items)}
     common.write("drivebc", {"items": items, "counts": counts, "home": list(common.home(cfg)), "sample_lines": sample_lines,
-                             "sample_hl": sample_hl})
+                             "sample_hl": sample_hl, "sample_cams": {k_: v for k_, v in sample_cams.items() if v}})
     for i in items:
         print(f"{i['severity']} {i['kind']}: {i['road']} {i['direction']} — {i['description'][:90]}", flush=True)
     if st.get("takeover") == "closures":
