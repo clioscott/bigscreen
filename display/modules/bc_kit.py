@@ -1154,6 +1154,7 @@ def frame_crop(mp, w, h, pts, home, pad=12):
         x0, x1, y0, y1 = min(x0, rx), max(x1, rx), min(y0, ry), max(y1, ry)
     sx = int(max(0, min(max(0, mp.w - w), (x0 + x1) / 2 - w / 2)))
     sy = int(max(0, min(max(0, mp.h - h), (y0 + y1) / 2 - h / 2)))
+    ref["area_x"] = sum(p[0] for p in xy) / len(xy)              # the label goes on the side away from the area
     return sx, sy, ref
 
 
@@ -1172,7 +1173,9 @@ def ref_marker(c, mp, ref, x, y, sx, sy, w, h, col=(225, 225, 235)):
         box(c, px_ - 2, py_ - 2, 5, 5, BLACK)
         box(c, px_ - 1, py_ - 1, 3, 3, col)
         s = ref["name"]
-        tx = px_ + 5 if px_ + 5 + tw(f, s) < x + w - 1 else px_ - 5 - tw(f, s)
+        right, left = px_ + 5, px_ - 5 - tw(f, s)
+        away = left if ref.get("area_x", -1e9) - sx + x > px_ else right
+        tx = away if x + 1 <= away and away + tw(f, s) < x + w - 1 else (right if away == left else left)
         ty = int(max(y + 1, min(y + h - f.h - 1, py_ - f.h // 2)))
     else:
         cx, cy = x + w / 2, y + h / 2
