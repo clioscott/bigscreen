@@ -129,8 +129,10 @@ class Stream:
 class WebcamPanel:
     """Draws the ``webcam`` (one side), ``webcam_full`` (full width) and ``webcam_wall`` (whole wall) entries."""
 
-    def __init__(self, cfg):
+    def __init__(self, cfg, data_dir=None):
         s = cfg.modules.get("webcams") or {}
+        self.data_dir = data_dir
+        self.weather, self._wx_mtime, self._wx_checked = {}, None, 0.0
         self.cams = s.get("cams") or {}
         self.hub = s.get("hub_url") or DEFAULT_HUB
         self.streams: dict = {}
@@ -197,8 +199,24 @@ class WebcamPanel:
                 self._centre(c, (x, y + 12, w, h), st.error[: max(8, w // 5)], Color(120, 60, 60))
             if now - max(started, st.frame_t) > GIVE_UP_SEC:      # a hiccup mid-play doesn't end a held webcam
                 return "skip"
-        draw_caption(c, zone, cam, now - started, self.font)
+        draw_caption(c, zone, cam, now - started, self.font, wx=self._weather(now).get(entry.get("cam")))
         return None
+
+    def _weather(self, now):
+        """data/webcam_weather.json (hub/jobs/webcam_weather.py), re-read when it changes (checked every 5 s)."""
+        if self.data_dir and now - self._wx_checked > 5:
+            self._wx_checked = now
+            path = os.path.join(self.data_dir, "webcam_weather.json")
+            try:
+                mt = os.stat(path).st_mtime
+                if mt != self._wx_mtime:
+                    import json
+                    with open(path, encoding="utf-8") as f:
+                        self.weather = json.load(f) or {}
+                    self._wx_mtime = mt
+            except (OSError, ValueError):
+                pass
+        return self.weather
 
     def _centre(self, c, zone, text, color):
         x, y, w, h = zone
@@ -207,7 +225,7 @@ class WebcamPanel:
         graphics.DrawText(c, f, x + max(2, (w - tw) // 2), y + h // 2, color, text)
 
 
-def render_preview(cam: dict, frame, shape_zone, elapsed=0.0) -> np.ndarray:
+def render_preview(cam: dict, frame, shape_zone, elapsed=0.0, wx=None) -> np.ndarray:
     """The wall's pixels for one zone: a frame already cropped to the zone, plus the caption (control panel)."""
     from display.gfx import Canvas
     w, h = shape_zone
@@ -223,5 +241,5 @@ def render_preview(cam: dict, frame, shape_zone, elapsed=0.0) -> np.ndarray:
             f.LoadFont(FONTS.get(size, size))
         return f
 
-    draw_caption(c, (0, 0, w, h), cam, elapsed, font_for)
+    draw_caption(c, (0, 0, w, h), cam, elapsed, font_for, wx=wx)
     return c.buf.copy()

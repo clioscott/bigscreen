@@ -181,6 +181,15 @@ def _validate_webcams(wc):
             check_source(cam.get("source"))
         except SourceError as e:
             raise ConfigError(f"webcam {name}: {e}")
+        for key, lim in (("lat", 90), ("lon", 180)):
+            v = cam.get(key)
+            if v not in (None, ""):
+                try:
+                    ok = -lim <= float(v) <= lim
+                except (TypeError, ValueError):
+                    ok = False
+                if not ok:
+                    raise ConfigError(f"webcam {name}: {key} must be a number between -{lim} and {lim}")
         try:
             fps_ok = 1 <= float(cam.get("fps", 15)) <= 30
         except (TypeError, ValueError):

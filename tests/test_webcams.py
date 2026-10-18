@@ -172,7 +172,9 @@ def test_gallery_entries_are_valid_webcams():
 
     from hub import config
     js = (Path(__file__).resolve().parent.parent / "hub/web/ui/pages/webcam_gallery.js").read_text(encoding="utf-8")
-    ids = re.findall(r'\{ id: "([^"]+)", label: "([^"]+)"', js)
+    found = re.findall(r'\{ id: "([^"]+)", lat: (-?[\d.]+), lon: (-?[\d.]+), label: "([^"]+)"', js)
+    assert all(-90 <= float(la) <= 90 and -180 <= float(lo) <= 180 for _, la, lo, _ in found)
+    ids = [(i, lbl) for i, _, _, lbl in found]
     assert len(ids) >= 15
     assert len({i for i, _ in ids}) == len(ids) and len({lbl for _, lbl in ids}) == len(ids)
     cams = {f"c{n}": {"label": lbl, "source": {"type": "youtube", "url": f"https://www.youtube.com/watch?v={i}"}}
@@ -312,3 +314,96 @@ def test_buffer_memory_is_capped():
         assert len(f._buf) <= f._cap() == int((0.5 + webcams.BUFFER_HEADROOM) * 15)
     finally:
         f._stop.set()
+
+
+# --- captions v2 (display/modules/webcam_caption.py) ------------------------------------------------------------
+from display.modules import webcam_caption as cap  # noqa: E402
+
+WX = {"temp": 17.6, "code": 2, "is_day": 1, "sunrise": [], "sunset": []}
+EVERYTHING = {k: True for k in cap.SECTIONS}
+
+
+@pytest.mark.parametrize("layout", [l for l in cap.LAYOUTS if l != "none"])
+@pytest.mark.parametrize("corner", ["tl", "tc", "tr", "bl", "bc", "br"])
+def test_every_layout_and_position_renders_with_everything(layout, corner):
+    cam = {**CAM, "overlay": {"style": layout, "corner": corner, "show": EVERYTHING, "custom_text": "Scramble cam"}}
+    for zone in ((152, 130), (448, 192)):
+        frame = webcams.render(FRAME, *zone)
+        img = wc.render_preview(cam, frame, zone, 1.0, wx=WX)
+        assert img.shape == (zone[1], zone[0], 3) and not np.array_equal(img, frame)
+
+
+@pytest.mark.parametrize("lines", ["auto", "wrap", "stacked", "inline"])
+def test_line_modes_render(lines):
+    cam = {**CAM, "overlay": {"style": "tag", "lines": lines, "show": EVERYTHING}}
+    wc.render_preview(cam, webcams.render(FRAME, 223, 134), (223, 134), 1.0, wx=WX)
+
+
+def test_content_order_headline_and_sections():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    t = datetime(2026, 10, 19, 5, 41, tzinfo=ZoneInfo("Asia/Tokyo"))
+    here = datetime(2026, 10, 18, 13, 41, tzinfo=ZoneInfo("America/Vancouver"))
+    ov = cap.overlay_of({"overlay": {"headline": "place", "order": ["weather", "time"],
+                                     "show": {"weather": True, "offset": True, "date": True}}})
+    ct = cap.Content(CAM, ov, now_local=t, here=here, wx=WX)
+    assert ct.title == "Tokyo, Japan"                                   # place is the headline…
+    kinds = [k for k, _ in ct.bits()]
+    assert kinds[:3] == ["weather", "time", "name"] and "place" not in kinds   # …the name moves to the details
+    sec = dict(ct.bits())
+    assert sec["weather"] == "18°C" and sec["time"] == "05:41" and sec["offset"] == "+16h"
+    assert sec["date"] == "MON 19 OCT" and ct.icon == "partly"
+
+
+def test_sun_section_names_the_next_event():
+    import time as _t
+    now = _t.time()
+    ov = cap.overlay_of({"overlay": {"show": {"sun": True}}})
+    ct = cap.Content(CAM, ov, wx={**WX, "sunrise": [now - 3600, now + 7200], "sunset": [now + 3600]})
+    assert dict(ct.bits())["sun"].startswith("sunset ")
+
+
+def test_uppercase_twelve_hour_and_separator():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    t = datetime(2026, 10, 19, 17, 5, tzinfo=ZoneInfo("Asia/Tokyo"))
+    ov = cap.overlay_of({"overlay": {"uppercase": True, "time_format": "12h"}})
+    ct = cap.Content(CAM, ov, now_local=t)
+    assert ct.title == "SHIBUYA CROSSING" and dict(ct.bits())["time"] == "5:05 PM"
+    from display.gfx import graphics
+    f = graphics.Font()
+    f.LoadFont(cap.FONTS["small"])
+    assert " / " in cap.fit_detail(f, [("a", "x"), ("b", "y")], 200, sep="slash")
+
+
+def test_inline_drops_sections_instead_of_cutting_them():
+    from display.gfx import Canvas
+    cam = {**CAM, "overlay": {"style": "outline", "lines": "inline", "show": EVERYTHING}}
+    k = cap.Ctx(Canvas(152, 130), (0, 0, 152, 130), cap.overlay_of(cam), lambda p: _font(p))
+    title, lines = cap._headline_and_lines(k, cap.Content(CAM, k.ov, wx=WX), 140)
+    assert not lines and cap._tw(k.T, title) <= 140
+    assert all(piece.strip() for piece in title.split("·"))           # no dangling half-section
+
+
+def _font(path):
+    from display.gfx import graphics
+    f = graphics.Font()
+    f.LoadFont(cap.FONTS.get(path, path))
+    return f
+
+
+def test_periodic_visibility_with_fades():
+    ov = {"when": "periodic", "show_sec": 10, "every_min": 1, "fade": True}
+    assert cap.visibility(ov, 2) == 1.0                                # the intro
+    assert cap.visibility(ov, 30) == 0.0                               # hidden in between
+    assert 0 < cap.visibility(ov, 60.3) < 1                            # fading back in at the minute
+    assert cap.visibility(ov, 65) == 1.0
+    assert cap.visibility({**ov, "fade": False}, 60.3) == 1.0
+
+
+def test_webcam_location_validation():
+    from hub import config
+    config.validate(_cfg({"cams": {"a": {**CAM, "lat": 49.28, "lon": -123.12}}}))
+    for bad in ({"lat": 100}, {"lon": "east"}):
+        with pytest.raises(config.ConfigError):
+            config.validate(_cfg({"cams": {"a": {**CAM, **bad}}}))

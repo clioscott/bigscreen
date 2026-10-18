@@ -127,8 +127,13 @@ once (`hold: false`), so the rotation resumes by itself.
 - Display: `display/modules/webcam.py`, panels `webcam` (a side), `webcam_full`, `webcam_wall`; entry field `cam`.
   The Pi's reader thread runs on cores 0–1 and hangs up `IDLE_SEC` after the screen stops drawing it; a stream with no
   picture after `GIVE_UP_SEC` returns `"skip"` (display/rotation.py ends the screen at once).
+- Captions: `display/modules/webcam_caption.py` (its docstring lists every `overlay` key). Sections (`Content`) are
+  formatted once, then a layout (`LAYOUT_FUNCS`: tag, bar, lower_third, split, postcard, chips, clock, signage, ticker,
+  stack, outline, dot) places them; long content drops sections in `DROP` order. Weather and sunrise/sunset come from
+  `hub/jobs/webcam_weather.py` (Open-Meteo, every 15 min, webcams with lat/lon) → `data/webcam_weather.json`.
+  Re-render every layout after changes: `tests/test_webcams.py` renders them all; look at real frames before shipping.
 - Config `modules.webcams`: `hub_url` (default `http://192.168.1.111:8800`), `cams.<id>` = label, place, credit, tz,
-  fps, source, `crops.{left,right,full,wall}` = {x, y, w} fractions (height follows the zone), colour, overlay.
+  lat, lon, fps, source, `crops.{left,right,full,wall}` = {x, y, w} fractions (height follows the zone), colour, overlay.
   Panel page: Webcams. Some YouTube streams need a JS runtime for yt-dlp: deno, installed user-level on the server
   (`curl -fsSL https://deno.land/install.sh | sh -s -- -y --no-modify-path` → `~/.deno/bin`, found by `deno_path()`).
 - Ready-made webcams: `hub/web/ui/pages/webcam_gallery.js` (YouTube ids; a restarted stream gets a new id). Cards show
