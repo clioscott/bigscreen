@@ -51,8 +51,12 @@ fixed, Haxor (ucw.cz) and knxt (Konstantin Bytensky). If you are an author and w
 - **Highway shields** (`assets/icons/shields/shields.json`): pixel art redrawn per size by `tools/build_shields.py`
   from Wikimedia Commons SVGs — BC, Trans-Canada, Interstate, US and Washington blanks (public domain) and the
   Yellowhead blank by MuzikMachine ([CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/); the derived
-  `yellowhead` sprites are shared under the same licence). The Crowsnest (BC Highway 3) shield is redrawn from the
-  BC government's sign design.
+  `yellowhead` sprites are shared under the same licence). The Crowsnest (BC Highway 3) shield is a low-resolution
+  redraw of the BC government's road sign, traced from English Wikipedia's "British Columbia Highway 3.svg" (a
+  non-free, fair-use file); the sign design belongs to the Province of British Columbia.
+- **Flags** (`assets/icons/flags`): Canadian and US flags, public domain designs.
+- **Stock logos** are not in the repository: the ticker loads them from `<data dir>/stock-icons` (uploaded from the
+  control panel) and shows the symbol alone without one.
 
 ## Data shown on the wall
 
