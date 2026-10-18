@@ -26,9 +26,11 @@ WORK_W = 640                 # decoded frames are this wide; crops come out of t
 MAX_FEEDS = 4                # ffmpegs at once
 GRACE_SEC = 30.0             # a feed outlives its last viewer by this long (the next play starts instantly)
 STALL_SEC = 20.0             # no frame for this long: restart ffmpeg
+OPEN_SEC = 45.0              # … or no first frame this long after starting it
 RESOLVE_TTL = 3600.0         # YouTube manifest URLs last ~6 h; resolve again after an hour
 SCHEMES = {"http", "https", "rtsp", "rtsps", "rtmp", "rtmps"}
-PROTOCOLS = "file,http,https,tcp,tls,crypto,hls,httpproxy,rtp,udp,rtsp,rtmp,rtmps,rtmpt,data"
+PROTOCOLS = "http,https,tcp,tls,crypto,httpproxy,rtsp,rtsps,rtmp,rtmps,rtmpt"     # network only: no file:, data:
+NOISE = ("frame=", "  ", "Input #", "Output #", "Stream mapping", "Press [q]")
 SIZE_RE = re.compile(r"Stream #\d+:\d+.*Video: rawvideo.*?, (\d+)x(\d+)")
 
 
@@ -78,6 +80,8 @@ def resolve(kind, url, fresh=False) -> tuple[str, str]:
         err = (r.stderr.strip().splitlines() or ["yt-dlp failed"])[-1]
         raise SourceError(err.replace("ERROR: ", "")[:300])
     title, status, media = lines[0], lines[1], lines[-1]
+    if urlparse(media).scheme.lower() not in SCHEMES:
+        raise SourceError("YouTube gave an unexpected stream address")
     if status not in ("is_live", "post_live", "NA", "None"):
         title = f"{title} (not live: {status})"
     with _resolve_lock:
@@ -104,6 +108,7 @@ class Feed:
         self.restarts = 0
         self._times = []
         self._proc = None
+        self._restart = False
         self._lock = threading.Lock()
         self._cond = threading.Condition(self._lock)
         threading.Thread(target=self._run, name=f"webcam-{urlparse(url).netloc}", daemon=True).start()
@@ -121,6 +126,16 @@ class Feed:
 
     def wanted(self):
         return self.viewers > 0 or time.time() - self.last_view < GRACE_SEC
+
+    def raise_fps(self, fps):
+        """Decode at least this fast (viewers wanting fewer frames skip some); restarts ffmpeg if it has to."""
+        if fps <= self.fps:
+            return
+        self.fps = fps
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            self._restart = True
+            proc.kill()
 
     def wait(self, after_seq, timeout):
         """The next frame after ``after_seq``: (seq, frame), or (after_seq, None) on timeout."""
@@ -149,7 +164,13 @@ class Feed:
             try:
                 media, title = resolve(self.kind, self.url, fresh)
                 self.title = title or self.title
+                if not self.wanted():                  # yt-dlp can take a while; nobody may be left
+                    break
+                self._restart = False
                 got = self._decode(media)
+                if self._restart:                      # a viewer wanted a higher frame rate: go again now
+                    self.error = ""
+                    continue
                 if got:
                     backoff = 0
                 fresh = self.kind == "youtube"         # a YouTube URL that stopped working may have expired
@@ -173,7 +194,8 @@ class Feed:
 
     def _decode(self, media) -> bool:
         """Run ffmpeg until the stream ends, stalls or nobody wants it. True if any frame arrived."""
-        args = ["ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "info", "-protocol_whitelist", PROTOCOLS]
+        # -nostats: the progress line ends in \r, which readline would keep growing for hours
+        args = ["ffmpeg", "-hide_banner", "-nostdin", "-nostats", "-loglevel", "info", "-protocol_whitelist", PROTOCOLS]
         scheme = urlparse(media).scheme.lower()
         if scheme in ("http", "https"):
             args += ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
@@ -237,22 +259,26 @@ class Feed:
                 m = SIZE_RE.search(line)
                 if m:
                     size_box.append((int(m.group(1)), int(m.group(2))))
-            if line and not line.startswith(("frame=", "  ", "Input #", "Output #", "Stream mapping", "Press [q]")):
+            if line and not line.startswith(NOISE) and "Opening '" not in line:
                 tail[:] = (tail + [line])[-8:]
 
     def _watchdog(self, proc):
-        """Stop ffmpeg when nobody wants the feed any more, or when frames stopped coming."""
+        """Stop ffmpeg when nobody wants the feed any more, or when frames stopped coming (or never came:
+        a stream that opens but sends nothing would otherwise block forever)."""
+        run_start = time.time()
         while proc.poll() is None:
             time.sleep(1.0)
-            last = self.frame_t or self.started
+            had_frame = self.frame_t > run_start
+            last = self.frame_t if had_frame else run_start
+            limit = STALL_SEC if had_frame else OPEN_SEC
             if not self.wanted():
                 proc.kill()
-            elif self.state == "live" and time.time() - last > STALL_SEC:
-                self.error = f"no picture for {int(STALL_SEC)} s"
+            elif time.time() - last > limit:
+                self.error = f"no picture for {int(limit)} s"
                 proc.kill()
 
 
-_feeds: dict = {}            # (type, url, fps) -> Feed
+_feeds: dict = {}            # (type, url) -> Feed
 _feeds_lock = threading.Lock()
 
 
@@ -264,14 +290,16 @@ def _forget(feed):
 
 
 def feed(src, fps=15) -> Feed:
-    """The running feed for a source, started if needed (raises SourceError)."""
+    """The running feed for a source, started if needed (raises SourceError). One feed per source, decoding at
+    the highest frame rate anyone asked for; viewers that want fewer thin it themselves (app.py min_gap)."""
     kind, url = check_source(src)
     fps = max(1, min(30, int(fps or 15)))
-    key = (kind, url, fps)
+    key = (kind, url)
     with _feeds_lock:
         f = _feeds.get(key)
         if f is not None and f.state != "stopped":
             f.last_view = time.time()
+            f.raise_fps(fps)
             return f
         live = [x for x in _feeds.values() if x.state != "stopped"]
         if len(live) >= MAX_FEEDS:
@@ -280,7 +308,7 @@ def feed(src, fps=15) -> Feed:
                 raise SourceError(f"already decoding {MAX_FEEDS} webcams")
             stale = min(idle, key=lambda x: x.last_view)
             stale.last_view = 0                         # its watchdog stops it within a second
-            _feeds.pop((stale.kind, stale.url, stale.fps), None)
+            _feeds.pop((stale.kind, stale.url), None)
         f = _feeds[key] = Feed(kind, url, fps)
         return f
 

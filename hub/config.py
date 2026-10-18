@@ -146,17 +146,29 @@ def _validate_webcams(wc):
     if not wc:
         return
     from hub.webcams import SourceError, check_source
-    for cid, cam in (wc.get("cams") or {}).items():
+    cams = wc.get("cams") or {}
+    if not isinstance(cams, dict):
+        raise ConfigError("webcams.cams must be an object")
+    for cid, cam in cams.items():
         if not re.fullmatch(r"[A-Za-z0-9_-]+", cid):
             raise ConfigError(f"webcam id {cid!r}: letters, digits, _ and - only")
+        if not isinstance(cam, dict):
+            raise ConfigError(f"webcam {cid}: must be an object")
         name = cam.get("label") or cid
         try:
             check_source(cam.get("source"))
         except SourceError as e:
             raise ConfigError(f"webcam {name}: {e}")
-        if not 1 <= float(cam.get("fps", 15)) <= 30:
+        try:
+            fps_ok = 1 <= float(cam.get("fps", 15)) <= 30
+        except (TypeError, ValueError):
+            fps_ok = False
+        if not fps_ok:
             raise ConfigError(f"webcam {name}: frame rate must be 1–30")
-        for shape, crop in (cam.get("crops") or {}).items():
+        crops = cam.get("crops") or {}
+        if not isinstance(crops, dict):
+            raise ConfigError(f"webcam {name}: crops must be an object")
+        for shape, crop in crops.items():
             if shape not in ("left", "right", "full", "wall"):
                 raise ConfigError(f"webcam {name}: unknown crop {shape!r}")
             try:

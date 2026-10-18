@@ -106,3 +106,60 @@ def test_rotation_skip_ends_the_screen_at_once():
 def test_rotation_tells_webcam_entries_apart():
     from display.rotation import entry_key
     assert entry_key({"panel": "webcam", "cam": "a"}) != entry_key({"panel": "webcam", "cam": "b"})
+
+
+def test_close_never_waits_for_a_blocked_read():
+    """The render thread hangs up on idle streams: that must not wait out the socket timeout (review #1)."""
+    import socket
+    import sys
+    import threading
+    import time
+
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    held = []
+
+    def serve():                     # answer the request with headers, then send nothing
+        c, _ = srv.accept()
+        held.append(c)
+        c.recv(4096)
+        c.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n\r\n")
+
+    threading.Thread(target=serve, daemon=True).start()
+    st = wc.Stream(f"http://127.0.0.1:{srv.getsockname()[1]}", {"type": "stream", "url": "http://x/", "w": 8, "h": 8})
+    time.sleep(0.5)                  # the reader is now blocked in read()
+    t0 = time.time()
+    st.close()
+    assert time.time() - t0 < 0.2
+    if sys.platform != "linux":      # Windows doesn't wake a recv() blocked in another thread on shutdown
+        srv.close()
+        return
+    for _ in range(40):              # and the reader thread notices and stops
+        if not st.alive and st._conn is None:
+            break
+        time.sleep(0.05)
+    assert st._conn is None
+    srv.close()
+
+
+@pytest.mark.parametrize("style", ["tag", "bar"])
+def test_badge_only_caption_stays_in_its_box(style):
+    cam = {**CAM, "overlay": {"style": style, "corner": "bl", "show": {"name": False, "place": False, "time": False}}}
+    black = np.zeros((130, 152, 3), np.uint8)
+    img = wc.render_preview(cam, black, (152, 130), 1.0)
+    rows = np.nonzero(img.any(axis=(1, 2)))[0]
+    assert len(rows) and rows.max() <= 129 and rows.max() - rows.min() <= 14   # badge + padding, not spilling out
+
+
+def test_config_validation_rejects_malformed_cams_cleanly():
+    from hub import config
+    for bad in ({"a": "not a cam"}, {"a": {**CAM, "fps": None}}, {"a": {**CAM, "crops": [1]}}):
+        with pytest.raises(config.ConfigError):
+            config.validate(_cfg({"cams": bad}))
+    with pytest.raises(config.ConfigError):
+        config.validate(_cfg({"cams": ["not", "a", "mapping"]}))
+
+
+def test_hub_never_lets_ffmpeg_read_local_files():
+    assert "file" not in webcams.PROTOCOLS.split(",") and "data" not in webcams.PROTOCOLS.split(",")

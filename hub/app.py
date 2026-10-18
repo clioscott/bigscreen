@@ -684,7 +684,7 @@ def _webcam_feed(src, fps):
     try:
         return webcams.feed(src, fps)
     except webcams.SourceError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(503 if "already decoding" in str(e) else 400, str(e))
 
 
 @app.get("/api/webcams/status")
@@ -744,7 +744,8 @@ async def webcams_frames(type: str, url: str, w: int, h: int, fps: int = 15, x: 
     def make(frame, feed):
         return webcams.pack(webcams.render(frame, w, h, crop, colour), (time.time() - feed.frame_t) * 1000)
 
-    return StreamingResponse(_webcam_frames(f, make), media_type="application/octet-stream",
+    fps = max(1, min(30, fps))                                # the feed may decode faster for another viewer
+    return StreamingResponse(_webcam_frames(f, make, min_gap=0.9 / fps), media_type="application/octet-stream",
                              headers={"Cache-Control": "no-store"})
 
 

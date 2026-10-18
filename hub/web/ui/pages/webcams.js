@@ -108,7 +108,7 @@ const CropEditor = {
     const err = ref(false);
     let t;
     onMounted(() => { t = setInterval(() => { const i = img.value; if (i?.naturalWidth) nat.value = [i.naturalWidth, i.naturalHeight]; }, 500); });
-    onBeforeUnmount(() => clearInterval(t));
+    onBeforeUnmount(() => { clearInterval(t); if (img.value) img.value.src = ""; });   // end the stream (frees the hub's viewer)
     const src = computed(() => props.cam.source?.url ? `/api/webcams/source.mjpeg?${qs({ type: props.cam.source.type || "stream", url: props.cam.source.url, fps: props.cam.fps || 15 })}` : "");
     watch(src, () => { err.value = false; });
     const aspect = computed(() => props.zone[0] / props.zone[1]);
@@ -199,12 +199,13 @@ const WallPreview = {
     };
     const queue = () => { if (!timer) timer = setTimeout(send, 150); };
     watch(() => [props.cam, props.shape], queue, { deep: true, immediate: true });
-    onBeforeUnmount(() => clearTimeout(timer));
+    const img = ref(null);
+    onBeforeUnmount(() => { clearTimeout(timer); if (img.value) img.value.src = ""; });
     const src = computed(() => token.value ? `/api/webcams/preview/${token.value}.mjpeg` : "");
-    return { src, zone, err };
+    return { src, zone, err, img };
   },
   template: `<div class="led" :style="{maxWidth: Math.min(zone[0] * 3 + 22, 1366) + 'px'}">
-    <img v-if="src" :src="src" :style="{aspectRatio: zone[0] + ' / ' + zone[1]}" alt="">
+    <img v-if="src" ref="img" :src="src" :style="{aspectRatio: zone[0] + ' / ' + zone[1]}" alt="">
     <div v-else class="placeholder">{{ err || 'No source yet' }}</div></div>`,
 };
 
@@ -218,16 +219,20 @@ const WebcamEditor = {
     const shape = ref("full");
     const { status, feedFor } = useStatus();
     const zone = computed(() => status.value.zones[shape.value] || [448, 130]);
-    // fill in fields older or hand-written webcams lack, in saved and draft alike (opening one isn't a change)
-    for (const root of [store.saved, store.draft]) {
-      const c = root?.modules?.webcams?.cams?.[id.value];
-      if (!c) continue;
-      c.source = c.source || { type: "youtube", url: "" };
-      c.overlay = { ...clone(DEFAULT_OVERLAY), ...(c.overlay || {}) };
-      c.overlay.show = { ...DEFAULT_OVERLAY.show, ...(c.overlay.show || {}) };
-      c.colour = c.colour || {};
-      c.crops = c.crops || {};
-    }
+    // fill in fields older or hand-written webcams lack, in saved and draft alike (opening one isn't a change);
+    // runs on every webcam opened: the editor stays mounted when going from one webcam to another
+    const fill = (cid) => {
+      for (const root of [store.saved, store.draft]) {
+        const c = root?.modules?.webcams?.cams?.[cid];
+        if (!c) continue;
+        c.source = c.source || { type: "youtube", url: "" };
+        c.overlay = { ...clone(DEFAULT_OVERLAY), ...(c.overlay || {}) };
+        c.overlay.show = { ...DEFAULT_OVERLAY.show, ...(c.overlay.show || {}) };
+        c.colour = c.colour || {};
+        c.crops = c.crops || {};
+      }
+    };
+    watch(id, fill, { immediate: true, flush: "sync" });
     const ov = computed(() => cam.value.overlay);
     const colour = computed(() => cam.value.colour);
     const probe = ref(null);
@@ -279,7 +284,7 @@ const WebcamEditor = {
           <div class="card-body stack">
             <Seg v-model="cam.source.type" :options="[{value:'youtube', label:'YouTube live', icon:'Youtube'}, {value:'stream', label:'Stream URL', icon:'Radio'}]"/>
             <div class="row nowrap">
-              <input class="input grow" v-model.trim="cam.source.url" :placeholder="cam.source.type === 'youtube' ? 'https://www.youtube.com/watch?v=…  or  …/@channel/live' : 'https://…/index.m3u8, an MJPEG URL, rtsp://…'">
+              <input class="input grow" v-model.lazy.trim="cam.source.url" :placeholder="cam.source.type === 'youtube' ? 'https://www.youtube.com/watch?v=…  or  …/@channel/live' : 'https://…/index.m3u8, an MJPEG URL, rtsp://…'">
               <button class="btn" :disabled="testing || !cam.source.url" @click="test"><Icon :name="testing ? 'LoaderCircle' : 'PlugZap'" :size="14" :class="{spin: testing}"/>Test</button></div>
             <div v-if="probe" class="callout" :class="probe.ok ? 'ok' : 'bad'" style="font-size:12.5px">
               <Icon :name="probe.ok ? 'CircleCheck' : 'CircleX'" :size="14"/> {{ probe.ok ? (probe.title ? 'Found: ' + probe.title : 'The hub can open it') : probe.error }}</div>

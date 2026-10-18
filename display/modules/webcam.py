@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import http.client
 import os
+import socket
 import threading
 import time
 from datetime import datetime
@@ -90,18 +91,23 @@ class Stream:
         self.last_use = time.time()
         self.alive = True
         self._conn = None
+        self._sock = None                      # our own reference: http.client drops conn.sock once a response owns it
         threading.Thread(target=self._run, name="webcam-reader", daemon=True).start()
 
     def used(self):
         self.last_use = time.time()
 
     def close(self):
+        """Safe from the render thread: never waits for the reader. Closing the connection would block on the
+        reader's buffered read (up to the socket timeout), so shut the socket down instead; the read then fails
+        at once and the reader thread closes the rest itself."""
         self.alive = False
-        try:
-            if self._conn is not None:
-                self._conn.close()
-        except Exception:
-            pass
+        sock = self._sock
+        if sock is not None:
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
 
     def _run(self):
         try:
@@ -113,14 +119,24 @@ class Stream:
                 self._read()
             except Exception as e:
                 self.error = str(e)[:200] or type(e).__name__
+            finally:
+                conn, self._conn, self._sock = self._conn, None, None
+                if conn is not None:
+                    try:
+                        conn.close()                   # on the reader's own thread: nothing else waits on it
+                    except Exception:
+                        pass
             if self.alive and time.time() - self.last_use < IDLE_SEC:
                 time.sleep(2.0)
         self.alive = False
-        self.close()
 
     def _read(self):
         conn = http.client.HTTPConnection(self.hub.hostname, self.hub.port or 80, timeout=30)
         self._conn = conn
+        conn.connect()
+        self._sock = conn.sock
+        if not self.alive:                     # closed while connecting
+            return
         conn.request("GET", self.path, headers={"User-Agent": "bigscreen-display"})
         r = conn.getresponse()
         if r.status != 200:
@@ -210,7 +226,7 @@ class WebcamPanel:
             self._centre(c, zone, f"Tuning in to {label}" + "." * (1 + int(now * 2) % 3), self.dim)
             if st.error:
                 self._centre(c, (x, y + 12, w, h), st.error[: max(8, w // 5)], Color(120, 60, 60))
-            if now - started > GIVE_UP_SEC:
+            if now - max(started, st.frame_t) > GIVE_UP_SEC:      # a hiccup mid-play doesn't end a held webcam
                 return "skip"
         draw_caption(c, zone, cam, now - started, self.font)
         return None
@@ -316,7 +332,7 @@ def draw_caption(c, zone, cam, elapsed, font_for, now_local=None):
     gap = 1 if (title and detail) else 0
     tw_ = max(_tw(font, title), _tw(small, detail))
     box_w = min(w, pad * 2 + (bw + 3 if bw else 0) + tw_)
-    box_h = pad * 2 + (lh if title else 0) + gap + dh
+    box_h = pad * 2 + max((lh if title else 0) + gap + dh, small.height + 1 if badge else 0)   # badge alone fits too
     if not title and not detail and not badge:
         return
 
