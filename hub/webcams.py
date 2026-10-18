@@ -336,11 +336,12 @@ def describe():
 
 
 # --- snapshots (the panel's gallery and list) -----------------------------------------------------------------
-# Requests never wait for a grab: they get the cached still (fresh or stale) at once, or None while two background
+# Requests never wait for a grab: they get the cached still (fresh or stale) at once, or None while background
 # workers grab it. A source that failed is not tried again for SNAP_RETRY, so dead streams cost nothing per page load.
 SNAP_TTL = 3600.0            # a still older than this is refreshed (and served meanwhile)
 SNAP_RETRY = 600.0           # after a failed grab
 SNAP_KEEP = 200              # stills kept on disk
+SNAP_WORKERS = 4             # grabs at once: each is ~5 s of yt-dlp + ~4 s of ffmpeg, mostly waiting on the network
 _snap_queue: "queue.Queue" = queue.Queue()
 _snap_busy: set = set()      # keys queued or being grabbed
 _snap_failed: dict = {}      # key -> (when, error)
@@ -377,7 +378,7 @@ def snapshot(src):
         if not recently_failed and key not in _snap_busy:
             _snap_busy.add(key)
             _snap_queue.put(key)
-            while len(_snap_workers) < 2:
+            while len(_snap_workers) < SNAP_WORKERS:
                 t = threading.Thread(target=_snap_worker, name="webcam-snap", daemon=True)
                 t.start()
                 _snap_workers.append(t)

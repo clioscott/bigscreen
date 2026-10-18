@@ -131,7 +131,7 @@ once (`hold: false`), so the rotation resumes by itself.
   (`curl -fsSL https://deno.land/install.sh | sh -s -- -y --no-modify-path` → `~/.deno/bin`, found by `deno_path()`).
 - Ready-made webcams: `hub/web/ui/pages/webcam_gallery.js` (YouTube ids; a restarted stream gets a new id). Cards show
   real frames from `/api/webcams/snapshot.jpg`, which never waits: the cached still (fresh or stale), else 503 +
-  Retry-After while two background workers grab one (failures not retried for 10 min; `cache/webcam_snaps`), falling back to
+  Retry-After while four background workers grab one (failures not retried for 10 min; `cache/webcam_snaps`), falling back to
   `/api/webcams/thumb/{id}.jpg` (YouTube's thumbnail, fetched by the hub).
 
 ## BC alert screens

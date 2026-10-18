@@ -71,7 +71,7 @@ const SnapImg = {
           state.value = "ok";
           return;
         }
-        if (r.status === 503 && tries < 40) {
+        if (r.status === 503 && tries < 100) {        // a first-ever fill of the whole gallery takes a minute or two
           timer = setTimeout(() => load(tries + 1), 1000 * (Number(r.headers.get("Retry-After")) || 4));
           return;
         }
