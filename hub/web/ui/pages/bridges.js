@@ -72,8 +72,9 @@ export const Bridges = {
             <option v-if="!b.ids?.length" :value="undefined">Pick a DriveBC camera…</option>
             <option v-if="b.ids?.length && !cameras.find(c => c.id === b.ids[0])" :value="b.ids[0]">#{{ b.ids[0] }}</option>
             <option v-for="c in cameras" :key="c.id" :value="c.id">{{ c.name }}{{ c.on ? '' : ' (off)' }}</option></select>
-          <span class="pill" :class="found(i, b)?.on ? 'ok' : found(i, b) ? 'bad' : ''" :title="found(i, b)?.caption">
-            {{ found(i, b) ? (found(i, b).on ? (found(i, b).cam !== b.ids?.[0] ? 'fallback: ' + camName(found(i, b).cam) : ago(Date.now() / 1000 - found(i, b).updated)) : found(i, b).why) : 'not fetched yet' }}</span>
+          <span class="pill" :class="found(i, b)?.on ? (found(i, b).cam !== b.ids?.[0] ? 'warn' : 'ok') : found(i, b) ? 'bad' : ''"
+            :title="found(i, b)?.cam && found(i, b).cam !== b.ids?.[0] ? 'Using ' + camName(found(i, b).cam) + ': the chosen camera is off' : found(i, b)?.caption">
+            {{ found(i, b) ? (found(i, b).on ? (found(i, b).cam !== b.ids?.[0] ? 'fallback' : ago(Date.now() / 1000 - found(i, b).updated)) : found(i, b).why) : 'not fetched yet' }}</span>
           <button class="btn sm ghost icon-only" title="Up" @click="move(i, -1)"><Icon name="ChevronUp" :size="14"/></button>
           <button class="btn sm ghost icon-only" title="Down" @click="move(i, 1)"><Icon name="ChevronDown" :size="14"/></button>
           <button class="btn sm ghost icon-only" title="Remove" @click="cams.splice(i, 1)"><Icon name="X" :size="14"/></button>
