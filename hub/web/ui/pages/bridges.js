@@ -1,6 +1,6 @@
 // Bridges now: a grid of the latest DriveBC stills from the bridges (hub/jobs/bridges.py, display/modules/bridges.py).
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
-import { store, api, fail, toast, seed, clone, dirty, previewOnDisplay, playOnDisplay, ago } from "../core.js";
+import { store, api, fail, toast, clone, dirty, previewOnDisplay, playOnDisplay, ago } from "../core.js";
 
 const SHAPES = {
   full: { label: "Full width", panel: "bridges_full", side: "right", icon: "RectangleHorizontal" },
@@ -20,8 +20,11 @@ export const Bridges = {
     const load = async () => {
       try {
         state.value = await api("/api/bridges/state");
-        seed(["modules", "bridges"], { cams: clone(state.value.cams) });       // the defaults, until edited
-        if (!store.draft.modules.bridges.cams) store.draft.modules.bridges.cams = clone(state.value.cams);
+        // the bridges in use (defaults until edited), in saved and draft alike so opening the page isn't a change
+        for (const root of [store.saved, store.draft]) {
+          const m = root.modules.bridges || (root.modules.bridges = {});
+          if (!Array.isArray(m.cams)) m.cams = clone(state.value.cams);
+        }
       } catch (e) { fail(e); }
     };
     onMounted(async () => {
@@ -35,7 +38,7 @@ export const Bridges = {
     const found = (i, b) => { const c = state.value?.data?.cams?.[i]; return c && c.label === b.label ? c : null; };
     const camName = (id) => cameras.value.find((c) => c.id === id)?.name || `#${id}`;
     const preview = computed(() => `/api/bridges/preview.png?shape=${shape.value}&page=${page.value}&scale=3&t=${tick.value}`);
-    const pages = computed(() => (shape.value === "right" ? Math.ceil(cams.value.length / 4) : 1));
+    const pages = computed(() => Math.max(1, Math.ceil(cams.value.length / (shape.value === "right" ? 4 : 8))));
     const add = () => cams.value.push({ label: "New bridge", ids: [] });
     const move = (i, d) => { const a = cams.value; const j = i + d; if (j < 0 || j >= a.length) return; a.splice(j, 0, a.splice(i, 1)[0]); };
     const setCam = (b, id) => { b.ids = [Number(id), ...(b.ids || []).filter((x) => x !== Number(id))]; };

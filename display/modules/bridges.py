@@ -34,13 +34,17 @@ def _age_text(sec):
 class BridgesPanel:
     def __init__(self, cfg, data_dir):
         s = cfg.modules.get("bridges") or {}
-        self.page_sec = float(s.get("page_sec", PAGE_SEC))
+        try:
+            self.page_sec = max(1.0, float(s.get("page_sec", PAGE_SEC)))
+        except (TypeError, ValueError):
+            self.page_sec = PAGE_SEC
         self.dir = data_dir or ""
         self.meta = {}
-        self.tiles = {}                      # (key, "s"|"l") -> (h, w, 3) array
+        self.tiles = {}                      # tile file name -> (h, w, 3) array
         self._mtime = None
+        self._waiting = None                 # (mtime, since): a new bridges.json whose tiles haven't all arrived yet
         self._checked = 0.0
-        self.started = {}
+        self.started = {}                    # (panel, zone x) -> when this play began (each side pages on its own)
         self.passes = {}
         self.fonts = {}
         self.white = Color(235, 235, 235)
@@ -70,16 +74,23 @@ class BridgesPanel:
         try:
             with open(path, encoding="utf-8") as f:
                 meta = json.load(f)
+            # bridges.json reaches the Pi in the main sync pass, the tiles it names in a second one: keep showing the
+            # previous set until they're all here (or 30 s have gone by, then show what there is)
+            names = {(kind, n) for c in meta.get("cams", []) if c.get("on") for kind, n in (c.get("tiles") or {}).items()}
+            missing = [n for _, n in names if not os.path.exists(os.path.join(self.dir, "bridges", n))]
+            if missing:
+                if not self._waiting or self._waiting[0] != mt:
+                    self._waiting = (mt, now)
+                if now - self._waiting[1] < 30:
+                    return
             tiles = {}
-            for c in meta.get("cams", []):
-                for kind in "sl":
-                    tw, th = meta.get(f"tile_{kind}", (111, 66 if kind == "s" else 95))
-                    p = os.path.join(self.dir, "bridges", f"{c['key']}_{kind}.bin")
-                    if c.get("on") and os.path.exists(p):
-                        a = np.fromfile(p, dtype=np.uint8)
-                        if a.size == tw * th * 3:
-                            tiles[(c["key"], kind)] = a.reshape(th, tw, 3)
-            self.meta, self.tiles, self._mtime = meta, tiles, mt
+            for kind, n in names:
+                tw, th = meta.get(f"tile_{kind}", (111, 66 if kind == "s" else 95))
+                fp = os.path.join(self.dir, "bridges", n)
+                a = np.fromfile(fp, dtype=np.uint8) if os.path.exists(fp) else np.zeros(0, np.uint8)
+                if a.size == tw * th * 3:
+                    tiles[n] = a.reshape(th, tw, 3)
+            self.meta, self.tiles, self._mtime, self._waiting = meta, tiles, mt, None
         except (OSError, ValueError) as e:
             print(f"[bridges] load: {e}")
 
@@ -88,7 +99,7 @@ class BridgesPanel:
         x, y, w, h = zone
         now = time.time()
         self._load(now)
-        key = entry.get("panel", "bridges")
+        key = (entry.get("panel", "bridges"), x)
         if transition or key not in self.started:
             self.started[key], self.passes[key] = now, 0
         cams = self.meta.get("cams") or []
@@ -120,7 +131,7 @@ class BridgesPanel:
 
     def _tile(self, c, x, y, w, h, cam, kind, now):
         lf, af = self.font(FONT_LABEL), self.font(FONT_AGE)
-        arr = self.tiles.get((cam.get("key"), kind))
+        arr = self.tiles.get((cam.get("tiles") or {}).get(kind))
         if arr is not None:
             c.Blit(arr, x, y)
         else:
@@ -149,6 +160,6 @@ def render_preview(data_dir, size, panel="bridges_full", elapsed=0.0):
     w, h = size
     c = Canvas(w, h)
     p = BridgesPanel(_Cfg(), data_dir)
-    p.started[panel], p.passes[panel] = time.time() - elapsed, 0
+    p.started[(panel, 0)], p.passes[(panel, 0)] = time.time() - elapsed, 0
     p.draw(c, (0, 0, w, h), {"panel": panel}, False)
     return c.buf.copy()
