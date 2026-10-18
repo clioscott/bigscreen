@@ -294,6 +294,7 @@ class Feed:
                             self.error = tail[-1][:300]
                         return got
                     got_n += k
+                frame.flags.writeable = False             # shared by every reader once published
                 with self._buf_lock:
                     self._buf.append(frame)
                     while len(self._buf) > self._cap():          # bounded memory, even while re-buffering
