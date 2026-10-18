@@ -225,6 +225,23 @@ class WebcamPanel:
         graphics.DrawText(c, f, x + max(2, (w - tw) // 2), y + h // 2, color, text)
 
 
+_preview_fonts: dict = {}
+
+
+def _preview_font(size):
+    f = _preview_fonts.get(size)
+    if f is None:
+        f = _preview_fonts[size] = graphics.Font()
+        f.LoadFont(FONTS.get(size, size))
+    return f
+
+
+def caption_dropped(cam: dict, shape_zone, wx=None) -> list:
+    """Sections turned on that the caption can't fit at this size (the control panel lists them)."""
+    from display.modules.webcam_caption import dropped_sections
+    return dropped_sections(cam, shape_zone, _preview_font, wx)
+
+
 def render_preview(cam: dict, frame, shape_zone, elapsed=0.0, wx=None) -> np.ndarray:
     """The wall's pixels for one zone: a frame already cropped to the zone, plus the caption (control panel)."""
     from display.gfx import Canvas
