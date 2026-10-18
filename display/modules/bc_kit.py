@@ -587,7 +587,8 @@ class BCScreen:
     PANEL = ""            # takeover panel name in the rotation ("naad_alert", …)
     DATA = ""             # data file the hub writes (data/<DATA>.json)
     SETTINGS = ""         # config section (modules.<SETTINGS>)
-    THEMES = {}           # id → {"label", "hint", "draw": fn(screen, c, item, now, el)}
+    THEMES = {}           # id → {"label", "hint", "draw": fn(screen, c, item, now, el), "badge": SAMPLE at,
+                          #       "dots": where the page dots go (see page_dots; none = no dots)}
     SAMPLES = {}          # id → {"label", "item": {...}}
     DEFAULT_THEME = ""
     FONT_ROLES = ()       # preloaded when the screen is built, not in the first frame of an alert
@@ -705,6 +706,15 @@ class BCScreen:
             out += [(it, t) for t in pages]
         return out
 
+    def _groups(self):
+        """Which item each page of the pass belongs to (0, 0, 1, 2, 2…), for the page dots."""
+        out, seen = [], []
+        for it, _ in self.queue:
+            if not seen or seen[-1] is not it:
+                seen.append(it)
+            out.append(len(seen) - 1)
+        return out
+
     def draw(self, c, zone, entry, transition, now=None):
         now = time.time() if now is None else now
         entry = entry or {}
@@ -727,6 +737,9 @@ class BCScreen:
             text(c, font("m13"), 8, 8, (255, 80, 80), f"{self.PANEL}: theme {tid} failed")
         if item.get("sample"):
             sample_badge(c, self.THEMES[tid].get("badge"))
+        pos = self.THEMES[tid].get("dots")              # (x, y), or fn(screen, item) -> (x, y)
+        if pos and len(self.queue) > 1:
+            page_dots(c, pos(self, item) if callable(pos) else pos, self._groups(), self.idx)
         if el >= float(entry.get("dwell_sec") or self.dwell(item)):
             self.idx += 1
             self.t0 = now
@@ -1119,6 +1132,24 @@ def map_crop(c, mp, x, y, w, h, cx, cy):
     return sx, sy
 
 
+def page_dots(c, pos, groups, cur):
+    """The full-wall pass as 3-px dots on a black strip, the page on now lit, a wider gap between items.
+    ``pos`` = (x, y) of the strip's top-right corner (x < 0 counts from the right edge)."""
+    gaps = sum(1 for a, b in zip(groups, groups[1:]) if a != b)
+    w = 5 * len(groups) + 3 * gaps + 3
+    x, y = pos
+    x = (W + x if x < 0 else x) - w
+    box(c, x, y, w, 7, BLACK)
+    dx = x + 2
+    for j, g in enumerate(groups):
+        if j and groups[j - 1] != g:
+            dx += 3
+        on = j == cur
+        box(c, dx, y + 2, 3, 3, WHITE if on else (95, 98, 110))
+        dx += 5
+    return w
+
+
 def sample_badge(c, pos=None):
     """Samples are labelled on the wall; each theme says where the badge goes (default bottom-right)."""
     f = font("s8")
@@ -1147,20 +1178,37 @@ def render_half(cls, sample=None, at=4.0, settings=None, data=None, data_dir=Non
     return c.buf, len(hp.pages)
 
 
-def render_preview(cls, theme, sample=None, at=4.0, settings=None, data=None, data_dir=None, frames=1):
-    """A frame of a screen ``at`` seconds into an item (a sample unless ``sample`` is None and real data exist)."""
-    from display.gfx import Canvas
+def _preview_screen(cls, theme, sample, settings, data, data_dir, page):
     loader = StaticLoader({cls.DATA: data or {}}, data_dir)
     scr = cls(dict(settings or {}, theme=theme), loader, data_dir)
-    c = Canvas(W, H)
     entry = {"theme": theme, "dwell_sec": 10 ** 6}
     if sample:
         entry["sample"] = sample
     elif not scr.live_items():
         entry["sample"] = next(iter(cls.SAMPLES))
+    if page is not None and entry.get("sample"):
+        entry["pages"] = True                            # a sample's whole first showing: the theme, then extra pages
+    return scr, entry
+
+
+def full_pages(cls, theme, sample=None, data=None, data_dir=None, settings=None):
+    """The full-wall pass of a sample on its first showing, as theme ids (the main one, then the extra pages)."""
+    scr, entry = _preview_screen(cls, theme, sample, settings, data, data_dir, 0)
+    return [t for _, t in scr._queue(entry)]
+
+
+def render_preview(cls, theme, sample=None, at=4.0, settings=None, data=None, data_dir=None, frames=1, page=None):
+    """A frame of a screen ``at`` seconds into an item (a sample unless ``sample`` is None and real data exist);
+    ``page`` = which page of a sample's first showing (see full_pages), with the page dots as on the wall."""
+    from display.gfx import Canvas
+    scr, entry = _preview_screen(cls, theme, sample, settings, data, data_dir, page)
+    c = Canvas(W, H)
     now = time.time()
     t0 = now - float(at)
     scr.draw(c, (0, 0, W, H), entry, True, now=t0)
+    if page:
+        scr.idx = max(0, min(int(page), len(scr.queue) - 1))
+        scr.state = {}
     for k in range(1, frames + 1):                       # a few frames so animated state settles
         scr.draw(c, (0, 0, W, H), entry, False, now=t0 + float(at) * k / frames)
     return c.buf

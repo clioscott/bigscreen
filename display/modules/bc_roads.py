@@ -684,17 +684,17 @@ SAMPLES = {
 
 THEMES = {
     "map": {"label": "Incident map", "hint": "The map zoomed to the event, the affected road highlighted; shield, icon and details beside",
-            "draw": _map, "badge": (W - 50, H - 12)},
+            "draw": _map, "badge": (W - 50, H - 12), "dots": (-2, 4)},
     "hero": {"label": "Shield headline", "hint": "A 64-px shield, the road and what is wrong in large type; the map beside",
-             "draw": _hero, "badge": (W - 50, H - 12)},
+             "draw": _hero, "badge": (W - 50, H - 12), "dots": (-2, 2)},
     "vms": {"label": "Overhead sign", "hint": "An amber variable-message sign; the big shield, icon and details beneath",
-            "draw": _vms, "badge": (W - 96, H - 12)},
+            "draw": _vms, "badge": (W - 96, H - 12), "dots": (-2, H - 8)},
     "overview": {"label": "Metro overview", "hint": "Every current event's road highlighted on the Metro map, the list beside",
-                 "draw": _overview, "badge": (4, H - 14)},
+                 "draw": _overview, "badge": (4, H - 14), "dots": (-2, 5)},
     "camera": {"label": "Highway camera", "hint": "The nearest DriveBC camera full height (or the map), shield and details beside",
-               "draw": _camera, "badge": (4, 20)},
+               "draw": _camera, "badge": (4, 20), "dots": lambda s, it: (336 - 3 if _cam(s, it) is not None else 300 - 3, 4)},
     "board": {"label": "Traffic desk", "hint": "Every current event in rows with shields; the one in focus expanded below",
-              "draw": _board, "badge": (230, 3)},
+              "draw": _board, "badge": (230, 3), "dots": (-2, H - 8)},
 }
 
 
@@ -734,6 +734,9 @@ class Screen(k.BCScreen):
         d = self.data()
         it.setdefault("road_lines", (d.get("sample_lines") or {}).get(key) or [])
         it.setdefault("hl", (d.get("sample_hl") or {}).get(key) or {})
+        cam = (d.get("sample_cams") or {}).get(key)          # a real camera near the sample's road (the hub fetches it)
+        if cam:
+            it.setdefault("cam", cam)
         return it
 
     def dwell(self, item):
@@ -910,5 +913,5 @@ HALF = {"map": _half_map, "hero": _half_hero, "vms": _half_vms, "overview": _hal
         "board": _half_board}
 
 
-def render_preview(theme, sample=None, at=4.0, settings=None, data=None, data_dir=None):
-    return k.render_preview(Screen, theme, sample, at, settings, data, data_dir)
+def render_preview(theme, sample=None, at=4.0, settings=None, data=None, data_dir=None, page=None):
+    return k.render_preview(Screen, theme, sample, at, settings, data, data_dir, page=page)
