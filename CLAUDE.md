@@ -129,7 +129,8 @@ once (`hold: false`), so the rotation resumes by itself.
   fps, source, `crops.{left,right,full,wall}` = {x, y, w} fractions (height follows the zone), colour, overlay.
   Panel page: Webcams. YouTube may need a JS runtime (deno) for yt-dlp some day; it works without one today.
 - Ready-made webcams: `hub/web/ui/pages/webcam_gallery.js` (YouTube ids; a restarted stream gets a new id). Cards show
-  real frames from `/api/webcams/snapshot.jpg` (ffmpeg still, cached an hour in `cache/webcam_snaps`), falling back to
+  real frames from `/api/webcams/snapshot.jpg`, which never waits: the cached still (fresh or stale), else 503 +
+  Retry-After while two background workers grab one (failures not retried for 10 min; `cache/webcam_snaps`), falling back to
   `/api/webcams/thumb/{id}.jpg` (YouTube's thumbnail, fetched by the hub).
 
 ## BC alert screens

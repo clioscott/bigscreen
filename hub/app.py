@@ -751,12 +751,17 @@ async def webcams_frames(type: str, url: str, w: int, h: int, fps: int = 15, x: 
 
 @app.get("/api/webcams/snapshot.jpg")
 def webcams_snapshot(type: str, url: str):
-    """A current still from any source (hub/webcams.py snapshot: grabbed by ffmpeg, cached an hour)."""
+    """A current still from any source (hub/webcams.py snapshot). Never waits for a grab: 503 + Retry-After while
+    one is being made, 404 when the source failed recently."""
     try:
-        jpg = webcams.snapshot({"type": type, "url": url})
+        jpg, state = webcams.snapshot({"type": type, "url": url})
     except webcams.SourceError as e:
-        raise HTTPException(502, str(e))
-    return Response(jpg, media_type="image/jpeg", headers={"Cache-Control": "max-age=600"})
+        raise HTTPException(400, str(e))
+    if jpg is None:
+        if state == "pending":
+            return JSONResponse({"detail": "grabbing a frame"}, status_code=503, headers={"Retry-After": "4"})
+        raise HTTPException(404, state)
+    return Response(jpg, media_type="image/jpeg", headers={"Cache-Control": "no-store", "X-Snapshot": state})
 
 
 _yt_thumbs: dict = {}               # video id -> (fetched at, jpeg bytes)

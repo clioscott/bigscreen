@@ -50,8 +50,46 @@ function usedIn(id) {
   return out;
 }
 
+// A current still from the hub (/api/webcams/snapshot.jpg). The hub answers at once: the still, or 503 while it grabs
+// one (ask again after Retry-After), or 404 when the stream is down (then YouTube's thumbnail, or nothing).
+const youtubeId = (url) => { try { const u = new URL(url); return u.searchParams.get("v") || ""; } catch { return ""; } };
+const SnapImg = {
+  props: { source: Object },
+  setup(props) {
+    const url = ref("");
+    const state = ref("loading");
+    let alive = true, timer = null, blobUrl = "";
+    const load = async (tries = 0) => {
+      if (!alive || !props.source?.url) return;
+      try {
+        const r = await fetch(snap(props.source));
+        if (r.ok) {
+          const b = await r.blob();
+          if (!alive) return;
+          if (blobUrl) URL.revokeObjectURL(blobUrl);
+          url.value = blobUrl = URL.createObjectURL(b);
+          state.value = "ok";
+          return;
+        }
+        if (r.status === 503 && tries < 40) {
+          timer = setTimeout(() => load(tries + 1), 1000 * (Number(r.headers.get("Retry-After")) || 4));
+          return;
+        }
+      } catch {}
+      const id = props.source.type === "youtube" ? youtubeId(props.source.url) : "";
+      if (id) { url.value = thumb({ id }); state.value = "ok"; } else state.value = "none";
+    };
+    onMounted(() => load());
+    watch(() => props.source?.url, () => { clearTimeout(timer); state.value = "loading"; url.value = ""; load(); });
+    onBeforeUnmount(() => { alive = false; clearTimeout(timer); if (blobUrl) URL.revokeObjectURL(blobUrl); });
+    return { url, state };
+  },
+  template: `<img v-if="url" :src="url" alt=""><span v-else class="wc-snap-wait">{{ state === 'loading' ? 'live frame…' : '' }}</span>`,
+};
+
 // --- list ---------------------------------------------------------------------------------------------------
 const WebcamList = {
+  components: { SnapImg },
   setup() {
     const wc = seed(["modules", "webcams"], { cams: {} });
     const cams = computed(() => Object.entries(store.draft.modules.webcams.cams || {}));
@@ -74,15 +112,11 @@ const WebcamList = {
       add(c, false);
       toast(`Added ${c.label}. Save to keep it; open it to crop it or add it to the rotation.`);
     };
-    const fallback = (ev, c) => {               // the hub couldn't grab a frame: YouTube's thumbnail, then nothing
-      const img = ev.target;
-      if (c?.id && !img.dataset.fell) { img.dataset.fell = "1"; img.src = thumb(c); } else img.style.visibility = "hidden";
-    };
     const usedText = (id) => {
       const u = usedIn(id);
       return u.length ? `in the rotation ×${u.length}` : "not in the rotation";
     };
-    return { wc, cams, feedFor, feedPill, add, host, usedText, go, GALLERY, snap, haveId, pick, fallback };
+    return { wc, cams, feedFor, feedPill, add, host, usedText, go, GALLERY, haveId, pick };
   },
   template: `<div class="page">
     <div class="page-head"><div class="grow"><h1>Webcams</h1>
@@ -91,7 +125,7 @@ const WebcamList = {
       <button class="btn primary" @click="add()"><Icon name="Plus" :size="15"/>Add webcam</button></div>
     <div class="card">
       <div class="list-row" v-for="[id, cam] in cams" :key="id" style="cursor:pointer" @click="go('webcams/' + id)">
-        <span class="wc-row-thumb"><img v-if="cam.source?.url" :src="snap(cam.source)" alt="" loading="lazy" @error="fallback($event)"></span>
+        <span class="wc-row-thumb"><SnapImg v-if="cam.source?.url" :source="cam.source"/></span>
         <div class="grow" style="min-width:0"><b>{{ cam.label || id }}</b>
           <div class="faint ellipsis" style="font-size:12.5px">{{ [cam.place, host(cam.source?.url), usedText(id)].filter(Boolean).join(' · ') }}</div></div>
         <span class="pill" :class="feedPill(feedFor(cam)).cls">{{ feedPill(feedFor(cam)).text }}</span>
@@ -103,7 +137,7 @@ const WebcamList = {
       <div class="card-head"><Icon :name="g.icon" :size="16"/><h3>{{ g.group }}</h3><span class="faint" style="font-size:12px">live now · click to add</span></div>
       <div class="card-body wc-gallery">
         <button v-for="c in g.cams" :key="c.id" type="button" class="wc-pick" :class="{have: haveId(c)}" @click="pick(c)" :title="c.note">
-          <span class="wc-thumb"><img :src="snap(c.source)" alt="" loading="lazy" @error="fallback($event, c)"><span class="live">LIVE</span>
+          <span class="wc-thumb"><SnapImg :source="c.source"/><span class="live">LIVE</span>
             <span class="wc-have" v-if="haveId(c)"><Icon name="Check" :size="13"/>added</span></span>
           <b>{{ c.label }}</b><span class="faint">{{ c.place }}</span><span class="faint wc-note">{{ c.note }}</span>
         </button>

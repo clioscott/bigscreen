@@ -12,6 +12,8 @@ A crop is ``{"x", "y", "w"}`` in fractions of the source frame (left edge, top e
 from the zone's shape, so a crop never stretches the picture. No crop: the largest centred one that fits.
 """
 
+import os
+import queue
 import re
 import subprocess
 import sys
@@ -85,6 +87,8 @@ def resolve(kind, url, fresh=False) -> tuple[str, str]:
     if status not in ("is_live", "post_live", "NA", "None"):
         title = f"{title} (not live: {status})"
     with _resolve_lock:
+        if len(_resolved) > 200:
+            _resolved.clear()
         _resolved[url] = (media, title, time.time())
     return media, title
 
@@ -319,48 +323,93 @@ def describe():
 
 
 # --- snapshots (the panel's gallery and list) -----------------------------------------------------------------
-SNAP_TTL = 3600.0
-_snap_slots = threading.Semaphore(2)     # ffmpegs grabbing a still at once
+# Requests never wait for a grab: they get the cached still (fresh or stale) at once, or None while two background
+# workers grab it. A source that failed is not tried again for SNAP_RETRY, so dead streams cost nothing per page load.
+SNAP_TTL = 3600.0            # a still older than this is refreshed (and served meanwhile)
+SNAP_RETRY = 600.0           # after a failed grab
+SNAP_KEEP = 200              # stills kept on disk
+_snap_queue: "queue.Queue" = queue.Queue()
+_snap_busy: set = set()      # keys queued or being grabbed
+_snap_failed: dict = {}      # key -> (when, error)
+_snap_lock = threading.Lock()
+_snap_workers: list = []
 
 
-def snapshot(src, max_age=SNAP_TTL) -> bytes:
-    """A current still (JPEG, 480 px wide) from a source, cached on disk for an hour; a stale one if grabbing
-    fails. Raises SourceError when there is nothing to show."""
+def _snap_path(kind, url):
     import hashlib
 
     from hub import paths
-    kind, url = check_source(src)
     d = paths.CACHE_DIR / "webcam_snaps"
     d.mkdir(parents=True, exist_ok=True)
-    path = d / (hashlib.sha1(f"{kind}|{url}".encode()).hexdigest()[:16] + ".jpg")
+    return d / (hashlib.sha1(f"{kind}|{url}".encode()).hexdigest()[:16] + ".jpg")
 
-    def fresh():
-        return path.exists() and time.time() - path.stat().st_mtime < max_age
 
-    if fresh():
-        return path.read_bytes()
-    with _snap_slots:
-        if fresh():                      # another request grabbed it while this one waited
-            return path.read_bytes()
+def snapshot(src):
+    """(jpeg bytes or None, status): "fresh", "stale" (a refresh is queued), "pending" (being grabbed; ask again
+    in a few seconds) or "failed: <why>" (not retried for SNAP_RETRY). Never blocks on ffmpeg."""
+    kind, url = check_source(src)
+    key = (kind, url)
+    path = _snap_path(kind, url)
+    data = age = None
+    try:
+        age = time.time() - path.stat().st_mtime
+        data = path.read_bytes()
+    except OSError:
+        pass
+    if data is not None and age < SNAP_TTL:
+        return data, "fresh"
+    with _snap_lock:
+        failed = _snap_failed.get(key)
+        recently_failed = failed and time.time() - failed[0] < SNAP_RETRY
+        if not recently_failed and key not in _snap_busy:
+            _snap_busy.add(key)
+            _snap_queue.put(key)
+            while len(_snap_workers) < 2:
+                t = threading.Thread(target=_snap_worker, name="webcam-snap", daemon=True)
+                t.start()
+                _snap_workers.append(t)
+    if data is not None:
+        return data, "stale"
+    if recently_failed:
+        return None, f"failed: {failed[1]}"
+    return None, "pending"
+
+
+def _snap_worker():
+    while True:
+        key = _snap_queue.get()
         try:
-            media, _ = resolve(kind, url)
-            args = ["ffmpeg", "-hide_banner", "-nostdin", "-nostats", "-loglevel", "error",
-                    "-protocol_whitelist", PROTOCOLS]
-            if kind == "youtube" or ".m3u8" in media:
-                args += ["-live_start_index", "-1"]
-            args += ["-i", media, "-frames:v", "1", "-vf", "scale=480:-2", "-f", "image2", "-c:v", "mjpeg",
-                     "-q:v", "4", "pipe:1"]
-            r = subprocess.run(args, capture_output=True, timeout=40)
-            if r.returncode or not r.stdout:
-                raise SourceError((r.stderr.decode("utf-8", "replace").strip().splitlines() or ["no picture"])[-1][:200])
-            tmp = path.with_suffix(".tmp")
-            tmp.write_bytes(r.stdout)
-            tmp.replace(path)
-            return r.stdout
-        except (SourceError, subprocess.TimeoutExpired, OSError) as e:
-            if path.exists():
-                return path.read_bytes()
-            raise e if isinstance(e, SourceError) else SourceError(f"no picture: {e}")
+            _grab(*key)
+            with _snap_lock:
+                _snap_failed.pop(key, None)
+        except Exception as e:
+            msg = str(e) if isinstance(e, SourceError) else f"no picture: {e}"
+            with _snap_lock:
+                _snap_failed[key] = (time.time(), msg[:200])
+                if len(_snap_failed) > 500:
+                    _snap_failed.clear()
+        finally:
+            with _snap_lock:
+                _snap_busy.discard(key)
+
+
+def _grab(kind, url):
+    import tempfile
+    media, _ = resolve(kind, url)
+    args = ["ffmpeg", "-hide_banner", "-nostdin", "-nostats", "-loglevel", "error", "-protocol_whitelist", PROTOCOLS]
+    if kind == "youtube" or ".m3u8" in media:
+        args += ["-live_start_index", "-1"]
+    args += ["-i", media, "-frames:v", "1", "-vf", "scale=480:-2", "-f", "image2", "-c:v", "mjpeg", "-q:v", "4", "pipe:1"]
+    r = subprocess.run(args, capture_output=True, timeout=40)
+    if r.returncode or not r.stdout:
+        raise SourceError((r.stderr.decode("utf-8", "replace").strip().splitlines() or ["no picture"])[-1][:200])
+    path = _snap_path(kind, url)
+    with tempfile.NamedTemporaryFile(dir=path.parent, suffix=".tmp", delete=False) as tmp:
+        tmp.write(r.stdout)
+    os.replace(tmp.name, path)
+    stills = sorted(path.parent.glob("*.jpg"), key=lambda p: p.stat().st_mtime)
+    for old in stills[:-SNAP_KEEP]:
+        old.unlink(missing_ok=True)
 
 
 # --- crop, scale, colour --------------------------------------------------------------------------------------
