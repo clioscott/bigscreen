@@ -50,6 +50,7 @@ export const SECTIONS = [
   ["Headlines", ["modules", "headlines"]],
   ["Weather maps", ["modules", "weather_maps"]],
   ["Webcams", ["modules", "webcams"]],
+  ["Bridges now", ["modules", "bridges"]],
   ["Weather data", ["modules", "weather"]],
   ["Weather alerts", ["modules", "weather_alerts"]],
   ["Japan EEW", ["modules", "japan_eew"]],
@@ -197,6 +198,9 @@ export const PANEL_TYPES = {
   webcam: { label: "Webcam", icon: "Video", sub: "cam", passes: false },
   webcam_full: { label: "Webcam (full width)", icon: "Video", sub: "cam", full: true, passes: false },
   webcam_wall: { label: "Webcam (whole wall)", icon: "Video", sub: "cam", full: true, passes: false, note: "Covers the ticker and clock too" },
+  bridges: { label: "Bridges now", icon: "Construction", passes: true, passWord: "pass through every bridge", note: "2×2, paging through the bridges" },
+  bridges_full: { label: "Bridges now (full width)", icon: "Construction", full: true, passes: true, passWord: "pass through every bridge" },
+  bridges_wall: { label: "Bridges now (whole wall)", icon: "Construction", full: true, passes: true, passWord: "pass through every bridge", note: "Covers the ticker and clock too" },
   blank: { label: "Blank", icon: "Square", passes: false },
 };
 // the stage of an alert's life on the wall (display/modules/alert_life.py) a rule can ask for

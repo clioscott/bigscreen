@@ -13,6 +13,7 @@ PANEL_LABELS = {
     "map": "Weather map", "map_full": "Weather map (full width)", "weather_alert": "Weather alert (full screen)",
     "blank": "Blank", "quake": "Earthquake warning", "font_specimen": "Font specimen",
     "webcam": "Webcam", "webcam_full": "Webcam (full width)", "webcam_wall": "Webcam (whole wall)",
+    "bridges": "Bridges now", "bridges_full": "Bridges now (full width)", "bridges_wall": "Bridges now (whole wall)",
 }
 WEATHER_SCREENS = {"current": "Current conditions", "hourly": "Hourly forecast", "forecast": "7-day forecast",
                    "warning": "Warnings"}

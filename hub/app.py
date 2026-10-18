@@ -865,6 +865,57 @@ async def webcams_preview(token: str):
                              headers={"Cache-Control": "no-store"})
 
 
+# --- bridges now (DriveBC stills, hub/jobs/bridges.py) ---------------------------------------------------------
+_dbc_cams = {"at": 0.0, "list": []}
+METRO = (48.95, 49.45, -123.35, -122.15)        # lat min/max, lon min/max: Metro Vancouver and the border
+
+
+@app.get("/api/bridges/state")
+def bridges_state():
+    """The bridges in use (config, or the job's defaults) and what the last run found."""
+    from hub.jobs import bridges as job
+    return {"cams": job.cams_of(config.load()), "defaults": job.DEFAULT_CAMS,
+            "data": read_json(paths.DATA_DIR / "bridges.json", {}) or {}}
+
+
+@app.get("/api/bridges/cameras")
+def bridges_cameras():
+    """DriveBC cameras in Metro Vancouver to pick from (cached 10 min)."""
+    if time.time() - _dbc_cams["at"] > 600:
+        try:
+            raw = requests.get("https://www.drivebc.ca/api/webcams/", timeout=40).json()
+        except Exception as e:
+            if not _dbc_cams["list"]:
+                raise HTTPException(502, f"DriveBC: {e}")
+            raw = None
+        if raw is not None:
+            out = []
+            for c in raw if isinstance(raw, list) else raw.get("results", []):
+                lon, lat = ((c.get("location") or {}).get("coordinates") or [None, None])[:2]
+                if lat is None or not (METRO[0] <= lat <= METRO[1] and METRO[2] <= lon <= METRO[3]):
+                    continue
+                out.append({"id": c.get("id"), "name": c.get("name") or "", "caption": c.get("caption") or "",
+                            "on": bool(c.get("is_on")) and not c.get("marked_stale")})
+            _dbc_cams.update(at=time.time(), list=sorted(out, key=lambda c: c["name"].lower()))
+    return _dbc_cams["list"]
+
+
+@app.get("/api/bridges/preview.png")
+def bridges_preview(shape: str = "full", page: int = 0, scale: int = 3):
+    """What the wall shows for a Bridges now entry, from the last job run."""
+    from display.modules import bridges as mod
+    zones = _webcam_zones()
+    if shape not in zones:
+        raise HTTPException(400, "shape must be left, right, full or wall")
+    panel = {"full": "bridges_full", "wall": "bridges_wall"}.get(shape, "bridges")
+    img = mod.render_preview(str(paths.DATA_DIR), tuple(zones[shape]), panel, elapsed=page * mod.PAGE_SEC + 0.5)
+    im = Image.fromarray(img)
+    s = max(1, min(6, scale))
+    out = io.BytesIO()
+    im.resize((im.width * s, im.height * s), Image.NEAREST).save(out, "PNG")
+    return Response(out.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
 # --- finance -----------------------------------------------------------------
 @app.get("/api/finance/data")
 def finance_data():

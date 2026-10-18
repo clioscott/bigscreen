@@ -220,6 +220,11 @@ class Screen:
         self.weather_full = keep("weather_full", (), lambda: WeatherInfoPanel(cfg, loader, full=True))
         self.panels["weather"] = self.weather_half.draw
         self.full_panels["weather_full"] = self.weather_full.draw
+        from display.modules.bridges import BridgesPanel      # DriveBC stills of the bridges (hub/jobs/bridges.py)
+        self.bridges = keep("bridges", ("bridges",), lambda: BridgesPanel(cfg, getattr(loader, "data_dir", None)))
+        self.panels["bridges"] = self.bridges.draw
+        self.full_panels["bridges_full"] = self.bridges.draw
+        self.takeover_panels["bridges_wall"] = self.bridges.draw
         from display.modules.webcam import WebcamPanel        # live video decoded by the hub (control panel → Webcams)
         self.webcam = keep("webcam", ("webcams",), lambda: WebcamPanel(cfg))
         self.panels["webcam"] = self.webcam.draw

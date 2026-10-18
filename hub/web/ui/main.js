@@ -17,6 +17,7 @@ import { Quake } from "./pages/quake.js";
 import { Fonts } from "./pages/fonts.js";
 import { Naad, Roads, Quakes, Tsunami, Wildfire } from "./pages/bcalerts.js";
 import { Webcams } from "./pages/webcams.js";
+import { Bridges } from "./pages/bridges.js";
 
 const NAV = [
   { id: "overview", label: "Overview", icon: "LayoutDashboard" },
@@ -26,6 +27,7 @@ const NAV = [
   { id: "headlines", label: "Headlines", icon: "Newspaper" },
   { id: "maps", label: "Weather maps", icon: "Radar" },
   { id: "webcams", label: "Webcams", icon: "Video" },
+  { id: "bridges", label: "Bridges now", icon: "Construction" },
   { id: "alerts", label: "Weather alerts", icon: "Siren" },
   { id: "naad", label: "Alert Ready", icon: "Megaphone" },
   { id: "roads", label: "DriveBC", icon: "Car" },
@@ -43,7 +45,7 @@ const NAV = [
 ];
 
 const App = {
-  components: { ...common, PlayingBar, Overview, Rotation, Ticker, Headlines, Maps, MapEditor, Areas, AreaEditor, Colours, DisplaySettings, System, Consoles, Alerts, Quake, Fonts, Naad, Roads, Quakes, Tsunami, Wildfire, Webcams },
+  components: { ...common, PlayingBar, Overview, Rotation, Ticker, Headlines, Maps, MapEditor, Areas, AreaEditor, Colours, DisplaySettings, System, Consoles, Alerts, Quake, Fonts, Naad, Roads, Quakes, Tsunami, Wildfire, Webcams, Bridges },
   setup() {
     const ready = ref(false);
     const err = ref("");
@@ -62,7 +64,7 @@ const App = {
       if (r === "areas" && store.route.params[0]) return "AreaEditor";
       return { overview: "Overview", rotation: "Rotation", ticker: "Ticker", headlines: "Headlines", maps: "Maps", areas: "Areas",
         colours: "Colours", display: "DisplaySettings", system: "System", consoles: "Consoles", alerts: "Alerts", quake: "Quake", fonts: "Fonts",
-        naad: "Naad", roads: "Roads", quakes: "Quakes", tsunami: "Tsunami", wildfire: "Wildfire", webcams: "Webcams" }[r] || "Overview";
+        naad: "Naad", roads: "Roads", quakes: "Quakes", tsunami: "Tsunami", wildfire: "Wildfire", webcams: "Webcams", bridges: "Bridges" }[r] || "Overview";
     });
     const feedsBad = computed(() => Object.values(store.status?.jobs || {}).filter((j) => ["stale", "failing"].includes(j.health)).length);
     const disp = computed(() => store.display?.status);
