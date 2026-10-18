@@ -36,7 +36,7 @@ CITIES = [
     ("100 Mile House", 51.6418, -121.2940, 2000),
 ]
 MAX_ZOOM_OUT = 3.0          # a reference may widen a zoomed map this much (the area keeps ≥ 1/3 of its size) …
-MIN_AREA_PX = 20            # … or until the area is this many pixels across, whichever allows more
+MIN_AREA_PX = 30            # … or, for areas zoomed in to the limit, until the area is this many pixels across
 
 
 def km(lat1, lon1, lat2, lon2):
