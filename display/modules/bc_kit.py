@@ -198,18 +198,27 @@ def draw_fit(c, lines, x, y):
 
 
 def fit_text(c, s, x, y, w, h, roles, col, centre=False, line_gap=1):
-    """One paragraph in the largest role that fits the box; returns the height used."""
+    """One paragraph in the largest role that fits the box without splitting a word (else the largest that fits
+    the box at all, else the last); returns the height used."""
+    if not roles:
+        return 0
+    words = str(s or "").split()
+    pick_ = fallback = None
     for r in roles:
         f = font(r)
         lines = wrap(f, s, w)
-        if len(lines) * (f.h + line_gap) - line_gap <= h or r == roles[-1]:
-            for i, ln in enumerate(lines):
-                ty = y + i * (f.h + line_gap)
-                if ty + f.h > y + h + 2:
-                    break
-                (text_c(c, f, x + w // 2, ty, col, ln) if centre else text(c, f, x, ty, col, ln))
-            return len(lines) * (f.h + line_gap) - line_gap
-    return 0
+        if len(lines) * (f.h + line_gap) - line_gap <= h:
+            if all(tw(f, wd) <= w for wd in words):
+                pick_ = (f, lines)
+                break
+            fallback = fallback or (f, lines)
+    f, lines = pick_ or fallback or (font(roles[-1]), wrap(font(roles[-1]), s, w))
+    for i, ln in enumerate(lines):
+        ty = y + i * (f.h + line_gap)
+        if ty + f.h > y + h + 2:
+            break
+        (text_c(c, f, x + w // 2, ty, col, ln) if centre else text(c, f, x, ty, col, ln))
+    return len(lines) * (f.h + line_gap) - line_gap
 
 
 # ------------------------------------------------------------------------------------------------ shapes
