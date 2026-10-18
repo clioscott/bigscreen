@@ -127,7 +127,8 @@ once (`hold: false`), so the rotation resumes by itself.
   picture after `GIVE_UP_SEC` returns `"skip"` (display/rotation.py ends the screen at once).
 - Config `modules.webcams`: `hub_url` (default `http://192.168.1.111:8800`), `cams.<id>` = label, place, credit, tz,
   fps, source, `crops.{left,right,full,wall}` = {x, y, w} fractions (height follows the zone), colour, overlay.
-  Panel page: Webcams. YouTube may need a JS runtime (deno) for yt-dlp some day; it works without one today.
+  Panel page: Webcams. Some YouTube streams need a JS runtime for yt-dlp: deno, installed user-level on the server
+  (`curl -fsSL https://deno.land/install.sh | sh -s -- -y --no-modify-path` → `~/.deno/bin`, found by `deno_path()`).
 - Ready-made webcams: `hub/web/ui/pages/webcam_gallery.js` (YouTube ids; a restarted stream gets a new id). Cards show
   real frames from `/api/webcams/snapshot.jpg`, which never waits: the cached still (fresh or stale), else 503 +
   Retry-After while two background workers grab one (failures not retried for 10 min; `cache/webcam_snaps`), falling back to

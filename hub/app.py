@@ -689,7 +689,8 @@ def _webcam_feed(src, fps):
 
 @app.get("/api/webcams/status")
 def webcams_status():
-    return {"feeds": webcams.describe(), "zones": _webcam_zones(), "max_feeds": webcams.MAX_FEEDS}
+    return {"feeds": webcams.describe(), "zones": _webcam_zones(), "max_feeds": webcams.MAX_FEEDS,
+            "js_runtime": bool(webcams.deno_path())}
 
 
 @app.post("/api/webcams/probe")

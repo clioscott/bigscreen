@@ -57,8 +57,21 @@ _resolved: dict = {}         # youtube url -> (media url, title, at)
 _resolve_lock = threading.Lock()
 
 
+def deno_path() -> str:
+    """deno for yt-dlp's YouTube challenges (some streams fail without a JS runtime): $BIGSCREEN_DENO, the user-level
+    install (~/.deno/bin, not on the service's PATH), or deno on the PATH. "" when there is none."""
+    import shutil
+    from pathlib import Path
+    for cand in (os.environ.get("BIGSCREEN_DENO"), str(Path.home() / ".deno" / "bin" / "deno"), shutil.which("deno")):
+        if cand and os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
+    return ""
+
+
 def _yt_dlp(*args, timeout=60):
-    return subprocess.run([sys.executable, "-m", "yt_dlp", "--no-warnings", "--no-playlist", *args],
+    deno = deno_path()
+    js = ["--js-runtimes", f"deno:{deno}"] if deno else []
+    return subprocess.run([sys.executable, "-m", "yt_dlp", "--no-warnings", "--no-playlist", *js, *args],
                           capture_output=True, text=True, timeout=timeout)
 
 
