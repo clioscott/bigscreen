@@ -231,6 +231,13 @@ def build_sandbox():
 
 
 # ---- renderers --------------------------------------------------------------------------------------
+def _bc_data(mod):
+    """What a BC screen's samples take from its live data file (sample_cams, sample_lines…), nothing else."""
+    src = REAL_STATE / "data" / f"{mod.Screen.DATA}.json"
+    d = json.loads(src.read_text()) if src.exists() else {}
+    return {k: v for k, v in d.items() if k.startswith("sample_")}
+
+
 def _frames(fn, start, stop, fps):
     n = max(1, int(round((stop - start) * fps)))
     return [fn(start + i / fps) for i in range(n)]
@@ -291,10 +298,11 @@ def render_half(man):
         save_gif(man, "half", "half-weather.gif", frames, 1.5, "Weather alert, half width", "Every page in turn", -1)
     for j, (src, (modname, label)) in enumerate(BC.items()):
         mod = importlib.import_module(f"display.modules.{modname}")
-        f0, n = bc_kit.render_half(mod.Screen, None, 3.0, {}, {}, data_dir, page=0)
+        data = _bc_data(mod)
+        f0, n = bc_kit.render_half(mod.Screen, None, 3.0, {}, data, data_dir, page=0)
         frames = []
         for p in range(n):
-            f, _ = bc_kit.render_half(mod.Screen, None, 3.0, {}, {}, data_dir, page=p)
+            f, _ = bc_kit.render_half(mod.Screen, None, 3.0, {}, data, data_dir, page=p)
             save_png(man, "half", f"half-{src}-p{p}.png", f[41:175, 225:448], f"{label} · page {p + 1}", "", 100 + j * 10 + p)
             frames += [f[41:175, 225:448]] * 3
         if frames:
@@ -304,14 +312,23 @@ def render_half(man):
 
 def render_bc(man):
     import importlib
+    from display.modules import bc_kit
     data_dir = str(SANDBOX / "data")
     for j, (src, (modname, label)) in enumerate(BC.items()):
         mod = importlib.import_module(f"display.modules.{modname}")
+        data = _bc_data(mod)
         for i, (tid, th) in enumerate(mod.THEMES.items()):
-            f = mod.render_preview(tid, None, 6.0, {}, {}, data_dir)
+            f = mod.render_preview(tid, None, 6.0, {}, data, data_dir)
             save_png(man, "bc", f"bc-{src}-{tid}.png", f, f"{label} · {th['label']}", th.get("hint", ""), j * 100 + i + 1)
         tid = mod.Screen.DEFAULT_THEME
-        frames = _frames(lambda t: mod.render_preview(tid, None, t, {}, {}, data_dir), 0.0, 9.0, 5)
+        pages = bc_kit.full_pages(mod.Screen, tid, None, data, data_dir)
+        if len(pages) > 1:                                # the sample's whole first showing, with the page dots
+            frames = []
+            for p in range(len(pages)):
+                frames += _frames(lambda t: bc_kit.render_preview(mod.Screen, tid, None, t, {}, data, data_dir, page=p),
+                                  0.0, 4.0, 5)
+        else:
+            frames = _frames(lambda t: mod.render_preview(tid, None, t, {}, data, data_dir), 0.0, 9.0, 5)
         save_gif(man, "bc", f"bc-{src}.gif", frames, 5, label, mod.THEMES[tid]["label"], j * 100)
     log("BC screens done")
 
