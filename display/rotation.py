@@ -29,6 +29,7 @@ import time
 from display.rules import legacy_rules
 
 DEFAULT_DWELL = 30.0
+WARM_AHEAD = 20.0          # this close to the end of a screen, the next one may get its source ready (webcams)
 DEFAULT_CAP = 1800.0
 
 
@@ -132,6 +133,31 @@ class Rotation:
                 return None
             return {**self.cur["entry"], "_play": self.cur["id"]}
 
+    def upcoming(self, now: float):
+        """The entry that should play after the current screen, once that screen is near its end (under WARM_AHEAD
+        seconds left, by its time limit or, for one that runs by passes, by how long its passes have taken); else
+        None. For getting the next screen's source ready (a webcam's feed)."""
+        with self._lock:
+            c = self.cur
+            if c is None or self.preview:
+                return None
+            e = c["entry"]
+            left = self._limit(e) - c["visible"]
+            if e.get("advance") == "cycles" and c["passes"] >= 1:     # passes so far tell how long the rest takes
+                done_at = c.get("pass_at", c["visible"])
+                left = min(left, done_at / c["passes"] * (self.need(e) - c["passes"]) - (c["visible"] - done_at))
+            if left > WARM_AHEAD:
+                return None
+            for i in self.pending:
+                if i < len(self.entries) and self._allows(self.entries[i]):
+                    return self.entries[i]
+            n = len(self.entries)
+            for step in range(1, n + 1):
+                i = (self.pos + step) % n
+                if self._allows(self.entries[i]):
+                    return self.entries[i]
+            return None
+
     # -- progress ------------------------------------------------------------------------
     def need(self, e) -> int:
         n = e.get("cycles")
@@ -169,6 +195,7 @@ class Rotation:
                 c["visible"] += dt
                 if result == "done":
                     c["passes"] += 1
+                    c["pass_at"] = c["visible"]      # screen time when that pass ended (upcoming estimates from it)
             if visible and result == "skip":
                 if self.preview and c["source"] == "preview":
                     self._end_preview(now)

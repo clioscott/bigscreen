@@ -175,6 +175,7 @@ class Screen:
             self.prev = dict(prev.prev)
         for eng in self.engines.values():
             eng.env, eng.passes_for = env, self._default_passes
+        self._warm_t = 0.0                           # last look for a webcam to warm (draw)
         # panel name -> draw(canvas, zone, entry, transition) -> "done" | None
         self.panels = {
             "calendar": self._draw_calendar,
@@ -245,6 +246,21 @@ class Screen:
         if prev is not None and getattr(prev, "_sigs", {}).get(name) == sig and getattr(prev, name, None) is not None:
             return getattr(prev, name)
         return make()
+
+    def _warm_next(self, visible, now):
+        """A side on screen whose next entry is a webcam: have the hub start its feed (a paused side waits)."""
+        warm = getattr(getattr(self, "webcam", None), "warm", None)
+        if warm is None:
+            return
+        for side in ("left", "right"):
+            if not visible.get(side):
+                continue
+            try:
+                nxt = self.engines[side].upcoming(now)
+                if nxt and str(nxt.get("panel", "")).startswith("webcam"):
+                    warm(nxt)
+            except Exception as e:                   # never cost a frame: the webcam just loads as before
+                print(f"[webcam] warm next on {side}: {e}")
 
     def _default_passes(self, entry):
         if entry.get("panel", "").startswith("map") and hasattr(self, "map_panel"):
@@ -332,6 +348,9 @@ class Screen:
             if visible[side]:
                 self.prev_play[side] = chosen[side].get("_play")
             self.prev[side] = chosen[side].get("panel")
+        if now - self._warm_t >= 2.0:                # the next screen is a webcam: get its feed going at the hub
+            self._warm_t = now
+            self._warm_next(visible, now)
         if takeover:
             return                                  # no ticker / clock while an alert has the wall
 
