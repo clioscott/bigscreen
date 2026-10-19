@@ -84,17 +84,22 @@ export function makeBCPage(P) {
 
       // rotation: is there an entry for this screen?
       const lc = computed(() => store.draft.modules.layout_cycle || {});
-      const inRotation = computed(() => ["left", "right"].some((side) => (lc.value[side] || []).some((e) => e.panel === P.panel)));
-      const halfInRotation = computed(() => (lc.value.right || []).some((e) => e.panel === P.panel + "_half"));
+      // one entry per screen: full screen while an item is new, half width (its variant) once shown enough
+      const fullEntry = computed(() => ["left", "right"].map((side) => (lc.value[side] || []).find((e) => e.panel === P.panel)).find(Boolean));
+      const inRotation = computed(() => !!fullEntry.value);
+      const halfInRotation = computed(() => (fullEntry.value?.variants || []).some((v) => v.panel === P.panel + "_half")
+        || (lc.value.right || []).some((e) => e.panel === P.panel + "_half"));          // older configs: a second entry
+      const halfVariant = () => ({ panel: P.panel + "_half", advance: "cycles", cycles: 1, max_sec: 300, rules: [{ if: P.rule, phase: "full", not: true }] });
       const addToRotation = () => {
         const right = store.draft.modules.layout_cycle.right = store.draft.modules.layout_cycle.right || [];
         if (!inRotation.value) {
           const at = right.findIndex((e) => e.panel === "weather_alert");
-          right.splice(at + 1, 0, { panel: P.panel, rules: [{ if: P.rule, phase: "full" }], priority: "next", advance: "cycles", cycles: 1, max_sec: 600 });
-        }
-        if (!halfInRotation.value) {
-          const m = right.findIndex((e) => e.panel?.startsWith("map"));
-          right.splice(m >= 0 ? m : right.length, 0, { panel: P.panel + "_half", rules: [{ if: P.rule, phase: "half" }], advance: "cycles", cycles: 1, max_sec: 300 });
+          right.splice(at + 1, 0, { panel: P.panel, rules: [{ if: P.rule }], priority: "next", advance: "cycles", cycles: 1, max_sec: 600,
+            variants: [halfVariant()] });
+        } else if (!halfInRotation.value) {
+          const e = fullEntry.value;
+          for (const r of e.rules || []) if (r.if === P.rule && !r.not) delete r.phase;   // comes up at either stage
+          (e.variants = e.variants || []).push(halfVariant());
         }
         toast("Added to the rotation — Save to keep it");
       };

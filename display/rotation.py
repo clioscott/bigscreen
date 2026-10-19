@@ -8,6 +8,9 @@ Entries (``modules.layout_cycle.<side>``)::
      "dwell_sec": 30,                                  … after this many seconds on screen
      "priority": "next",                               when its rules become true, it plays next (after the
                                                        current screen), then the rotation carries on where it was
+     "variants": [{"panel": "webcam",                  plays as another panel (shape) while these rules hold:
+                   "rules": [{"if": "hours", …}],      the first variant whose rules hold wins, else ``panel``;
+                   "max_sec": 300}],                   any other field overrides the entry's while it plays so
      "enabled": false}                                 kept in the list but never shown
 
 How it plays:
@@ -34,18 +37,49 @@ DEFAULT_CAP = 1800.0
 
 
 def entry_key(e: dict):
-    return (e.get("panel"), e.get("track"), e.get("weather_screen"), e.get("cam"))
+    b = e.get("_base") if isinstance(e.get("_base"), dict) else e          # a shaped play: the entry it came from
+    return (b.get("panel"), b.get("track"), b.get("weather_screen"), b.get("cam"))
+
+
+_NOT_OVERRIDDEN = ("panel", "rules", "variants", "enabled", "priority", "cam", "track", "weather_screen")
+
+
+def variants_of(e: dict) -> list:
+    """An entry's other shapes, cleaned: [{"panel", "rules", …overrides}] (anything malformed is dropped)."""
+    raw = e.get("variants")
+    out = []
+    for v in raw if isinstance(raw, list) else []:
+        if isinstance(v, dict) and isinstance(v.get("panel"), str) and v["panel"].strip():
+            rules = v.get("rules")
+            extra = {k: x for k, x in v.items() if k not in _NOT_OVERRIDDEN and not str(k).startswith("_")}
+            out.append({**extra, "panel": v["panel"].strip(),
+                        "rules": [r for r in rules if isinstance(r, dict)] if isinstance(rules, list) else []})
+    return out
 
 
 def normalise(raw) -> dict | None:
     if not isinstance(raw, dict) or not (raw.get("panel") or "").strip():
         return None
-    e = {k: v for k, v in raw.items() if k not in ("when", "allowed_days", "allowed_hours")}
+    e = {k: v for k, v in raw.items()
+         if k not in ("when", "allowed_days", "allowed_hours") and not str(k).startswith("_")}   # _play, _base…
     e["panel"] = raw["panel"].strip()
     e["rules"] = legacy_rules(raw)
     if e["panel"] in ("weather_alert", "naad_alert", "road_alert", "quake_alert", "tsunami_alert", "fire_alert"):
         e.setdefault("priority", "next")      # an alert that starts plays next ("priority": "" turns that off)
     return e
+
+
+def _as_variant(entry, v):
+    """The entry played as variant v: v's panel and overrides; ``_base`` keeps the entry as configured."""
+    return {**entry, **{k: x for k, x in v.items() if k != "rules"}, "_shape_of": entry["panel"], "_base": entry}
+
+
+def _same_size(entry, was):
+    """After a config reload: the new settings for a play already on screen, at the size it started with."""
+    if not was.get("_shape_of"):
+        return entry
+    v = next((v for v in variants_of(entry) if v["panel"] == was["panel"]), None)
+    return _as_variant(entry, v or {"panel": was["panel"]})         # variant since removed: keep its size till it ends
 
 
 class Rotation:
@@ -60,6 +94,7 @@ class Rotation:
         self.pending: list[int] = []         # priority entries waiting to play next
         self._prio_seen: dict = {}           # key -> rules held last check
         self._prio_tok: dict = {}            # key -> the new-alert token last check (see Env.priority_token)
+        self._full_keys: set = set()         # keys queued by a new alert: they play their own (full) size
         self._prio_t = 0.0
         self._idle_t = 0.0
         self._last_t = None
@@ -71,7 +106,26 @@ class Rotation:
     def _allows(self, e):
         return e.get("enabled", True) is not False and (self.env is None or self.env.allows(e))
 
-    def _start(self, entry, idx, source, now):
+    def _shaped(self, entry):
+        """The entry as it plays now: the first variant whose rules hold gives the panel (e.g. half width during
+        business hours), else its own. Decided when a screen starts, like every rule."""
+        if isinstance(entry.get("_base"), dict):          # restarting a screen (after a preview): decide afresh
+            entry = entry["_base"]
+        for v in variants_of(entry):
+            try:
+                ok = self.env is None or self.env.allows({**entry, "rules": v["rules"]})
+            except Exception as ex:
+                print(f"[rotation] variant rules: {ex}")
+                ok = False
+            if ok:
+                return _as_variant(entry, v)
+        return entry
+
+    def _start(self, entry, idx, source, now, own_size=False):
+        if own_size:                                     # a new alert's jump: full size whatever the variants say
+            entry = entry["_base"] if isinstance(entry.get("_base"), dict) else entry
+        else:
+            entry = self._shaped(entry)
         self._plays += 1
         self.cur = {"entry": entry, "idx": idx, "source": source, "id": self._plays,
                     "visible": 0.0, "passes": 0, "started": now}
@@ -87,7 +141,8 @@ class Rotation:
             ok = self._allows(e)
             cur_e = self.cur["entry"] if self.cur else None
             playing = bool(cur_e and entry_key(cur_e) == k)
-            if ok and not self._prio_seen.get(k) and i not in self.pending and not playing:
+            if ok and not self._prio_seen.get(k) and i not in self.pending and not playing \
+                    and not self._shaped(e).get("_shape_of"):        # jumps are for its own (full) size
                 self.pending.append(i)
             self._prio_seen[k] = ok
             # a new alert (never shown in full) also jumps the queue when the entry was already eligible
@@ -102,13 +157,16 @@ class Rotation:
                     continue                 # keep the old token: it triggers again once this pass ends
                 if i not in self.pending:
                     self.pending.append(i)
+                self._full_keys.add(k)       # a new alert: full size, even if the alert list hasn't caught up yet
             self._prio_tok[k] = tok
 
     def _pick(self, now):
         while self.pending:
             i = self.pending.pop(0)
             if i < len(self.entries) and self._allows(self.entries[i]):
-                self._start(self.entries[i], i, "priority", now)
+                k = entry_key(self.entries[i])
+                self._start(self.entries[i], i, "priority", now, own_size=k in self._full_keys)
+                self._full_keys.discard(k)
                 return
         if now < self._idle_t:
             return
@@ -289,7 +347,7 @@ class Rotation:
                     k = entry_key(c["entry"])
                     if k in keys:
                         c["idx"] = keys.index(k)
-                        c["entry"] = new[c["idx"]]          # new settings (cycles, dwell…) apply to the play
+                        c["entry"] = _same_size(new[c["idx"]], c["entry"])   # new settings, same size
                     elif c is self.cur:
                         self.cur = None
                     else:
