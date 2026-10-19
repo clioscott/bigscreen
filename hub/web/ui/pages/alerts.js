@@ -7,7 +7,9 @@ const TYPES = [
   { id: "advisory", label: "Advisories", hint: "Less severe but still a nuisance (frost, fog…)" },
   { id: "statement", label: "Special weather statements", hint: "Heads-up about unusual weather" },
 ];
-const ENTRY = { panel: "weather_alert", when: "weather_alert_active", advance: "cycles", cycles: 1, max_sec: 900 };
+// one entry: full screen while an alert is new, half width on the right once it has had its full-wall showings
+const ENTRY = { panel: "weather_alert", rules: [{ if: "alert" }], priority: "next", advance: "cycles", cycles: 1, max_sec: 900,
+  variants: [{ panel: "weather_alert_half", advance: "cycles", cycles: 1, max_sec: 300, rules: [{ if: "alert", phase: "full", not: true }] }] };
 const DETAIL = [
   { value: "all", label: "Everything", hint: "The whole ECCC text (minus boilerplate)" },
   { value: "essentials", label: "Essentials", hint: "What's happening, what to expect and what to do" },
@@ -318,7 +320,7 @@ export const Alerts = {
     const entry = computed(() => ["left", "right"].map((s) => (store.draft.modules.layout_cycle[s] || []).find((e) => e.panel === "weather_alert")).find(Boolean));
     const addToRotation = () => {
       const r = (store.draft.modules.layout_cycle.right = store.draft.modules.layout_cycle.right || []);
-      r.unshift({ ...ENTRY });
+      r.unshift(JSON.parse(JSON.stringify(ENTRY)));
       toast("Added to the start of the right-half rotation — save to apply");
     };
     const when = (ts) => (ts ? new Date(ts * 1000).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "");

@@ -39,13 +39,57 @@ def test_variant_picks_the_shape_when_the_screen_starts():
     assert _run(r, 15.0, 26.0) == "webcam_full"                       # next time round: full width
 
 
-def test_shaped_entry_keeps_its_identity():
+def test_shaped_entry_keeps_its_identity_and_size_across_a_reload():
     env = Env()
     r = Rotation("right", [_cam(), {"panel": "blank"}], env=env)
     shaped = r.current(0.0)
     assert entry_key(shaped) == entry_key(_cam())                     # reloads and priorities still recognise it
+    env.biz = False                                                   # even if the variant no longer applies
     r.reload([_cam(dwell_sec=20), {"panel": "blank"}])
-    assert r.current(1.0)["cam"] == "a"
+    e = r.current(1.0)
+    assert e["cam"] == "a" and e["panel"] == "webcam" and e["dwell_sec"] == 20 and e["_play"] == shaped["_play"]
+
+
+def test_reload_keeps_the_variants_new_settings():
+    r = Rotation("right", [_alert(), {"panel": "blank"}], env=Env())
+    assert r.current(0.0)["max_sec"] == 300
+    new = _alert()
+    new["variants"][0]["max_sec"] = 200
+    r.reload([new, {"panel": "blank"}])
+    e = r.current(0.5)
+    assert e["panel"] == "weather_alert_half" and e["max_sec"] == 200
+
+
+class TokenEnv(Env):
+    """Also a new-alert token (Env.priority_token), as the alert screens give."""
+    def __init__(self):
+        super().__init__()
+        self.tok = None
+
+    def priority_token(self, entry):
+        return self.tok
+
+
+def test_a_new_alert_jumps_the_queue_at_full_size_even_while_the_half_size_applies():
+    env = TokenEnv()                                                   # biz=True: the half variant applies
+    r = Rotation("right", [{"panel": "blank", "dwell_sec": 5}, _alert()], env=env)
+    assert _run(r, 0.0, 2.0) == "blank"                               # alert eligible, half size: no jump
+    assert r.pending == []
+    env.tok = "new-1"                                                  # a new alert, list not caught up yet
+    _run(r, 2.0, 6.0)
+    e = r.current(6.0)
+    assert e["panel"] == "weather_alert" and "_shape_of" not in e     # its own, full size
+
+
+def test_variants_cannot_change_what_is_shown():
+    v = variants_of({"variants": [{"panel": "webcam", "cam": "other", "track": "x", "weather_screen": "y", "rules": []}]})
+    assert v == [{"panel": "webcam", "rules": []}]
+
+
+def test_internal_fields_are_dropped_from_config_entries():
+    r = Rotation("right", [{**_cam(), "_base": "junk", "_shape_of": "x", "_play": 9}], env=Env())
+    e = r.current(0.0)
+    assert e["panel"] == "webcam" and isinstance(e["_base"], dict) and "_base" not in e["_base"]
 
 
 def test_restart_after_a_preview_decides_the_shape_afresh():
@@ -102,18 +146,25 @@ def test_alert_pairs_fold_into_one_entry_each():
     cfg = {"modules": {"layout_cycle": {"left": [], "right": [
         {"panel": "weather_alert", "advance": "cycles", "cycles": 1, "max_sec": 900,
          "rules": [{"if": "alert", "phase": "full", "min_level": "watch"}], "priority": "next"},
-        {"panel": "weather_alert_half", "rules": [{"if": "alert", "phase": "half"}], "max_sec": 240, "priority": ""},
+        {"panel": "weather_alert_half", "rules": [{"if": "alert", "phase": "half", "min_level": "watch"}],
+         "advance": "cycles", "cycles": 1, "max_sec": 240, "priority": ""},
         {"panel": "quake_alert", "rules": [{"if": "quakes", "phase": "full"}], "priority": "next"},
         {"panel": "quake_alert_half", "rules": [{"if": "quakes", "phase": "half"}], "max_sec": 300},
         {"panel": "naad_alert_half", "rules": [{"if": "naad", "phase": "half"}]},     # no full entry: left alone
+        {"panel": "fire_alert", "rules": [{"if": "wildfire", "phase": "full"}]},
+        {"panel": "fire_alert_half", "rules": [{"if": "wildfire", "phase": "half"}], "enabled": False},  # off: kept
+        {"panel": "road_alert", "rules": [{"if": "roads", "phase": "full", "home": True}]},
+        {"panel": "road_alert_half", "rules": [{"if": "roads", "phase": "half"}]},     # other filter: kept
         {"panel": "map", "track": "precip_radar"}]}}}
     migrate(cfg)
     right = cfg["modules"]["layout_cycle"]["right"]
-    assert [e["panel"] for e in right] == ["weather_alert", "quake_alert", "naad_alert_half", "map"]
+    assert [e["panel"] for e in right] == ["weather_alert", "quake_alert", "naad_alert_half", "fire_alert",
+                                           "fire_alert_half", "road_alert", "road_alert_half", "map"]
     wx = right[0]
     assert wx["rules"] == [{"if": "alert", "min_level": "watch"}] and wx["max_sec"] == 900
-    assert wx["variants"] == [{"panel": "weather_alert_half", "max_sec": 240,
+    assert wx["variants"] == [{"panel": "weather_alert_half", "advance": "cycles", "cycles": 1, "max_sec": 240,
                                "rules": [{"if": "alert", "min_level": "watch", "phase": "full", "not": True}]}]
+    assert right[3]["rules"] == [{"if": "wildfire", "phase": "full"}] and "variants" not in right[3]
     once = copy.deepcopy(cfg)
     assert migrate(cfg) == [] and cfg == once                          # running it again changes nothing
 

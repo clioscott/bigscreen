@@ -139,7 +139,7 @@ const SlotEditor = {
       props.e.variants.push({ panel: other, rules: [{ if: "hours", from: "07:00", to: "17:00" }, { if: "days", days: [0, 1, 2, 3, 4] }] });
     };
     const removeVariant = (i) => { props.e.variants.splice(i, 1); if (!props.e.variants.length) delete props.e.variants; };
-    const addVariantRule = (v) => v.rules.push({ if: "hours", ...RULES.hours.make() });
+    const addVariantRule = (v) => (v.rules = v.rules || []).push({ if: "hours", ...RULES.hours.make() });
     return { t, tracks, cams, setPanel, mode, passes, defaultLoops, rules, addRule, priority, enabled, PANEL_TYPES, WEATHER_SCREENS,
       shapes, variants, addVariant, removeVariant, addVariantRule, shapeName };
   },
@@ -168,7 +168,7 @@ const SlotEditor = {
       <div class="rule-list">
         <div v-for="(v, i) in variants" :key="i" class="card-body" style="border:1px solid var(--line); border-radius:8px; padding:8px 10px">
           <div class="row" style="gap:8px; margin-bottom:6px"><span>Plays</span>
-            <select class="input" v-model="v.panel" style="max-width:180px"><option v-for="p in shapes" :key="p" :value="p" :disabled="p === e.panel">{{ shapeName(p) }}</option></select>
+            <select class="input" v-model="v.panel" style="max-width:180px"><option v-for="p in shapes" :key="p" :value="p" :disabled="p === e.panel || variants.some((w, j) => j !== i && w.panel === p)">{{ shapeName(p) }}</option></select>
             <span class="faint">while all of these hold:</span><span class="spacer"></span>
             <button class="btn sm ghost icon-only" title="Remove" @click="removeVariant(i)"><Icon name="X" :size="14"/></button></div>
           <RuleRow v-for="(r, k) in v.rules" :key="k" :r="r" @remove="v.rules.splice(k, 1)"/>
@@ -228,7 +228,8 @@ export const Rotation = {
       cycle.value[other].push(e);
       open.value = null;
     };
-    const play = (side, e, hold) => playOnDisplay(e, { side, hold });
+    // ▶ shows the entry at its own size (an alert entry with nothing new would otherwise show an empty half panel)
+    const play = (side, e, hold) => { const { variants, ...own } = e; return playOnDisplay(own, { side, hold }); };
     return { cycle, open, isCurrent, waiting, add, remove, moveTo, play, entryTitle, entrySub, advanceText, ruleText, variantText, PANEL_TYPES,
       life: computed(() => store.draft.modules.alert_lifecycle) };
   },

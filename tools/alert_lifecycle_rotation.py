@@ -19,6 +19,21 @@ FULL = {"weather_alert": "alert", "tsunami_alert": "tsunami", "quake_alert": "qu
         "fire_alert": "wildfire", "road_alert": "roads"}
 
 
+def _foldable(full, halves, cond):
+    """A half entry folds into the full one only when nothing but its size and timing differs: it is on, its alert
+    rule has the same filters (level, hazards, home), and it has no other rules. Otherwise both stay as they are."""
+    if len(halves) > 1:
+        return False
+    if not halves:
+        return True
+    h = halves[0]
+    strip = lambda r: {k: v for k, v in r.items() if k not in ("phase", "not")}
+    mine = [r for r in full.get("rules") or [] if r.get("if") == cond and not r.get("not")]
+    theirs = h.get("rules") or []
+    return (h.get("enabled", True) is not False and len(theirs) == 1 and theirs[0].get("if") == cond
+            and not theirs[0].get("not") and strip(theirs[0]) == (strip(mine[0]) if mine else {"if": cond}))
+
+
 def migrate(cfg):
     mods = cfg.setdefault("modules", {})
     mods.setdefault("alert_lifecycle", {"full_showings": 3, "full_minutes": 30, "half": True})
@@ -31,6 +46,9 @@ def migrate(cfg):
         halves = [e for e in right if e.get("panel") == half]
         if full is None:
             continue                                           # no full-wall entry: leave any half entry alone
+        if not _foldable(full, halves, cond):
+            print(f"{panel}: its half-width entry differs (turned off, other filters or rules): left as two entries")
+            continue
         if full.get("when") == "weather_alert_active" or (not full.get("rules") and panel == "weather_alert"):
             full.pop("when", None)
             full["rules"] = [{"if": "alert"}]
@@ -45,9 +63,10 @@ def migrate(cfg):
         full.setdefault("priority", "next")
         variants = full.setdefault("variants", [])
         if not any(v.get("panel") == half for v in variants):
-            cap = next((h.get("max_sec") for h in halves if h.get("max_sec")), 300)
+            h = halves[0] if halves else {}
+            timing = {k: h[k] for k in ("advance", "cycles", "max_sec", "dwell_sec") if k in h} or {"max_sec": 300}
             params = {k: v for k, v in rule.items() if k not in ("phase", "not")}
-            variants.append({"panel": half, "max_sec": cap, "rules": [{**params, "phase": "full", "not": True}]})
+            variants.append({"panel": half, **timing, "rules": [{**params, "phase": "full", "not": True}]})
             changed.append(f"{panel} + half width")
         if halves:
             right[:] = [e for e in right if e.get("panel") != half]
