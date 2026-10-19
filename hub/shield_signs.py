@@ -10,6 +10,7 @@ Routes Commons has no file for (BC 3, the Crowsnest) return None and the wall ke
 from __future__ import annotations
 
 import io
+import os
 import re
 import threading
 import time
@@ -32,30 +33,35 @@ def png_path(route, kind=None):
     return SIGNS_DIR / f"{slug(name)}.png" if name else None
 
 
-_fetching = threading.Lock()   # one Commons request at a time (the panel asks for a row of presets at once)
+_fetching = threading.Lock()   # one Commons request and render at a time (the panel asks for a row of presets)
+LOCK_WAIT = 15                 # s a preview waits for another fetch before giving up (it's asked again later)
+
+
+def _write(path, data: bytes):
+    """Atomically, through a temp name of this process and thread (the job runs in its own process)."""
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    tmp.write_bytes(data)
+    tmp.replace(path)
 
 
 def _svg(name: str, timeout=20) -> bytes | None:
     """The SVG from Commons, cached for good (signs don't change). A 404 is remembered for RETRY_SEC; anything else
-    (rate limiting, Commons down) raises and is simply tried again next time."""
+    (rate limiting, Commons down) raises and is simply tried again next time. Called under _fetching."""
     CACHE.mkdir(parents=True, exist_ok=True)
     path, miss = CACHE / f"{slug(name)}.svg", CACHE / f"{slug(name)}.missing"
-    with _fetching:
-        if path.exists():
-            return path.read_bytes()
-        if miss.exists() and time.time() - miss.stat().st_mtime < RETRY_SEC:
-            return None
-        r = requests.get(FILE_URL.format(name.replace(" ", "_")), headers=UA, timeout=timeout)
-        if r.status_code == 404:
-            miss.touch()
-            return None
-        r.raise_for_status()
-        if b"<svg" not in r.content:
-            raise ValueError(f"{name}: not an SVG")
-        tmp = path.with_suffix(".tmp")
-        tmp.write_bytes(r.content)
-        tmp.replace(path)
-        return r.content
+    if path.exists():
+        return path.read_bytes()
+    if miss.exists() and time.time() - miss.stat().st_mtime < RETRY_SEC:
+        return None
+    r = requests.get(FILE_URL.format(name.replace(" ", "_")), headers=UA, timeout=timeout)
+    if r.status_code == 404:
+        miss.touch()
+        return None
+    r.raise_for_status()
+    if b"<svg" not in r.content:
+        raise ValueError(f"{name}: not an SVG")
+    _write(path, r.content)
+    return r.content
 
 
 def render(svg: bytes, h=RENDER_H) -> bytes:
@@ -78,17 +84,22 @@ def ensure(route, kind=None) -> "paths.Path | None":
         return None
     if out.exists():
         return out
-    svg = _svg(commons_file(route, kind))
-    if svg is None:
-        return None
-    png = render(svg)
-    from PIL import Image
-    Image.open(io.BytesIO(png)).verify()
-    SIGNS_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = out.with_suffix(".tmp")
-    tmp.write_bytes(png)
-    tmp.replace(out)
-    return out
+    if not _fetching.acquire(timeout=LOCK_WAIT):
+        raise TimeoutError("another sign is being fetched")
+    try:
+        if out.exists():                                   # done while this one waited
+            return out
+        svg = _svg(commons_file(route, kind))
+        if svg is None:
+            return None
+        png = render(svg)
+        from PIL import Image
+        Image.open(io.BytesIO(png)).verify()
+        SIGNS_DIR.mkdir(parents=True, exist_ok=True)
+        _write(out, png)
+        return out
+    finally:
+        _fetching.release()
 
 
 def wanted(cfg) -> set:

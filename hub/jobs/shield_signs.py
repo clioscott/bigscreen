@@ -12,13 +12,16 @@ from hub.jobs import _harness
 
 def run(cfg):
     want = shield_signs.wanted(cfg)
-    have, missing = 0, []
+    have, missing, errors = 0, [], {}
     for route, kind in sorted(want, key=str):
-        if shield_signs.ensure(route, kind):
-            have += 1
-        else:
-            missing.append(route)
-    return {"ok": True, "signs": have, "no_sign": missing}
+        try:                                               # one bad route (Commons down, a broken SVG) skips only itself
+            if shield_signs.ensure(route, kind):
+                have += 1
+            else:
+                missing.append(route)
+        except Exception as e:                             # noqa: BLE001
+            errors[route] = f"{type(e).__name__}: {e}"[:200]
+    return {"ok": not errors, "signs": have, "no_sign": missing, **({"errors": errors} if errors else {})}
 
 
 if __name__ == "__main__":

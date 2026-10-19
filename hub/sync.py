@@ -51,6 +51,7 @@ def _push_once():
                "--include=alertmaps/", "--include=alertmaps/*.bin", "--include=alertmaps/*.mask", "--include=alertmaps/*.zones",
                "--include=quake/", "--include=quake/*.bin", "--include=alertpages/", "--include=alertpages/*.bin",
                "--include=bcmaps/", "--include=bcmaps/*.bin", "--include=drivebc/", "--include=drivebc/*.bin",
+               "--include=shields/", "--include=shields/*.png",          # real highway signs (hub/shield_signs.py)
                "--exclude=*",
                "--rsync-path", f"mkdir -p {remote_dir} && rsync",
                "-e", SSH, f"{paths.DATA_DIR}/", f"{target}:{remote_dir}/"]

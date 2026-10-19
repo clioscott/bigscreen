@@ -313,7 +313,9 @@ class Content:
         sec["credit"] = (cam.get("credit") or "") if sh.get("credit") else ""
         sec["custom"] = (ov.get("custom_text") or "").strip() if sh.get("custom") else ""
         shield = ov.get("shield") if isinstance(ov.get("shield"), dict) else {}
-        sec["shield"] = str(shield.get("route") or "").strip()[:8] if sh.get("shield") else ""
+        route = str(shield.get("route") or "").strip()[:8]
+        from display.modules.shields import has_number      # as the panel: a route needs a number to be a section
+        sec["shield"] = route if sh.get("shield") and has_number(route) else ""
         self.ampm = up(t.strftime("%p")) if twelve else ""
         sec["time"] = ((t.strftime("%I:%M").lstrip("0") if twelve else t.strftime("%H:%M")) if sh.get("time") else "")
         sec["date"] = f"{t:%a} {t.day} {t:%b}".upper() if sh.get("date") else ""
@@ -1061,18 +1063,19 @@ def real_sign(route, kind, h):
             mtime = os.stat(path).st_mtime
         except OSError:
             continue
-        return _scaled_sign(path, mtime, max(SHIELD_MIN, min(SHIELD_MAX, int(h))))
+        try:
+            return _scaled_sign(path, mtime, max(SHIELD_MIN, min(SHIELD_MAX, int(h))))
+        except (OSError, ValueError):
+            return None
     return None
 
 
 @lru_cache(maxsize=64)
 def _scaled_sign(path, mtime, h):
-    """Scaled once per size (and again if the hub re-renders it); never per frame."""
+    """Scaled once per size (and again if the hub re-renders it); never per frame. Raises on an unreadable file,
+    so a failure isn't cached."""
     from PIL import Image
-    try:
-        im = Image.open(path).convert("RGBA")
-    except OSError:
-        return None
+    im = Image.open(path).convert("RGBA")
     w = max(1, round(im.width * h / im.height))
     return np.asarray(im.resize((w, h), Image.LANCZOS), dtype=np.uint8)
 

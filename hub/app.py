@@ -713,12 +713,14 @@ def shield_preview(route: str, kind: str = "auto", h: int = 24, scale: int = 2, 
         from hub import shield_signs
         try:
             ok = shield_signs.ensure(route, kd)
+        except TimeoutError as e:                           # another sign is being fetched: asked again later
+            raise HTTPException(503, str(e)) from e
         except Exception as e:                              # noqa: BLE001 (Commons down, resvg missing…)
             raise HTTPException(502, f"couldn't get the sign: {e}") from e
         sign = webcam_caption.real_sign(route, kd, h) if ok else None
         if sign is None:
             raise HTTPException(404, "no real sign for this route")
-        img = Image.fromarray(sign, "RGBA")
+        img = Image.fromarray(sign)                         # (h, w, 4) uint8: RGBA
     else:
         w = shields.width(route, h, kd)
         c = Canvas(w, h)

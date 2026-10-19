@@ -798,7 +798,7 @@ def test_real_sign_is_scaled_and_blended(tmp_path, monkeypatch):
     img = np.zeros((96, 80, 4), np.uint8)
     img[..., :3] = (255, 255, 255)
     img[8:88, 8:72, 3] = 255                                   # opaque middle, clear border
-    Image.fromarray(img, "RGBA").save(tmp_path / "BC-99.png")
+    Image.fromarray(img).save(tmp_path / "BC-99.png")
     monkeypatch.setattr(cap, "SIGN_DIRS", [str(tmp_path)])
     sign = cap.real_sign("99", None, 24)
     assert sign.shape[0] == 24 and sign.shape[1] == 20 and 0 < sign[..., 3].min() + 1 and sign[0, 0, 3] < 255
@@ -864,3 +864,39 @@ def test_shield_sign_job_and_validation():
     config.validate(_cfg({"cams": {"a": {**CAM, "overlay": good}}}))
     with pytest.raises(config.ConfigError):
         config.validate(_cfg({"cams": {"a": {**CAM, "overlay": {**good, "shield": {"route": "99", "style": "svg"}}}}}))
+
+
+# --- third review: the signs reach the Pi, the job survives a bad route -------------------------------------------
+def test_real_signs_are_synced_to_the_pi(monkeypatch):
+    from hub import sync
+    cmds = []
+
+    class Done:
+        returncode, stderr, stdout = 0, "", ""
+    monkeypatch.setattr(sync, "pi_target", lambda: ("pi", "/dev/shm/bigscreen"))
+    monkeypatch.setattr(sync.subprocess, "run", lambda cmd, **kw: cmds.append(cmd) or Done())
+    sync._push_once()
+    first = cmds[0]
+    assert "--include=shields/" in first and "--include=shields/*.png" in first
+    assert first.index("--include=shields/*.png") < first.index("--exclude=*")
+
+
+def test_sign_job_reports_a_bad_route_and_keeps_going(monkeypatch):
+    from hub import shield_signs
+    from hub.jobs import shield_signs as job
+
+    def ensure(route, kind=None):
+        if route == "7":
+            raise TimeoutError("Commons is slow")
+        return None if route == "3" else "x.png"
+    monkeypatch.setattr(shield_signs, "ensure", ensure)
+    monkeypatch.setattr(shield_signs, "wanted", lambda cfg: {("7", None), ("99", None), ("3", None)})
+    out = job.run({})
+    assert out["signs"] == 1 and out["no_sign"] == ["3"] and "7" in out["errors"] and out["ok"] is False
+
+
+def test_a_route_needs_a_number_on_the_wall_as_on_the_panel():
+    ov = cap.overlay_of({"overlay": {"style": "custom", "show": {"shield": True}, "shield": {"route": "TCH"}}})
+    assert cap.Content(CAM, ov).sections["shield"] == ""
+    ov["shield"]["route"] = "US 97"
+    assert cap.Content(CAM, ov).sections["shield"] == "US 97"

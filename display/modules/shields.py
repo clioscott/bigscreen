@@ -63,8 +63,8 @@ def sign_slug(name):
 
 
 def has_number(route):
-    """True when the route has a number to put on the sign ("US" alone, or "I-", doesn't)."""
-    return bool(_route_text(route))
+    """True when the route has a number to put on the sign ("US" alone, "I-" or "TCH" doesn't; the panel agrees)."""
+    return any(ch.isdigit() for ch in _route_text(route))
 
 
 def _route_text(route):

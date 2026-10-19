@@ -69,6 +69,7 @@ const SHIELD_KINDS = [{ value: "auto", label: "By number" }, { value: "bc", labe
 const SHIELD_PLACES = [{ value: "inside", label: "Inside the box" }, { value: "left", label: "Outside left" },
   { value: "right", label: "Outside right" }, { value: "line", label: "In its line" }];
 const SHIELD_SIZES = [{ value: "box", label: "Box height" }, ...[16, 20, 24, 28, 32, 40, 48, 56, 64].map((h) => ({ value: h, label: h + " px" }))];
+const SHIELD_PRESET_ROUTES = SHIELD_PRESETS.flatMap((g) => g.routes);
 const SHIELD_STYLES = [{ value: "pixel", label: "Pixel art" }, { value: "real", label: "Real sign" }];
 const shieldSrc = (route, kind = "auto", h = 24, style = "pixel") =>
   `/api/shields/preview.png?${new URLSearchParams({ route, kind, h, scale: 2, style })}`;
@@ -583,6 +584,11 @@ const WebcamEditor = {
     const orderOn = computed(() => (ov.value.order || []).filter((k) => k !== "live" && k !== "shield" && ov.value.show[k] && k !== (ov.value.headline || "name")));
     // sections that will actually have text on the wall (the renderer skips empty ones)
     const signMissing = ref(false);                       // the shield preview didn't load (no real sign for it)
+    // real-sign presets load one after another (each may be a first fetch from Commons on the hub)
+    const presetsLoaded = ref(1);
+    watch(() => ov.value?.shield?.style, () => { presetsLoaded.value = 1; });
+    const presetShown = (r) => ov.value.shield.style !== "real" || SHIELD_PRESET_ROUTES.indexOf(r) < presetsLoaded.value;
+    const presetDone = () => { presetsLoaded.value++; };
     const hasText = (k) => ({ place: !!cam.value.place, credit: !!cam.value.credit, custom: !!ov.value.custom_text?.trim(),
       shield: /\d/.test(String(ov.value.shield?.route ?? "")),
       weather: Number.isFinite(cam.value.lat), sun: Number.isFinite(cam.value.lat) }[k] ?? true);
@@ -624,7 +630,7 @@ const WebcamEditor = {
     };
     const customCrop = (s) => !!cam.value.crops?.[s];
     return { id, cam, shape, zone, ov, colour, probe, testing, test, used, addToRotation, play, remove, captionToAll, toggleShow, customCrop,
-      orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, hasText, customCols, SHIELD_PRESETS, SHIELD_KINDS, SHIELD_PLACES, SHIELD_SIZES, SHIELD_STYLES, shieldSrc, signMissing,
+      orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, hasText, customCols, SHIELD_PRESETS, SHIELD_KINDS, SHIELD_PLACES, SHIELD_SIZES, SHIELD_STYLES, shieldSrc, signMissing, presetShown, presetDone,
       CONTAINERS, feedFor, feedPill, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
   },
   template: `<div class="page" v-if="cam">
@@ -717,7 +723,8 @@ const WebcamEditor = {
                   <div v-for="g in SHIELD_PRESETS" :key="g.group" class="row" style="gap:4px; align-items:center">
                     <span class="faint" style="font-size:11.5px; width:150px">{{ g.group }}</span>
                     <button v-for="r in g.routes" :key="r" type="button" class="wc-shield" :class="{on: ov.shield.route === r && ov.shield.kind === 'auto'}"
-                      @click="ov.shield.route = r; ov.shield.kind = 'auto'" :title="r"><img :src="shieldSrc(r, 'auto', 24, ov.shield.style)" alt="" height="24"></button></div>
+                      @click="ov.shield.route = r; ov.shield.kind = 'auto'" :title="r"><img v-if="presetShown(r)" :src="shieldSrc(r, 'auto', 24, ov.shield.style)" alt="" height="24"
+                        @load="presetDone" @error="presetDone"></button></div>
                   <div class="row" style="gap:10px; align-items:flex-end">
                     <Field label="Route"><input class="input" style="width:90px" v-model.trim="ov.shield.route" maxlength="8" placeholder="99"></Field>
                     <Field label="Sign"><select class="input" v-model="ov.shield.kind"><option v-for="s in SHIELD_KINDS" :key="s.value" :value="s.value">{{ s.label }}</option></select></Field>
