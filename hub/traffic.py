@@ -36,7 +36,8 @@ CROSSINGS = [
 # Which way a camera really looks, where DriveBC's label is wrong (None: can't tell, so no direction is claimed).
 # Checked 2026-10-18 around 17:15 PDT, when the sun was low in the west-southwest.
 FACING = {
-    29: "N",        # Steveston interchange, labelled S: the North Shore mountains fill the background
+    29: "N",        # Steveston interchange, labelled S: the North Shore mountains fill the background. It can turn
+                    # ("*"), but it has sat facing north; the page marks it ↻ either way
     31: "S",        # Massey "South Approach", labelled N: Mt Baker straight ahead
     371: "W",       # Hwy 99 at Hwy 17A, labelled E: looking into the setting sun
     374: None,      # Hwy 99 at Hwy 17A, labelled W: probably swapped with 371 (no sun, open fields)

@@ -358,7 +358,8 @@ def _dbc_list():
     return _webcams["list"]
 
 
-_cov = {"at": 0.0, "list": [], "busy": False}
+_cov = {"at": 0.0, "list": [], "tried": 0.0}
+_cov_lock = threading.Lock()                 # one crawl at a time
 COV_CACHE = paths.CACHE_DIR / "cov_cams.json"
 
 
@@ -366,13 +367,15 @@ def _cov_refresh():
     from hub.bc import common
     try:
         got = traffic.cov_cameras(lambda u: common.session.get(u, timeout=20).text)
-        if got:
+        if got and len(got) >= 0.8 * len(_cov["list"]):     # a crawl that lost many pages keeps the old list
             _cov["list"], _cov["at"] = got, time.time()
             atomic_write_json(COV_CACHE, {"at": _cov["at"], "list": got})
+        else:
+            print(f"City of Vancouver cameras: only {len(got)} views, keeping {len(_cov['list'])}", flush=True)
     except Exception as e:
         print(f"City of Vancouver cameras: {e}", flush=True)
     finally:
-        _cov["busy"] = False
+        _cov_lock.release()
 
 
 def _cov_list():
@@ -380,8 +383,9 @@ def _cov_list():
     if not _cov["list"]:
         saved = read_json(COV_CACHE, {}) or {}
         _cov["list"], _cov["at"] = saved.get("list") or [], saved.get("at") or 0.0
-    if time.time() - _cov["at"] > 86400 and not _cov["busy"]:
-        _cov["busy"] = True
+    now = time.time()
+    if now - _cov["at"] > 86400 and now - _cov["tried"] > 3600 and _cov_lock.acquire(blocking=False):
+        _cov["tried"] = now                                  # a failed crawl is retried an hour later, not per request
         threading.Thread(target=_cov_refresh, name="cov-cams", daemon=True).start()
     return _cov["list"]
 
@@ -393,13 +397,17 @@ def webcams_traffic():
     from hub.jobs import drivebc
     d = traffic.build(_dbc_list(), drivebc.fold)
     cov = _cov_list()
-    for c in d["cities"]:
-        if c["city"] == "Vancouver":
-            c["cams"] = sorted(c["cams"] + cov, key=lambda x: x["name"].lower())
+    van = next((c for c in d["cities"] if c["city"] == "Vancouver"), None)
+    if van is None and cov:
+        van = {"city": "Vancouver", "cams": []}
+        d["cities"].insert(0, van)
+    if van is not None:
+        van["cams"] = sorted(van["cams"] + cov, key=lambda x: x["name"].lower())
     return {**d, "count": d["count"] + len(cov), "fetched": _webcams["at"], "vancouver": bool(cov)}
 
 
-_dbc_thumbs: dict = {}               # camera id -> (fetched at, jpeg)
+_dbc_thumbs: dict = {}               # camera id -> (fetched at, jpeg); ~15 kB each, oldest dropped past THUMBS_MAX
+THUMBS_MAX = 1200                    # the Vancouver tab alone has ~860 cameras
 _dbc_thumb_failed: dict = {}         # camera id -> when its fetch failed (not retried for a minute)
 _dbc_thumb_slots = threading.Semaphore(6)   # DriveBC fetches at once (a city tab asks for ~100 thumbnails)
 
@@ -431,8 +439,9 @@ def webcams_cov_thumb(stem: str):
             raise HTTPException(502, f"{stem}: {e}")
         finally:
             _dbc_thumb_slots.release()
-        if len(_dbc_thumbs) > 400:
-            _dbc_thumbs.clear()
+        while len(_dbc_thumbs) >= THUMBS_MAX:
+            _dbc_thumbs.pop(next(iter(_dbc_thumbs)))       # dicts keep insertion order: the oldest goes
+        _dbc_thumbs.pop(key, None)
         hit = _dbc_thumbs[key] = (time.time(), _thumb_jpeg(frame))
     return Response(hit[1], media_type="image/jpeg", headers={"Cache-Control": "max-age=60"})
 
@@ -453,8 +462,9 @@ def webcams_drivebc_thumb(cid: int):
             raise HTTPException(502, f"DriveBC camera {cid}: {e}")
         finally:
             _dbc_thumb_slots.release()
-        if len(_dbc_thumbs) > 400:
-            _dbc_thumbs.clear()
+        while len(_dbc_thumbs) >= THUMBS_MAX:
+            _dbc_thumbs.pop(next(iter(_dbc_thumbs)))       # dicts keep insertion order: the oldest goes
+        _dbc_thumbs.pop(cid, None)
         hit = _dbc_thumbs[cid] = (time.time(), _thumb_jpeg(frame))
     return Response(hit[1], media_type="image/jpeg", headers={"Cache-Control": "max-age=60"})
 

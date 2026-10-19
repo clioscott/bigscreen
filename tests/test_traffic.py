@@ -283,3 +283,16 @@ def test_city_of_vancouver_pages_become_image_cameras():
 def test_fixing_twice_changes_nothing():
     once = traffic.fix({"id": 29, "orientation": "S", "caption": "Highway 99 at Steveston interchange, looking south.*"})
     assert traffic.fix(once) == once and once["turns"]
+
+
+def test_city_crawl_backs_off_and_keeps_a_good_list(monkeypatch, tmp_path):
+    from hub import app as hub_app
+    monkeypatch.setattr(hub_app, "COV_CACHE", tmp_path / "cov.json")
+    full = [{"id": f"cov-{i}"} for i in range(100)]
+    monkeypatch.setattr(hub_app, "_cov", {"at": 1.0, "list": list(full), "tried": 0.0})
+    monkeypatch.setattr(traffic, "cov_cameras", lambda get: full[:50])         # a crawl that lost half the pages
+    started = []
+    monkeypatch.setattr(hub_app.threading, "Thread", lambda target, **k: started.append(target) or type("T", (), {"start": lambda s: target()})())
+    hub_app._cov_list()
+    hub_app._cov_list()                                                      # within the hour: no second crawl
+    assert len(started) == 1 and len(hub_app._cov["list"]) == 100 and not hub_app._cov_lock.locked()
