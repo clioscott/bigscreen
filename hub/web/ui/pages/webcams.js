@@ -171,7 +171,7 @@ const TrafficCams = {
   },
   template: `<div class="card" style="margin-top:16px" ref="box">
     <div class="card-head"><Icon name="Cctv" :size="16"/><h3>Traffic cams</h3>
-      <span class="faint" style="font-size:12px">DriveBC and City of Vancouver stills, a new picture every few minutes · click to add</span><span class="spacer"></span>
+      <span class="faint" style="font-size:12px">DriveBC, City of Vancouver and City of Richmond stills · click to add</span><span class="spacer"></span>
       <input class="input" v-model="query" placeholder="Search cameras" style="max-width:200px; height:28px" v-if="tab !== 'map'">
       <Seg v-model="tab" :options="[{value:'crossings', label:'Bridges'}, {value:'cities', label:'By city'}, {value:'map', label:'Map'}]"/></div>
     <div v-if="loading" class="card-body faint">Loading DriveBC cameras…</div>
@@ -197,7 +197,7 @@ const TrafficCams = {
           <span class="wc-thumb"><img :src="thumb(c)" loading="lazy" alt="">
             <span class="wc-have" v-if="have(c)"><Icon name="Check" :size="13"/>added</span>
             <span class="wc-have" v-else-if="!c.on" style="color:var(--bad)">offline</span></span>
-          <b>{{ c.name }}</b><span class="faint wc-note">{{ c.credit === 'City of Vancouver' ? 'City of Vancouver' : c.caption }}</span>
+          <b>{{ c.name }}</b><span class="faint wc-note">{{ (c.credit || '').startsWith('City of') ? c.credit : c.caption }}</span>
         </button></div>
     </template>
     <div v-else-if="query && tab !== 'map'" class="card-body wc-gallery">

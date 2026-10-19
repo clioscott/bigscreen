@@ -358,56 +358,85 @@ def _dbc_list():
     return _webcams["list"]
 
 
-_cov = {"at": 0.0, "list": [], "tried": 0.0}
-_cov_lock = threading.Lock()                 # one crawl at a time
-COV_CACHE = paths.CACHE_DIR / "cov_cams.json"
+_city = {"at": 0.0, "lists": {}, "tried": 0.0, "urls": {}}    # city -> its own camera views (hub/traffic.py)
+_city_lock = threading.Lock()                # one crawl at a time
+CITY_CACHE = paths.CACHE_DIR / "city_cams.json"
+COV_CACHE = paths.CACHE_DIR / "cov_cams.json"   # before Richmond joined: Vancouver's views only
 
 
-def _cov_refresh():
+def _city_index():
+    _city["urls"] = {c["id"]: c["source"]["url"] for cams in _city["lists"].values() for c in cams}
+
+
+def _city_refresh():
     from hub.bc import common
+    get = lambda u: common.session.get(u, timeout=20).text
     try:
-        got = traffic.cov_cameras(lambda u: common.session.get(u, timeout=20).text)
-        if got and len(got) >= 0.8 * len(_cov["list"]):     # a crawl that lost many pages keeps the old list
-            _cov["list"], _cov["at"] = got, time.time()
-            atomic_write_json(COV_CACHE, {"at": _cov["at"], "list": got})
-        else:
-            print(f"City of Vancouver cameras: only {len(got)} views, keeping {len(_cov['list'])}", flush=True)
+        lists = dict(_city["lists"])
+        for city, crawl in traffic.CITY_SOURCES.items():
+            old = lists.get(city) or []
+            try:
+                got = crawl(get)
+            except Exception as e:
+                print(f"{city} cameras: {e}", flush=True)
+                continue
+            if got and len(got) >= 0.8 * len(old):             # a crawl that lost many pages keeps the old list
+                lists[city] = got
+            else:
+                print(f"{city} cameras: only {len(got)} views, keeping {len(old)}", flush=True)
+        if all(lists.get(c) for c in traffic.CITY_SOURCES):    # every city fresh: wait a day
+            _city["at"] = time.time()
+        _city["lists"] = lists
+        _city_index()
+        atomic_write_json(CITY_CACHE, {"at": _city["at"], "lists": lists})
     except Exception as e:
-        print(f"City of Vancouver cameras: {e}", flush=True)
+        print(f"City cameras: {e}", flush=True)
     finally:
-        _cov_lock.release()
+        _city_lock.release()
 
 
-def _cov_list():
-    """The City of Vancouver's camera views (hub/traffic.py), refreshed daily in the background; kept on disk."""
-    if not _cov["list"]:
-        saved = read_json(COV_CACHE, {}) or {}
-        _cov["list"], _cov["at"] = saved.get("list") or [], saved.get("at") or 0.0
+def _city_lists():
+    """{city: its own camera views} (Vancouver's and Richmond's, hub/traffic.py), refreshed daily in the background
+    and kept on disk; a city missing from the cache is crawled at once."""
+    if not _city["lists"]:
+        saved = read_json(CITY_CACHE, {}) or {}
+        if not saved and COV_CACHE.exists():
+            old = read_json(COV_CACHE, {}) or {}
+            saved = {"at": 0.0, "lists": {"Vancouver": old.get("list") or []}}
+        _city["lists"], _city["at"] = saved.get("lists") or {}, saved.get("at") or 0.0
+        _city_index()
     now = time.time()
-    if now - _cov["at"] > 86400 and now - _cov["tried"] > 3600 and _cov_lock.acquire(blocking=False):
-        _cov["tried"] = now                                  # a failed crawl is retried an hour later, not per request
-        threading.Thread(target=_cov_refresh, name="cov-cams", daemon=True).start()
-    return _cov["list"]
+    stale = now - _city["at"] > 86400 or not all(_city["lists"].get(c) for c in traffic.CITY_SOURCES)
+    if stale and now - _city["tried"] > 3600 and _city_lock.acquire(blocking=False):
+        _city["tried"] = now                                 # a failed crawl is retried an hour later, not per request
+        threading.Thread(target=_city_refresh, name="city-cams", daemon=True).start()
+    return _city["lists"]
 
 
 @app.get("/api/webcams/traffic")
 def webcams_traffic():
-    """Traffic cameras for the Webcams page: DriveBC's by bridge or tunnel and by city, with the City of Vancouver's
-    intersection cameras in Vancouver (hub/traffic.py)."""
+    """Traffic cameras for the Webcams page: DriveBC's by bridge or tunnel and by city, with the cities' own
+    intersection cameras (Vancouver, Richmond) in their tabs (hub/traffic.py)."""
     from hub.jobs import drivebc
     d = traffic.build(_dbc_list(), drivebc.fold)
-    cov = _cov_list()
-    van = next((c for c in d["cities"] if c["city"] == "Vancouver"), None)
-    if van is None and cov:
-        van = {"city": "Vancouver", "cams": []}
-        d["cities"].insert(0, van)
-    if van is not None:
-        van["cams"] = sorted(van["cams"] + cov, key=lambda x: x["name"].lower())
-    return {**d, "count": d["count"] + len(cov), "fetched": _webcams["at"], "vancouver": bool(cov)}
+    extra = 0
+    for city, cams in _city_lists().items():
+        if not cams:
+            continue
+        tab = next((c for c in d["cities"] if c["city"] == city), None)
+        if tab is None:
+            tab = {"city": city, "cams": []}
+            d["cities"].insert(0, tab)
+        tab["cams"] = sorted(tab["cams"] + cams, key=lambda x: x["name"].lower())
+        extra += len(cams)
+    rank = {n: i for i, n in enumerate(traffic.HOME)}
+    d["cities"].sort(key=lambda c: (rank.get(c["city"], len(traffic.HOME)), c["city"] == "Elsewhere", c["city"]))
+    return {**d, "count": d["count"] + extra, "fetched": _webcams["at"],
+            "city_cams": {c: len(v) for c, v in _city["lists"].items()}}
 
 
 _dbc_thumbs: dict = {}               # camera id -> (fetched at, jpeg); ~15 kB each, oldest dropped past THUMBS_MAX
-THUMBS_MAX = 1200                    # the Vancouver tab alone has ~860 cameras
+THUMBS_MAX = 1600                    # Vancouver ~860 + Richmond ~600 city cameras, plus DriveBC
 _dbc_thumb_failed: dict = {}         # camera id -> when its fetch failed (not retried for a minute)
 _dbc_thumb_slots = threading.Semaphore(6)   # DriveBC fetches at once (a city tab asks for ~100 thumbnails)
 
@@ -421,22 +450,29 @@ def _thumb_jpeg(frame):
 
 @app.get("/api/webcams/cov/{stem}.jpg")
 def webcams_cov_thumb(stem: str):
-    """A City of Vancouver camera's latest image, 320 px wide, cached a minute. Only the City's listed cameras."""
-    key = "cov-" + stem
-    url = next((c["source"]["url"] for c in _cov_list() if c["id"] == key), None)
+    """Older thumbnail path for City of Vancouver cameras (lists cached before Richmond joined)."""
+    return webcams_city_thumb("cov-" + stem)
+
+
+@app.get("/api/webcams/city/{key}.jpg")
+def webcams_city_thumb(key: str):
+    """A city camera's latest image (Vancouver "cov-…", Richmond "rmd-…"), 320 px wide, cached a minute. Only
+    cameras on the cities' own lists: never an arbitrary URL."""
+    _city_lists()
+    url = _city["urls"].get(key)
     if not url:
-        raise HTTPException(404, "no such City of Vancouver camera")
+        raise HTTPException(404, "no such city camera")
     hit = _dbc_thumbs.get(key)
     if not hit or time.time() - hit[0] > 60:
         if time.time() - _dbc_thumb_failed.get(key, 0) < 60:
-            raise HTTPException(404, f"{stem} isn't answering")
+            raise HTTPException(404, f"{key} isn't answering")
         if not _dbc_thumb_slots.acquire(timeout=20):
             raise HTTPException(503, "busy")
         try:
             frame, _ = webcams.fetch_still("image", url)
         except Exception as e:
             _dbc_thumb_failed[key] = time.time()
-            raise HTTPException(502, f"{stem}: {e}")
+            raise HTTPException(502, f"{key}: {e}")
         finally:
             _dbc_thumb_slots.release()
         while len(_dbc_thumbs) >= THUMBS_MAX:
