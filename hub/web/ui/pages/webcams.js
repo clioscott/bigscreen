@@ -164,10 +164,25 @@ const TrafficCams = {
     const match = (c) => !query.value || `${c.name} ${c.caption} ${c.highway} ${c.city}`.toLowerCase().includes(query.value.toLowerCase());
     const cityCams = computed(() => (data.value.cities.find((c) => c.city === city.value)?.cams || []).filter(match));
     const found = computed(() => (query.value ? data.value.cities.flatMap((c) => c.cams).filter(match).slice(0, 60) : []));
-    const addedIds = computed(() => props.cams.filter(([, x]) => x.source?.type === "drivebc").map(([, x]) => x.source.id));
-    const fromMap = (c) => add(c, c.name, c.city || "");
+    // the map's own camera ids that are webcams already: DriveBC by id, city cameras by their image URL
+    const cityAll = computed(() => data.value.cities.flatMap((c) => c.cams).filter((c) => (c.credit || "").startsWith("City of")));
+    const addedIds = computed(() => {
+      const urls = new Set(props.cams.filter(([, x]) => x.source?.type === "image").map(([, x]) => x.source.url));
+      return [...props.cams.filter(([, x]) => x.source?.type === "drivebc").map(([, x]) => x.source.id),
+              ...cityAll.value.filter((c) => urls.has(c.source.url)).map((c) => c.id)];
+    });
+    const mapFocus = ref(null);
+    watch(tab, (t) => { if (t !== "map") mapFocus.value = null; });   // the plain Map tab shows the whole area again
+    const onMap = () => {                                    // the chosen city's cameras on the map
+      const pts = (data.value.cities.find((c) => c.city === city.value)?.cams || []).filter((c) => c.lat != null);
+      if (!pts.length) return;
+      const lons = pts.map((c) => +c.lon), lats = pts.map((c) => +c.lat);
+      mapFocus.value = [Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats)];
+      tab.value = "map";
+    };
+    const fromMap = (c) => add(c, c.name, c.city || "");     // DriveBC and city cameras alike
     const openFromMap = (c) => go(`webcams/${have(c)}`);
-    return { data, tab, city, query, box, loading, have, thumb, add, look, why, cityCams, found, addedIds, fromMap, openFromMap };
+    return { data, tab, city, query, box, loading, have, thumb, add, look, why, cityCams, found, addedIds, fromMap, openFromMap, cityList: cityAll, mapFocus, onMap };
   },
   template: `<div class="card" style="margin-top:16px" ref="box">
     <div class="card-head"><Icon name="Cctv" :size="16"/><h3>Traffic cams</h3>
@@ -191,7 +206,8 @@ const TrafficCams = {
     <template v-else-if="tab === 'cities' && !query">
       <div class="card-body"><div class="row" style="gap:6px">
         <button v-for="c in data.cities" :key="c.city" type="button" class="chip" :class="{off: city !== c.city}" style="height:26px; padding:0 10px"
-                @click="city = c.city">{{ c.city }} <span class="faint">{{ c.cams.length }}</span></button></div></div>
+                @click="city = c.city">{{ c.city }} <span class="faint">{{ c.cams.length }}</span></button>
+        <button type="button" class="btn sm" style="margin-left:auto" @click="onMap" :disabled="!city"><Icon name="Map" :size="13"/>{{ city }} on the map</button></div></div>
       <div class="card-body wc-gallery" style="padding-top:0">
         <button v-for="c in cityCams" :key="c.id" type="button" class="wc-pick" :class="{have: have(c), off: !c.on}" @click="add(c, c.name, city)" :title="why(c)">
           <span class="wc-thumb"><img :src="thumb(c)" loading="lazy" alt="">
@@ -207,7 +223,7 @@ const TrafficCams = {
         <b>{{ c.name }}</b><span class="faint">{{ c.city }}</span><span class="faint wc-note">{{ c.caption }}</span>
       </button>
       <div class="faint" v-if="!found.length">No camera matches “{{ query }}”.</div></div>
-    <CameraMap v-else addable :added="addedIds" @add="fromMap" @open="openFromMap"/>
+    <CameraMap v-else addable :added="addedIds" :extra="cityList" :focus="mapFocus" @add="fromMap" @open="openFromMap"/>
   </div>`,
 };
 

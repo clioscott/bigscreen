@@ -1,12 +1,12 @@
 // DriveBC camera map: every highway camera in and around the screen's area, which way each one looks,
 // what's on the roads, and which camera each event (and sample) shows. A small pan/zoom tile map, no library.
-import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
 import { api, fail } from "../core.js";
 
 const TILE = "/api/tiles/{layer}/{z}/{x}/{y}.png";          // Esri's dark grey canvas and its labels, via the hub's tile cache
 const BEARING = { N: 0, NE: 45, E: 90, SE: 135, S: 180, SW: 225, W: 270, NW: 315 };
 const LOOK = { N: "north", NE: "northeast", E: "east", SE: "southeast", S: "south", SW: "southwest", W: "west", NW: "northwest" };
-const COL = { event: "#ff8a1f", sample: "#c77dff", cam: "#7c8cff", off: "#5b6273" };
+const COL = { event: "#ff8a1f", sample: "#c77dff", cam: "#7c8cff", off: "#5b6273", city: "#34c38f" };
 
 const wx = (lon, z) => (lon + 180) / 360 * 256 * 2 ** z;
 const wy = (lat, z) => { const s = Math.sin(lat * Math.PI / 180); return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * 256 * 2 ** z; };
@@ -15,9 +15,11 @@ const latOf = (y, z) => { const n = Math.PI - 2 * Math.PI * y / (256 * 2 ** z); 
 
 export const CameraMap = {
   // addable: show "Add as a webcam" for the selected camera (Webcams page); added: camera ids already webcams
-  props: { addable: Boolean, added: { type: Array, default: () => [] } },
+  // extra: the cities' own intersection cameras (several views per intersection, one marker each); focus: a bbox to show
+  props: { addable: Boolean, added: { type: Array, default: () => [] }, extra: { type: Array, default: () => [] },
+           focus: { type: Array, default: null } },
   emits: ["add", "open"],
-  setup() {
+  setup(props) {
     const st = ref({ cameras: [], events: [], samples: [], bbox: null });
     const loading = ref(true);
     const el = ref(null);
@@ -25,6 +27,8 @@ export const CameraMap = {
     const view = ref({ lon: -122.95, lat: 49.2, z: 11 });
     const sel = ref(null);
     const showSamples = ref(true);
+    const showCity = ref(true);
+    const selSpot = ref(null);                                 // a selected intersection (city cameras)
     const query = ref("");
     let ro;
 
@@ -46,9 +50,11 @@ export const CameraMap = {
     onMounted(() => {
       ro = new ResizeObserver(() => { if (el.value) size.value = { w: el.value.clientWidth, h: el.value.clientHeight }; });
       if (el.value) { ro.observe(el.value); size.value = { w: el.value.clientWidth, h: el.value.clientHeight }; }
+      if (props.focus) fit(props.focus);                    // right away, not after the camera list arrives
       load();
     });
     onBeforeUnmount(() => ro && ro.disconnect());
+    watch(() => props.focus, (b) => { if (b) fit(b); });
 
     // the view: top-left world pixel, and screen position of a lon/lat
     const origin = computed(() => ({ x: wx(view.value.lon, view.value.z) - size.value.w / 2, y: wy(view.value.lat, view.value.z) - size.value.h / 2 }));
@@ -92,6 +98,25 @@ export const CameraMap = {
       }).filter(({ p }) => p.x > -40 && p.y > -40 && p.x < size.value.w + 40 && p.y < size.value.h + 40)
         .sort((a, b) => a.used - b.used);                       // cameras in use drawn on top
     });
+    // the cities' cameras: one marker per intersection, all its views listed when picked
+    const spots = computed(() => {
+      const by = {};
+      for (const c of props.extra) {
+        if (c.lat == null || c.lon == null) continue;
+        const k = `${(+c.lat).toFixed(5)},${(+c.lon).toFixed(5)}`;
+        (by[k] = by[k] || { key: k, lat: +c.lat, lon: +c.lon, name: c.caption || c.name, credit: c.credit, views: [] }).views.push(c);
+      }
+      return Object.values(by);
+    });
+    const spotMarks = computed(() => {
+      if (!showCity.value) return [];
+      const q = query.value.toLowerCase();
+      return spots.value.filter((s) => !q || s.name.toLowerCase().includes(q)).map((s) => ({ s, p: px(s.lon, s.lat) }))
+        .filter(({ p }) => p.x > -20 && p.y > -20 && p.x < size.value.w + 20 && p.y < size.value.h + 20);
+    });
+    const pickSpot = (s) => { if (drag?.moved) return; selSpot.value = s; sel.value = null; };
+    const word = (v, i) => (v.name.includes(" - ") ? v.name.split(" - ").pop() : v.look ? `Looking ${v.look}` : `View ${i + 1}`);
+    const credits = computed(() => [...new Set(spots.value.map((s) => s.credit).filter(Boolean))].join(", "));
     const lines = computed(() => [
       ...st.value.events.map((e) => ({ e, col: e.closed ? "#ff3b30" : "#ff8a1f" })),
       ...(showSamples.value ? st.value.samples.map((e) => ({ e, col: "#c77dff" })) : []),
@@ -127,7 +152,7 @@ export const CameraMap = {
       const r = el.value.getBoundingClientRect();
       zoomAt(ev.deltaY < 0 ? 1 : -1, ev.clientX - r.left, ev.clientY - r.top);
     };
-    const pick = (c) => { if (drag?.moved) return; sel.value = c; };
+    const pick = (c) => { if (drag?.moved) return; sel.value = c; selSpot.value = null; };
     const goTo = (c) => {
       sel.value = c;
       const z = Math.max(view.value.z, 14);
@@ -140,7 +165,7 @@ export const CameraMap = {
     const updated = (s) => { if (!s) return ""; const d = new Date(s); return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); };
 
     return { st, loading, el, tiles, cams, lines, path, down, move, up, wheel, zoomAt, size, sel, pick, goTo, inUse, selUse, showSamples,
-      query, LOOK, COL, imgT, updated, load, fit };
+      query, LOOK, COL, imgT, updated, load, fit, spots, spotMarks, selSpot, pickSpot, showCity, word, credits };
   },
   template: `<div :class="addable ? '' : 'card'"><div class="card-head" v-if="!addable"><Icon name="Cctv" :size="15"/><h3>DriveBC cameras</h3>
       <span class="pill">{{ st.cameras.length }}</span>
@@ -165,22 +190,41 @@ export const CameraMap = {
             <circle v-if="sel && sel.id === m.c.id" :cx="m.p.x" :cy="m.p.y" r="10" fill="none" stroke="#fff" stroke-width="1.5"/>
             <title>{{ m.c.name }}{{ m.c.orientation ? ' · looking ' + LOOK[m.c.orientation] : '' }}</title>
           </g>
+          <g v-for="m in spotMarks" :key="m.s.key" @click.stop="pickSpot(m.s)" style="cursor:pointer">
+            <rect :x="m.p.x - 4" :y="m.p.y - 4" width="8" height="8" rx="2" :fill="COL.city" stroke="#000" stroke-width="1.2"/>
+            <rect v-if="selSpot && selSpot.key === m.s.key" :x="m.p.x - 9" :y="m.p.y - 9" width="18" height="18" rx="4" fill="none" stroke="#fff" stroke-width="1.5"/>
+            <title>{{ m.s.name }} · {{ m.s.views.length }} view{{ m.s.views.length === 1 ? '' : 's' }} · {{ m.s.credit }}</title>
+          </g>
         </svg>
         <div style="position:absolute; left:10px; top:10px; display:flex; flex-direction:column; gap:4px" @pointerdown.stop>
           <button class="btn sm icon-only" @click="zoomAt(1, size.w / 2, size.h / 2)"><Icon name="Plus" :size="14"/></button>
           <button class="btn sm icon-only" @click="zoomAt(-1, size.w / 2, size.h / 2)"><Icon name="Minus" :size="14"/></button>
         </div>
-        <div style="position:absolute; left:10px; bottom:8px; display:flex; gap:12px; font-size:12px; white-space:nowrap; background:rgba(0,0,0,.6); padding:4px 9px; border-radius:7px" @pointerdown.stop>
+        <div style="position:absolute; left:10px; bottom:8px; max-width:calc(100% - 20px); display:flex; flex-wrap:wrap; gap:4px 12px; font-size:12px; white-space:nowrap; background:rgba(0,0,0,.6); padding:4px 9px; border-radius:7px" @pointerdown.stop>
           <span><span class="dot" :style="{background: COL.event, display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%'}"></span> on the wall</span>
           <span v-if="showSamples"><span class="dot" :style="{background: COL.sample, display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%'}"></span> used by a sample</span>
           <span><span class="dot" :style="{background: COL.cam, display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%'}"></span> camera (cone = where it points)</span>
           <span><span class="dot" :style="{background: COL.off, display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%'}"></span> offline</span>
+          <label v-if="spots.length" style="cursor:pointer"><input type="checkbox" v-model="showCity" style="vertical-align:-2px">
+            <span :style="{background: COL.city, display: 'inline-block', width: '8px', height: '8px', borderRadius: '2px'}"></span> intersection cameras (City)</label>
         </div>
-        <div style="position:absolute; right:6px; top:4px; font-size:10.5px; color:#9aa; background:rgba(0,0,0,.5); padding:1px 5px; border-radius:4px" @pointerdown.stop>Basemap © Esri, HERE, Garmin, © OpenStreetMap contributors · cameras: DriveBC</div>
+        <div style="position:absolute; right:6px; top:4px; max-width:calc(100% - 56px); font-size:10.5px; color:#9aa; background:rgba(0,0,0,.5); padding:1px 5px; border-radius:4px" @pointerdown.stop>Basemap © Esri, HERE, Garmin, © OpenStreetMap contributors · cameras: DriveBC{{ credits ? ', ' + credits : '' }}</div>
         <div v-if="loading" style="position:absolute; inset:0; display:grid; place-items:center" class="faint">Loading cameras…</div>
       </div>
       <div style="width:340px; flex:none; border-left:1px solid var(--line); overflow:auto; height:calc(100vh - 210px); min-height:420px">
-        <div v-if="sel" class="card-body stack">
+        <div v-if="selSpot" class="card-body stack">
+          <div><b>{{ selSpot.name }}</b><div class="faint" style="font-size:12.5px">{{ selSpot.credit }} · {{ selSpot.views.length }} view{{ selSpot.views.length === 1 ? '' : 's' }}</div></div>
+          <div v-for="(v, i) in selSpot.views" :key="v.id" class="stack" style="gap:6px">
+            <img :src="v.thumb" style="width:100%; border-radius:8px; display:block; background:#000; aspect-ratio:16/9; object-fit:cover" alt="" loading="lazy">
+            <div class="row" style="gap:8px"><b style="font-size:13px; flex:1">{{ word(v, i) }}</b>
+              <template v-if="addable">
+                <button v-if="!added.includes(v.id)" class="btn sm primary" @click="$emit('add', v)"><Icon name="Plus" :size="13"/>Add</button>
+                <button v-else class="btn sm" @click="$emit('open', v)"><Icon name="Check" :size="13"/>Added · open</button>
+              </template></div>
+          </div>
+          <button class="btn sm ghost" @click="selSpot = null"><Icon name="X" :size="13"/>Close</button>
+        </div>
+        <div v-else-if="sel" class="card-body stack">
           <a :href="sel.image" target="_blank" rel="noopener"><img :src="sel.image + (sel.image.includes('?') ? '&' : '?') + 'v=' + imgT" style="width:100%; border-radius:8px; display:block" alt=""></a>
           <div><b>{{ sel.name }}</b><div class="faint" style="font-size:12.5px">{{ sel.caption }}</div></div>
           <div class="row" style="flex-wrap:wrap; gap:6px">
