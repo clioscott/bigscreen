@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import io
 import re
+import threading
 import time
 
 import requests
@@ -31,23 +32,30 @@ def png_path(route, kind=None):
     return SIGNS_DIR / f"{slug(name)}.png" if name else None
 
 
+_fetching = threading.Lock()   # one Commons request at a time (the panel asks for a row of presets at once)
+
+
 def _svg(name: str, timeout=20) -> bytes | None:
-    """The SVG from Commons, cached for good (signs don't change); a missing file is remembered for RETRY_SEC."""
+    """The SVG from Commons, cached for good (signs don't change). A 404 is remembered for RETRY_SEC; anything else
+    (rate limiting, Commons down) raises and is simply tried again next time."""
     CACHE.mkdir(parents=True, exist_ok=True)
     path, miss = CACHE / f"{slug(name)}.svg", CACHE / f"{slug(name)}.missing"
-    if path.exists():
-        return path.read_bytes()
-    if miss.exists() and time.time() - miss.stat().st_mtime < RETRY_SEC:
-        return None
-    r = requests.get(FILE_URL.format(name.replace(" ", "_")), headers=UA, timeout=timeout)
-    if r.status_code == 404 or b"<svg" not in r.content[:4096]:
-        miss.touch()
-        return None
-    r.raise_for_status()
-    tmp = path.with_suffix(".tmp")
-    tmp.write_bytes(r.content)
-    tmp.replace(path)
-    return r.content
+    with _fetching:
+        if path.exists():
+            return path.read_bytes()
+        if miss.exists() and time.time() - miss.stat().st_mtime < RETRY_SEC:
+            return None
+        r = requests.get(FILE_URL.format(name.replace(" ", "_")), headers=UA, timeout=timeout)
+        if r.status_code == 404:
+            miss.touch()
+            return None
+        r.raise_for_status()
+        if b"<svg" not in r.content:
+            raise ValueError(f"{name}: not an SVG")
+        tmp = path.with_suffix(".tmp")
+        tmp.write_bytes(r.content)
+        tmp.replace(path)
+        return r.content
 
 
 def render(svg: bytes, h=RENDER_H) -> bytes:
