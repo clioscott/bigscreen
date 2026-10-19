@@ -14,6 +14,9 @@ const lonOf = (x, z) => x / (256 * 2 ** z) * 360 - 180;
 const latOf = (y, z) => { const n = Math.PI - 2 * Math.PI * y / (256 * 2 ** z); return 180 / Math.PI * Math.atan(Math.sinh(n)); };
 
 export const CameraMap = {
+  // addable: show "Add as a webcam" for the selected camera (Webcams page); added: camera ids already webcams
+  props: { addable: Boolean, added: { type: Array, default: () => [] } },
+  emits: ["add", "open"],
   setup() {
     const st = ref({ cameras: [], events: [], samples: [], bbox: null });
     const loading = ref(true);
@@ -139,7 +142,7 @@ export const CameraMap = {
     return { st, loading, el, tiles, cams, lines, path, down, move, up, wheel, zoomAt, size, sel, pick, goTo, inUse, selUse, showSamples,
       query, LOOK, COL, imgT, updated, load, fit };
   },
-  template: `<div class="card"><div class="card-head"><Icon name="Cctv" :size="15"/><h3>DriveBC cameras</h3>
+  template: `<div :class="addable ? '' : 'card'"><div class="card-head" v-if="!addable"><Icon name="Cctv" :size="15"/><h3>DriveBC cameras</h3>
       <span class="pill">{{ st.cameras.length }}</span>
       <input class="input" v-model="query" placeholder="Filter by name or highway" style="max-width:220px; height:28px; margin-left:auto">
       <label class="row faint" style="gap:6px; font-size:12.5px; cursor:pointer"><input type="checkbox" v-model="showSamples">Samples</label>
@@ -189,6 +192,9 @@ export const CameraMap = {
           </div>
           <div v-for="(u, i) in selUse" :key="i" class="callout info" style="font-size:12.5px; display:block">
             {{ u.what === 'event' ? 'On the wall for' : 'Shown for the sample' }} <b>{{ u.label }}</b>{{ u.km != null ? ' · ' + u.km + ' km from it' : '' }}</div>
+          <div class="row" v-if="addable">
+            <button v-if="!added.includes(sel.id)" class="btn sm primary" @click="$emit('add', sel)"><Icon name="Plus" :size="13"/>Add as a webcam</button>
+            <button v-else class="btn sm" @click="$emit('open', sel)"><Icon name="Check" :size="13"/>Added · open it</button></div>
           <button class="btn sm ghost" @click="sel = null"><Icon name="X" :size="13"/>Close</button>
         </div>
         <div v-else class="card-body stack">

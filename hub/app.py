@@ -341,13 +341,11 @@ def panel_tile(style: str, z: int, x: int, y: int):
 _webcams = {"at": 0.0, "list": [], "tried": 0.0}
 
 
-@app.get("/api/bc/roads/cameras")
-def bc_road_cameras():
-    """Every DriveBC camera in and around the DriveBC screen's area (where it is, which way it looks), what is on
-    the roads, and which camera each event and sample uses — for the panel's camera map."""
+def _dbc_list():
+    """DriveBC's camera list, cached 10 min (a minute between failed tries)."""
     from hub.bc import common
     from hub.jobs import drivebc
-    if time.time() - _webcams["at"] > 600 and time.time() - _webcams["tried"] > 60:     # (a minute between failed tries)
+    if time.time() - _webcams["at"] > 600 and time.time() - _webcams["tried"] > 60:
         _webcams["tried"] = time.time()
         try:
             got = common.session.get(f"{drivebc.API}/webcams/", timeout=20).json()
@@ -357,6 +355,54 @@ def bc_road_cameras():
         except Exception as e:
             if not _webcams["list"]:
                 raise HTTPException(502, f"DriveBC webcams: {e}")
+    return _webcams["list"]
+
+
+@app.get("/api/webcams/traffic")
+def webcams_traffic():
+    """DriveBC traffic cameras for the Webcams page, by bridge or tunnel and by city (hub/traffic.py)."""
+    from hub import traffic
+    from hub.jobs import drivebc
+    return {**traffic.build(_dbc_list(), drivebc.fold), "fetched": _webcams["at"]}
+
+
+_dbc_thumbs: dict = {}               # camera id -> (fetched at, jpeg)
+_dbc_thumb_failed: dict = {}         # camera id -> when its fetch failed (not retried for a minute)
+_dbc_thumb_slots = threading.Semaphore(6)   # DriveBC fetches at once (a city tab asks for ~100 thumbnails)
+
+
+@app.get("/api/webcams/drivebc/{cid}.jpg")
+def webcams_drivebc_thumb(cid: int):
+    """A DriveBC camera's latest image, 320 px wide, cached a minute (the page's thumbnails)."""
+    hit = _dbc_thumbs.get(cid)
+    if not hit or time.time() - hit[0] > 60:
+        if time.time() - _dbc_thumb_failed.get(cid, 0) < 60:
+            raise HTTPException(404, f"DriveBC camera {cid} isn't answering")
+        if not _dbc_thumb_slots.acquire(timeout=20):
+            raise HTTPException(503, "busy")
+        try:
+            frame, _ = webcams.fetch_still("drivebc", webcams.DRIVEBC_IMAGE.format(id=cid), meta=False)
+        except Exception as e:
+            _dbc_thumb_failed[cid] = time.time()
+            raise HTTPException(502, f"DriveBC camera {cid}: {e}")
+        finally:
+            _dbc_thumb_slots.release()
+        im = Image.fromarray(frame)
+        out = io.BytesIO()
+        im.resize((320, round(im.height * 320 / im.width))).save(out, "JPEG", quality=80)
+        if len(_dbc_thumbs) > 400:
+            _dbc_thumbs.clear()
+        hit = _dbc_thumbs[cid] = (time.time(), out.getvalue())
+    return Response(hit[1], media_type="image/jpeg", headers={"Cache-Control": "max-age=60"})
+
+
+@app.get("/api/bc/roads/cameras")
+def bc_road_cameras():
+    """Every DriveBC camera in and around the DriveBC screen's area (where it is, which way it looks), what is on
+    the roads, and which camera each event and sample uses — for the panel's camera map."""
+    from hub.bc import common
+    from hub.jobs import drivebc
+    _dbc_list()
     st = common.settings(config.load(), "road_alerts", drivebc.DEFAULTS)
     lo0, la0, lo1, la1 = [float(v) for v in st.get("bbox") or drivebc.DEFAULTS["bbox"]]
     m = 0.08
@@ -772,6 +818,15 @@ def webcams_probe(payload: dict = Body(...)):
     """{"source": {...}} → {"ok", "title", "error"}: can the hub open this source? (YouTube: is it live?)"""
     try:
         kind, url = webcams.check_source(payload.get("source"))
+        if kind in webcams.STILLS:
+            try:
+                frame, at = webcams.fetch_still(kind, url)
+            except webcams.SourceError:
+                raise
+            except Exception as e:
+                return {"ok": False, "error": f"couldn't fetch the image: {e}"[:300]}
+            age = int((time.time() - at) // 60)
+            return {"ok": True, "title": f"still image, {frame.shape[1]}×{frame.shape[0]}, taken {age} min ago"}
         _media, title = webcams.resolve(kind, url, fresh=True)
         return {"ok": True, "title": title}
     except webcams.SourceError as e:
@@ -815,19 +870,21 @@ def _num(v, default, lo, hi):
 
 
 @app.get("/api/webcams/frames")
-async def webcams_frames(type: str, url: str, w: int, h: int, fps: int = 15, x: float | None = None,
+async def webcams_frames(type: str, w: int, h: int, url: str = "", id: int | None = None, refresh: int | None = None,
+                         fps: int = 15, x: float | None = None,
                          y: float | None = None, cw: float | None = None, b: float = 1.0, c: float = 1.0,
                          s: float = 1.0):
     """The Pi's feed: raw RGB frames already cropped and scaled to its zone (display/modules/webcam.py reads
     them), each behind a 12-byte header (hub/webcams.py pack)."""
     if not (8 <= w <= 448 and 8 <= h <= 192):
         raise HTTPException(400, "w/h out of range")
-    f = _webcam_feed({"type": type, "url": url}, fps)
+    f = _webcam_feed({"type": type, "url": url, "id": id, "refresh_sec": refresh}, fps)
     crop = {"x": x or 0, "y": y or 0, "w": cw} if cw else None
     colour = {"brightness": _num(b, 1, 0.2, 3), "contrast": _num(c, 1, 0.2, 3), "saturation": _num(s, 1, 0, 3)}
 
     def make(frame, feed):
-        return webcams.pack(webcams.render(frame, w, h, crop, colour), (time.time() - feed.frame_t) * 1000)
+        age = time.time() - (feed.image_t or feed.frame_t)      # stills: the image's age, for the caption
+        return webcams.pack(webcams.render(frame, w, h, crop, colour), age * 1000)
 
     fps = max(1, min(30, fps))                                # the feed may decode faster for another viewer
     return StreamingResponse(_webcam_frames(f, make, fps=fps), media_type="application/octet-stream",
@@ -835,11 +892,11 @@ async def webcams_frames(type: str, url: str, w: int, h: int, fps: int = 15, x: 
 
 
 @app.get("/api/webcams/snapshot.jpg")
-def webcams_snapshot(type: str, url: str):
+def webcams_snapshot(type: str, url: str = "", id: int | None = None):
     """A current still from any source (hub/webcams.py snapshot). Never waits for a grab: 503 + Retry-After while
     one is being made, 404 when the source failed recently."""
     try:
-        jpg, state = webcams.snapshot({"type": type, "url": url})
+        jpg, state = webcams.snapshot({"type": type, "url": url, "id": id})
     except webcams.SourceError as e:
         raise HTTPException(400, str(e))
     if jpg is None:
@@ -880,9 +937,9 @@ def _part(data, kind):
 
 
 @app.get("/api/webcams/source.mjpeg")
-async def webcams_source(type: str, url: str, fps: int = 15):
+async def webcams_source(type: str, url: str = "", id: int | None = None, refresh: int | None = None, fps: int = 15):
     """The whole source picture (what crops are cut from) as an MJPEG stream for the panel's crop editor."""
-    f = _webcam_feed({"type": type, "url": url}, fps)
+    f = _webcam_feed({"type": type, "url": url, "id": id, "refresh_sec": refresh}, fps)
 
     def make(frame, _feed):
         out = io.BytesIO()
@@ -920,7 +977,8 @@ def webcams_preview_set(payload: dict = Body(...)):
                                "since": _webcam_previews.get(token, {}).get("since", now)}
     from display.modules import webcam as wc
     try:
-        dropped = wc.caption_dropped(cam, tuple(zones[shape]), wx)
+        still = (cam.get("source") or {}).get("type") in webcams.STILLS
+        dropped = wc.caption_dropped(cam, tuple(zones[shape]), wx, {"taken": time.time()} if still else None)
     except Exception:
         dropped = []
     return {"token": token, "zone": zones[shape], "dropped": dropped, "has_weather": bool(wx)}
@@ -949,8 +1007,9 @@ async def webcams_preview(token: str):
         if time.time() - cur.get("wx_at", 0) > 20 and _wants_wx(cam_now):   # pick up fetched / newer weather
             cur["wx"], cur["wx_at"] = _webcam_wx(cur.get("id"), cam_now), time.time()
         wx = cur.get("wx")
+        extra = {"taken": round(_feed.image_t)} if getattr(_feed, "image_t", None) else None
         img = wc.render_preview(cam_now, None if frame is None else webcams.render(frame, w, h, crop, colour),
-                                (w, h), time.time() - t0, wx=wx)
+                                (w, h), time.time() - t0, wx=wx, extra=extra)
         out = io.BytesIO()
         Image.fromarray(img).save(out, "PNG", compress_level=1)
         return _part(out.getvalue(), b"image/png")

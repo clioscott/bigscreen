@@ -35,6 +35,13 @@ def stream_query(cam: dict, shape: str, w: int, h: int) -> dict:
     src = cam.get("source") or {}
     q = {"type": src.get("type", "stream"), "url": src.get("url", ""), "fps": int(cam.get("fps", 15)),
          "w": int(w), "h": int(h)}
+    if src.get("type") == "drivebc":
+        q["id"] = int(src.get("id") or 0)
+    try:
+        if src.get("refresh_sec"):
+            q["refresh"] = int(float(src["refresh_sec"]))
+    except (TypeError, ValueError):
+        pass
     crop = (cam.get("crops") or {}).get(shape)
     if isinstance(crop, dict) and crop.get("w"):
         q.update(x=round(float(crop.get("x", 0)), 5), y=round(float(crop.get("y", 0)), 5),
@@ -55,6 +62,7 @@ class Stream:
         self.w, self.h = int(query["w"]), int(query["h"])
         self.frame = None
         self.frame_t = 0.0
+        self.age = None
         self.error = ""
         self.last_use = time.time()
         self.alive = True
@@ -116,6 +124,7 @@ class Stream:
             if len(head) < 12 or head[:4] != MAGIC:
                 raise RuntimeError("stream ended")
             w, h = int.from_bytes(head[4:6], "big"), int.from_bytes(head[6:8], "big")
+            age = int.from_bytes(head[8:12], "big") / 1000.0       # a still's image age at send (s)
             if (w, h) != (self.w, self.h):
                 raise RuntimeError(f"hub sent {w}x{h}, wanted {self.w}x{self.h}")
             body = r.read(n)
@@ -123,6 +132,7 @@ class Stream:
                 raise RuntimeError("stream ended")
             self.frame = np.frombuffer(body, np.uint8).reshape(h, w, 3)
             self.frame_t = time.time()
+            self.age = age
             self.error = ""
 
 
@@ -200,7 +210,9 @@ class WebcamPanel:
             if now - max(started, st.frame_t) > GIVE_UP_SEC:      # a hiccup mid-play doesn't end a held webcam
                 return "skip"
         wx = cam.get("_wx") or self._weather(now).get(entry.get("cam"))   # _wx: a preview of an unsaved location
-        draw_caption(c, zone, cam, now - started, self.font, wx=wx)
+        still = (cam.get("source") or {}).get("type") in ("drivebc", "image")
+        extra = {"taken": round(st.frame_t - st.age)} if still and st.age is not None else None   # capture time (s)
+        draw_caption(c, zone, cam, now - started, self.font, wx=wx, extra=extra)
         return None
 
     def _weather(self, now):
@@ -237,13 +249,13 @@ def _preview_font(size):
     return f
 
 
-def caption_dropped(cam: dict, shape_zone, wx=None) -> list:
+def caption_dropped(cam: dict, shape_zone, wx=None, extra=None) -> list:
     """Sections turned on that the caption can't fit at this size (the control panel lists them)."""
     from display.modules.webcam_caption import dropped_sections
-    return dropped_sections(cam, shape_zone, _preview_font, wx)
+    return dropped_sections(cam, shape_zone, _preview_font, wx, extra)
 
 
-def render_preview(cam: dict, frame, shape_zone, elapsed=0.0, wx=None) -> np.ndarray:
+def render_preview(cam: dict, frame, shape_zone, elapsed=0.0, wx=None, extra=None) -> np.ndarray:
     """The wall's pixels for one zone: a frame already cropped to the zone, plus the caption (control panel)."""
     from display.gfx import Canvas
     w, h = shape_zone
@@ -259,5 +271,5 @@ def render_preview(cam: dict, frame, shape_zone, elapsed=0.0, wx=None) -> np.nda
             f.LoadFont(FONTS.get(size, size))
         return f
 
-    draw_caption(c, (0, 0, w, h), cam, elapsed, font_for, wx=wx)
+    draw_caption(c, (0, 0, w, h), cam, elapsed, font_for, wx=wx, extra=extra)
     return c.buf.copy()

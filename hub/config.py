@@ -152,7 +152,7 @@ def _validate_overlay(name, ov):
     choices = {"style": LAYOUTS, "corner": ("tl", "tc", "tr", "bl", "bc", "br"), "font": tuple(FONTS),
                "headline": ("name", "place", "custom", "time"), "lines": ("auto", "wrap", "stacked", "inline"),
                "separator": tuple(SEPARATORS), "when": ("always", "intro", "periodic"), "time_format": ("24h", "12h"),
-               "container": ("box", "strip", "outline", "board")}
+               "container": ("box", "strip", "outline", "board"), "taken_format": ("time", "relative", "both")}
     for key, allowed in choices.items():
         if key in ov and ov[key] not in allowed:
             raise ConfigError(f"webcam {name}: caption {key} must be one of {', '.join(allowed)}")
@@ -244,6 +244,14 @@ def _validate_webcams(wc):
             fps_ok = False
         if not fps_ok:
             raise ConfigError(f"webcam {name}: frame rate must be 1–30")
+        refresh = (cam.get("source") or {}).get("refresh_sec")
+        if refresh not in (None, ""):
+            try:
+                ok = 20 <= float(refresh) <= 3600
+            except (TypeError, ValueError):
+                ok = False
+            if not ok:
+                raise ConfigError(f"webcam {name}: fetch every must be 20-3600 s")
         _validate_overlay(name, cam.get("overlay"))
         crops = cam.get("crops") or {}
         if not isinstance(crops, dict):

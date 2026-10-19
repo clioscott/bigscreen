@@ -1,12 +1,10 @@
 // Shared page for the BC alert screens (Alert Ready, DriveBC, earthquakes, tsunami, wildfire).
 // Each page passes its own config: title, intro, settings fields and how to show its live items.
 import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
-import { store, api, fail, toast, ago, seed, clone } from "../core.js";
-import { CameraMap } from "./cameramap.js";
+import { store, api, fail, toast, ago, seed, clone, go } from "../core.js";
 
 export function makeBCPage(P) {
   return {
-    components: { CameraMap },
     setup() {
       const tab = ref((P.tabs || [])[0]?.id || "screen");
       seed(["modules", P.section], { enabled: true });
@@ -101,7 +99,8 @@ export function makeBCPage(P) {
         toast("Added to the rotation — Save to keep it");
       };
       const health = computed(() => st.value.job?.health || "never");
-      return { P, s, st, val, set, toggleIn, theme, pick, view, sample, smp, real, t, playing, preview, testWall, stop, runNow,
+      const openTrafficMap = () => { store.trafficTab = "map"; go("webcams"); };
+      return { openTrafficMap, P, s, st, val, set, toggleIn, theme, pick, view, sample, smp, real, t, playing, preview, testWall, stop, runNow,
         items, inRotation, halfInRotation, addToRotation, health, ago, half, halfPage, pinned, show, realTheme, halfTl, jumpHalf,
         tab, fullTl, fullOn, fullPage, jumpFull };
     },
@@ -110,7 +109,10 @@ export function makeBCPage(P) {
         <Seg v-if="P.tabs" v-model="tab" :options="P.tabs.map(x => ({value: x.id, label: x.label}))"/>
         <Toggle :modelValue="val('enabled') !== false" @update:modelValue="v => set('enabled', v)"/></div>
 
-      <CameraMap v-if="tab === 'cameras'"/>
+      <div v-if="tab === 'cameras'" class="card"><div class="card-body row" style="gap:12px">
+        <Icon name="MapPin" :size="18"/><span class="grow">The DriveBC camera map has moved to <b>Webcams → Traffic cams</b>, where any camera
+          can also be added to the rotation. It still shows which camera each road event uses.</span>
+        <button class="btn primary" @click="openTrafficMap"><Icon name="Video" :size="14"/>Open the camera map</button></div></div>
       <div class="two-col" v-else>
         <div class="stack sticky">
           <div class="card"><div class="card-head"><span class="live">PREVIEW</span>

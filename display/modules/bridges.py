@@ -2,7 +2,8 @@
 
 Panels: ``bridges`` (one side: 2×2, paging through the rest), ``bridges_full`` (4×2 under the ticker) and
 ``bridges_wall`` (4×2 on the whole wall). The hub has already cut each image to the tile size, so drawing is copying.
-Each tile: the bridge's name over a dark band, and the image's age in the corner, coloured against that camera's own
+Each tile: the bridge's name over a dark band, and the exact time the picture was taken (13:29:17) in the corner,
+coloured by its age against that camera's own
 refresh period (yellow past 1.5×, or when DriveBC says it's delayed; red past 3×); a camera that is off gets a dark
 tile saying so.
 """
@@ -146,7 +147,7 @@ class BridgesPanel:
         age = now - cam["updated"] if cam.get("updated") else None
         period = max(120.0, float(cam.get("period") or 300))
         col = self.bad if age is None or age > 3 * period else self.warn if age > 1.5 * period or cam.get("delayed")             else self.white
-        txt = _age_text(age)
+        txt = time.strftime("%H:%M:%S", time.localtime(cam["updated"])) if cam.get("updated") else "?"   # exact capture time
         _outlined(c, af, x + w - _tw(af, txt) - 2, y + h - 2, col, txt)
 
 

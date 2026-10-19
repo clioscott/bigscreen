@@ -3,6 +3,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
 import { store, api, fail, toast, seed, go, clone, dirty, previewOnDisplay, playOnDisplay, rotationAction } from "../core.js";
 import { GALLERY, snap, thumb } from "./webcam_gallery.js";
+import { CameraMap } from "./cameramap.js";
 
 export const SHAPES = {
   left: { label: "Left side", panel: "webcam", side: "left", icon: "PanelLeft" },
@@ -28,11 +29,11 @@ const LAYOUTS = {
   none: { label: "None", icon: "EyeOff", note: "No caption" },
 };
 const FONTS = [{ value: "tiny", label: "Tiny" }, { value: "small", label: "Small" }, { value: "medium", label: "Medium" }, { value: "large", label: "Large" }];
-const SECTIONS = { name: "Name", place: "Place", time: "Local time", weather: "Weather", sun: "Sunrise / sunset", date: "Date",
+const SECTIONS = { name: "Name", place: "Place", time: "Local time", age: "Image time", weather: "Weather", sun: "Sunrise / sunset", date: "Date",
   offset: "Time difference", daynight: "Day / night icon", live: "LIVE badge", credit: "Credit", custom: "Your text" };
-const ORDERABLE = ["live", "name", "place", "time", "weather", "date", "offset", "sun", "custom", "credit"];
+const ORDERABLE = ["live", "name", "place", "time", "age", "weather", "date", "offset", "sun", "custom", "credit"];
 // the Custom layout: where each section goes (column, line) to start with; mirrors webcam_caption.DEFAULT_SLOTS
-const DEFAULT_SLOTS = { live: [1, 1], name: [1, 1], place: [1, 2], time: [1, 2], weather: [1, 3], date: [1, 3], offset: [1, 3],
+const DEFAULT_SLOTS = { live: [1, 1], name: [1, 1], place: [1, 2], time: [1, 2], age: [1, 2], weather: [1, 3], date: [1, 3], offset: [1, 3],
   sun: [1, 3], custom: [1, 3], credit: [1, 3] };
 const CONTAINERS = [{ value: "box", label: "Box" }, { value: "strip", label: "Full-width strip" }, { value: "outline", label: "Outlined" }, { value: "board", label: "Board" }];
 const LINE_SIZES = [{ value: "headline", label: "Headline" }, { value: "detail", label: "Detail" }, { value: "big", label: "Big" }];
@@ -45,7 +46,15 @@ const DEFAULT_OVERLAY = { style: "tag", corner: "bl", when: "always", font: "sma
   bg: "#000000", opacity: 0.7, time_format: "24h", fade: true, show_sec: 12, every_min: 3, custom_text: "", headline: "name",
   lines: "auto", separator: "dot", uppercase: false, order: [...ORDERABLE],
   show: { name: true, place: true, time: true, date: false, offset: false, daynight: false, weather: false, sun: false,
-    live: true, credit: false, custom: false } };
+    age: false, live: true, credit: false, custom: false } };
+// still sources (a DriveBC camera by id, or any JPEG) and the query that names a source to the hub
+const STILL = ["drivebc", "image"];
+const DRIVEBC_IMAGE = (id) => `https://www.drivebc.ca/images/${id}.jpg`;
+const srcUrl = (s) => (s?.type === "drivebc" ? DRIVEBC_IMAGE(s.id) : s?.url || "");
+const srcParams = (s) => ({ type: s?.type || "stream", ...(s?.type === "drivebc" ? { id: s.id } : { url: s?.url || "" }),
+  ...(s?.refresh_sec ? { refresh: s.refresh_sec } : {}) });
+const hasSource = (s) => (s?.type === "drivebc" ? Number.isInteger(s.id) && s.id > 0 : !!s?.url);
+const LOOKS = { N: "north", NE: "northeast", E: "east", SE: "southeast", S: "south", SW: "southwest", W: "west", NW: "northwest" };
 const TIMEZONES = ["America/Vancouver", "America/Los_Angeles", "America/Denver", "America/Chicago", "America/New_York", "America/Halifax",
   "Pacific/Honolulu", "America/Anchorage", "Europe/London", "Europe/Paris", "Europe/Berlin", "Europe/Rome", "Atlantic/Reykjavik",
   "Africa/Johannesburg", "Africa/Windhoek", "Asia/Tokyo", "Asia/Seoul", "Asia/Hong_Kong", "Asia/Singapore", "Australia/Sydney", "Pacific/Auckland"];
@@ -61,11 +70,12 @@ function useStatus() {
   const load = async () => { try { status.value = await api("/api/webcams/status"); } catch {} };
   onMounted(() => { load(); t = setInterval(load, 3000); });
   onBeforeUnmount(() => clearInterval(t));
-  const feedFor = (cam) => status.value.feeds.find((f) => f.url === cam?.source?.url && f.type === (cam?.source?.type || "stream"));
+  const feedFor = (cam) => status.value.feeds.find((f) => f.url === srcUrl(cam?.source) && f.type === (cam?.source?.type || "stream"));
   return { status, feedFor };
 }
 function feedPill(f) {
   if (!f) return { cls: "", text: "idle" };
+  if (f.state === "live" && f.still) return { cls: "ok", text: `still · ${Math.round((f.image_age_sec || 0) / 60)} min old` };
   if (f.state === "live") return { cls: "ok", text: `live · ${f.measured_fps} fps${f.viewers ? "" : " · warm"}` };
   if (f.state === "starting") return { cls: "warn", text: "tuning in…" };
   return { cls: "bad", text: f.error ? `retrying: ${f.error}` : f.state };
@@ -87,7 +97,8 @@ const SnapImg = {
     const state = ref("loading");
     let alive = true, timer = null, blobUrl = "";
     const load = async (tries = 0) => {
-      if (!alive || !props.source?.url) return;
+      if (!alive || !hasSource(props.source)) return;
+      if (props.source.type === "drivebc") { url.value = `/api/webcams/drivebc/${props.source.id}.jpg`; state.value = "ok"; return; }
       try {
         const r = await fetch(snap(props.source));
         if (r.ok) {
@@ -107,16 +118,92 @@ const SnapImg = {
       if (id) { url.value = thumb({ id }); state.value = "ok"; } else state.value = "none";
     };
     onMounted(() => load());
-    watch(() => props.source?.url, () => { clearTimeout(timer); state.value = "loading"; url.value = ""; load(); });
+    watch(() => srcUrl(props.source), () => { clearTimeout(timer); state.value = "loading"; url.value = ""; load(); });
     onBeforeUnmount(() => { alive = false; clearTimeout(timer); if (blobUrl) URL.revokeObjectURL(blobUrl); });
     return { url, state };
   },
   template: `<img v-if="url" :src="url" alt=""><span v-else class="wc-snap-wait">{{ state === 'loading' ? 'live frame…' : '' }}</span>`,
 };
 
+// --- traffic cams: DriveBC highway cameras (stills that refresh every few minutes) ---------------------------------
+const TrafficCams = {
+  components: { CameraMap },
+  props: { cams: Array },                                  // [[id, cam]] of the webcams set up
+  emits: ["add"],
+  setup(props, { emit }) {
+    const data = ref({ crossings: [], cities: [], count: 0 });
+    const tab = ref(store.trafficTab || "crossings");
+    const city = ref("");
+    const query = ref("");
+    const box = ref(null);
+    const loading = ref(true);
+    onMounted(async () => {
+      try {
+        data.value = await api("/api/webcams/traffic");
+        city.value = data.value.cities.find((c) => c.city === "Vancouver")?.city || data.value.cities[0]?.city || "";
+      } catch (e) { fail(e); }
+      loading.value = false;
+      if (store.trafficTab) { box.value?.scrollIntoView({ block: "start" }); store.trafficTab = null; }   // from the DriveBC page
+    });
+    const have = (id) => props.cams.find(([, x]) => x.source?.type === "drivebc" && x.source.id === id)?.[0];
+    const add = (c, label, place) => {
+      if (have(c.id)) return go(`webcams/${have(c.id)}`);
+      emit("add", { label, place, credit: "DriveBC", tz: "America/Vancouver", source: { type: "drivebc", id: c.id }, lat: c.lat, lon: c.lon });
+      toast(`Added ${label}. Save to keep it; open it to crop it or add it to the rotation.`);
+    };
+    const look = (c) => (LOOKS[c.orientation] ? `looking ${LOOKS[c.orientation]}` : c.name);
+    const match = (c) => !query.value || `${c.name} ${c.caption} ${c.highway} ${c.city}`.toLowerCase().includes(query.value.toLowerCase());
+    const cityCams = computed(() => (data.value.cities.find((c) => c.city === city.value)?.cams || []).filter(match));
+    const found = computed(() => (query.value ? data.value.cities.flatMap((c) => c.cams).filter(match).slice(0, 60) : []));
+    const addedIds = computed(() => props.cams.filter(([, x]) => x.source?.type === "drivebc").map(([, x]) => x.source.id));
+    const fromMap = (c) => add(c, c.name, c.city || "");
+    const openFromMap = (c) => go(`webcams/${have(c.id)}`);
+    return { data, tab, city, query, box, loading, have, add, look, cityCams, found, addedIds, fromMap, openFromMap };
+  },
+  template: `<div class="card" style="margin-top:16px" ref="box">
+    <div class="card-head"><Icon name="Cctv" :size="16"/><h3>Traffic cams</h3>
+      <span class="faint" style="font-size:12px">DriveBC stills, a new picture every few minutes · click to add</span><span class="spacer"></span>
+      <input class="input" v-model="query" placeholder="Search cameras" style="max-width:200px; height:28px" v-if="tab !== 'map'">
+      <Seg v-model="tab" :options="[{value:'crossings', label:'Bridges'}, {value:'cities', label:'By city'}, {value:'map', label:'Map'}]"/></div>
+    <div v-if="loading" class="card-body faint">Loading DriveBC cameras…</div>
+    <template v-else-if="tab === 'crossings' && !query">
+      <div v-for="x in data.crossings" :key="x.name" class="card-body" style="padding-top:6px">
+        <div class="wc-subhead">{{ x.name }}</div>
+        <div class="wc-gallery">
+          <button v-for="c in x.cams" :key="c.id" type="button" class="wc-pick" :class="{have: have(c.id), off: !c.on}"
+                  @click="add(c, x.short + (c.orientation ? ' · ' + look(c) : ''), x.name)" :title="c.caption">
+            <span class="wc-thumb"><img :src="'/api/webcams/drivebc/' + c.id + '.jpg'" loading="lazy" alt="">
+              <span class="wc-have" v-if="have(c.id)"><Icon name="Check" :size="13"/>added</span>
+              <span class="wc-have" v-else-if="!c.on" style="color:var(--bad)">offline</span></span>
+            <b>{{ look(c) }}</b><span class="faint wc-note">{{ c.caption }}</span>
+          </button></div></div>
+    </template>
+    <template v-else-if="tab === 'cities' && !query">
+      <div class="card-body"><div class="row" style="gap:6px">
+        <button v-for="c in data.cities" :key="c.city" type="button" class="chip" :class="{off: city !== c.city}" style="height:26px; padding:0 10px"
+                @click="city = c.city">{{ c.city }} <span class="faint">{{ c.cams.length }}</span></button></div></div>
+      <div class="card-body wc-gallery" style="padding-top:0">
+        <button v-for="c in cityCams" :key="c.id" type="button" class="wc-pick" :class="{have: have(c.id), off: !c.on}" @click="add(c, c.name, city)" :title="c.caption">
+          <span class="wc-thumb"><img :src="'/api/webcams/drivebc/' + c.id + '.jpg'" loading="lazy" alt="">
+            <span class="wc-have" v-if="have(c.id)"><Icon name="Check" :size="13"/>added</span>
+            <span class="wc-have" v-else-if="!c.on" style="color:var(--bad)">offline</span></span>
+          <b>{{ c.name }}</b><span class="faint wc-note">{{ c.caption }}</span>
+        </button></div>
+    </template>
+    <div v-else-if="query && tab !== 'map'" class="card-body wc-gallery">
+      <button v-for="c in found" :key="c.id" type="button" class="wc-pick" :class="{have: have(c.id), off: !c.on}" @click="add(c, c.name, c.city)" :title="c.caption">
+        <span class="wc-thumb"><img :src="'/api/webcams/drivebc/' + c.id + '.jpg'" loading="lazy" alt="">
+          <span class="wc-have" v-if="have(c.id)"><Icon name="Check" :size="13"/>added</span></span>
+        <b>{{ c.name }}</b><span class="faint">{{ c.city }}</span><span class="faint wc-note">{{ c.caption }}</span>
+      </button>
+      <div class="faint" v-if="!found.length">No camera matches “{{ query }}”.</div></div>
+    <CameraMap v-else addable :added="addedIds" @add="fromMap" @open="openFromMap"/>
+  </div>`,
+};
+
 // --- list ---------------------------------------------------------------------------------------------------
 const WebcamList = {
-  components: { SnapImg },
+  components: { SnapImg, TrafficCams },
   setup() {
     const wc = seed(["modules", "webcams"], { cams: {} });
     const cams = computed(() => Object.entries(store.draft.modules.webcams.cams || {}));
@@ -128,7 +215,9 @@ const WebcamList = {
         ...(f.lat != null ? { lat: f.lat, lon: f.lon } : {}) });
       let id = slug(base.label), n = 2;
       while (all[id]) id = `${slug(base.label)}_${n++}`;
-      all[id] = { fps: 15, ...base, overlay: clone(DEFAULT_OVERLAY), crops: {} };
+      const overlay = clone(DEFAULT_OVERLAY);
+      if (STILL.includes(f.source?.type)) Object.assign(overlay.show, { age: true, live: false });   // a still isn't LIVE
+      all[id] = { fps: 15, ...base, overlay, crops: {} };
       if (open) go(`webcams/${id}`);
       return id;
     };
@@ -144,7 +233,8 @@ const WebcamList = {
       const u = usedIn(id);
       return u.length ? `in the rotation ×${u.length}` : "not in the rotation";
     };
-    return { wc, cams, feedFor, feedPill, add, host, usedText, go, GALLERY, haveId, pick };
+    const srcHost = (s) => (s?.type === "drivebc" ? `DriveBC camera ${s.id}` : host(s?.url));
+    return { wc, cams, feedFor, feedPill, add, host, srcHost, hasSource, usedText, go, GALLERY, haveId, pick };
   },
   template: `<div class="page">
     <div class="page-head"><div class="grow"><h1>Webcams</h1>
@@ -153,9 +243,9 @@ const WebcamList = {
       <button class="btn primary" @click="add()"><Icon name="Plus" :size="15"/>Add webcam</button></div>
     <div class="card">
       <div class="list-row" v-for="[id, cam] in cams" :key="id" style="cursor:pointer" @click="go('webcams/' + id)">
-        <span class="wc-row-thumb"><SnapImg v-if="cam.source?.url" :source="cam.source"/></span>
+        <span class="wc-row-thumb"><SnapImg v-if="hasSource(cam.source)" :source="cam.source"/></span>
         <div class="grow" style="min-width:0"><b>{{ cam.label || id }}</b>
-          <div class="faint ellipsis" style="font-size:12.5px">{{ [cam.place, host(cam.source?.url), usedText(id)].filter(Boolean).join(' · ') }}</div></div>
+          <div class="faint ellipsis" style="font-size:12.5px">{{ [cam.place, srcHost(cam.source), usedText(id)].filter(Boolean).join(' · ') }}</div></div>
         <span class="pill" :class="feedPill(feedFor(cam)).cls">{{ feedPill(feedFor(cam)).text }}</span>
         <button class="btn sm ghost icon-only" title="Edit"><Icon name="Pencil" :size="14"/></button>
       </div>
@@ -170,7 +260,9 @@ const WebcamList = {
           <b>{{ c.label }}</b><span class="faint">{{ c.place }}</span><span class="faint wc-note">{{ c.note }}</span>
         </button>
       </div></div>
-    <div class="faint" style="font-size:12.5px; margin-top:10px">Or use Add webcam with any YouTube live page, or an HLS / MJPEG / RTSP stream URL.</div>
+    <TrafficCams :cams="cams" @add="add($event, false)"/>
+    <div class="faint" style="font-size:12.5px; margin-top:10px">Or use Add webcam with any YouTube live page, an HLS / MJPEG / RTSP stream URL,
+      a DriveBC camera number, or any still image URL.</div>
   </div>`,
 };
 
@@ -184,7 +276,7 @@ const CropEditor = {
     let t;
     onMounted(() => { t = setInterval(() => { const i = img.value; if (i?.naturalWidth) nat.value = [i.naturalWidth, i.naturalHeight]; }, 500); });
     onBeforeUnmount(() => { clearInterval(t); if (img.value) img.value.src = ""; });   // end the stream (frees the hub's viewer)
-    const src = computed(() => props.cam.source?.url ? `/api/webcams/source.mjpeg?${qs({ type: props.cam.source.type || "stream", url: props.cam.source.url, fps: props.cam.fps || 15 })}` : "");
+    const src = computed(() => hasSource(props.cam.source) ? `/api/webcams/source.mjpeg?${qs({ ...srcParams(props.cam.source), fps: props.cam.fps || 15 })}` : "");
     watch(src, () => { err.value = false; });
     const aspect = computed(() => props.zone[0] / props.zone[1]);
     const fit = () => {
@@ -263,7 +355,7 @@ const WallPreview = {
     const send = async () => {
       timer = null;
       const srcKey = JSON.stringify([props.cam.source, props.cam.fps]);
-      if (!props.cam.source?.url) { token.value = ""; return; }
+      if (!hasSource(props.cam.source)) { token.value = ""; return; }
       const fresh = srcKey !== lastSrc;
       lastSrc = srcKey;
       try {
@@ -422,7 +514,7 @@ const WebcamEditor = {
     };
     const customCrop = (s) => !!cam.value.crops?.[s];
     return { id, cam, shape, zone, ov, colour, probe, testing, test, used, addToRotation, play, remove, captionToAll, toggleShow, customCrop,
-      orderOn, moveSection, setCoord, needsLocation, galleryLoc, useGalleryLoc, customRows, setSlot, moveInLine, sameLine, usedLines, usedCols, lineSize, setLineSize, colAlign,
+      orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, customRows, setSlot, moveInLine, sameLine, usedLines, usedCols, lineSize, setLineSize, colAlign,
       setColAlign, CONTAINERS, LINE_SIZES, ALIGNS, feedFor, feedPill, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
   },
   template: `<div class="page" v-if="cam">
@@ -436,10 +528,15 @@ const WebcamEditor = {
       <div class="stack">
         <div class="card"><div class="card-head"><Icon name="Link" :size="16"/><h3>Source</h3></div>
           <div class="card-body stack">
-            <Seg v-model="cam.source.type" :options="[{value:'youtube', label:'YouTube live', icon:'Youtube'}, {value:'stream', label:'Stream URL', icon:'Radio'}]"/>
+            <Seg v-model="cam.source.type" :options="[{value:'youtube', label:'YouTube live', icon:'Youtube'}, {value:'stream', label:'Stream URL', icon:'Radio'},
+              {value:'drivebc', label:'DriveBC camera', icon:'Cctv'}, {value:'image', label:'Still image', icon:'Image'}]"/>
             <div class="row nowrap">
-              <input class="input grow" v-model.lazy.trim="cam.source.url" :placeholder="cam.source.type === 'youtube' ? 'https://www.youtube.com/watch?v=…  or  …/@channel/live' : 'https://…/index.m3u8, an MJPEG URL, rtsp://…'">
-              <button class="btn" :disabled="testing || !cam.source.url" @click="test"><Icon :name="testing ? 'LoaderCircle' : 'PlugZap'" :size="14" :class="{spin: testing}"/>Test</button></div>
+              <input v-if="cam.source.type === 'drivebc'" class="input grow" type="number" min="1" :value="cam.source.id ?? ''"
+                     @change="cam.source.id = Number($event.target.value) || undefined" placeholder="DriveBC camera number, e.g. 18 (Lions Gate)">
+              <input v-else class="input grow" v-model.lazy.trim="cam.source.url" :placeholder="cam.source.type === 'youtube' ? 'https://www.youtube.com/watch?v=…  or  …/@channel/live'
+                : cam.source.type === 'image' ? 'https://…/camera.jpg (any still image that updates)' : 'https://…/index.m3u8, an MJPEG URL, rtsp://…'">
+              <button class="btn" :disabled="testing || !hasSource(cam.source)" @click="test"><Icon :name="testing ? 'LoaderCircle' : 'PlugZap'" :size="14" :class="{spin: testing}"/>Test</button></div>
+            <div class="faint" style="font-size:12px" v-if="cam.source.type === 'drivebc'">Find cameras under Webcams → Traffic cams. DriveBC posts a new picture every few minutes.</div>
             <div v-if="probe" class="callout" :class="probe.ok ? 'ok' : 'bad'" style="font-size:12.5px">
               <Icon :name="probe.ok ? 'CircleCheck' : 'CircleX'" :size="14"/> {{ probe.ok ? (probe.title ? 'Found: ' + probe.title : 'The hub can open it') : probe.error }}</div>
             <div class="fields">
@@ -448,7 +545,9 @@ const WebcamEditor = {
               <Field label="Credit" hint="Who runs the camera"><input class="input" v-model="cam.credit" placeholder="FNN"></Field>
               <Field label="Time zone" hint="For the caption's local time"><input class="input" v-model.trim="cam.tz" list="wc-tz" placeholder="Asia/Tokyo">
                 <datalist id="wc-tz"><option v-for="z in TIMEZONES" :key="z" :value="z"/></datalist></Field>
-              <Field label="Frame rate" hint="Smoother costs the hub more"><Stepper v-model="cam.fps" :min="1" :max="30" unit=" fps"/></Field>
+              <Field label="Frame rate" hint="Smoother costs the hub more" v-if="!STILL.includes(cam.source.type)"><Stepper v-model="cam.fps" :min="1" :max="30" unit=" fps"/></Field>
+              <Field label="Fetch every" hint="How often the image is fetched again" v-if="cam.source.type === 'image'">
+                <Stepper :modelValue="cam.source.refresh_sec || 60" @update:modelValue="v => cam.source.refresh_sec = v" :min="20" :max="3600" :step="10" unit=" s"/></Field>
               <Field label="Location" hint="Latitude, longitude: for the caption's weather and sunrise/sunset">
                 <div class="row nowrap" style="gap:6px"><input class="input" style="width:50%" :value="cam.lat ?? ''" @change="setCoord('lat', $event, 90)" placeholder="49.2888">
                   <input class="input" style="width:50%" :value="cam.lon ?? ''" @change="setCoord('lon', $event, 180)" placeholder="-123.1111"></div></Field>
@@ -521,6 +620,9 @@ const WebcamEditor = {
                   <Field label="Divider" v-if="usedCols.length > 1"><Toggle :modelValue="ov.divider !== false" @update:modelValue="v => ov.divider = v"/></Field>
                 </div>
               </template>
+              <Field label="Image time" v-if="ov.show.age" hint="When the still was taken (DriveBC gives it to the second)">
+                <Seg :modelValue="ov.taken_format || 'time'" @update:modelValue="v => ov.taken_format = v"
+                     :options="[{value:'time', label:'taken 17:05:42'}, {value:'relative', label:'3 min ago'}, {value:'both', label:'Both'}]"/></Field>
               <Field label="Your text" v-if="ov.show.custom"><input class="input" v-model="ov.custom_text" maxlength="40" placeholder="Scramble Crossing, from the Starbucks"></Field>
               <div class="callout info" v-if="(ov.show.weather || ov.show.sun) && !(Number.isFinite(cam.lat) && Number.isFinite(cam.lon))" style="font-size:12.5px">
                 <Icon name="MapPin" :size="14"/> Weather and sunrise/sunset need this webcam's location (Source → Location).</div>
