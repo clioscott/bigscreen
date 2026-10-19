@@ -95,6 +95,7 @@ class Rotation:
         self._prio_seen: dict = {}           # key -> rules held last check
         self._prio_tok: dict = {}            # key -> the new-alert token last check (see Env.priority_token)
         self._full_keys: set = set()         # keys queued by a new alert: they play their own (full) size
+        self._pass_len: dict = {}            # key -> seconds its last pass took (upcoming: when a screen will end)
         self._prio_t = 0.0
         self._idle_t = 0.0
         self._last_t = None
@@ -204,6 +205,8 @@ class Rotation:
             if e.get("advance") == "cycles" and c["passes"] >= 1:     # passes so far tell how long the rest takes
                 done_at = c.get("pass_at", c["visible"])
                 left = min(left, done_at / c["passes"] * (self.need(e) - c["passes"]) - (c["visible"] - done_at))
+            elif e.get("advance") == "cycles" and entry_key(e) in self._pass_len:   # first pass: as long as last time
+                left = min(left, self._pass_len[entry_key(e)] * self.need(e) - c["visible"])
             if left > WARM_AHEAD:
                 return None
             for i in self.pending:
@@ -254,6 +257,7 @@ class Rotation:
                 if result == "done":
                     c["passes"] += 1
                     c["pass_at"] = c["visible"]      # screen time when that pass ended (upcoming estimates from it)
+                    self._pass_len[entry_key(c["entry"])] = c["visible"] / c["passes"]   # remembered for next time
             if visible and result == "skip":
                 if self.preview and c["source"] == "preview":
                     self._end_preview(now)

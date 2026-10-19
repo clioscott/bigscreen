@@ -40,6 +40,33 @@ def test_screens_that_run_by_passes_use_how_long_their_passes_take():
     assert one.upcoming(0.5) is None                                    # one long pass: not warmed for 30 minutes
 
 
+def test_a_one_pass_screen_is_expected_to_take_as_long_as_last_time():
+    r = Rotation("right", [{"panel": "headlines", "advance": "cycles", "cycles": 1, "max_sec": 1800},
+                           {"panel": "webcam", "cam": "a", "dwell_sec": 5}])
+    t = 0.0
+    r.current(t)
+    while t < 100.0:                                                    # headlines: a 100 s pass
+        r.report(None, True, t)
+        t += 0.5
+    r.report("done", True, t)
+    assert r.current(t)["panel"] == "webcam"
+    end = t + 6.0
+    while t < end:                                                      # the webcam's 5 s
+        r.current(t)
+        r.report(None, True, t)
+        t += 0.5
+    start = t
+    assert r.current(t)["panel"] == "headlines"                        # headlines again
+    while t < start + 60.0:
+        r.report(None, True, t)
+        t += 0.5
+    assert r.upcoming(t) is None                                        # ~40 s left by last time's pass
+    while t < start + 85.0:
+        r.report(None, True, t)
+        t += 0.5
+    assert r.upcoming(t)["cam"] == "a"                                  # ~15 s left: warm it
+
+
 def test_upcoming_skips_entries_whose_rules_dont_hold_and_waits_out_previews():
     class Env:
         def allows(self, e):
