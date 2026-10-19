@@ -21,7 +21,8 @@ function advanceText(e) {
   }
   return `${e.dwell_sec ?? 30} s`;
 }
-const sameEntry = (a, b) => a && b && a.panel === b.panel && (a.track || null) === (b.track || null) && (a.weather_screen || null) === (b.weather_screen || null)
+const sameEntry = (a, b) => a && b && (a._shape_of || a.panel) === (b._shape_of || b.panel) &&   // a shaped play matches its entry
+  (a.track || null) === (b.track || null) && (a.weather_screen || null) === (b.weather_screen || null)
   && (a.cam || null) === (b.cam || null);
 
 const WITHIN = [{ value: 0, label: "right now" }, { value: 1, label: "within 1 h" }, { value: 3, label: "within 3 h" },
@@ -75,6 +76,21 @@ const RuleRow = {
   </div>`,
 };
 
+// an entry's shapes: the same screen at another size (webcam / webcam_full / webcam_wall, map / map_full, …)
+const baseOf = (id) => id.replace(/_(full|wall|half)$/, "");
+const shapesOf = (id) => Object.keys(PANEL_TYPES).filter((p) => baseOf(p) === baseOf(id));
+const shapeName = (id) => (id.endsWith("_wall") ? "whole wall" : id.endsWith("_half") ? "half width"
+  : PANEL_TYPES[id]?.full ? (id.endsWith("_full") ? "full width" : "full screen") : "half width");
+// "Half width when it's 07:00–17:00 and it's Mon–Fri", "Half width once its alerts are past their full-wall showings"
+const clause = (r) => (r.not && r.phase === "full" ? ["once", "its alerts are past their full-wall showings"]
+  : [r.not ? "unless" : "when", ruleText(r).replace(/^(not )?when /, "")]);
+const variantText = (v) => {
+  const s = shapeName(v.panel);
+  let last = "";
+  const when = (v.rules || []).map(clause).map(([c, t]) => { const out = c === last ? t : `${c} ${t}`; last = c; return out; });
+  return s[0].toUpperCase() + s.slice(1) + (when.length ? " " + when.join(" and ") : " always");
+};
+
 const SlotEditor = {
   components: { RuleRow },
   props: { e: Object, side: String },
@@ -93,6 +109,10 @@ const SlotEditor = {
       if (pt.sub !== "weather_screen") delete e.weather_screen;
       if (pt.sub !== "cam") delete e.cam;
       if (!pt.passes) { delete e.advance; delete e.cycles; delete e.max_sec; e.dwell_sec = e.dwell_sec ?? 30; }
+      if (e.variants) {                                     // keep only other sizes of the new panel
+        e.variants = e.variants.filter((v) => baseOf(v.panel) === baseOf(p) && v.panel !== p);
+        if (!e.variants.length) delete e.variants;
+      }
     };
     const mode = computed({
       get: () => (props.e.advance === "cycles" ? "cycles" : "time"),
@@ -109,7 +129,19 @@ const SlotEditor = {
     const priority = computed({ get: () => props.e.priority === "next", set: (v) => { props.e.priority = v ? "next" : ""; } });
     const enabled = computed({ get: () => props.e.enabled !== false, set: (v) => { if (v) delete props.e.enabled; else props.e.enabled = false; } });
     const cams = computed(() => store.draft.modules.webcams?.cams || {});
-    return { t, tracks, cams, setPanel, mode, passes, defaultLoops, rules, addRule, priority, enabled, PANEL_TYPES, WEATHER_SCREENS };
+    // other shapes at certain times (display/rotation.py "variants"): the first whose rules hold wins
+    const shapes = computed(() => shapesOf(props.e.panel));
+    const variants = computed(() => props.e.variants || []);
+    const addVariant = () => {
+      const other = shapes.value.find((p) => p !== props.e.panel);
+      if (!other) return;
+      if (!props.e.variants) props.e.variants = [];
+      props.e.variants.push({ panel: other, rules: [{ if: "hours", from: "07:00", to: "17:00" }, { if: "days", days: [0, 1, 2, 3, 4] }] });
+    };
+    const removeVariant = (i) => { props.e.variants.splice(i, 1); if (!props.e.variants.length) delete props.e.variants; };
+    const addVariantRule = (v) => v.rules.push({ if: "hours", ...RULES.hours.make() });
+    return { t, tracks, cams, setPanel, mode, passes, defaultLoops, rules, addRule, priority, enabled, PANEL_TYPES, WEATHER_SCREENS,
+      shapes, variants, addVariant, removeVariant, addVariantRule, shapeName };
   },
   template: `<div class="slot-editor">
     <div class="field"><div class="label">Panel</div>
@@ -131,6 +163,20 @@ const SlotEditor = {
           <span class="faint" style="font-size:12.5px">{{ rules.length ? 'All rules must hold. They are checked when the next screen is picked; a screen that starts always plays to its end.' : 'No rules: it comes up every time round.' }}</span></div>
       </div>
       <ToggleRow v-model="priority" label="Jump the queue" hint="When its rules start holding, it plays next (after the current screen finishes), then the rotation carries on where it was."/>
+    </div>
+    <div class="field" v-if="shapes.length > 1"><div class="label">Size at certain times</div>
+      <div class="rule-list">
+        <div v-for="(v, i) in variants" :key="i" class="card-body" style="border:1px solid var(--line); border-radius:8px; padding:8px 10px">
+          <div class="row" style="gap:8px; margin-bottom:6px"><span>Plays</span>
+            <select class="input" v-model="v.panel" style="max-width:180px"><option v-for="p in shapes" :key="p" :value="p" :disabled="p === e.panel">{{ shapeName(p) }}</option></select>
+            <span class="faint">while all of these hold:</span><span class="spacer"></span>
+            <button class="btn sm ghost icon-only" title="Remove" @click="removeVariant(i)"><Icon name="X" :size="14"/></button></div>
+          <RuleRow v-for="(r, k) in v.rules" :key="k" :r="r" @remove="v.rules.splice(k, 1)"/>
+          <button class="btn sm ghost" @click="addVariantRule(v)"><Icon name="Plus" :size="13"/>Add a rule</button>
+        </div>
+        <div class="row"><button class="btn sm" @click="addVariant"><Icon name="Plus" :size="14"/>Play at another size at certain times</button>
+          <span class="faint" style="font-size:12.5px">{{ variants.length ? 'Otherwise it plays ' + shapeName(e.panel) + '. Decided when the screen starts.' : 'Always plays ' + shapeName(e.panel) + '.' }}</span></div>
+      </div>
     </div>
     <div class="field"><div class="label">Move on to the next screen</div>
       <div class="row">
@@ -183,7 +229,7 @@ export const Rotation = {
       open.value = null;
     };
     const play = (side, e, hold) => playOnDisplay(e, { side, hold });
-    return { cycle, open, isCurrent, waiting, add, remove, moveTo, play, entryTitle, entrySub, advanceText, ruleText, PANEL_TYPES,
+    return { cycle, open, isCurrent, waiting, add, remove, moveTo, play, entryTitle, entrySub, advanceText, ruleText, variantText, PANEL_TYPES,
       life: computed(() => store.draft.modules.alert_lifecycle) };
   },
   template: `<div class="page">
@@ -218,6 +264,7 @@ export const Rotation = {
                 <b>{{ entryTitle(e) }}</b>
                 <span>{{ [entrySub(e), e.enabled === false ? 'off' : waiting(side, i) ? 'skipped right now: rules don\\'t hold' : ''].filter(Boolean).join(' · ') || (e.rules?.length ? '' : 'every time round') }}</span>
                 <div class="rule-summary" v-if="e.rules?.length"><span class="pill" v-for="(r, k) in e.rules" :key="k">{{ ruleText(r) }}</span></div>
+                <div class="rule-summary" v-if="e.variants?.length"><span class="pill accent" v-for="(v, k) in e.variants" :key="'v' + k" title="Plays at this size while these hold; otherwise its own size"><Icon name="Maximize2" :size="12"/>{{ variantText(v) }}</span></div>
               </div>
               <span class="pill" :class="{accent: e.advance === 'cycles'}"><Icon :name="e.advance === 'cycles' ? 'Repeat' : 'Timer'" :size="12"/>{{ advanceText(e) }}</span>
               <span class="live" v-if="isCurrent(side, i)" title="On screen now"></span>

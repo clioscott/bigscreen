@@ -83,7 +83,9 @@ Urgent fix: push straight to `main` as admin (bypasses the ruleset) — the time
   The hub proxies these under `/api/display/*`.
 - Rotation: `display/rotation.py` (one per side; screens always play to their end, rules checked only when picking
   the next one, previews resume the rotation) and `display/rules.py` (the conditions). Entries live in
-  `modules.layout_cycle.{left,right}` with `rules`; legacy `when` still works.
+  `modules.layout_cycle.{left,right}` with `rules`; legacy `when` still works. One entry per screen: another size at
+  certain times is a `variants` item on the same entry (`{"panel": "webcam", "rules": […], …overrides}`, first match
+  wins when the screen starts), shown as a label on the Rotation page — never a second entry.
 - Emulate anywhere: `BIGSCREEN_DATA_DIR=… python -m display.main --emulate --port 8799`.
 - The deploy timer updates the Pi; by hand: `ssh scott@192.168.1.100 'cd ~/bigscreen && git pull && sudo systemctl restart bigscreen-display'`.
 

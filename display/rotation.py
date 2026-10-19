@@ -8,6 +8,9 @@ Entries (``modules.layout_cycle.<side>``)::
      "dwell_sec": 30,                                  … after this many seconds on screen
      "priority": "next",                               when its rules become true, it plays next (after the
                                                        current screen), then the rotation carries on where it was
+     "variants": [{"panel": "webcam",                  plays as another panel (shape) while these rules hold:
+                   "rules": [{"if": "hours", …}],      the first variant whose rules hold wins, else ``panel``;
+                   "max_sec": 300}],                   any other field overrides the entry's while it plays so
      "enabled": false}                                 kept in the list but never shown
 
 How it plays:
@@ -33,7 +36,21 @@ DEFAULT_CAP = 1800.0
 
 
 def entry_key(e: dict):
-    return (e.get("panel"), e.get("track"), e.get("weather_screen"), e.get("cam"))
+    return (e.get("_shape_of") or e.get("panel"), e.get("track"), e.get("weather_screen"), e.get("cam"))
+
+
+def variants_of(e: dict) -> list:
+    """An entry's other shapes, cleaned: [{"panel", "rules", …overrides}] (anything malformed is dropped)."""
+    raw = e.get("variants")
+    out = []
+    for v in raw if isinstance(raw, list) else []:
+        if isinstance(v, dict) and isinstance(v.get("panel"), str) and v["panel"].strip():
+            rules = v.get("rules")
+            extra = {k: x for k, x in v.items()
+                     if k not in ("panel", "rules", "variants", "enabled", "priority") and not k.startswith("_")}
+            out.append({**extra, "panel": v["panel"].strip(),
+                        "rules": [r for r in rules if isinstance(r, dict)] if isinstance(rules, list) else []})
+    return out
 
 
 def normalise(raw) -> dict | None:
@@ -70,7 +87,23 @@ class Rotation:
     def _allows(self, e):
         return e.get("enabled", True) is not False and (self.env is None or self.env.allows(e))
 
+    def _shaped(self, entry):
+        """The entry as it plays now: the first variant whose rules hold gives the panel (e.g. half width during
+        business hours), else its own. Decided when a screen starts, like every rule."""
+        entry = entry.get("_base") or entry              # restarting a screen (after a preview): decide afresh
+        for v in variants_of(entry):
+            try:
+                ok = self.env is None or self.env.allows({**entry, "rules": v["rules"]})
+            except Exception as ex:
+                print(f"[rotation] variant rules: {ex}")
+                ok = False
+            if ok:
+                over = {k: x for k, x in v.items() if k != "rules"}
+                return {**entry, **over, "_shape_of": entry["panel"], "_base": entry}
+        return entry
+
     def _start(self, entry, idx, source, now):
+        entry = self._shaped(entry)
         self._plays += 1
         self.cur = {"entry": entry, "idx": idx, "source": source, "id": self._plays,
                     "visible": 0.0, "passes": 0, "started": now}

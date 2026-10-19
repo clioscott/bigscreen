@@ -608,7 +608,7 @@ const WebcamEditor = {
               <span class="spacer"></span>
               <button class="btn sm primary" @click="addToRotation"><Icon name="ListPlus" :size="14"/>Add to the rotation</button></div>
             <div class="faint" style="font-size:12.5px">
-              <template v-if="used.length">In the rotation: <span v-for="(u, k) in used" :key="k" class="pill" style="margin-right:4px">{{ u.side }} · {{ SHAPES[u.e.panel === 'webcam' ? u.side : u.e.panel === 'webcam_full' ? 'full' : 'wall'].label.toLowerCase() }} · {{ u.e.dwell_sec || 30 }} s</span>
+              <template v-if="used.length">In the rotation: <span v-for="(u, k) in used" :key="k" class="pill" style="margin-right:4px">{{ u.side }} · {{ SHAPES[u.e.panel === 'webcam' ? u.side : u.e.panel === 'webcam_full' ? 'full' : 'wall'].label.toLowerCase() }} · {{ u.e.dwell_sec || 30 }} s{{ u.e.variants?.length ? ' · other sizes at set times' : '' }}</span>
                 <a href="#/rotation">rules and timing</a></template>
               <template v-else>Not in the rotation yet.</template></div>
           </div></div>
