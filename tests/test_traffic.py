@@ -215,3 +215,71 @@ def test_still_feeds_have_no_pacer_and_take_a_new_refresh(monkeypatch):
     finally:
         f.last_view = 0
         f._stop.set()
+
+
+# --- directions checked by eye, home cities, City of Vancouver cameras ----------------------------------------------
+def test_wrong_directions_are_corrected_and_turning_cameras_marked():
+    steveston = {"id": 29, "orientation": "S", "caption": "Highway 99 at Steveston interchange, looking south.*"}
+    f = traffic.fix(steveston)
+    assert f["orientation"] == "N" and f["caption"] == "Highway 99 at Steveston interchange, looking north."
+    assert f["turns"] and f["corrected"] and steveston["orientation"] == "S"          # the original is untouched
+    unsure = traffic.fix({"id": 573, "orientation": "N", "caption": "Hwy 17 at Hwy 91 Connector, looking north."})
+    assert unsure["orientation"] == "" and "looking" not in unsure["caption"]
+    plain = {"id": 18, "orientation": "S", "caption": "Lions Gate Bridge north end, looking south."}
+    assert traffic.fix(plain) is plain
+    c = traffic.camera({**steveston, "name": "Steveston", "location": {"coordinates": [-123.0947, 49.1376]}})
+    assert c["look"] == "north" and c["turns"] and c["city"] == "Richmond"
+
+
+def test_cameras_by_the_river_land_in_the_right_city():
+    where = {(49.2083, -123.1304): "Vancouver",          # Oak St at 70 Ave (north end of the Oak St Bridge)
+             (49.1818, -123.1030): "Richmond",           # Hwy 99 at Shell Rd
+             (49.1710, -122.9511): "Delta",              # Annacis Island
+             (49.1763, -122.9617): "Richmond",           # Hwy 91/91A interchange
+             (49.1832, -122.9571): "New Westminster",    # Queensborough
+             (49.1956, -122.8922): "Surrey",             # Tannery Rd (stal̕əw̓asəm Bridge's south end)
+             (49.2343, -122.8785): "Coquitlam",          # Brunette
+             (49.3150, -123.1380): "West Vancouver"}     # Lions Gate north end (nearest centre)
+    assert {k: traffic.city_of(*k) for k in where} == where
+
+
+def test_home_cities_come_first():
+    raw = [_cam(1, 49.05, -122.30, "Abbotsford cam"), _cam(2, 49.25, -122.98, "Burnaby cam"),
+           _cam(3, 49.26, -123.11, "Vancouver cam"), _cam(4, 49.17, -123.13, "Richmond cam")]
+    assert [c["city"] for c in traffic.build(raw)["cities"]] == ["Vancouver", "Richmond", "Burnaby", "Abbotsford"]
+
+
+def test_every_crossing_has_its_cameras_once():
+    for name, short, ids, note in traffic.CROSSINGS:
+        assert ids and len(ids) == len(set(ids)), name
+    names = [x[0] for x in traffic.CROSSINGS]
+    for want in ("George Massey", "Oak Street", "Knight Street", "Hwy 91", "Queensborough", "Alex Fraser", "stal̕əw̓asəm",
+                 "Port Mann", "Ironworkers", "Lions Gate"):
+        assert any(want in n for n in names), want
+
+
+def test_crossing_labels_are_drawable():
+    from hub.jobs import drivebc
+    raw = [_cam(609, 49.1956, -122.8922, "Tannery Road - N")]
+    x = traffic.build(raw, drivebc.fold)["crossings"][0]
+    assert x["short"] == "stal̕əw̓asəm" and x["label"] == "stalewasem" and x["note"]
+
+
+def test_city_of_vancouver_pages_become_image_cameras():
+    row = {"name": "Cambie Bridge", "url": "https://trafficcams.vancouver.ca/cambiebridge.htm",
+           "geo_point_2d": {"lat": 49.271, "lon": -123.115}}
+    html = ('<img src="cameraimages/CambieBridgeNorth.jpg" alt="Cambie Bridge - North" width="720">'
+            '<img src="cameraimages/CambieBridgeSouth.jpg" alt="Cambie Bridge - South">')
+    v = traffic.cov_views(row, html)
+    assert [c["name"] for c in v] == ["Cambie Bridge - North", "Cambie Bridge - South"]
+    assert v[0]["source"] == {"type": "image", "url": "https://trafficcams.vancouver.ca/cameraimages/CambieBridgeNorth.jpg",
+                              "refresh_sec": 120}
+    assert v[0]["orientation"] == "" and v[0]["credit"] == "City of Vancouver" and v[0]["thumb"].endswith("/CambieBridgeNorth.jpg")
+    import json
+    pages = {traffic.COV_LIST: json.dumps([row, {"name": "x", "url": "https://elsewhere.example/a.htm"}]), row["url"]: html}
+    assert len(traffic.cov_cameras(pages.__getitem__)) == 2                    # only the City's own pages are read
+
+
+def test_fixing_twice_changes_nothing():
+    once = traffic.fix({"id": 29, "orientation": "S", "caption": "Highway 99 at Steveston interchange, looking south.*"})
+    assert traffic.fix(once) == once and once["turns"]

@@ -145,37 +145,47 @@ const TrafficCams = {
       loading.value = false;
       if (store.trafficTab) { box.value?.scrollIntoView({ block: "start" }); store.trafficTab = null; }   // from the DriveBC page
     });
-    const have = (id) => props.cams.find(([, x]) => x.source?.type === "drivebc" && x.source.id === id)?.[0];
+    // DriveBC cameras by id; City of Vancouver ones (string ids) by their image URL
+    const srcOf = (c) => c.source || { type: "drivebc", id: c.id };
+    const have = (id) => {
+      const c = typeof id === "object" ? id : { id };
+      const want = srcOf(c);
+      return props.cams.find(([, x]) => x.source?.type === want.type && (want.type === "drivebc" ? x.source.id === want.id : x.source.url === want.url))?.[0];
+    };
+    const thumb = (c) => c.thumb || `/api/webcams/drivebc/${c.id}.jpg`;
     const add = (c, label, place) => {
-      if (have(c.id)) return go(`webcams/${have(c.id)}`);
-      emit("add", { label, place, credit: "DriveBC", tz: "America/Vancouver", source: { type: "drivebc", id: c.id }, lat: c.lat, lon: c.lon });
+      if (have(c)) return go(`webcams/${have(c)}`);
+      emit("add", { label, place, credit: c.credit || "DriveBC", tz: "America/Vancouver", source: { ...srcOf(c) }, lat: c.lat, lon: c.lon });
       toast(`Added ${label}. Save to keep it; open it to crop it or add it to the rotation.`);
     };
-    const look = (c) => (LOOKS[c.orientation] ? `looking ${LOOKS[c.orientation]}` : c.name);
+    const look = (c) => ((c.look || LOOKS[c.orientation]) ? `looking ${c.look || LOOKS[c.orientation]}` : c.name);
+    const why = (c) => [c.caption, c.turns && "This camera can turn: the direction is DriveBC's last known one.",
+                        c.corrected && "Direction checked by eye (DriveBC's label was wrong)."].filter(Boolean).join("\n");
     const match = (c) => !query.value || `${c.name} ${c.caption} ${c.highway} ${c.city}`.toLowerCase().includes(query.value.toLowerCase());
     const cityCams = computed(() => (data.value.cities.find((c) => c.city === city.value)?.cams || []).filter(match));
     const found = computed(() => (query.value ? data.value.cities.flatMap((c) => c.cams).filter(match).slice(0, 60) : []));
     const addedIds = computed(() => props.cams.filter(([, x]) => x.source?.type === "drivebc").map(([, x]) => x.source.id));
     const fromMap = (c) => add(c, c.name, c.city || "");
-    const openFromMap = (c) => go(`webcams/${have(c.id)}`);
-    return { data, tab, city, query, box, loading, have, add, look, cityCams, found, addedIds, fromMap, openFromMap };
+    const openFromMap = (c) => go(`webcams/${have(c)}`);
+    return { data, tab, city, query, box, loading, have, thumb, add, look, why, cityCams, found, addedIds, fromMap, openFromMap };
   },
   template: `<div class="card" style="margin-top:16px" ref="box">
     <div class="card-head"><Icon name="Cctv" :size="16"/><h3>Traffic cams</h3>
-      <span class="faint" style="font-size:12px">DriveBC stills, a new picture every few minutes · click to add</span><span class="spacer"></span>
+      <span class="faint" style="font-size:12px">DriveBC and City of Vancouver stills, a new picture every few minutes · click to add</span><span class="spacer"></span>
       <input class="input" v-model="query" placeholder="Search cameras" style="max-width:200px; height:28px" v-if="tab !== 'map'">
       <Seg v-model="tab" :options="[{value:'crossings', label:'Bridges'}, {value:'cities', label:'By city'}, {value:'map', label:'Map'}]"/></div>
     <div v-if="loading" class="card-body faint">Loading DriveBC cameras…</div>
     <template v-else-if="tab === 'crossings' && !query">
       <div v-for="x in data.crossings" :key="x.name" class="card-body" style="padding-top:6px">
         <div class="wc-subhead">{{ x.name }}</div>
+        <div class="faint" style="font-size:12px; margin:-2px 0 6px" v-if="x.note">{{ x.note }}</div>
         <div class="wc-gallery">
-          <button v-for="c in x.cams" :key="c.id" type="button" class="wc-pick" :class="{have: have(c.id), off: !c.on}"
-                  @click="add(c, x.short + (c.orientation ? ' · ' + look(c) : ''), x.name)" :title="c.caption">
-            <span class="wc-thumb"><img :src="'/api/webcams/drivebc/' + c.id + '.jpg'" loading="lazy" alt="">
-              <span class="wc-have" v-if="have(c.id)"><Icon name="Check" :size="13"/>added</span>
+          <button v-for="c in x.cams" :key="c.id" type="button" class="wc-pick" :class="{have: have(c), off: !c.on}"
+                  @click="add(c, (x.label || x.short) + (c.look ? ' · ' + look(c) : ''), x.name)" :title="why(c)">
+            <span class="wc-thumb"><img :src="thumb(c)" loading="lazy" alt="">
+              <span class="wc-have" v-if="have(c)"><Icon name="Check" :size="13"/>added</span>
               <span class="wc-have" v-else-if="!c.on" style="color:var(--bad)">offline</span></span>
-            <b>{{ look(c) }}</b><span class="faint wc-note">{{ c.caption }}</span>
+            <b>{{ look(c) }}<span v-if="c.turns" class="faint" title="Can turn"> ↻</span></b><span class="faint wc-note">{{ c.caption }}</span>
           </button></div></div>
     </template>
     <template v-else-if="tab === 'cities' && !query">
@@ -183,17 +193,17 @@ const TrafficCams = {
         <button v-for="c in data.cities" :key="c.city" type="button" class="chip" :class="{off: city !== c.city}" style="height:26px; padding:0 10px"
                 @click="city = c.city">{{ c.city }} <span class="faint">{{ c.cams.length }}</span></button></div></div>
       <div class="card-body wc-gallery" style="padding-top:0">
-        <button v-for="c in cityCams" :key="c.id" type="button" class="wc-pick" :class="{have: have(c.id), off: !c.on}" @click="add(c, c.name, city)" :title="c.caption">
-          <span class="wc-thumb"><img :src="'/api/webcams/drivebc/' + c.id + '.jpg'" loading="lazy" alt="">
-            <span class="wc-have" v-if="have(c.id)"><Icon name="Check" :size="13"/>added</span>
+        <button v-for="c in cityCams" :key="c.id" type="button" class="wc-pick" :class="{have: have(c), off: !c.on}" @click="add(c, c.name, city)" :title="why(c)">
+          <span class="wc-thumb"><img :src="thumb(c)" loading="lazy" alt="">
+            <span class="wc-have" v-if="have(c)"><Icon name="Check" :size="13"/>added</span>
             <span class="wc-have" v-else-if="!c.on" style="color:var(--bad)">offline</span></span>
-          <b>{{ c.name }}</b><span class="faint wc-note">{{ c.caption }}</span>
+          <b>{{ c.name }}</b><span class="faint wc-note">{{ c.credit === 'City of Vancouver' ? 'City of Vancouver' : c.caption }}</span>
         </button></div>
     </template>
     <div v-else-if="query && tab !== 'map'" class="card-body wc-gallery">
-      <button v-for="c in found" :key="c.id" type="button" class="wc-pick" :class="{have: have(c.id), off: !c.on}" @click="add(c, c.name, c.city)" :title="c.caption">
-        <span class="wc-thumb"><img :src="'/api/webcams/drivebc/' + c.id + '.jpg'" loading="lazy" alt="">
-          <span class="wc-have" v-if="have(c.id)"><Icon name="Check" :size="13"/>added</span></span>
+      <button v-for="c in found" :key="c.id" type="button" class="wc-pick" :class="{have: have(c), off: !c.on}" @click="add(c, c.name, c.city)" :title="why(c)">
+        <span class="wc-thumb"><img :src="thumb(c)" loading="lazy" alt="">
+          <span class="wc-have" v-if="have(c)"><Icon name="Check" :size="13"/>added</span></span>
         <b>{{ c.name }}</b><span class="faint">{{ c.city }}</span><span class="faint wc-note">{{ c.caption }}</span>
       </button>
       <div class="faint" v-if="!found.length">No camera matches “{{ query }}”.</div></div>

@@ -15,9 +15,9 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 
 from common import logring
-from hub import config, paths, pi, sync, webcams
+from hub import config, paths, pi, sync, traffic, webcams
 from hub.jobs import news as news_job
-from hub.util import read_json
+from hub.util import atomic_write_json, read_json
 
 WEB_DIR = Path(__file__).parent / "web"
 ICON_NAME = re.compile(r"^[A-Za-z0-9._=^-]+\.png$")
@@ -351,24 +351,90 @@ def _dbc_list():
             got = common.session.get(f"{drivebc.API}/webcams/", timeout=20).json()
             if not isinstance(got, list):
                 raise ValueError("unexpected reply")
-            _webcams["list"], _webcams["at"] = got, time.time()
+            _webcams["list"], _webcams["at"] = traffic.fix_all(got), time.time()   # directions checked by eye
         except Exception as e:
             if not _webcams["list"]:
                 raise HTTPException(502, f"DriveBC webcams: {e}")
     return _webcams["list"]
 
 
+_cov = {"at": 0.0, "list": [], "busy": False}
+COV_CACHE = paths.CACHE_DIR / "cov_cams.json"
+
+
+def _cov_refresh():
+    from hub.bc import common
+    try:
+        got = traffic.cov_cameras(lambda u: common.session.get(u, timeout=20).text)
+        if got:
+            _cov["list"], _cov["at"] = got, time.time()
+            atomic_write_json(COV_CACHE, {"at": _cov["at"], "list": got})
+    except Exception as e:
+        print(f"City of Vancouver cameras: {e}", flush=True)
+    finally:
+        _cov["busy"] = False
+
+
+def _cov_list():
+    """The City of Vancouver's camera views (hub/traffic.py), refreshed daily in the background; kept on disk."""
+    if not _cov["list"]:
+        saved = read_json(COV_CACHE, {}) or {}
+        _cov["list"], _cov["at"] = saved.get("list") or [], saved.get("at") or 0.0
+    if time.time() - _cov["at"] > 86400 and not _cov["busy"]:
+        _cov["busy"] = True
+        threading.Thread(target=_cov_refresh, name="cov-cams", daemon=True).start()
+    return _cov["list"]
+
+
 @app.get("/api/webcams/traffic")
 def webcams_traffic():
-    """DriveBC traffic cameras for the Webcams page, by bridge or tunnel and by city (hub/traffic.py)."""
-    from hub import traffic
+    """Traffic cameras for the Webcams page: DriveBC's by bridge or tunnel and by city, with the City of Vancouver's
+    intersection cameras in Vancouver (hub/traffic.py)."""
     from hub.jobs import drivebc
-    return {**traffic.build(_dbc_list(), drivebc.fold), "fetched": _webcams["at"]}
+    d = traffic.build(_dbc_list(), drivebc.fold)
+    cov = _cov_list()
+    for c in d["cities"]:
+        if c["city"] == "Vancouver":
+            c["cams"] = sorted(c["cams"] + cov, key=lambda x: x["name"].lower())
+    return {**d, "count": d["count"] + len(cov), "fetched": _webcams["at"], "vancouver": bool(cov)}
 
 
 _dbc_thumbs: dict = {}               # camera id -> (fetched at, jpeg)
 _dbc_thumb_failed: dict = {}         # camera id -> when its fetch failed (not retried for a minute)
 _dbc_thumb_slots = threading.Semaphore(6)   # DriveBC fetches at once (a city tab asks for ~100 thumbnails)
+
+
+def _thumb_jpeg(frame):
+    im = Image.fromarray(frame)
+    out = io.BytesIO()
+    im.resize((320, round(im.height * 320 / im.width))).save(out, "JPEG", quality=80)
+    return out.getvalue()
+
+
+@app.get("/api/webcams/cov/{stem}.jpg")
+def webcams_cov_thumb(stem: str):
+    """A City of Vancouver camera's latest image, 320 px wide, cached a minute. Only the City's listed cameras."""
+    key = "cov-" + stem
+    url = next((c["source"]["url"] for c in _cov_list() if c["id"] == key), None)
+    if not url:
+        raise HTTPException(404, "no such City of Vancouver camera")
+    hit = _dbc_thumbs.get(key)
+    if not hit or time.time() - hit[0] > 60:
+        if time.time() - _dbc_thumb_failed.get(key, 0) < 60:
+            raise HTTPException(404, f"{stem} isn't answering")
+        if not _dbc_thumb_slots.acquire(timeout=20):
+            raise HTTPException(503, "busy")
+        try:
+            frame, _ = webcams.fetch_still("image", url)
+        except Exception as e:
+            _dbc_thumb_failed[key] = time.time()
+            raise HTTPException(502, f"{stem}: {e}")
+        finally:
+            _dbc_thumb_slots.release()
+        if len(_dbc_thumbs) > 400:
+            _dbc_thumbs.clear()
+        hit = _dbc_thumbs[key] = (time.time(), _thumb_jpeg(frame))
+    return Response(hit[1], media_type="image/jpeg", headers={"Cache-Control": "max-age=60"})
 
 
 @app.get("/api/webcams/drivebc/{cid}.jpg")
@@ -387,12 +453,9 @@ def webcams_drivebc_thumb(cid: int):
             raise HTTPException(502, f"DriveBC camera {cid}: {e}")
         finally:
             _dbc_thumb_slots.release()
-        im = Image.fromarray(frame)
-        out = io.BytesIO()
-        im.resize((320, round(im.height * 320 / im.width))).save(out, "JPEG", quality=80)
         if len(_dbc_thumbs) > 400:
             _dbc_thumbs.clear()
-        hit = _dbc_thumbs[cid] = (time.time(), out.getvalue())
+        hit = _dbc_thumbs[cid] = (time.time(), _thumb_jpeg(frame))
     return Response(hit[1], media_type="image/jpeg", headers={"Cache-Control": "max-age=60"})
 
 

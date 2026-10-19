@@ -143,8 +143,13 @@ once (`hold: false`), so the rotation resumes by itself.
   from `/api/webcams/{id}/` (its images have no Last-Modified) and a picture is downloaded only when it's new. Frames
   carry the image's age; captions show the exact capture time (`age` section, `taken_format`). Stills don't count
   against `MAX_FEEDS`.
-- Traffic cams (Webcams page): `hub/traffic.py` groups DriveBC's cameras by bridge/tunnel (`CROSSINGS`, best view first)
-  and by nearest city; `/api/webcams/traffic`, thumbnails `/api/webcams/drivebc/{id}.jpg`. The DriveBC camera map
+- Traffic cams (Webcams page): `hub/traffic.py` groups DriveBC's cameras by bridge/tunnel (`CROSSINGS`: every camera
+  on the crossing and its approaches, best view first) and by city (rough outlines in `BOUNDS` for the home cities,
+  listed first; nearest centre for the rest); `/api/webcams/traffic`, thumbnails `/api/webcams/drivebc/{id}.jpg`.
+  DriveBC mislabels some directions: `traffic.FACING` holds ones checked by eye, and `traffic.fix_all` is applied
+  wherever the hub reads DriveBC's camera list (this page, the camera map, the DriveBC and Bridges jobs).
+  The City of Vancouver's ~850 intersection views (open data, refreshed daily, cached in `cache/cov_cams.json`) join
+  the Vancouver tab as `image` sources; thumbnails `/api/webcams/cov/{name}.jpg`. The DriveBC camera map
   (`cameramap.js`) lives there now, with "Add as a webcam".
 - Ready-made webcams: `hub/web/ui/pages/webcam_gallery.js` (YouTube ids; a restarted stream gets a new id). Cards show
   real frames from `/api/webcams/snapshot.jpg`, which never waits: the cached still (fresh or stale), else 503 +
