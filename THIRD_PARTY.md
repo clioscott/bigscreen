@@ -54,6 +54,10 @@ fixed, Haxor (ucw.cz) and knxt (Konstantin Bytensky). If you are an author and w
   `yellowhead` sprites are shared under the same licence). The Crowsnest (BC Highway 3) shield is a low-resolution
   redraw of the BC government's road sign, traced from English Wikipedia's "British Columbia Highway 3.svg" (a
   non-free, fair-use file); the sign design belongs to the Province of British Columbia.
+- **Real highway signs** (webcam captions, "Real sign"): not in the repository. `hub/shield_signs.py` fetches the
+  route's sign from Wikimedia Commons when a caption uses it ("BC-99.svg", "I-5.svg", "US 97.svg", …; most are
+  public domain, some CC BY-SA, as each file's Commons page says) and renders it into the hub's data dir. Routes
+  Commons has no file for (BC 3) keep the pixel art.
 - **Flags** (`assets/icons/flags`): Canadian and US flags, public domain designs.
 - **Stock logos** are not in the repository: the ticker loads them from `<data dir>/stock-icons` (uploaded from the
   control panel) and shows the symbol alone without one.

@@ -175,15 +175,27 @@ def _validate_overlay(name, ov):
     if not isinstance(slots, dict):
         raise ConfigError(f"webcam {name}: caption slots must be an object")
     for kind, slot in slots.items():
-        ok = kind in FIELDS and isinstance(slot, list) and len(slot) == 2 \
-            and all(isinstance(v, int) and not isinstance(v, bool) for v in slot) \
-            and 1 <= slot[0] <= 3 and 1 <= slot[1] <= 4
+        ok = kind in FIELDS and isinstance(slot, list) and len(slot) in (2, 3) \
+            and all(isinstance(v, int) and not isinstance(v, bool) for v in slot[:2]) \
+            and 1 <= slot[0] <= 3 and 1 <= slot[1] <= 4 and (len(slot) == 2 or slot[2] in ("left", "right"))
         if not ok:
-            raise ConfigError(f"webcam {name}: caption slot for {kind} must be [column 1-3, line 1-4]")
+            raise ConfigError(f"webcam {name}: caption slot for {kind} must be [column 1-3, line 1-4, left|right]")
     sizes = ov.get("line_sizes", {})
     if not isinstance(sizes, dict) or any(v not in LINE_SIZES or not re.fullmatch(r"[1-3]\.[1-4]", str(key))
                                           for key, v in sizes.items()):
         raise ConfigError(f"webcam {name}: caption line sizes must be headline, detail or big")
+    shield = ov.get("shield", {})
+    from display.modules.webcam_caption import SHIELD_KINDS, SHIELD_MAX, SHIELD_MIN, SHIELD_PLACES, SHIELD_STYLES
+    size = shield.get("size", "box") if isinstance(shield, dict) else None
+    if not isinstance(shield, dict) or shield.get("kind", "auto") not in SHIELD_KINDS \
+            or shield.get("place", "inside") not in SHIELD_PLACES or shield.get("style", "pixel") not in SHIELD_STYLES \
+            or not isinstance(shield.get("route", ""), (str, int)) or isinstance(shield.get("route", ""), bool) \
+            or len(str(shield.get("route", ""))) > 8 \
+            or not (size == "box" or (isinstance(size, int) and not isinstance(size, bool)
+                                      and SHIELD_MIN <= size <= SHIELD_MAX)):
+        raise ConfigError(f"webcam {name}: caption shield must be "
+                          f"{{route, kind, style: pixel|real, place: inside|left|right|line, "
+                          f"size: box|{SHIELD_MIN}-{SHIELD_MAX}}}")
     cols = ov.get("columns", [])
     if not isinstance(cols, list) or any(not isinstance(c, dict) or c.get("align", "left") not in ("left", "center", "right")
                                          for c in cols):

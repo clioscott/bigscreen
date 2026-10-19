@@ -99,7 +99,7 @@ hot-reload on the wall, no restart needed.
 - **Tsunami**: 4 themes (North Pacific, BC zones, Bulletin, Hazard sign), 3 built-in samples.
 - **Wildfire**: 4 themes (Situation map, Incident card, Fire danger sign, Evacuation notice), 3 built-in samples.
 - **Japan EEW**: 12 themes (Kyoshin Monitor, JQuake style, TV broadcast, LED countdown, Departure board, Pachinko, Fever mode, Data terminal, 号外 extra edition, Seismograph lab, Arcade cabinet, Instrument panel).
-- **13 fetch jobs** on the hub, each a short-lived subprocess with a timeout:
+- **14 fetch jobs** on the hub, each a short-lived subprocess with a timeout:
   - `alerts`: Current ECCC alerts for the configured area → data/alerts.json
   - `bridges`: Bridges now: the latest DriveBC still from a camera on each Metro Vancouver bridge → data/bridges.json + tiles
   - `calendar`: Google Calendar events → data/calendar.json (v1 format, via the v1 CalendarService)
@@ -109,6 +109,7 @@ hot-reload on the wall, no restart needed.
   - `naad`: The stored NAAD messages (hub/bc/naad_listener.py) → data/naad.json
   - `news`: Headlines from publisher RSS/Atom feeds, grouped into categories
   - `quakes`: Quakes that matter in south-west BC → data/quakes.json
+  - `shield_signs`: The real highway signs the webcam captions use → data/shields/*.png (hub/shield_signs.py)
   - `tsunami`: NTWC bulletins for the BC coast → data/tsunami.json
   - `weather`: Environment Canada citypage forecast + SWOB live observations → data/weather.json
   - `webcam_weather`: Weather and sunrise/sunset at each webcam → data/webcam_weather.json (for the webcam captions)

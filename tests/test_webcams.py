@@ -683,3 +683,220 @@ def test_wall_preview_batches_weather_and_skips_webcams_without_it(monkeypatch):
     assert cams["a"]["_wx"]["temp"] == 12.0 and cams["b"]["_wx"]["temp"] == 12.0
     assert "_wx" not in cams["c"] and "_wx" not in cams["d"]                                  # no weather shown / no place
     assert len(calls) == 1 and len(calls[0]) == 2                                             # one request for both
+
+
+# --- custom layout: a section pushed to its line's right end ----------------------------------------------------
+def test_custom_right_end_puts_the_time_in_the_corner():
+    """A slot's third value "right" draws the section flush with the column's right edge, the rest still at the left."""
+    from display.gfx import Canvas
+    slots = {"live": [1, 1], "name": [1, 1], "place": [1, 2], "time": [1, 2, "right"]}
+    ov = cap.overlay_of({"overlay": {"style": "custom", "slots": slots}})
+    assert cap.right_kinds(ov) == {"time"}
+    spots = {}
+    real = cap.graphics.DrawText
+
+    def spy(c, f, x, y, col, s):
+        spots[s] = (x, x + cap._tw(f, s))
+        return real(c, f, x, y, col, s)
+    cap.graphics.DrawText = spy
+    try:
+        cap._l_custom(cap.Ctx(Canvas(448, 134), (0, 0, 448, 134), ov, _font), cap.Content(CAM, ov, wx=WX))
+    finally:
+        cap.graphics.DrawText = real
+    clock = cap.Content(CAM, ov).clock()
+    assert spots[clock][1] == spots[CAM["label"]][1]          # the time ends where the headline (the widest line) ends
+    assert spots[CAM["place"]][0] < spots[clock][0]           # the place stays at the left
+
+
+def test_custom_right_slot_validation():
+    from hub import config
+    config.validate(_cfg({"cams": {"a": {**CAM, "overlay": {"style": "custom", "slots": {"time": [1, 2, "right"]}}}}}))
+    for bad in ({"time": [1, 2, "middle"]}, {"time": [1, 2, "right", 4]}):
+        with pytest.raises(config.ConfigError):
+            config.validate(_cfg({"cams": {"a": {**CAM, "overlay": {"style": "custom", "slots": bad}}}}))
+
+
+# --- custom layout: a highway shield ----------------------------------------------------------------------------
+def _shield_box(place, size, corner="bl"):
+    """(the caption box's mask, the shield's mask) for a Custom caption with a BC 99 shield."""
+    from display.gfx import Canvas
+    from display.modules import shields
+    ov = cap.overlay_of({"overlay": {"style": "custom", "corner": corner, "show": {"shield": True},
+                                     "shield": {"route": "99", "place": place, "size": size},
+                                     "slots": {"live": [1, 1], "name": [1, 1], "place": [1, 2], "time": [1, 2, "right"]}}})
+    c = Canvas(448, 134)
+    c.buf[:] = (0, 120, 0)                                     # green frame: the box darkens it
+    drawn = []
+    real = shields.draw
+
+    def spy(cv, x, y, route, h=20, kind=None):
+        w = real(cv, x, y, route, h=h, kind=kind)
+        drawn.append((x, y, w, cap._shield_dims(route, h, kind)[1]))
+        return w
+    shields.draw = spy
+    try:
+        cap._l_custom(cap.Ctx(c, (0, 0, 448, 134), ov, _font), cap.Content(CAM, ov, wx=WX))
+    finally:
+        shields.draw = real
+    px = c.buf.astype(int)
+    box = (px[..., 1] < 100) & (px[..., 0] < 60)             # the darkened box background
+    shield = np.zeros(box.shape, bool)
+    (x, y, w, h), = drawn
+    shield[y:y + h, x:x + w] = True
+    return box & ~shield, shield                               # the shield's own dark blue isn't the box
+
+
+def _extent(m):
+    ys, xs = np.nonzero(m)
+    return ys.min(), ys.max(), xs.min(), xs.max()
+
+
+def test_shield_inside_grows_the_box_to_fit():
+    box_small, _ = _shield_box("inside", "box")
+    box_big, shield = _shield_box("inside", 40)
+    by0, by1, bx0, bx1 = _extent(box_big)
+    sy0, sy1, sx0, sx1 = _extent(shield)
+    assert sy1 - sy0 + 1 >= 38 and by1 - by0 > _extent(box_small)[1] - _extent(box_small)[0]
+    assert by0 <= sy0 and sy1 <= by1 and bx0 <= sx0 and sx1 <= bx1  # inside the box
+
+
+def test_shield_outside_sits_beside_the_box():
+    for place in ("left", "right"):
+        box, shield = _shield_box(place, 40)
+        by0, by1, bx0, bx1 = _extent(box)
+        sy0, sy1, sx0, sx1 = _extent(shield)
+        assert (sx1 < bx0) if place == "left" else (sx0 > bx1)
+        assert sy1 == by1                                      # bottom corner: lined up with the box's bottom edge
+    box, shield = _shield_box("right", 40, corner="tr")
+    assert _extent(shield)[0] == _extent(box)[0]              # top corner: with its top edge
+
+
+def test_shield_in_its_line_and_validation():
+    from hub import config
+    box, shield = _shield_box("line", "box")
+    assert shield.any() and _extent(shield)[1] - _extent(shield)[0] < 14
+    good = {"style": "custom", "show": {"shield": True}, "shield": {"route": "US 97", "kind": "us", "place": "left", "size": 32}}
+    config.validate(_cfg({"cams": {"a": {**CAM, "overlay": good}}}))
+    for bad in ({"place": "above"}, {"size": 80}, {"size": "line"}, {"kind": "autobahn"}, {"route": "123456789"}):
+        with pytest.raises(config.ConfigError):
+            config.validate(_cfg({"cams": {"a": {**CAM, "overlay": {**good, "shield": {**good["shield"], **bad}}}}}))
+
+
+# --- real highway signs and the second review's fixes -------------------------------------------------------------
+def test_real_sign_files_by_route():
+    from display.modules import shields
+    assert [shields.sign_file(r) for r in ("99", "1", "I-5", "US 97", "SR 543", "17A")] == \
+        ["BC-99.svg", "BC-1.svg", "I-5.svg", "US 97.svg", "WA-543.svg", "BC-17A.svg"]
+    assert shields.sign_file("97", "us") == "US 97.svg" and shields.sign_file("US") is None
+    assert shields.sign_slug("US 97.svg") == "US_97"
+
+
+def test_real_sign_is_scaled_and_blended(tmp_path, monkeypatch):
+    """A rendered sign in a sign dir is drawn at the asked height with its soft edges blended; none → pixel art."""
+    from PIL import Image
+    from display.gfx import Canvas
+    img = np.zeros((96, 80, 4), np.uint8)
+    img[..., :3] = (255, 255, 255)
+    img[8:88, 8:72, 3] = 255                                   # opaque middle, clear border
+    Image.fromarray(img).save(tmp_path / "BC-99.png")
+    monkeypatch.setattr(cap, "SIGN_DIRS", [str(tmp_path)])
+    sign = cap.real_sign("99", None, 24)
+    assert sign.shape[0] == 24 and sign.shape[1] == 20 and 0 < sign[..., 3].min() + 1 and sign[0, 0, 3] < 255
+    c = Canvas(40, 30)
+    w = cap._put_shield(c, 2, 2, "99", 24, None, "real")
+    assert w == 20 and c.buf[14, 12].tolist() == [255, 255, 255] and c.buf[2, 2].max() < 255
+    assert cap._shield_dims("5", 24, None, "real") == cap._shield_dims("5", 24)   # no file: the pixel art
+
+
+def test_route_without_a_number_draws_the_blank_sign():
+    from display.gfx import Canvas
+    from display.modules import shields
+    for r in ("US", "US-", "I-", "SR", "WA"):
+        assert shields.draw(Canvas(40, 30), 0, 0, r, h=24) > 0 and not shields.has_number(r)
+    ov = cap.overlay_of({"overlay": {"style": "custom", "show": {"shield": True}, "shield": {"route": "US", "place": "line"}}})
+    cap._l_custom(cap.Ctx(Canvas(448, 134), (0, 0, 448, 134), ov, _font), cap.Content(CAM, ov, wx=WX))
+
+
+def test_shield_only_column_leaves_headline_and_alignment_to_the_text():
+    from display.gfx import Canvas
+    ov = cap.overlay_of({"overlay": {"style": "custom", "font": "large", "show": {"shield": True},
+                                     "shield": {"route": "99", "place": "inside"},
+                                     "slots": {"shield": [1, 1], "live": [2, 1], "name": [2, 1], "place": [2, 2],
+                                               "time": [2, 2, "right"]}}})
+    fonts = {}
+    real = cap.graphics.DrawText
+
+    def spy(c, f, x, y, col, s):
+        fonts[s] = f.height
+        return real(c, f, x, y, col, s)
+    cap.graphics.DrawText = spy
+    try:
+        cap._l_custom(cap.Ctx(Canvas(448, 134), (0, 0, 448, 134), ov, _font), cap.Content(CAM, ov, wx=WX))
+    finally:
+        cap.graphics.DrawText = real
+    assert fonts[CAM["label"]] > fonts[CAM["place"]]          # the name is still the headline
+
+
+def test_fixed_shield_never_taller_than_the_zone():
+    for place in ("inside", "left"):
+        from display.gfx import Canvas
+        ov = cap.overlay_of({"overlay": {"style": "custom", "show": {"shield": True},
+                                         "shield": {"route": "99", "place": place, "size": 64}}})
+        drawn = []
+        real = cap._put_shield
+        cap._put_shield = lambda c, x, y, route, h, kind=None, style="pixel": drawn.append((y, h)) or real(c, x, y, route, h, kind, style)
+        try:
+            cap._l_custom(cap.Ctx(Canvas(150, 40), (0, 0, 150, 40), ov, _font), cap.Content(CAM, ov, wx=WX))
+        finally:
+            cap._put_shield = real
+        (y, h), = drawn
+        assert y >= 0 and h <= 36
+
+
+def test_shield_sign_job_and_validation():
+    from hub import config, shield_signs
+    cfg = {"modules": {"webcams": {"cams": {
+        "a": {"overlay": {"show": {"shield": True}, "shield": {"route": "99", "style": "real"}}},
+        "b": {"overlay": {"show": {"shield": True}, "shield": {"route": "5", "style": "pixel"}}},
+        "c": {"overlay": {"show": {"shield": False}, "shield": {"route": "7", "style": "real"}}}}}}}
+    assert shield_signs.wanted(cfg) == {("99", None)}
+    good = {"style": "custom", "show": {"shield": True}, "shield": {"route": "99", "style": "real"}}
+    config.validate(_cfg({"cams": {"a": {**CAM, "overlay": good}}}))
+    with pytest.raises(config.ConfigError):
+        config.validate(_cfg({"cams": {"a": {**CAM, "overlay": {**good, "shield": {"route": "99", "style": "svg"}}}}}))
+
+
+# --- third review: the signs reach the Pi, the job survives a bad route -------------------------------------------
+def test_real_signs_are_synced_to_the_pi(monkeypatch):
+    from hub import sync
+    cmds = []
+
+    class Done:
+        returncode, stderr, stdout = 0, "", ""
+    monkeypatch.setattr(sync, "pi_target", lambda: ("pi", "/dev/shm/bigscreen"))
+    monkeypatch.setattr(sync.subprocess, "run", lambda cmd, **kw: cmds.append(cmd) or Done())
+    sync._push_once()
+    first = cmds[0]
+    assert "--include=shields/" in first and "--include=shields/*.png" in first
+    assert first.index("--include=shields/*.png") < first.index("--exclude=*")
+
+
+def test_sign_job_reports_a_bad_route_and_keeps_going(monkeypatch):
+    from hub import shield_signs
+    from hub.jobs import shield_signs as job
+
+    def ensure(route, kind=None):
+        if route == "7":
+            raise TimeoutError("Commons is slow")
+        return None if route == "3" else "x.png"
+    monkeypatch.setattr(shield_signs, "ensure", ensure)
+    monkeypatch.setattr(shield_signs, "wanted", lambda cfg: {("7", None), ("99", None), ("3", None)})
+    out = job.run({})
+    assert out["signs"] == 1 and out["no_sign"] == ["3"] and "7" in out["errors"] and out["ok"] is False
+
+
+def test_a_route_needs_a_number_on_the_wall_as_on_the_panel():
+    ov = cap.overlay_of({"overlay": {"style": "custom", "show": {"shield": True}, "shield": {"route": "TCH"}}})
+    assert cap.Content(CAM, ov).sections["shield"] == ""
+    ov["shield"]["route"] = "US 97"
+    assert cap.Content(CAM, ov).sections["shield"] == "US 97"

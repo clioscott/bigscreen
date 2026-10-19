@@ -42,6 +42,31 @@ def kind_for(route, network="bc"):
     return KINDS_BY_ROUTE.get(r, network)
 
 
+def sign_file(route, kind=None):
+    """The real sign's file on Wikimedia Commons (hub/shield_signs.py fetches it): "99" → "BC-99.svg", "I-5" →
+    "I-5.svg", "US 97" → "US 97.svg", "SR 543" → "WA-543.svg"; ``kind`` (interstate | us | wa) names the network of a
+    bare number. None for a route with no number."""
+    import re
+    r = str(route or "").strip().upper().replace("_", " ")
+    m = re.fullmatch(r"(I|US|SR|WA|BC|TCH|YH)?[\s-]*(\d{1,3}[A-Z]?)", r)
+    if not m:
+        return None
+    net, num = m.group(1), m.group(2)
+    net = net or {"interstate": "I", "us": "US", "wa": "WA"}.get(kind or "", "BC")
+    return {"I": f"I-{num}.svg", "US": f"US {num}.svg", "SR": f"WA-{num}.svg", "WA": f"WA-{num}.svg"}.get(net, f"BC-{num}.svg")
+
+
+def sign_slug(name):
+    """A sign file's name on disk: "US 97.svg" → "US_97"."""
+    import re
+    return re.sub(r"[^A-Za-z0-9-]+", "_", name.rsplit(".", 1)[0])
+
+
+def has_number(route):
+    """True when the route has a number to put on the sign ("US" alone, "I-" or "TCH" doesn't; the panel agrees)."""
+    return any(ch.isdigit() for ch in _route_text(route))
+
+
 def _route_text(route):
     r = str(route).upper().replace(" ", "")
     for p in ("I-", "US-", "US", "SR-", "SR", "WA-", "WA"):
@@ -186,6 +211,8 @@ def draw(c, x, y, route, h=20, kind=None):
     sh, sw = mask.shape
     c.Blit(rgb, int(x), int(y), mask)
     text = _route_text(route)
+    if not text:                                          # "US", "I-" while a route is being typed: the blank sign
+        return sw
     if spec.get("allow") is not None:
         key = (kind, h, text)
         if key not in _PLACED:
