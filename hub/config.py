@@ -185,16 +185,17 @@ def _validate_overlay(name, ov):
                                           for key, v in sizes.items()):
         raise ConfigError(f"webcam {name}: caption line sizes must be headline, detail or big")
     shield = ov.get("shield", {})
-    from display.modules.webcam_caption import SHIELD_KINDS, SHIELD_MAX, SHIELD_MIN, SHIELD_PLACES
+    from display.modules.webcam_caption import SHIELD_KINDS, SHIELD_MAX, SHIELD_MIN, SHIELD_PLACES, SHIELD_STYLES
     size = shield.get("size", "box") if isinstance(shield, dict) else None
     if not isinstance(shield, dict) or shield.get("kind", "auto") not in SHIELD_KINDS \
-            or shield.get("place", "inside") not in SHIELD_PLACES \
+            or shield.get("place", "inside") not in SHIELD_PLACES or shield.get("style", "pixel") not in SHIELD_STYLES \
             or not isinstance(shield.get("route", ""), (str, int)) or isinstance(shield.get("route", ""), bool) \
             or len(str(shield.get("route", ""))) > 8 \
             or not (size == "box" or (isinstance(size, int) and not isinstance(size, bool)
                                       and SHIELD_MIN <= size <= SHIELD_MAX)):
         raise ConfigError(f"webcam {name}: caption shield must be "
-                          f"{{route, kind, place: inside|left|right|line, size: box|{SHIELD_MIN}-{SHIELD_MAX}}}")
+                          f"{{route, kind, style: pixel|real, place: inside|left|right|line, "
+                          f"size: box|{SHIELD_MIN}-{SHIELD_MAX}}}")
     cols = ov.get("columns", [])
     if not isinstance(cols, list) or any(not isinstance(c, dict) or c.get("align", "left") not in ("left", "center", "right")
                                          for c in cols):

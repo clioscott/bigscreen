@@ -44,15 +44,19 @@ const HEADLINES = [{ value: "name", label: "Name" }, { value: "place", label: "P
 const LINES = [{ value: "auto", label: "Fit (wraps if needed)" }, { value: "stacked", label: "One per line" }, { value: "inline", label: "Beside the headline" }];
 const SEPS = [{ value: "dot", label: "·" }, { value: "slash", label: "/" }, { value: "pipe", label: "|" }, { value: "dash", label: "-" }, { value: "space", label: "space" }];
 const POSITIONS = ["tl", "tc", "tr", "bl", "bc", "br"];
-// the columns the Custom layout draws: those with a section that's on and has text (as webcam_caption.custom_grid)
-const customCols = (ov, hasText) => [...new Set(Object.keys(DEFAULT_SLOTS).filter((k) => ov.show?.[k] && hasText(k))
+// a shield beside the box rather than in the grid (a strip spans the zone, so the wall puts it inside instead)
+const shieldOutside = (ov) => ["left", "right"].includes(ov.shield?.place) && ov.container !== "strip";
+// the columns with text, as webcam_caption._l_custom counts them for the headline, the last column and the
+// Divider (a shield in its line counts; one inside the box or outside it doesn't)
+const customCols = (ov, hasText) => [...new Set(Object.keys(DEFAULT_SLOTS)
+  .filter((k) => ov.show?.[k] && hasText(k) && (k !== "shield" || ov.shield?.place === "line"))
   .map((k) => (ov.slots?.[k] || DEFAULT_SLOTS[k])[0]))].sort();
 const DEFAULT_OVERLAY = { style: "tag", corner: "bl", when: "always", font: "small", accent: "#e8202a", text: "#ffffff",
   bg: "#000000", opacity: 0.7, time_format: "24h", fade: true, show_sec: 12, every_min: 3, custom_text: "", headline: "name",
   lines: "auto", separator: "dot", uppercase: false, order: [...ORDERABLE],
   show: { name: true, place: true, time: true, date: false, offset: false, daynight: false, weather: false, sun: false,
     age: false, live: true, credit: false, custom: false, shield: false },
-  shield: { route: "99", kind: "auto", place: "inside", size: "box" } };
+  shield: { route: "99", kind: "auto", style: "pixel", place: "inside", size: "box" } };
 // the caption's highway shield (display/modules/shields.py draws it; the Custom layout only)
 const SHIELD_PRESETS = [
   { group: "BC", routes: ["1", "7", "10", "11", "13", "15", "17", "91", "99"] },
@@ -65,7 +69,9 @@ const SHIELD_KINDS = [{ value: "auto", label: "By number" }, { value: "bc", labe
 const SHIELD_PLACES = [{ value: "inside", label: "Inside the box" }, { value: "left", label: "Outside left" },
   { value: "right", label: "Outside right" }, { value: "line", label: "In its line" }];
 const SHIELD_SIZES = [{ value: "box", label: "Box height" }, ...[16, 20, 24, 28, 32, 40, 48, 56, 64].map((h) => ({ value: h, label: h + " px" }))];
-const shieldSrc = (route, kind = "auto", h = 24) => `/api/shields/preview.png?${new URLSearchParams({ route, kind, h, scale: 2 })}`;
+const SHIELD_STYLES = [{ value: "pixel", label: "Pixel art" }, { value: "real", label: "Real sign" }];
+const shieldSrc = (route, kind = "auto", h = 24, style = "pixel") =>
+  `/api/shields/preview.png?${new URLSearchParams({ route, kind, h, scale: 2, style })}`;
 // still sources (a DriveBC camera by id, or any JPEG) and the query that names a source to the hub
 const STILL = ["drivebc", "image"];
 const DRIVEBC_IMAGE = (id) => `https://www.drivebc.ca/images/${id}.jpg`;
@@ -437,7 +443,7 @@ const CaptionGrid = {
     const slotOf = (k) => props.ov.slots?.[k] || DEFAULT_SLOTS[k] || [1, 3];
     const shown = computed(() => {
       const o = props.ov.order || [];
-      const outside = ["left", "right"].includes(props.ov.shield?.place);
+      const outside = shieldOutside(props.ov);
       return [...o, ...ORDERABLE.filter((k) => !o.includes(k))]
         .filter((k) => k in DEFAULT_SLOTS && props.ov.show[k] && !(k === "shield" && outside));
     });
@@ -576,8 +582,9 @@ const WebcamEditor = {
     // the detail sections that are on, in their order (drag to reorder; the headline isn't a detail)
     const orderOn = computed(() => (ov.value.order || []).filter((k) => k !== "live" && k !== "shield" && ov.value.show[k] && k !== (ov.value.headline || "name")));
     // sections that will actually have text on the wall (the renderer skips empty ones)
+    const signMissing = ref(false);                       // the shield preview didn't load (no real sign for it)
     const hasText = (k) => ({ place: !!cam.value.place, credit: !!cam.value.credit, custom: !!ov.value.custom_text?.trim(),
-      shield: !!String(ov.value.shield?.route ?? "").trim(),
+      shield: /\d/.test(String(ov.value.shield?.route ?? "")),
       weather: Number.isFinite(cam.value.lat), sun: Number.isFinite(cam.value.lat) }[k] ?? true);
     const needsLocation = computed(() => (ov.value.show.weather || ov.value.show.sun) && !(Number.isFinite(cam.value.lat) && Number.isFinite(cam.value.lon)));
     const galleryLoc = computed(() => GALLERY.flatMap((g) => g.cams).find((g) => g.source.url === cam.value.source?.url && g.lat != null) || null);
@@ -617,7 +624,7 @@ const WebcamEditor = {
     };
     const customCrop = (s) => !!cam.value.crops?.[s];
     return { id, cam, shape, zone, ov, colour, probe, testing, test, used, addToRotation, play, remove, captionToAll, toggleShow, customCrop,
-      orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, hasText, customCols, SHIELD_PRESETS, SHIELD_KINDS, SHIELD_PLACES, SHIELD_SIZES, shieldSrc,
+      orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, hasText, customCols, SHIELD_PRESETS, SHIELD_KINDS, SHIELD_PLACES, SHIELD_SIZES, SHIELD_STYLES, shieldSrc, signMissing,
       CONTAINERS, feedFor, feedPill, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
   },
   template: `<div class="page" v-if="cam">
@@ -710,12 +717,17 @@ const WebcamEditor = {
                   <div v-for="g in SHIELD_PRESETS" :key="g.group" class="row" style="gap:4px; align-items:center">
                     <span class="faint" style="font-size:11.5px; width:150px">{{ g.group }}</span>
                     <button v-for="r in g.routes" :key="r" type="button" class="wc-shield" :class="{on: ov.shield.route === r && ov.shield.kind === 'auto'}"
-                      @click="ov.shield.route = r; ov.shield.kind = 'auto'" :title="r"><img :src="shieldSrc(r)" alt="" height="24"></button></div>
+                      @click="ov.shield.route = r; ov.shield.kind = 'auto'" :title="r"><img :src="shieldSrc(r, 'auto', 24, ov.shield.style)" alt="" height="24"></button></div>
                   <div class="row" style="gap:10px; align-items:flex-end">
                     <Field label="Route"><input class="input" style="width:90px" v-model.trim="ov.shield.route" maxlength="8" placeholder="99"></Field>
                     <Field label="Sign"><select class="input" v-model="ov.shield.kind"><option v-for="s in SHIELD_KINDS" :key="s.value" :value="s.value">{{ s.label }}</option></select></Field>
-                    <img v-if="ov.shield.route" :src="shieldSrc(ov.shield.route, ov.shield.kind, 32)" alt="" height="32" style="image-rendering:pixelated">
+                    <img v-if="ov.shield.route" :src="shieldSrc(ov.shield.route, ov.shield.kind, 32, ov.shield.style)" alt="" height="32"
+                      :style="{imageRendering: ov.shield.style === 'real' ? 'auto' : 'pixelated'}" @load="signMissing = false" @error="signMissing = true">
                   </div>
+                  <Field label="Look" hint="Pixel art: redrawn for the LEDs at set sizes. Real sign: the sign itself (Wikimedia Commons), scaled to any size">
+                    <Seg v-model="ov.shield.style" :options="SHIELD_STYLES"/></Field>
+                  <div class="callout" style="font-size:12.5px" v-if="signMissing && ov.shield.route"><Icon name="Info" :size="14"/>
+                    <span>{{ ov.shield.style === 'real' ? 'No real sign for this route on Wikimedia Commons (or it couldn’t be fetched); the wall uses the pixel art.' : 'This route has no number to draw.' }}</span></div>
                   <Field label="Where"><Seg v-model="ov.shield.place" :options="SHIELD_PLACES"/></Field>
                   <Field label="Size" v-if="ov.shield.place !== 'line'" hint="Box height matches the caption box; a bigger size stands out of a box it's beside, or grows the box it's in">
                     <div class="seg mini"><button v-for="s in SHIELD_SIZES" :key="s.value" type="button" :class="{on: ov.shield.size === s.value}" @click="ov.shield.size = s.value">{{ s.label }}</button></div></Field>

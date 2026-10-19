@@ -15,4 +15,5 @@ shapely>=2.0              # carto.py, bc maps: clipping and simplifying geometry
 pyshp>=2.3                # bc maps: ECCC/MSC shapefiles
 tifffile>=2024.1          # forecast.py: GeoMet WCS fields
 websockets>=12            # quake.py: Japan EEW feeds
+resvg-py>=0.5             # shield_signs.py: real highway signs (Commons SVGs) for webcam captions
 yt-dlp>=2026.8            # webcams.py: finds the video stream behind a YouTube live page

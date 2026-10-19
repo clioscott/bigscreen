@@ -19,6 +19,10 @@ from hub import config, paths, pi, sync, traffic, webcams
 from hub.jobs import news as news_job
 from hub.util import atomic_write_json, read_json
 
+# the hub's own previews of webcam captions draw real highway signs from its data dir (the Pi reads its synced copy)
+from display.modules import webcam_caption as _webcam_caption  # noqa: E402
+_webcam_caption.SIGN_DIRS.append(str(paths.DATA_DIR / "shields"))
+
 WEB_DIR = Path(__file__).parent / "web"
 ICON_NAME = re.compile(r"^[A-Za-z0-9._=^-]+\.png$")
 DOMAIN = re.compile(r"^[a-z0-9.-]+\.[a-z]{2,}$")
@@ -73,7 +77,7 @@ def put_config(payload: dict = Body(...)):
     for job, section in (("finance", "finance"), ("news", "headlines"), ("calendar", "calendar"),
                          ("weather", "weather"), ("naad", "naad_alerts"), ("drivebc", "road_alerts"),
                          ("quakes", "bc_quakes"), ("tsunami", "tsunami"), ("wildfire", "wildfire"),
-                         ("webcam_weather", "webcams")):
+                         ("webcam_weather", "webcams"), ("shield_signs", "webcams")):
         if before["modules"].get(section) != saved["modules"].get(section):
             _sched().run_now(job)
     sync.push_data()          # config.json rides along; the v2 display hot-reloads it
@@ -693,21 +697,37 @@ def fonts_preview(path: str, text: str = "", jp: str = "", scale: int = 2, fg: s
 
 
 @app.get("/api/shields/preview.png")
-def shield_preview(route: str, kind: str = "auto", h: int = 24, scale: int = 2):
-    """A highway shield as the wall draws it (display/modules/shields.py), for the caption's shield picker."""
+def shield_preview(route: str, kind: str = "auto", h: int = 24, scale: int = 2, style: str = "pixel"):
+    """A highway shield as the wall draws it, for the caption's shield picker: the pixel art
+    (display/modules/shields.py), or with style=real the route's real sign (hub/shield_signs.py, fetched and rendered
+    the first time it's asked for, so it's ready for the wall; 404 when Commons has no sign for the route)."""
     from display.gfx import Canvas
-    from display.modules import shields
+    from display.modules import shields, webcam_caption
     from display.modules.webcam_caption import SHIELD_KINDS, SHIELD_MAX, SHIELD_MIN
     route = route.strip()[:8]
-    if not route or kind not in SHIELD_KINDS:
-        raise HTTPException(400, "route and a known kind needed")
+    if not shields.has_number(route) or kind not in SHIELD_KINDS or style not in webcam_caption.SHIELD_STYLES:
+        raise HTTPException(400, "a route with a number, a known kind and style needed")
     h, scale = max(SHIELD_MIN, min(SHIELD_MAX, h)), max(1, min(4, scale))
     kd = None if kind == "auto" else kind
-    w = shields.width(route, h, kd)
-    c = Canvas(w, h)
-    shields.draw(c, 0, 0, route, h=h, kind=kd)
-    img = Image.fromarray(c.buf).convert("RGBA")
-    img.putalpha(Image.fromarray(((c.buf.max(axis=2) > 0) * 255).astype("uint8")))
+    if style == "real":
+        from hub import shield_signs
+        try:
+            ok = shield_signs.ensure(route, kd)
+        except Exception as e:                              # noqa: BLE001 (Commons down, resvg missing…)
+            raise HTTPException(502, f"couldn't get the sign: {e}") from e
+        sign = webcam_caption.real_sign(route, kd, h) if ok else None
+        if sign is None:
+            raise HTTPException(404, "no real sign for this route")
+        img = Image.fromarray(sign, "RGBA")
+    else:
+        w = shields.width(route, h, kd)
+        c = Canvas(w, h)
+        c.buf[:] = (255, 0, 255)                            # a colour no sign uses: what's still magenta is clear
+        shields.draw(c, 0, 0, route, h=h, kind=kd)
+        img = Image.fromarray(c.buf).convert("RGBA")
+        clear = (c.buf == (255, 0, 255)).all(axis=2)
+        img.putalpha(Image.fromarray(((~clear) * 255).astype("uint8")))
+    w = img.width
     bio = io.BytesIO()
     img.resize((w * scale, h * scale), Image.NEAREST).save(bio, "PNG")
     return Response(bio.getvalue(), media_type="image/png", headers={"Cache-Control": "max-age=3600"})
