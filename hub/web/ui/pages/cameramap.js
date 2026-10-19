@@ -35,8 +35,7 @@ export const CameraMap = {
     const load = async () => {
       try {
         st.value = await api("/api/bc/roads/cameras");
-        if (props.focus) fit(props.focus);
-        else if (st.value.bbox && !fitted) fit(st.value.bbox);
+        if (st.value.bbox && !fitted) fit(st.value.bbox);
       } catch (e) { fail(e); }
       loading.value = false;
     };
@@ -51,6 +50,7 @@ export const CameraMap = {
     onMounted(() => {
       ro = new ResizeObserver(() => { if (el.value) size.value = { w: el.value.clientWidth, h: el.value.clientHeight }; });
       if (el.value) { ro.observe(el.value); size.value = { w: el.value.clientWidth, h: el.value.clientHeight }; }
+      if (props.focus) fit(props.focus);                    // right away, not after the camera list arrives
       load();
     });
     onBeforeUnmount(() => ro && ro.disconnect());
@@ -115,7 +115,8 @@ export const CameraMap = {
         .filter(({ p }) => p.x > -20 && p.y > -20 && p.x < size.value.w + 20 && p.y < size.value.h + 20);
     });
     const pickSpot = (s) => { if (drag?.moved) return; selSpot.value = s; sel.value = null; };
-    const word = (v) => (v.name.includes(" - ") ? v.name.split(" - ").pop() : "View");
+    const word = (v, i) => (v.name.includes(" - ") ? v.name.split(" - ").pop() : v.look ? `Looking ${v.look}` : `View ${i + 1}`);
+    const credits = computed(() => [...new Set(spots.value.map((s) => s.credit).filter(Boolean))].join(", "));
     const lines = computed(() => [
       ...st.value.events.map((e) => ({ e, col: e.closed ? "#ff3b30" : "#ff8a1f" })),
       ...(showSamples.value ? st.value.samples.map((e) => ({ e, col: "#c77dff" })) : []),
@@ -164,7 +165,7 @@ export const CameraMap = {
     const updated = (s) => { if (!s) return ""; const d = new Date(s); return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); };
 
     return { st, loading, el, tiles, cams, lines, path, down, move, up, wheel, zoomAt, size, sel, pick, goTo, inUse, selUse, showSamples,
-      query, LOOK, COL, imgT, updated, load, fit, spots, spotMarks, selSpot, pickSpot, showCity, word };
+      query, LOOK, COL, imgT, updated, load, fit, spots, spotMarks, selSpot, pickSpot, showCity, word, credits };
   },
   template: `<div :class="addable ? '' : 'card'"><div class="card-head" v-if="!addable"><Icon name="Cctv" :size="15"/><h3>DriveBC cameras</h3>
       <span class="pill">{{ st.cameras.length }}</span>
@@ -207,15 +208,15 @@ export const CameraMap = {
           <label v-if="spots.length" style="cursor:pointer"><input type="checkbox" v-model="showCity" style="vertical-align:-2px">
             <span :style="{background: COL.city, display: 'inline-block', width: '8px', height: '8px', borderRadius: '2px'}"></span> intersection cameras (City)</label>
         </div>
-        <div style="position:absolute; right:6px; top:4px; max-width:calc(100% - 56px); font-size:10.5px; color:#9aa; background:rgba(0,0,0,.5); padding:1px 5px; border-radius:4px" @pointerdown.stop>Basemap © Esri, HERE, Garmin, © OpenStreetMap contributors · cameras: DriveBC{{ spots.length ? ', City of Vancouver, City of Richmond' : '' }}</div>
+        <div style="position:absolute; right:6px; top:4px; max-width:calc(100% - 56px); font-size:10.5px; color:#9aa; background:rgba(0,0,0,.5); padding:1px 5px; border-radius:4px" @pointerdown.stop>Basemap © Esri, HERE, Garmin, © OpenStreetMap contributors · cameras: DriveBC{{ credits ? ', ' + credits : '' }}</div>
         <div v-if="loading" style="position:absolute; inset:0; display:grid; place-items:center" class="faint">Loading cameras…</div>
       </div>
       <div style="width:340px; flex:none; border-left:1px solid var(--line); overflow:auto; height:calc(100vh - 210px); min-height:420px">
         <div v-if="selSpot" class="card-body stack">
           <div><b>{{ selSpot.name }}</b><div class="faint" style="font-size:12.5px">{{ selSpot.credit }} · {{ selSpot.views.length }} view{{ selSpot.views.length === 1 ? '' : 's' }}</div></div>
-          <div v-for="v in selSpot.views" :key="v.id" class="stack" style="gap:6px">
+          <div v-for="(v, i) in selSpot.views" :key="v.id" class="stack" style="gap:6px">
             <img :src="v.thumb" style="width:100%; border-radius:8px; display:block; background:#000; aspect-ratio:16/9; object-fit:cover" alt="" loading="lazy">
-            <div class="row" style="gap:8px"><b style="font-size:13px; flex:1">{{ word(v) }}</b>
+            <div class="row" style="gap:8px"><b style="font-size:13px; flex:1">{{ word(v, i) }}</b>
               <template v-if="addable">
                 <button v-if="!added.includes(v.id)" class="btn sm primary" @click="$emit('add', v)"><Icon name="Plus" :size="13"/>Add</button>
                 <button v-else class="btn sm" @click="$emit('open', v)"><Icon name="Check" :size="13"/>Added · open</button>

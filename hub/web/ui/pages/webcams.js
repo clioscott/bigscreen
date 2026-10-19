@@ -172,6 +172,7 @@ const TrafficCams = {
               ...cityAll.value.filter((c) => urls.has(c.source.url)).map((c) => c.id)];
     });
     const mapFocus = ref(null);
+    watch(tab, (t) => { if (t !== "map") mapFocus.value = null; });   // the plain Map tab shows the whole area again
     const onMap = () => {                                    // the chosen city's cameras on the map
       const pts = (data.value.cities.find((c) => c.city === city.value)?.cams || []).filter((c) => c.lat != null);
       if (!pts.length) return;
