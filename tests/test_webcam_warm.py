@@ -67,6 +67,15 @@ def test_a_one_pass_screen_is_expected_to_take_as_long_as_last_time():
     assert r.upcoming(t)["cam"] == "a"                                  # ~15 s left: warm it
 
 
+def test_an_instant_nothing_to_show_pass_is_not_remembered():
+    r = Rotation("right", [{"panel": "naad_alert", "advance": "cycles", "cycles": 1, "max_sec": 600},
+                           {"panel": "webcam", "cam": "a"}])
+    r.current(0.0)
+    r.report(None, True, 0.0)
+    r.report("done", True, 0.03)                                        # "Nothing to show." ends at once
+    assert r._pass_len == {}
+
+
 def test_upcoming_skips_entries_whose_rules_dont_hold_and_waits_out_previews():
     class Env:
         def allows(self, e):
