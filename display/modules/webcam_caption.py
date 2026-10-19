@@ -1181,8 +1181,10 @@ def _draw_line(k, ct, f, x, y_top, kinds, room, color, put):
         if i:
             if "live" in (kind, kinds[i - 1]):
                 x += 3
-            elif x < end:
+            elif x + _tw(f, sp) + 4 <= end:                # no separator unless some of the next piece fits after it
                 x += put(k.c, f, x, y_top + f.baseline, color, sp)
+            else:
+                break
         if x >= end:
             break
         if kind == "live":

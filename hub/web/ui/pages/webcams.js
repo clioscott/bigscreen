@@ -43,8 +43,9 @@ const HEADLINES = [{ value: "name", label: "Name" }, { value: "place", label: "P
 const LINES = [{ value: "auto", label: "Fit (wraps if needed)" }, { value: "stacked", label: "One per line" }, { value: "inline", label: "Beside the headline" }];
 const SEPS = [{ value: "dot", label: "·" }, { value: "slash", label: "/" }, { value: "pipe", label: "|" }, { value: "dash", label: "-" }, { value: "space", label: "space" }];
 const POSITIONS = ["tl", "tc", "tr", "bl", "bc", "br"];
-// how many columns the Custom layout uses (sections that are on)
-const customCols = (ov) => new Set(Object.keys(DEFAULT_SLOTS).filter((k) => ov.show?.[k]).map((k) => (ov.slots?.[k] || DEFAULT_SLOTS[k])[0])).size;
+// the columns the Custom layout draws: those with a section that's on and has text (as webcam_caption.custom_grid)
+const customCols = (ov, hasText) => [...new Set(Object.keys(DEFAULT_SLOTS).filter((k) => ov.show?.[k] && hasText(k))
+  .map((k) => (ov.slots?.[k] || DEFAULT_SLOTS[k])[0]))].sort();
 const DEFAULT_OVERLAY = { style: "tag", corner: "bl", when: "always", font: "small", accent: "#e8202a", text: "#ffffff",
   bg: "#000000", opacity: 0.7, time_format: "24h", fade: true, show_sec: 12, every_min: 3, custom_text: "", headline: "name",
   lines: "auto", separator: "dot", uppercase: false, order: [...ORDERABLE],
@@ -428,7 +429,7 @@ const CaptionGrid = {
       return s[0] === c && s[1] === l && (s[2] === "right" ? "right" : "left") === side;
     });
     const filled = (c, l) => zone(c, l, "left").length + zone(c, l, "right").length > 0;
-    const usedCols = computed(() => [1, 2, 3].filter((c) => [1, 2, 3, 4].some((l) => filled(c, l))));
+    const usedCols = computed(() => customCols(props.ov, props.hasText));   // blank chips show here but aren't drawn
     const lineSize = (c, l) => props.ov.line_sizes?.[`${c}.${l}`] || (c === (usedCols.value[0] || 1) && l === 1 ? "headline" : "detail");
     const setLineSize = (c, l, v) => { (props.ov.line_sizes || (props.ov.line_sizes = {}))[`${c}.${l}`] = v; };
     const colAlign = (c) => props.ov.columns?.[c - 1]?.align || (usedCols.value.length > 1 && c === usedCols.value.at(-1) ? "right" : "left");
@@ -688,7 +689,7 @@ const WebcamEditor = {
                   <CaptionGrid :ov="ov" :has-text="hasText"/></Field>
                 <div class="row" style="gap:16px; align-items:flex-start">
                   <Field label="Container"><Seg v-model="ov.container" :options="CONTAINERS"/></Field>
-                  <Field label="Divider" v-if="customCols(ov) > 1"><Toggle :modelValue="ov.divider !== false" @update:modelValue="v => ov.divider = v"/></Field>
+                  <Field label="Divider" v-if="customCols(ov, hasText).length > 1"><Toggle :modelValue="ov.divider !== false" @update:modelValue="v => ov.divider = v"/></Field>
                 </div>
               </template>
               <Field label="Image time" v-if="ov.show.age" hint="When the still was taken (DriveBC gives it to the second)">
