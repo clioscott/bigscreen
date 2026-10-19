@@ -175,6 +175,7 @@ class Screen:
             self.prev = dict(prev.prev)
         for eng in self.engines.values():
             eng.env, eng.passes_for = env, self._default_passes
+        self._warm_t = 0.0                           # last look for a webcam to warm (draw)
         # panel name -> draw(canvas, zone, entry, transition) -> "done" | None
         self.panels = {
             "calendar": self._draw_calendar,
@@ -329,6 +330,12 @@ class Screen:
         for side in ("left", "right"):
             # a side covered by the other side's full-width / full-wall screen is paused, not running out unseen
             self.engines[side].report(results.get(side), visible[side], now)
+        if now - self._warm_t >= 2.0:                # the next screen is a webcam: get its feed going at the hub
+            self._warm_t = now
+            for side in ("left", "right"):
+                nxt = self.engines[side].upcoming(now)
+                if nxt and str(nxt.get("panel", "")).startswith("webcam") and hasattr(getattr(self, "webcam", None), "warm"):
+                    self.webcam.warm(nxt)
             if visible[side]:
                 self.prev_play[side] = chosen[side].get("_play")
             self.prev[side] = chosen[side].get("panel")

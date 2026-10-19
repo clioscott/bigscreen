@@ -1008,6 +1008,18 @@ async def webcams_frames(type: str, w: int, h: int, url: str = "", id: int | Non
                              headers={"Cache-Control": "no-store"})
 
 
+@app.get("/api/webcams/warm")
+def webcams_warm(type: str, url: str = "", id: int | None = None, refresh: int | None = None, fps: int = 15):
+    """Start (or keep alive) a webcam's feed before its screen comes up, so the screen opens on a picture instead of
+    "loading". The display asks shortly before (display/modules/webcam.py warm); a feed outlives its last ask or viewer
+    by GRACE_SEC. Never fails loudly: the screen itself reports a source that won't come up."""
+    try:
+        f = webcams.feed({"type": type, "url": url, "id": id, "refresh_sec": refresh}, max(1, min(30, fps)))
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
+    return {"ok": True, "state": f.state}
+
+
 @app.get("/api/webcams/snapshot.jpg")
 def webcams_snapshot(type: str, url: str = "", id: int | None = None):
     """A current still from any source (hub/webcams.py snapshot). Never waits for a grab: 503 + Retry-After while

@@ -26,6 +26,7 @@ from display.modules.webcam_caption import (DEFAULT_OVERLAY, FONTS, INTRO_SEC, L
 
 DEFAULT_HUB = "http://192.168.1.111:8800"
 IDLE_SEC = 3.0               # hang up when the screen hasn't drawn this webcam for this long
+WARM_EVERY = 10.0            # while a webcam is next in the rotation, ask the hub to keep its feed going this often
 GIVE_UP_SEC = 25.0           # no picture this long after the play started: skip to the next screen
 MAGIC = b"BSWC"
 
@@ -58,6 +59,7 @@ class Stream:
 
     def __init__(self, hub_url: str, query: dict):
         self.hub = urlparse(hub_url)
+        self.query = dict(query)
         self.path = "/api/webcams/frames?" + urlencode(query)
         self.w, self.h = int(query["w"]), int(query["h"])
         self.frame = None
@@ -147,6 +149,7 @@ class WebcamPanel:
         self.hub = s.get("hub_url") or DEFAULT_HUB
         self.streams: dict = {}
         self.started: dict = {}
+        self._warmed: dict = {}                               # source -> when the hub was last asked to warm it
         self.fonts: dict = {}
         self.white = Color(255, 255, 255)
         self.dim = Color(150, 150, 150)
@@ -164,6 +167,32 @@ class WebcamPanel:
                 other.close()
                 self.streams.pop(k, None)
         return st
+
+    def warm(self, entry):
+        """The rotation says this webcam is next: have the hub start its feed now (in the background), so its screen
+        opens on a picture a second or so behind live instead of "loading"."""
+        cam = self.cams.get((entry or {}).get("cam"))
+        if not cam:
+            return
+        q = {k: v for k, v in stream_query(cam, "full", 8, 8).items() if k in ("type", "url", "id", "refresh", "fps")}
+        key = tuple(sorted(q.items()))
+        now = time.time()
+        if now - self._warmed.get(key, 0) < WARM_EVERY:
+            return
+        self._warmed[key] = now
+        if any(st.alive and all(st.query.get(k) == v for k, v in q.items()) for st in self.streams.values()):
+            return                                            # already on screen: its stream keeps it going
+        hub = urlparse(self.hub)
+
+        def ask():
+            try:
+                conn = http.client.HTTPConnection(hub.hostname, hub.port or 80, timeout=5)
+                conn.request("GET", "/api/webcams/warm?" + urlencode(q))
+                conn.getresponse().read()
+                conn.close()
+            except OSError as e:
+                print(f"[webcam] warm {q.get('url') or q.get('id')}: {e}")
+        threading.Thread(target=ask, name="webcam-warm", daemon=True).start()
 
     def font(self, size):
         """A font by size name (tiny…large) or by path, cached."""

@@ -29,6 +29,7 @@ import time
 from display.rules import legacy_rules
 
 DEFAULT_DWELL = 30.0
+WARM_AHEAD = 20.0          # this close to the end of a screen, the next one may get its source ready (webcams)
 DEFAULT_CAP = 1800.0
 
 
@@ -131,6 +132,27 @@ class Rotation:
             if self.cur is None:
                 return None
             return {**self.cur["entry"], "_play": self.cur["id"]}
+
+    def upcoming(self, now: float):
+        """The entry that should play after the current screen, once that screen is near its end (under WARM_AHEAD
+        seconds left, or on its last pass); else None. For getting the next screen's source ready (a webcam's feed)."""
+        with self._lock:
+            c = self.cur
+            if c is None or self.preview:
+                return None
+            e = c["entry"]
+            last_pass = e.get("advance") == "cycles" and c["passes"] >= self.need(e) - 1
+            if not last_pass and self._limit(e) - c["visible"] > WARM_AHEAD:
+                return None
+            for i in self.pending:
+                if i < len(self.entries) and self._allows(self.entries[i]):
+                    return self.entries[i]
+            n = len(self.entries)
+            for step in range(1, n + 1):
+                i = (self.pos + step) % n
+                if self._allows(self.entries[i]):
+                    return self.entries[i]
+            return None
 
     # -- progress ------------------------------------------------------------------------
     def need(self, e) -> int:

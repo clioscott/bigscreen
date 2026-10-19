@@ -121,6 +121,9 @@ once (`hold: false`), so the rotation resumes by itself.
   someone watches and stopped `GRACE_SEC` after the last viewer; frames decoded at 640 px wide as fast as they arrive
   (HLS lands a segment at a time) into a playout buffer, and `_pace` publishes them at an even 1/fps `BUFFER_SEC` behind.
   Don't go back to `-re`: it froze the picture while each next segment downloaded (the "stutter every few seconds").
+  A cold YouTube feed takes ~4–5 s to its first frame, so the display warms the next one: when a screen is under
+  `rotation.WARM_AHEAD` s from its end (or on its last pass) and the next entry is a webcam, it calls
+  `/api/webcams/warm` every `WARM_EVERY` s, and the screen then opens on a picture.
   Each viewer gets its own crop/scale/colour. At most `MAX_FEEDS` at once.
 - API (`hub/app.py`): `/api/webcams/frames` (raw RGB for the Pi, 12-byte header per frame), `source.mjpeg` (crop
   editor), `preview` + `preview/{token}.mjpeg` (exact wall render incl. caption), `probe`, `status`.
