@@ -16,6 +16,11 @@
     when        always | intro (the first INTRO_SEC of a play) | periodic (show_sec every every_min minutes)
     taken_format time (default: "taken 17:05:42") | relative ("3 min ago") | both — the "age" section of a still
     custom layout only:
+    shield      {route: "99", kind: auto | bc | tch | yellowhead | crowsnest | interstate | us | wa,
+                 place: inside | left | right | line, size: box | 12-64}: a highway shield (display/modules/shields.py)
+                shown with show.shield. inside: in front of its column's text, the box growing to fit it; left /
+                right: beside the box, outside it (taller than the box, it lines up with the box's outer edge);
+                line: a piece of its line, the line's height. size: the box's height, or a height in px
     slots       {section: [column 1-3, line 1-4, "right"?]}; sections sharing a line follow `order`; "right" puts
                 the section at the line's right end (e.g. the time in the box's bottom-right corner)
     line_sizes  {"column.line": headline | detail | big}
@@ -48,9 +53,10 @@ BIG = {"tiny": "fonts/alert/6x10.bdf", "small": "fonts/alert/7x13B.bdf", "medium
 LAYOUTS = ("tag", "bar", "outline", "dot", "lower_third", "split", "postcard", "chips", "clock", "signage", "ticker",
            "stack", "custom", "none")
 STYLES = LAYOUTS                             # older name
-SECTIONS = ("name", "place", "time", "date", "offset", "daynight", "weather", "sun", "age", "live", "credit", "custom")
+SECTIONS = ("name", "place", "time", "date", "offset", "daynight", "weather", "sun", "age", "live", "credit", "custom",
+            "shield")
 ORDER = ("name", "place", "time", "age", "weather", "date", "offset", "sun", "custom", "credit")    # default order
-DROP = ("credit", "custom", "sun", "offset", "date", "weather", "age", "place", "name")    # dropped first → last
+DROP = ("credit", "custom", "sun", "offset", "date", "weather", "age", "place", "shield", "name")    # dropped first → last
 SEPARATORS = {"dot": " · ", "slash": " / ", "pipe": " | ", "dash": " - ", "space": "   "}
 DEFAULT_OVERLAY = {"style": "tag", "corner": "bl", "when": "always", "font": "small", "accent": "#e8202a",
                    "text": "#ffffff", "bg": "#000000", "opacity": 0.7, "time_format": "24h", "fade": True,
@@ -58,7 +64,7 @@ DEFAULT_OVERLAY = {"style": "tag", "corner": "bl", "when": "always", "font": "sm
                    "separator": "dot", "uppercase": False, "order": list(ORDER),
                    "show": {"name": True, "place": True, "time": True, "date": False, "offset": False,
                             "daynight": False, "weather": False, "sun": False, "age": False, "live": True,
-                            "credit": False, "custom": False}}
+                            "credit": False, "custom": False, "shield": False}}
 WHITE, BLACK = Color(255, 255, 255), Color(0, 0, 0)
 WX_MAX_AGE = 2 * 3600       # weather older than this isn't shown
 FIT_LINES = 3               # "fit" wraps onto up to this many lines before dropping sections
@@ -305,6 +311,8 @@ class Content:
         sec["place"] = (cam.get("place") or "") if sh.get("place") else ""
         sec["credit"] = (cam.get("credit") or "") if sh.get("credit") else ""
         sec["custom"] = (ov.get("custom_text") or "").strip() if sh.get("custom") else ""
+        shield = ov.get("shield") if isinstance(ov.get("shield"), dict) else {}
+        sec["shield"] = str(shield.get("route") or "").strip()[:8] if sh.get("shield") else ""
         self.ampm = up(t.strftime("%p")) if twelve else ""
         sec["time"] = ((t.strftime("%I:%M").lstrip("0") if twelve else t.strftime("%H:%M")) if sh.get("time") else "")
         sec["date"] = f"{t:%a} {t.day} {t:%b}".upper() if sh.get("date") else ""
@@ -502,6 +510,15 @@ class _Zone:
         if x1 > x0 and y1 > y0:
             self.c.FillRect(x0, y0, x1 - x0, y1 - y0, color)
             self.mark(x0, y0, x1, y1)
+
+    def Blit(self, arr, x, y, mask=None):
+        h, w = arr.shape[:2]
+        sx0, sy0 = max(0, self.x0 - x), max(0, self.y0 - y)
+        ex, ey = min(w, self.x1 - x), min(h, self.y1 - y)
+        if ex <= sx0 or ey <= sy0:
+            return
+        self.c.Blit(arr[sy0:ey, sx0:ex], x + sx0, y + sy0, None if mask is None else mask[sy0:ey, sx0:ex])
+        self.mark(x + sx0, y + sy0, x + ex, y + ey)
 
     def SetPixel(self, x, y, r, g, b):
         if self.x0 <= x < self.x1 and self.y0 <= y < self.y1:
@@ -997,10 +1014,34 @@ def _l_stack(k, ct):
 
 
 # --- custom: your own columns and lines ----------------------------------------------------------------------------
-FIELDS = ("live", "name", "place", "time", "age", "weather", "date", "offset", "sun", "custom", "credit")
-DEFAULT_SLOTS = {"live": [1, 1], "name": [1, 1], "place": [1, 2], "time": [1, 2], "age": [1, 2], "weather": [1, 3], "date": [1, 3],
+FIELDS = ("shield", "live", "name", "place", "time", "age", "weather", "date", "offset", "sun", "custom", "credit")
+DEFAULT_SLOTS = {"shield": [1, 1], "live": [1, 1], "name": [1, 1], "place": [1, 2], "time": [1, 2], "age": [1, 2], "weather": [1, 3], "date": [1, 3],
                  "offset": [1, 3], "sun": [1, 3], "custom": [1, 3], "credit": [1, 3]}
 LINE_SIZES = ("headline", "detail", "big")
+SHIELD_KINDS = ("auto", "bc", "tch", "yellowhead", "crowsnest", "interstate", "us", "wa")
+SHIELD_MIN, SHIELD_MAX = 12, 64       # the sprite sizes shields.json has (12-64 px tall)
+
+
+SHIELD_PLACES = ("inside", "left", "right", "line")
+
+
+def shield_spec(ov):
+    """(kind or None for auto, place, size): place is inside | left | right (outside the box) | line; size is "box"
+    (the box's height) or a height in px."""
+    s = ov.get("shield") if isinstance(ov.get("shield"), dict) else {}
+    kind = s.get("kind") if s.get("kind") in SHIELD_KINDS[1:] else None
+    place = s.get("place") if s.get("place") in SHIELD_PLACES else "inside"
+    size = s.get("size", "box")
+    if not (size == "box" or (isinstance(size, int) and not isinstance(size, bool) and SHIELD_MIN <= size <= SHIELD_MAX)):
+        size = "box"
+    return kind, place, size
+
+
+def _shield_dims(route, h, kind=None):
+    """(width, height) of the shield drawn for a height of h px."""
+    from display.modules import shields
+    rgb = shields._sprite(kind or shields.kind_for(route), max(SHIELD_MIN, h))[0]
+    return rgb.shape[1], rgb.shape[0]
 
 
 def custom_grid(ct, ov):
@@ -1009,6 +1050,8 @@ def custom_grid(ct, ov):
     order = [k for k in (ov.get("order") or []) if k in FIELDS]
     if "live" not in order:                                # older orders don't list LIVE: it leads, as on the page
         order.insert(0, "live")
+    if "shield" not in order:                              # nor the shield, which leads its line
+        order.insert(0, "shield")
     order += [k for k in FIELDS if k not in order]
     grid = {}
     for kind in order:
@@ -1055,6 +1098,37 @@ def _l_custom(k, ct):
     def sides(kinds):
         return [kd for kd in kinds if kd not in pushed], [kd for kd in kinds if kd in pushed]
 
+    # the shield: a piece of its line ("line"); inside the box in front of its column's text, the box growing to fit
+    # ("inside"); or beside the box, outside it ("left" / "right"; a strip spans the zone, so it goes inside)
+    sh_kind, sh_place, sh_size = shield_spec(ov)
+    if container == "strip" and sh_place in ("left", "right"):
+        sh_place = "inside"
+    route = ct.sections.get("shield", "")
+    emblem = outside = None                                # the column an inside shield leads; "left"/"right"
+    if route and sh_place != "line":
+        for col in list(grid):
+            for ln in list(grid[col]):
+                if "shield" in grid[col][ln]:
+                    if sh_place == "inside":
+                        emblem = col
+                    else:
+                        outside = sh_place
+                    grid[col][ln].remove("shield")
+                    if not grid[col][ln]:
+                        del grid[col][ln]
+            if not grid[col] and col != emblem:
+                del grid[col]
+        if emblem is not None:
+            grid.setdefault(emblem, {})
+        if not grid:
+            grid[1] = {}                                   # a shield alone: an empty box beside it
+
+    def shield_h(f):
+        return max(SHIELD_MIN, f.height)
+
+    def line_h(f, kinds):
+        return max(f.height, _shield_dims(route, shield_h(f), sh_kind)[1]) if "shield" in kinds else f.height
+
     def font_of(col, line):
         sz = sizes.get(f"{col}.{line}") or ("headline" if (col, line) == (min(grid), 1) else "detail")
         return {"headline": k.T, "big": k.B}.get(sz, k.S)
@@ -1062,6 +1136,8 @@ def _l_custom(k, ct):
     def piece_width(f, kind):
         if kind == "live":
             return _tw(k.S, "LIVE") + 4
+        if kind == "shield":
+            return _shield_dims(route, shield_h(f), sh_kind)[0]
         w_ = _tw(f, _text(ct, kind))
         return w_ + (9 if kind == "weather" and ct.icon else 0)
 
@@ -1072,13 +1148,24 @@ def _l_custom(k, ct):
         left, right = sides(kinds)
         return run_width(f, left) + run_width(f, right) + (split_gap if left and right else 0)
 
-    def _joint(f, a, b):                                   # a separator between sections; just a gap beside LIVE
-        return 3 if "live" in (a, b) else _tw(f, _sep(f, sp_name))
+    def _joint(f, a, b):                                   # a separator between sections; a gap beside LIVE or a shield
+        return 3 if {"live", "shield"} & {a, b} else _tw(f, _sep(f, sp_name))
+
+    # the box's height comes from the lines; an emblem is sized from it (or set in px)
+    cols = sorted(grid)
+    text_h = max([sum(line_h(font_of(col, ln), grid[col][ln]) + 1 for ln in grid[col]) - 1 for col in cols if grid[col]]
+                 or [k.S.height])
+    ew, sw, eh, want = {}, 0, 0, 0                         # inside shield's width (with its gap) per column; its size
+    if emblem is not None or outside:
+        want = (text_h + 2 * pad - (2 if emblem is not None else 0)) if sh_size == "box" else sh_size
+        sw, eh = _shield_dims(route, want, sh_kind)
+        if emblem is not None:
+            ew[emblem] = sw + (4 if grid[emblem] else 0)
+    out_w = sw + 2 if outside else 0                       # an outside shield and its gap to the box
 
     # measure: every column at its natural width; if they don't all fit, the widest give way first
-    cols = sorted(grid)
-    avail = k.w - 2 * pad - 2 - gap * (len(cols) - 1)
-    natural = {col: max(line_width(font_of(col, ln), grid[col][ln]) for ln in grid[col]) for col in cols}
+    avail = k.w - 2 * pad - 2 - gap * (len(cols) - 1) - sum(ew.values()) - out_w
+    natural = {col: max([line_width(font_of(col, ln), grid[col][ln]) for ln in grid[col]] or [0]) for col in cols}
     room = dict(natural)
     while sum(room.values()) > avail:                      # the widest gives way, down to the next widest…
         widest = max(room, key=room.get)
@@ -1103,10 +1190,11 @@ def _l_custom(k, ct):
                 kinds.remove(drop)
                 _note_dropped([(drop, "")], set())
             lines.append((f, kinds, min(line_width(f, kinds), room[col])))
-        layout.append((col, lines, max(w_ for _, _, w_ in lines)))
-    total_w = sum(cw for _, _, cw in layout) + gap * (len(layout) - 1)
-    total_h = max(sum(f.height + 1 for f, _, _ in lines) - 1 for _, lines, _ in layout)
-    box_w, box_h = total_w + 2 * pad + (1 if container == "box" else 0), total_h + 2 * pad
+        layout.append((col, lines, max([w_ for _, _, w_ in lines] or [0])))
+    total_w = sum(cw + ew.get(col, 0) for col, _, cw in layout) + gap * (len(layout) - 1)
+    box_w, box_h = total_w + 2 * pad + (1 if container == "box" else 0), text_h + 2 * pad
+    if emblem is not None:
+        box_h = max(box_h, eh + 2)                         # inside: the box grows to the shield (text centred in it)
 
     if container == "strip":
         bx, by = k.x, (k.y if k.top else k.y + k.h - box_h)
@@ -1118,15 +1206,24 @@ def _l_custom(k, ct):
             if _col_align(cols_cfg, col, i, len(layout)) == "right":
                 continue
             xs[col] = left_x
-            left_x += cw + gap
+            left_x += cw + ew.get(col, 0) + gap
         for i, (col, lines, cw) in reversed(list(enumerate(layout))):
             if col in xs:
                 continue
-            right_x -= cw
+            right_x -= cw + ew.get(col, 0)
             xs[col] = max(right_x, left_x)                 # never over a left-flowing column
             right_x -= gap
     else:
-        bx, by = k.place(min(box_w, k.w - 2), box_h, margin=2)
+        bx, by = k.place(min(box_w, k.w - 2 - out_w) + out_w, box_h, margin=2)     # the box and an outside shield
+        if outside:
+            from display.modules import shields
+            bw_ = min(box_w, k.w - 2 - out_w)
+            sx = bx if outside == "left" else bx + bw_ + 2
+            if outside == "left":
+                bx += out_w
+            sy = by + (box_h - eh) // 2 if eh <= box_h else (by if k.top else by + box_h - eh)
+            shields.draw(c, sx, sy, route, h=max(SHIELD_MIN, want), kind=sh_kind)
+        box_w = min(box_w, k.w - 2 - out_w)
         if container == "box":
             _box(c, bx, by, min(box_w, k.w - 2), box_h, k.bg, k.op)
             c.FillRect(bx if k.align != "right" else bx + min(box_w, k.w - 2) - 1, by, 1, box_h, k.accent)
@@ -1138,25 +1235,30 @@ def _l_custom(k, ct):
         xs, x = {}, bx + pad + (1 if container == "box" and k.align != "right" else 0)
         for col, lines, cw in layout:
             xs[col] = x
-            x += cw + gap
+            x += cw + ew.get(col, 0) + gap
 
     for i, (col, lines, cw) in enumerate(layout):
         x0 = xs[col]
+        if col == emblem:                                  # centred in the box, which grew to fit it
+            from display.modules import shields
+            shields.draw(c, x0, by + (box_h - eh) // 2, route, h=max(SHIELD_MIN, want), kind=sh_kind)
+            x0 += ew[col]
         if divider and i > 0 and container != "outline":
             c.FillRect(x0 - (gap + 1) // 2, by + 2, 1, box_h - 4, k.accent if not board else Color(*(v // 3 for v in _rgb(color))))
         align = _col_align(cols_cfg, col, i, len(layout))
-        ty = by + pad
+        ty = by + (box_h - text_h) // 2                    # = by + pad unless a shield made the box taller
         for f, kinds, w_ in lines:
+            lh = line_h(f, kinds)
             left, right = sides(kinds)
             if right:                                      # a split line spans the column: right part flush right
                 rw = min(run_width(f, right), cw)
                 if left:
-                    _draw_line(k, ct, f, x0, ty, left, max(0, cw - rw - split_gap), color, put)
-                _draw_line(k, ct, f, x0 + cw - rw, ty, right, rw, color, put)
+                    _draw_line(k, ct, f, x0, ty, left, max(0, cw - rw - split_gap), color, put, lh, sh_kind)
+                _draw_line(k, ct, f, x0 + cw - rw, ty, right, rw, color, put, lh, sh_kind)
             else:
                 x = x0 + (cw - w_ if align == "right" else (cw - w_) // 2 if align == "center" else 0)
-                _draw_line(k, ct, f, x, ty, kinds, w_, color, put)
-            ty += f.height + 1
+                _draw_line(k, ct, f, x, ty, kinds, w_, color, put, lh, sh_kind)
+            ty += lh + 1
 
 
 def _col_align(cols_cfg, col, index, count):
@@ -1173,13 +1275,16 @@ def _text(ct, kind):
     return ct.clock() if kind == "time" else ct.sections.get(kind, "")
 
 
-def _draw_line(k, ct, f, x, y_top, kinds, room, color, put):
-    """One line of pieces: LIVE badges, a weather icon before the weather, separators between; clipped to room."""
+def _draw_line(k, ct, f, x, y_top, kinds, room, color, put, lh=None, sh_kind=None):
+    """One line of pieces: LIVE badges, shields, a weather icon before the weather, separators between; clipped to
+    room. lh: the line's height when a shield makes it taller than the font (text is centred in it)."""
     end = x + room
     sp = _sep(f, k.sep)
+    lh = lh or f.height
+    y_top += (lh - f.height) // 2
     for i, kind in enumerate(kinds):
         if i:
-            if "live" in (kind, kinds[i - 1]):
+            if {"live", "shield"} & {kind, kinds[i - 1]}:
                 x += 3
             elif x + _tw(f, sp) + 4 <= end:                # no separator unless some of the next piece fits after it
                 x += put(k.c, f, x, y_top + f.baseline, color, sp)
@@ -1189,6 +1294,14 @@ def _draw_line(k, ct, f, x, y_top, kinds, room, color, put):
             break
         if kind == "live":
             x += k.badge(x, y_top + max(0, (f.height - k.S.height - 1) // 2))
+            continue
+        if kind == "shield":
+            from display.modules import shields
+            route = ct.sections.get("shield", "")
+            sw, sh = _shield_dims(route, max(SHIELD_MIN, f.height), sh_kind)
+            if x + sw <= end:
+                shields.draw(k.c, x, y_top + (f.height - sh) // 2, route, h=max(SHIELD_MIN, f.height), kind=sh_kind)
+            x += sw
             continue
         if kind == "weather" and ct.icon:
             draw_icon(k.c, x, y_top + (f.height - 7) // 2, ct.icon)

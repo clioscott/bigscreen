@@ -31,10 +31,11 @@ const LAYOUTS = {
 };
 const FONTS = [{ value: "tiny", label: "Tiny" }, { value: "small", label: "Small" }, { value: "medium", label: "Medium" }, { value: "large", label: "Large" }];
 const SECTIONS = { name: "Name", place: "Place", time: "Local time", age: "Image time", weather: "Weather", sun: "Sunrise / sunset", date: "Date",
-  offset: "Time difference", daynight: "Day / night icon", live: "LIVE badge", credit: "Credit", custom: "Your text" };
-const ORDERABLE = ["live", "name", "place", "time", "age", "weather", "date", "offset", "sun", "custom", "credit"];
+  offset: "Time difference", daynight: "Day / night icon", live: "LIVE badge", credit: "Credit", custom: "Your text",
+  shield: "Highway shield" };
+const ORDERABLE = ["shield", "live", "name", "place", "time", "age", "weather", "date", "offset", "sun", "custom", "credit"];
 // the Custom layout: where each section goes (column, line) to start with; mirrors webcam_caption.DEFAULT_SLOTS
-const DEFAULT_SLOTS = { live: [1, 1], name: [1, 1], place: [1, 2], time: [1, 2], age: [1, 2], weather: [1, 3], date: [1, 3], offset: [1, 3],
+const DEFAULT_SLOTS = { shield: [1, 1], live: [1, 1], name: [1, 1], place: [1, 2], time: [1, 2], age: [1, 2], weather: [1, 3], date: [1, 3], offset: [1, 3],
   sun: [1, 3], custom: [1, 3], credit: [1, 3] };
 const CONTAINERS = [{ value: "box", label: "Box" }, { value: "strip", label: "Full-width strip" }, { value: "outline", label: "Outlined" }, { value: "board", label: "Board" }];
 const LINE_SIZES = [{ value: "headline", label: "Headline" }, { value: "detail", label: "Detail" }, { value: "big", label: "Big" }];
@@ -50,7 +51,21 @@ const DEFAULT_OVERLAY = { style: "tag", corner: "bl", when: "always", font: "sma
   bg: "#000000", opacity: 0.7, time_format: "24h", fade: true, show_sec: 12, every_min: 3, custom_text: "", headline: "name",
   lines: "auto", separator: "dot", uppercase: false, order: [...ORDERABLE],
   show: { name: true, place: true, time: true, date: false, offset: false, daynight: false, weather: false, sun: false,
-    age: false, live: true, credit: false, custom: false } };
+    age: false, live: true, credit: false, custom: false, shield: false },
+  shield: { route: "99", kind: "auto", place: "inside", size: "box" } };
+// the caption's highway shield (display/modules/shields.py draws it; the Custom layout only)
+const SHIELD_PRESETS = [
+  { group: "BC", routes: ["1", "7", "10", "11", "13", "15", "17", "91", "99"] },
+  { group: "Yellowhead · Crowsnest", routes: ["5", "16", "3"] },
+  { group: "Washington", routes: ["I-5", "I-405", "US 97", "SR 539", "SR 543", "SR 9"] },
+];
+const SHIELD_KINDS = [{ value: "auto", label: "By number" }, { value: "bc", label: "BC" }, { value: "tch", label: "Trans-Canada" },
+  { value: "yellowhead", label: "Yellowhead" }, { value: "crowsnest", label: "Crowsnest" }, { value: "interstate", label: "Interstate" },
+  { value: "us", label: "US Highway" }, { value: "wa", label: "Washington" }];
+const SHIELD_PLACES = [{ value: "inside", label: "Inside the box" }, { value: "left", label: "Outside left" },
+  { value: "right", label: "Outside right" }, { value: "line", label: "In its line" }];
+const SHIELD_SIZES = [{ value: "box", label: "Box height" }, ...[16, 20, 24, 28, 32, 40, 48, 56, 64].map((h) => ({ value: h, label: h + " px" }))];
+const shieldSrc = (route, kind = "auto", h = 24) => `/api/shields/preview.png?${new URLSearchParams({ route, kind, h, scale: 2 })}`;
 // still sources (a DriveBC camera by id, or any JPEG) and the query that names a source to the hub
 const STILL = ["drivebc", "image"];
 const DRIVEBC_IMAGE = (id) => `https://www.drivebc.ca/images/${id}.jpg`;
@@ -422,7 +437,9 @@ const CaptionGrid = {
     const slotOf = (k) => props.ov.slots?.[k] || DEFAULT_SLOTS[k] || [1, 3];
     const shown = computed(() => {
       const o = props.ov.order || [];
-      return [...o, ...ORDERABLE.filter((k) => !o.includes(k))].filter((k) => k in DEFAULT_SLOTS && props.ov.show[k]);
+      const outside = ["left", "right"].includes(props.ov.shield?.place);
+      return [...o, ...ORDERABLE.filter((k) => !o.includes(k))]
+        .filter((k) => k in DEFAULT_SLOTS && props.ov.show[k] && !(k === "shield" && outside));
     });
     const zone = (c, l, side) => shown.value.filter((k) => {
       const s = slotOf(k);
@@ -466,7 +483,7 @@ const CaptionGrid = {
       })));
     });
     onBeforeUnmount(() => sortables.forEach((x) => x.destroy()));
-    const label = (k) => (k === "live" ? "LIVE" : SECTIONS[k]);
+    const label = (k) => (k === "live" ? "LIVE" : k === "shield" ? "Shield " + (props.ov.shield?.route || "") : SECTIONS[k]);
     const ALIGN_ICONS = { left: "AlignLeft", center: "AlignCenter", right: "AlignRight" };
     return { root, zone, filled, usedCols, lineSize, setLineSize, colAlign, setColAlign, label, LINE_SIZES, ALIGNS, ALIGN_ICONS };
   },
@@ -481,9 +498,9 @@ const CaptionGrid = {
       <div v-for="c in 3" :key="c + '.' + l" class="cg-cell" :class="{filled: filled(c, l)}">
         <div class="cg-parts">
           <div class="cg-zone" :data-col="c" :data-line="l" data-side="left"><span v-for="k in zone(c, l, 'left')" :key="k" :data-k="k"
-            class="cg-chip" :class="{live: k === 'live', blank: !hasText(k)}" :title="hasText(k) ? 'Drag to move' : 'Nothing to show yet'">{{ label(k) }}</span></div>
+            class="cg-chip" :class="{live: k === 'live', shield: k === 'shield', blank: !hasText(k)}" :title="hasText(k) ? 'Drag to move' : 'Nothing to show yet'">{{ label(k) }}</span></div>
           <div class="cg-zone cg-right" :data-col="c" :data-line="l" data-side="right" title="Sections here sit at the line's right edge"><span
-            v-for="k in zone(c, l, 'right')" :key="k" :data-k="k" class="cg-chip" :class="{live: k === 'live', blank: !hasText(k)}"
+            v-for="k in zone(c, l, 'right')" :key="k" :data-k="k" class="cg-chip" :class="{live: k === 'live', shield: k === 'shield', blank: !hasText(k)}"
             :title="hasText(k) ? 'Drag to move' : 'Nothing to show yet'">{{ label(k) }}</span></div>
         </div>
         <select v-if="filled(c, l)" class="cg-size" :value="lineSize(c, l)" @change="setLineSize(c, l, $event.target.value)" title="Text size of this line">
@@ -514,6 +531,8 @@ const WebcamEditor = {
         c.overlay.show = { ...DEFAULT_OVERLAY.show, ...(c.overlay.show || {}) };
         const ord = (c.overlay.order || []).filter((k) => ORDERABLE.includes(k));
         if (!ord.includes("live")) ord.unshift("live");      // older orders don't list LIVE: it leads (as on the wall)
+        if (!ord.includes("shield")) ord.unshift("shield");  // nor the shield
+        c.overlay.shield = { ...DEFAULT_OVERLAY.shield, ...(c.overlay.shield || {}) };
         c.overlay.order = [...ord, ...ORDERABLE.filter((k) => !ord.includes(k))];
         c.colour = c.colour || {};
         c.crops = c.crops || {};
@@ -555,9 +574,10 @@ const WebcamEditor = {
     };
     const toggleShow = (k) => { ov.value.show[k] = !ov.value.show[k]; };
     // the detail sections that are on, in their order (drag to reorder; the headline isn't a detail)
-    const orderOn = computed(() => (ov.value.order || []).filter((k) => k !== "live" && ov.value.show[k] && k !== (ov.value.headline || "name")));
+    const orderOn = computed(() => (ov.value.order || []).filter((k) => k !== "live" && k !== "shield" && ov.value.show[k] && k !== (ov.value.headline || "name")));
     // sections that will actually have text on the wall (the renderer skips empty ones)
     const hasText = (k) => ({ place: !!cam.value.place, credit: !!cam.value.credit, custom: !!ov.value.custom_text?.trim(),
+      shield: !!String(ov.value.shield?.route ?? "").trim(),
       weather: Number.isFinite(cam.value.lat), sun: Number.isFinite(cam.value.lat) }[k] ?? true);
     const needsLocation = computed(() => (ov.value.show.weather || ov.value.show.sun) && !(Number.isFinite(cam.value.lat) && Number.isFinite(cam.value.lon)));
     const galleryLoc = computed(() => GALLERY.flatMap((g) => g.cams).find((g) => g.source.url === cam.value.source?.url && g.lat != null) || null);
@@ -597,7 +617,7 @@ const WebcamEditor = {
     };
     const customCrop = (s) => !!cam.value.crops?.[s];
     return { id, cam, shape, zone, ov, colour, probe, testing, test, used, addToRotation, play, remove, captionToAll, toggleShow, customCrop,
-      orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, hasText, customCols,
+      orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, hasText, customCols, SHIELD_PRESETS, SHIELD_KINDS, SHIELD_PLACES, SHIELD_SIZES, shieldSrc,
       CONTAINERS, feedFor, feedPill, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
   },
   template: `<div class="page" v-if="cam">
@@ -683,7 +703,24 @@ const WebcamEditor = {
                 <Field label="Text size" v-if="ov.style !== 'dot'"><Seg v-model="ov.font" :options="FONTS"/></Field>
               </div>
               <Field label="Sections" hint="Click to turn on or off" v-if="ov.style !== 'dot'"><div class="row" style="gap:6px">
-                <button v-for="(l, k) in SECTIONS" :key="k" type="button" class="chip" :class="{off: !ov.show[k]}" style="height:26px; padding:0 10px" @click="toggleShow(k)">{{ l }}</button></div></Field>
+                <template v-for="(l, k) in SECTIONS" :key="k"><button v-if="k !== 'shield' || ov.style === 'custom'" type="button" class="chip" :class="{off: !ov.show[k]}"
+                  style="height:26px; padding:0 10px" @click="toggleShow(k)">{{ l }}</button></template></div></Field>
+              <Field label="Highway shield" v-if="ov.style === 'custom' && ov.show.shield" hint="Pick a sign, or type a route; inside, the box grows to fit it">
+                <div class="stack" style="gap:8px">
+                  <div v-for="g in SHIELD_PRESETS" :key="g.group" class="row" style="gap:4px; align-items:center">
+                    <span class="faint" style="font-size:11.5px; width:150px">{{ g.group }}</span>
+                    <button v-for="r in g.routes" :key="r" type="button" class="wc-shield" :class="{on: ov.shield.route === r && ov.shield.kind === 'auto'}"
+                      @click="ov.shield.route = r; ov.shield.kind = 'auto'" :title="r"><img :src="shieldSrc(r)" alt="" height="24"></button></div>
+                  <div class="row" style="gap:10px; align-items:flex-end">
+                    <Field label="Route"><input class="input" style="width:90px" v-model.trim="ov.shield.route" maxlength="8" placeholder="99"></Field>
+                    <Field label="Sign"><select class="input" v-model="ov.shield.kind"><option v-for="s in SHIELD_KINDS" :key="s.value" :value="s.value">{{ s.label }}</option></select></Field>
+                    <img v-if="ov.shield.route" :src="shieldSrc(ov.shield.route, ov.shield.kind, 32)" alt="" height="32" style="image-rendering:pixelated">
+                  </div>
+                  <Field label="Where"><Seg v-model="ov.shield.place" :options="SHIELD_PLACES"/></Field>
+                  <Field label="Size" v-if="ov.shield.place !== 'line'" hint="Box height matches the caption box; a bigger size stands out of a box it's beside, or grows the box it's in">
+                    <div class="seg mini"><button v-for="s in SHIELD_SIZES" :key="s.value" type="button" :class="{on: ov.shield.size === s.value}" @click="ov.shield.size = s.value">{{ s.label }}</button></div></Field>
+                  <div class="faint" style="font-size:12px" v-else>The shield takes its line's height; place it in the arrangement below.</div>
+                </div></Field>
               <template v-if="ov.style === 'custom'">
                 <Field label="Arrangement" hint="Drag sections between columns and lines; drop one in a line's right end (→|) to push it to the right edge">
                   <CaptionGrid :ov="ov" :has-text="hasText"/></Field>

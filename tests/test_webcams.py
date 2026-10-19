@@ -714,3 +714,69 @@ def test_custom_right_slot_validation():
     for bad in ({"time": [1, 2, "middle"]}, {"time": [1, 2, "right", 4]}):
         with pytest.raises(config.ConfigError):
             config.validate(_cfg({"cams": {"a": {**CAM, "overlay": {"style": "custom", "slots": bad}}}}))
+
+
+# --- custom layout: a highway shield ----------------------------------------------------------------------------
+def _shield_box(place, size, corner="bl"):
+    """(the caption box's mask, the shield's mask) for a Custom caption with a BC 99 shield."""
+    from display.gfx import Canvas
+    from display.modules import shields
+    ov = cap.overlay_of({"overlay": {"style": "custom", "corner": corner, "show": {"shield": True},
+                                     "shield": {"route": "99", "place": place, "size": size},
+                                     "slots": {"live": [1, 1], "name": [1, 1], "place": [1, 2], "time": [1, 2, "right"]}}})
+    c = Canvas(448, 134)
+    c.buf[:] = (0, 120, 0)                                     # green frame: the box darkens it
+    drawn = []
+    real = shields.draw
+
+    def spy(cv, x, y, route, h=20, kind=None):
+        w = real(cv, x, y, route, h=h, kind=kind)
+        drawn.append((x, y, w, cap._shield_dims(route, h, kind)[1]))
+        return w
+    shields.draw = spy
+    try:
+        cap._l_custom(cap.Ctx(c, (0, 0, 448, 134), ov, _font), cap.Content(CAM, ov, wx=WX))
+    finally:
+        shields.draw = real
+    px = c.buf.astype(int)
+    box = (px[..., 1] < 100) & (px[..., 0] < 60)             # the darkened box background
+    shield = np.zeros(box.shape, bool)
+    (x, y, w, h), = drawn
+    shield[y:y + h, x:x + w] = True
+    return box & ~shield, shield                               # the shield's own dark blue isn't the box
+
+
+def _extent(m):
+    ys, xs = np.nonzero(m)
+    return ys.min(), ys.max(), xs.min(), xs.max()
+
+
+def test_shield_inside_grows_the_box_to_fit():
+    box_small, _ = _shield_box("inside", "box")
+    box_big, shield = _shield_box("inside", 40)
+    by0, by1, bx0, bx1 = _extent(box_big)
+    sy0, sy1, sx0, sx1 = _extent(shield)
+    assert sy1 - sy0 + 1 >= 38 and by1 - by0 > _extent(box_small)[1] - _extent(box_small)[0]
+    assert by0 <= sy0 and sy1 <= by1 and bx0 <= sx0 and sx1 <= bx1  # inside the box
+
+
+def test_shield_outside_sits_beside_the_box():
+    for place in ("left", "right"):
+        box, shield = _shield_box(place, 40)
+        by0, by1, bx0, bx1 = _extent(box)
+        sy0, sy1, sx0, sx1 = _extent(shield)
+        assert (sx1 < bx0) if place == "left" else (sx0 > bx1)
+        assert sy1 == by1                                      # bottom corner: lined up with the box's bottom edge
+    box, shield = _shield_box("right", 40, corner="tr")
+    assert _extent(shield)[0] == _extent(box)[0]              # top corner: with its top edge
+
+
+def test_shield_in_its_line_and_validation():
+    from hub import config
+    box, shield = _shield_box("line", "box")
+    assert shield.any() and _extent(shield)[1] - _extent(shield)[0] < 14
+    good = {"style": "custom", "show": {"shield": True}, "shield": {"route": "US 97", "kind": "us", "place": "left", "size": 32}}
+    config.validate(_cfg({"cams": {"a": {**CAM, "overlay": good}}}))
+    for bad in ({"place": "above"}, {"size": 80}, {"size": "line"}, {"kind": "autobahn"}, {"route": "123456789"}):
+        with pytest.raises(config.ConfigError):
+            config.validate(_cfg({"cams": {"a": {**CAM, "overlay": {**good, "shield": {**good["shield"], **bad}}}}}))

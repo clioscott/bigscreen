@@ -428,6 +428,10 @@ select.input { appearance: none; padding-right: 30px; background-image: url("dat
 .cg-chip { cursor: grab; user-select: none; touch-action: none; padding: 1px 7px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line-2); white-space: nowrap; font-size: 11.5px; line-height: 18px; }
 .cg-chip.live { background: #e8202a; color: #fff; border-color: #e8202a; font-weight: 700; }
 .cg-chip.blank { opacity: .5; font-style: italic; }
+.cg-chip.shield { background: #1d4f9c; color: #fff; border-color: #2f6fd0; }
+.wc-shield { display: inline-flex; align-items: center; justify-content: center; height: 32px; min-width: 32px; padding: 3px; border-radius: 7px; border: 1px solid var(--line-2); background: var(--surface-2); cursor: pointer; }
+.wc-shield.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.wc-shield img { image-rendering: pixelated; display: block; }
 .cg-size { font-size: 11px; height: 20px; padding: 0 2px; border-radius: 5px; border: 1px solid var(--line-2); background: var(--surface); color: var(--text-2); align-self: flex-start; }
 .seg.mini button { height: 22px; padding: 0 8px; font-size: 12px; }
 

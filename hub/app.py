@@ -692,6 +692,27 @@ def fonts_preview(path: str, text: str = "", jp: str = "", scale: int = 2, fg: s
     return Response(png, media_type="image/png", headers={"Cache-Control": "max-age=3600"})
 
 
+@app.get("/api/shields/preview.png")
+def shield_preview(route: str, kind: str = "auto", h: int = 24, scale: int = 2):
+    """A highway shield as the wall draws it (display/modules/shields.py), for the caption's shield picker."""
+    from display.gfx import Canvas
+    from display.modules import shields
+    from display.modules.webcam_caption import SHIELD_KINDS, SHIELD_MAX, SHIELD_MIN
+    route = route.strip()[:8]
+    if not route or kind not in SHIELD_KINDS:
+        raise HTTPException(400, "route and a known kind needed")
+    h, scale = max(SHIELD_MIN, min(SHIELD_MAX, h)), max(1, min(4, scale))
+    kd = None if kind == "auto" else kind
+    w = shields.width(route, h, kd)
+    c = Canvas(w, h)
+    shields.draw(c, 0, 0, route, h=h, kind=kd)
+    img = Image.fromarray(c.buf).convert("RGBA")
+    img.putalpha(Image.fromarray(((c.buf.max(axis=2) > 0) * 255).astype("uint8")))
+    bio = io.BytesIO()
+    img.resize((w * scale, h * scale), Image.NEAREST).save(bio, "PNG")
+    return Response(bio.getvalue(), media_type="image/png", headers={"Cache-Control": "max-age=3600"})
+
+
 @app.post("/api/fonts/wall")
 def fonts_wall(payload: dict = Body(...)):
     """Show one font (or up to 12 stacked) on the wall until "Back to rotation"."""
