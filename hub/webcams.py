@@ -7,6 +7,10 @@ frames scaled to WORK_W wide; each viewer gets its own crop of them, scaled to i
 Sources (``modules.webcams.cams.<id>.source``):
     {"type": "youtube", "url": "https://www.youtube.com/watch?v=…"}   live stream; resolved with yt-dlp
     {"type": "stream",  "url": "https://…/index.m3u8"}                HLS, MP4, MJPEG, RTSP… anything ffmpeg opens
+    {"type": "drivebc", "id": 18}                                       a DriveBC highway camera (a still, every few min)
+    {"type": "image",   "url": "https://…/cam.jpg", "refresh_sec": 60}  any still image, fetched again every refresh_sec
+Stills become a feed too: the latest image is published every second (so viewers know it's alive) and fetched again
+every refresh_sec; each frame carries the image's age for the caption.
 
 A crop is ``{"x", "y", "w"}`` in fractions of the source frame (left edge, top edge, width); its height follows
 from the zone's shape, so a crop never stretches the picture. No crop: the largest centred one that fits.
@@ -45,16 +49,87 @@ class SourceError(ValueError):
     pass
 
 
+STILLS = ("drivebc", "image")
+DRIVEBC_IMAGE = "https://www.drivebc.ca/images/{id}.jpg"
+
+
 def check_source(src) -> tuple[str, str]:
     """(type, url) of a source dict, or SourceError."""
     if not isinstance(src, dict):
         raise SourceError("source must be an object")
-    kind, url = src.get("type", "stream"), str(src.get("url", "")).strip()
-    if kind not in ("youtube", "stream"):
-        raise SourceError("source type must be youtube or stream")
-    if urlparse(url).scheme.lower() not in SCHEMES or not urlparse(url).netloc:
-        raise SourceError("source URL must be http(s), rtsp or rtmp")
+    kind = src.get("type", "stream")
+    if kind == "drivebc":
+        cid = src.get("id")
+        if not isinstance(cid, int) or isinstance(cid, bool) or cid <= 0:
+            raise SourceError("a DriveBC camera needs its numeric id")
+        return kind, DRIVEBC_IMAGE.format(id=cid)
+    url = str(src.get("url", "")).strip()
+    if kind not in ("youtube", "stream", "image"):
+        raise SourceError("source type must be youtube, stream, image or drivebc")
+    schemes = {"http", "https"} if kind == "image" else SCHEMES
+    if urlparse(url).scheme.lower() not in schemes or not urlparse(url).netloc:
+        raise SourceError("an image URL must be http(s)" if kind == "image" else "source URL must be http(s), rtsp or rtmp")
     return kind, url
+
+
+def refresh_of(src) -> float:
+    """How often a still is fetched again (s)."""
+    try:
+        return max(20.0, min(3600.0, float((src or {}).get("refresh_sec") or 60)))
+    except (TypeError, ValueError):
+        return 60.0
+
+
+DRIVEBC_CAMERA = "https://www.drivebc.ca/api/webcams/{id}/"
+UA = {"User-Agent": "BigScreen/2 (home LED wall)"}
+
+
+def drivebc_meta(url):
+    """(when the camera's current picture was taken, why it's unavailable or "") from DriveBC's camera API.
+    DriveBC's image responses carry no Last-Modified, so the time comes from here."""
+    from datetime import datetime
+
+    import requests
+    cid = url.rsplit("/", 1)[-1].split(".")[0]
+    m = requests.get(DRIVEBC_CAMERA.format(id=cid), timeout=15, headers=UA).json()
+    why = "camera offline" if m.get("is_on") is False else "camera stale" if m.get("marked_stale") else ""
+    try:
+        at = datetime.fromisoformat(m["last_update_modified"]).timestamp()
+    except (KeyError, TypeError, ValueError):
+        at = None
+    return at, why
+
+
+def fetch_still(kind, url, known_at=None):
+    """(RGB array WORK_W wide, the image's time) for a still source. DriveBC's caption strip (the bottom ~6 %) goes.
+    For DriveBC, when the picture is still the one taken at known_at, nothing is downloaded: (None, known_at)."""
+    import io
+    from email.utils import parsedate_to_datetime
+
+    import requests
+    dbc_at = None
+    if kind == "drivebc":
+        dbc_at, why = drivebc_meta(url)
+        if why and known_at is None:
+            raise SourceError(why)
+        if known_at is not None and dbc_at is not None and dbc_at == known_at:
+            return None, known_at
+    r = requests.get(url, timeout=15, headers=UA)
+    r.raise_for_status()
+    img = Image.open(io.BytesIO(r.content)).convert("RGB")
+    w, h = img.size
+    if kind == "drivebc":
+        img = img.crop((0, 0, w, int(h * 0.94)))
+        w, h = img.size
+    img = img.resize((WORK_W, max(2, round(h * WORK_W / w / 2) * 2)), Image.LANCZOS)
+    if dbc_at is not None:
+        at = dbc_at
+    else:
+        try:
+            at = parsedate_to_datetime(r.headers["Last-Modified"]).timestamp()
+        except (KeyError, TypeError, ValueError):
+            at = time.time()
+    return np.ascontiguousarray(np.asarray(img), dtype=np.uint8), min(at, time.time())
 
 
 # --- resolving -----------------------------------------------------------------------------------------------
@@ -82,7 +157,7 @@ def _yt_dlp(*args, timeout=60):
 
 def resolve(kind, url, fresh=False) -> tuple[str, str]:
     """(media URL for ffmpeg, title). YouTube pages go through yt-dlp: video only, 480p is plenty for 448 px."""
-    if kind != "youtube":
+    if kind != "youtube":                               # streams and stills are used as given
         return url, ""
     with _resolve_lock:
         hit = _resolved.get(url)
@@ -115,7 +190,7 @@ def resolve(kind, url, fresh=False) -> tuple[str, str]:
 class Feed:
     """One source decoded by one ffmpeg; the newest frame is always in ``frame`` (h, WORK_W, 3) uint8."""
 
-    def __init__(self, kind, url, fps):
+    def __init__(self, kind, url, fps, refresh=60.0):
         self.kind, self.url, self.fps = kind, url, fps
         self.frame = None
         self.seq = 0
@@ -141,6 +216,9 @@ class Feed:
         self.underflows = 0
         self._stop = threading.Event()   # set by _run when the feed ends; the pacer exits on it
         self._waiters = set()            # (event loop, asyncio.Event) of async readers, woken on every frame
+        self.image_t = None              # stills: when the current image was taken
+        self.refresh = refresh
+        self._still = None
         threading.Thread(target=self._run, name=f"webcam-{urlparse(url).netloc}", daemon=True).start()
         threading.Thread(target=self._pace, name="webcam-pacer", daemon=True).start()
 
@@ -171,7 +249,7 @@ class Feed:
 
     def raise_fps(self, fps):
         """Decode at least this fast (viewers wanting fewer frames skip some); restarts ffmpeg if it has to."""
-        if fps <= self.fps:
+        if self.kind in STILLS or fps <= self.fps:
             return
         self.fps = fps
         proc = self._proc
@@ -197,10 +275,14 @@ class Feed:
                 "title": self.title, "size": self.size, "viewers": self.viewers, "measured_fps": self.measured_fps(),
                 "age_sec": round(time.time() - self.frame_t, 1) if self.frame_t else None,
                 "uptime_sec": round(time.time() - self.started), "restarts": self.restarts,
-                "buffered_sec": round(len(self._buf) / max(1, self.fps), 1), "underflows": self.underflows}
+                "buffered_sec": round(len(self._buf) / max(1, self.fps), 1), "underflows": self.underflows,
+                "still": self.kind in STILLS,
+                "image_age_sec": round(time.time() - self.image_t) if self.image_t else None}
 
     # the ffmpeg loop ------------------------------------------------------------------------------------------
     def _run(self):
+        if self.kind in STILLS:
+            return self._run_still()
         backoff = 0
         fresh = False
         while self.wanted():
@@ -235,6 +317,46 @@ class Feed:
             end = time.time() + delay
             while time.time() < end and self.wanted():
                 time.sleep(0.5)
+        with self._lock:
+            self.state = "stopped"
+        self._stop.set()
+        _forget(self)
+
+    def _run_still(self):
+        """A still source: fetch the image every refresh_sec, publish the latest one every second."""
+        next_fetch, failures = 0.0, 0
+        while self.wanted():
+            now = time.time()
+            if now >= next_fetch:
+                try:
+                    frame, at = fetch_still(self.kind, self.url, self.image_t if self._still is not None else None)
+                    if frame is not None:                    # a new picture (DriveBC: only when it posted one)
+                        frame.flags.writeable = False
+                        self._still, self.size = frame, [frame.shape[1], frame.shape[0]]
+                    self.image_t, self.error, failures = at, "", 0
+                    next_fetch = now + self.refresh
+                except Exception as e:
+                    failures += 1
+                    self.error = f"{type(e).__name__}: {e}"[:300]
+                    next_fetch = now + min(300, 15 * failures)
+                    if self._still is None:
+                        with self._lock:
+                            self.state = "retrying"
+            if self._still is not None:
+                with self._cond:
+                    self.frame, self.frame_t = self._still, now
+                    self.seq += 1
+                    if self.state != "live":
+                        self.state = "live"
+                    waiters = list(self._waiters)
+                    self._cond.notify_all()
+                for loop, ev in waiters:
+                    try:
+                        loop.call_soon_threadsafe(ev.set)
+                    except RuntimeError:
+                        pass
+                self._times = (self._times + [now])[-60:]
+            self._stop.wait(1.0)
         with self._lock:
             self.state = "stopped"
         self._stop.set()
@@ -399,7 +521,7 @@ def feed(src, fps=15) -> Feed:
     """The running feed for a source, started if needed (raises SourceError). One feed per source, decoding at
     the highest frame rate anyone asked for; viewers that want fewer thin it themselves (app.py min_gap)."""
     kind, url = check_source(src)
-    fps = max(1, min(30, int(fps or 15)))
+    fps = 1 if kind in STILLS else max(1, min(30, int(fps or 15)))
     key = (kind, url)
     with _feeds_lock:
         f = _feeds.get(key)
@@ -407,15 +529,15 @@ def feed(src, fps=15) -> Feed:
             f.last_view = time.time()
             f.raise_fps(fps)
             return f
-        live = [x for x in _feeds.values() if x.state != "stopped"]
-        if len(live) >= MAX_FEEDS:
+        live = [x for x in _feeds.values() if x.state != "stopped" and x.kind not in STILLS]
+        if kind not in STILLS and len(live) >= MAX_FEEDS:
             idle = [x for x in live if x.viewers == 0]
             if not idle:
                 raise SourceError(f"already decoding {MAX_FEEDS} webcams")
             stale = min(idle, key=lambda x: x.last_view)
             stale.last_view = 0                         # its watchdog stops it within a second
             _feeds.pop((stale.kind, stale.url), None)
-        f = _feeds[key] = Feed(kind, url, fps)
+        f = _feeds[key] = Feed(kind, url, fps, refresh_of(src))
         return f
 
 
@@ -498,6 +620,16 @@ def _snap_worker():
 
 def _grab(kind, url):
     import tempfile
+    if kind in STILLS:
+        import io
+        frame, _ = fetch_still(kind, url)
+        out = io.BytesIO()
+        Image.fromarray(frame).resize((480, round(frame.shape[0] * 480 / frame.shape[1]))).save(out, "JPEG", quality=85)
+        path = _snap_path(kind, url)
+        with tempfile.NamedTemporaryFile(dir=path.parent, suffix=".tmp", delete=False) as tmp:
+            tmp.write(out.getvalue())
+        os.replace(tmp.name, path)
+        return
     media, _ = resolve(kind, url)
     args = ["ffmpeg", "-hide_banner", "-nostdin", "-nostats", "-loglevel", "error", "-protocol_whitelist", PROTOCOLS]
     if kind == "youtube" or ".m3u8" in media:

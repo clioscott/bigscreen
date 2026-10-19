@@ -14,6 +14,7 @@
     time_format 24h | 12h
     accent, text, bg  "#rrggbb"; opacity 0-1: how solid the background boxes are
     when        always | intro (the first INTRO_SEC of a play) | periodic (show_sec every every_min minutes)
+    taken_format time (default: "taken 17:05:42") | relative ("3 min ago") | both — the "age" section of a still
     custom layout only:
     slots       {section: [column 1-3, line 1-4]}; sections sharing a line follow `order`
     line_sizes  {"column.line": headline | detail | big}
@@ -46,17 +47,17 @@ BIG = {"tiny": "fonts/alert/6x10.bdf", "small": "fonts/alert/7x13B.bdf", "medium
 LAYOUTS = ("tag", "bar", "outline", "dot", "lower_third", "split", "postcard", "chips", "clock", "signage", "ticker",
            "stack", "custom", "none")
 STYLES = LAYOUTS                             # older name
-SECTIONS = ("name", "place", "time", "date", "offset", "daynight", "weather", "sun", "live", "credit", "custom")
-ORDER = ("name", "place", "time", "weather", "date", "offset", "sun", "custom", "credit")    # default detail order
-DROP = ("credit", "custom", "sun", "offset", "date", "weather", "place", "name")    # dropped first → last
+SECTIONS = ("name", "place", "time", "date", "offset", "daynight", "weather", "sun", "age", "live", "credit", "custom")
+ORDER = ("name", "place", "time", "age", "weather", "date", "offset", "sun", "custom", "credit")    # default order
+DROP = ("credit", "custom", "sun", "offset", "date", "weather", "age", "place", "name")    # dropped first → last
 SEPARATORS = {"dot": " · ", "slash": " / ", "pipe": " | ", "dash": " - ", "space": "   "}
 DEFAULT_OVERLAY = {"style": "tag", "corner": "bl", "when": "always", "font": "small", "accent": "#e8202a",
                    "text": "#ffffff", "bg": "#000000", "opacity": 0.7, "time_format": "24h", "fade": True,
                    "show_sec": 12, "every_min": 3, "custom_text": "", "headline": "name", "lines": "auto",
                    "separator": "dot", "uppercase": False, "order": list(ORDER),
                    "show": {"name": True, "place": True, "time": True, "date": False, "offset": False,
-                            "daynight": False, "weather": False, "sun": False, "live": True, "credit": False,
-                            "custom": False}}
+                            "daynight": False, "weather": False, "sun": False, "age": False, "live": True,
+                            "credit": False, "custom": False}}
 WHITE, BLACK = Color(255, 255, 255), Color(0, 0, 0)
 WX_MAX_AGE = 2 * 3600       # weather older than this isn't shown
 FIT_LINES = 3               # "fit" wraps onto up to this many lines before dropping sections
@@ -292,7 +293,7 @@ def _wrap_count(font, bits, width, sp, icon_kind):
 class Content:
     """The caption's sections for one moment, already formatted (wx: this webcam's weather, if any)."""
 
-    def __init__(self, cam, ov, now_local=None, here=None, wx=None):
+    def __init__(self, cam, ov, now_local=None, here=None, wx=None, extra=None):
         sh = ov["show"]
         up = (lambda s: s.upper()) if ov.get("uppercase") else (lambda s: s)
         t = now_local or _local_time(cam.get("tz"))
@@ -322,6 +323,8 @@ class Content:
             sec["weather"] = f"{round(wx['temp'])}°C"
             self.icon = weather_icon(wx.get("code"), bool(wx.get("is_day", 1)))
         sec["sun"] = self._sun(wx, t) if sh.get("sun") else ""
+        taken = (extra or {}).get("taken")                  # when a still image was taken (epoch), from the hub
+        sec["age"] = taken_text(taken, t.tzinfo, ov.get("taken_format"), twelve) if sh.get("age") and taken else ""
         self.night = None
         if sh.get("daynight"):
             self.night = (not wx["is_day"]) if "is_day" in wx else (t.hour < 6 or t.hour >= 19)
@@ -361,6 +364,23 @@ class Content:
             if v:
                 out.append((k, v))
         return out
+
+
+def taken_text(taken, tz, fmt="time", twelve=False):
+    """A still's capture time: "taken 17:05:42" (exact, in the camera's time zone), "3 min ago", or both."""
+    at = datetime.fromtimestamp(taken, timezone.utc).astimezone(tz) if tz else datetime.fromtimestamp(taken)
+    exact = "taken " + (at.strftime("%I:%M:%S %p").lstrip("0") if twelve else at.strftime("%H:%M:%S"))
+    rel = age_text(time.time() - taken)
+    return rel if fmt == "relative" else f"{exact} · {rel}" if fmt == "both" else exact
+
+
+def age_text(sec):
+    """How old a still image is: 'just now', '4 min ago', '1 h 20 min ago'."""
+    sec = max(0, int(sec))
+    if sec < 90:
+        return "just now"
+    m = sec // 60
+    return f"{m} min ago" if m < 60 else f"{m // 60} h {m % 60} min ago" if m % 60 else f"{m // 60} h ago"
 
 
 def caption_lines(cam, ov, now_local=None):
@@ -488,7 +508,7 @@ class _Zone:
             self.mark(x, y, x + 1, y + 1)
 
 
-def draw_caption(c, zone, cam, elapsed, font_for, now_local=None, wx=None):
+def draw_caption(c, zone, cam, elapsed, font_for, now_local=None, wx=None, extra=None):
     """Draw the webcam's caption over the frame in zone. font_for(path or size) -> a loaded Font.
 
     The caption is rendered once into a transparent layer (cached until its text, settings or blink phase change,
@@ -503,15 +523,15 @@ def draw_caption(c, zone, cam, elapsed, font_for, now_local=None, wx=None):
         return
     x, y, w, h = zone
     if style != "ticker" and now_local is None:              # the same layer for 0.4 s: skip rebuilding the key
-        mk = (id(cam), id(font_for), w, h, int(time.time() * 2.5), (wx or {}).get("at"))
+        mk = (id(cam), id(font_for), w, h, int(time.time() * 2.5), (wx or {}).get("at"), round((extra or {}).get("taken") or 0))
         parts = _memo.get(mk)
         if parts is None:
             if len(_memo) > 32:
                 _memo.clear()
-            parts = _memo[mk] = _layer(style, ov, Content(cam, ov, None, wx=wx), w, h, font_for) or ()
+            parts = _memo[mk] = _layer(style, ov, Content(cam, ov, None, wx=wx, extra=extra), w, h, font_for) or ()
         _composite(c, x, y, parts, a)
         return
-    content = Content(cam, ov, now_local, wx=wx)
+    content = Content(cam, ov, now_local, wx=wx, extra=extra)
     if style == "ticker":
         zc = _Zone(c, zone)
         before = c.buf[zc.y0:zc.y1, zc.x0:zc.x1].copy() if a < 1 else None
@@ -551,7 +571,7 @@ def _blend_back(c, zc, before, a):
     region[:] = ((old.astype(np.uint16) * (256 - k) + region.astype(np.uint16) * k) >> 8).astype(np.uint8)
 
 
-def dropped_sections(cam, zone_size, font_for, wx=None):
+def dropped_sections(cam, zone_size, font_for, wx=None, extra=None):
     """The sections turned on that this caption can't show at this size (the panel lists them)."""
     from display.gfx import Canvas
     ov = overlay_of(cam)
@@ -561,7 +581,7 @@ def dropped_sections(cam, zone_size, font_for, wx=None):
     w, h = zone_size
     _rec.dropped = found = set()
     try:
-        ct = Content(cam, ov, wx=wx)
+        ct = Content(cam, ov, wx=wx, extra=extra)
         LAYOUT_FUNCS[style](Ctx(_Zone(Canvas(w, h), (0, 0, w, h)), (0, 0, w, h), ov, _font_loader(font_for)), ct)
     finally:
         _rec.dropped = None
@@ -976,8 +996,8 @@ def _l_stack(k, ct):
 
 
 # --- custom: your own columns and lines ----------------------------------------------------------------------------
-FIELDS = ("live", "name", "place", "time", "weather", "date", "offset", "sun", "custom", "credit")
-DEFAULT_SLOTS = {"live": [1, 1], "name": [1, 1], "place": [1, 2], "time": [1, 2], "weather": [1, 3], "date": [1, 3],
+FIELDS = ("live", "name", "place", "time", "age", "weather", "date", "offset", "sun", "custom", "credit")
+DEFAULT_SLOTS = {"live": [1, 1], "name": [1, 1], "place": [1, 2], "time": [1, 2], "age": [1, 2], "weather": [1, 3], "date": [1, 3],
                  "offset": [1, 3], "sun": [1, 3], "custom": [1, 3], "credit": [1, 3]}
 LINE_SIZES = ("headline", "detail", "big")
 

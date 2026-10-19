@@ -152,7 +152,7 @@ def _validate_overlay(name, ov):
     choices = {"style": LAYOUTS, "corner": ("tl", "tc", "tr", "bl", "bc", "br"), "font": tuple(FONTS),
                "headline": ("name", "place", "custom", "time"), "lines": ("auto", "wrap", "stacked", "inline"),
                "separator": tuple(SEPARATORS), "when": ("always", "intro", "periodic"), "time_format": ("24h", "12h"),
-               "container": ("box", "strip", "outline", "board")}
+               "container": ("box", "strip", "outline", "board"), "taken_format": ("time", "relative", "both")}
     for key, allowed in choices.items():
         if key in ov and ov[key] not in allowed:
             raise ConfigError(f"webcam {name}: caption {key} must be one of {', '.join(allowed)}")

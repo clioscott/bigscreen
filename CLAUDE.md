@@ -138,6 +138,14 @@ once (`hold: false`), so the rotation resumes by itself.
   lat, lon, fps, source, `crops.{left,right,full,wall}` = {x, y, w} fractions (height follows the zone), colour, overlay.
   Panel page: Webcams. Some YouTube streams need a JS runtime for yt-dlp: deno, installed user-level on the server
   (`curl -fsSL https://deno.land/install.sh | sh -s -- -y --no-modify-path` → `~/.deno/bin`, found by `deno_path()`).
+- Still sources: `{"type": "drivebc", "id": N}` (a DriveBC camera) or `{"type": "image", "url", "refresh_sec"}`. A still
+  feed publishes the latest image every second and fetches again every `refresh_sec`; for DriveBC the image time comes
+  from `/api/webcams/{id}/` (its images have no Last-Modified) and a picture is downloaded only when it's new. Frames
+  carry the image's age; captions show the exact capture time (`age` section, `taken_format`). Stills don't count
+  against `MAX_FEEDS`.
+- Traffic cams (Webcams page): `hub/traffic.py` groups DriveBC's cameras by bridge/tunnel (`CROSSINGS`, best view first)
+  and by nearest city; `/api/webcams/traffic`, thumbnails `/api/webcams/drivebc/{id}.jpg`. The DriveBC camera map
+  (`cameramap.js`) lives there now, with "Add as a webcam".
 - Ready-made webcams: `hub/web/ui/pages/webcam_gallery.js` (YouTube ids; a restarted stream gets a new id). Cards show
   real frames from `/api/webcams/snapshot.jpg`, which never waits: the cached still (fresh or stale), else 503 +
   Retry-After while four background workers grab one (failures not retried for 10 min; `cache/webcam_snaps`), falling back to
