@@ -18,11 +18,26 @@ def test_upcoming_names_the_next_screen_only_near_the_end_of_this_one():
     assert r.upcoming(45.0)["cam"] == "a"                               # under 20 s left
 
 
-def test_upcoming_on_the_last_pass_of_a_screen_that_runs_by_passes():
-    r = Rotation("right", [{"panel": "headlines", "advance": "cycles", "cycles": 1, "max_sec": 1800},
+def test_screens_that_run_by_passes_use_how_long_their_passes_take():
+    r = Rotation("right", [{"panel": "map", "advance": "cycles", "cycles": 3, "max_sec": 600},
                            {"panel": "webcam", "cam": "a"}])
     r.current(0.0)
-    assert r.upcoming(0.5)["cam"] == "a"                                # one pass to go: get ready
+    assert r.upcoming(0.5) is None                                      # no pass done yet: nothing to go on
+    t = 0.0
+    for _ in range(2):                                                  # two 30 s passes: about 30 s to go
+        while t < 30.0 * (_ + 1):
+            r.report(None, True, t)
+            t += 0.5
+        r.report("done", True, t)
+    assert r.upcoming(t) is None
+    while t < 72.0:                                                     # 12 s into the last pass: ~18 s to go
+        r.report(None, True, t)
+        t += 0.5
+    assert r.upcoming(t)["cam"] == "a"
+    one = Rotation("right", [{"panel": "headlines", "advance": "cycles", "cycles": 1, "max_sec": 1800},
+                             {"panel": "webcam", "cam": "a"}])
+    one.current(0.0)
+    assert one.upcoming(0.5) is None                                    # one long pass: not warmed for 30 minutes
 
 
 def test_upcoming_skips_entries_whose_rules_dont_hold_and_waits_out_previews():

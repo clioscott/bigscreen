@@ -179,9 +179,9 @@ class WebcamPanel:
         now = time.time()
         if now - self._warmed.get(key, 0) < WARM_EVERY:
             return
-        self._warmed[key] = now
         if any(st.alive and all(st.query.get(k) == v for k, v in q.items()) for st in self.streams.values()):
             return                                            # already on screen: its stream keeps it going
+        self._warmed[key] = now
         hub = urlparse(self.hub)
 
         def ask():

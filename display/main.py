@@ -247,6 +247,21 @@ class Screen:
             return getattr(prev, name)
         return make()
 
+    def _warm_next(self, visible, now):
+        """A side on screen whose next entry is a webcam: have the hub start its feed (a paused side waits)."""
+        warm = getattr(getattr(self, "webcam", None), "warm", None)
+        if warm is None:
+            return
+        for side in ("left", "right"):
+            if not visible.get(side):
+                continue
+            try:
+                nxt = self.engines[side].upcoming(now)
+                if nxt and str(nxt.get("panel", "")).startswith("webcam"):
+                    warm(nxt)
+            except Exception as e:                   # never cost a frame: the webcam just loads as before
+                print(f"[webcam] warm next on {side}: {e}")
+
     def _default_passes(self, entry):
         if entry.get("panel", "").startswith("map") and hasattr(self, "map_panel"):
             return self.map_panel.default_loops(entry.get("track"))
@@ -330,15 +345,12 @@ class Screen:
         for side in ("left", "right"):
             # a side covered by the other side's full-width / full-wall screen is paused, not running out unseen
             self.engines[side].report(results.get(side), visible[side], now)
-        if now - self._warm_t >= 2.0:                # the next screen is a webcam: get its feed going at the hub
-            self._warm_t = now
-            for side in ("left", "right"):
-                nxt = self.engines[side].upcoming(now)
-                if nxt and str(nxt.get("panel", "")).startswith("webcam") and hasattr(getattr(self, "webcam", None), "warm"):
-                    self.webcam.warm(nxt)
             if visible[side]:
                 self.prev_play[side] = chosen[side].get("_play")
             self.prev[side] = chosen[side].get("panel")
+        if now - self._warm_t >= 2.0:                # the next screen is a webcam: get its feed going at the hub
+            self._warm_t = now
+            self._warm_next(visible, now)
         if takeover:
             return                                  # no ticker / clock while an alert has the wall
 
