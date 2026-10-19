@@ -1,6 +1,7 @@
 // Webcams: live video sources (hub/webcams.py decodes them), how each is cropped for every place on the wall,
 // its colour and its caption, and adding it to the rotation (panels webcam / webcam_full / webcam_wall).
 import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
+import Sortable from "sortablejs";
 import { store, api, fail, toast, seed, go, clone, dirty, previewOnDisplay, playOnDisplay, rotationAction } from "../core.js";
 import { GALLERY, snap, thumb } from "./webcam_gallery.js";
 import { CameraMap } from "./cameramap.js";
@@ -42,6 +43,8 @@ const HEADLINES = [{ value: "name", label: "Name" }, { value: "place", label: "P
 const LINES = [{ value: "auto", label: "Fit (wraps if needed)" }, { value: "stacked", label: "One per line" }, { value: "inline", label: "Beside the headline" }];
 const SEPS = [{ value: "dot", label: "·" }, { value: "slash", label: "/" }, { value: "pipe", label: "|" }, { value: "dash", label: "-" }, { value: "space", label: "space" }];
 const POSITIONS = ["tl", "tc", "tr", "bl", "bc", "br"];
+// how many columns the Custom layout uses (sections that are on)
+const customCols = (ov) => new Set(Object.keys(DEFAULT_SLOTS).filter((k) => ov.show?.[k]).map((k) => (ov.slots?.[k] || DEFAULT_SLOTS[k])[0])).size;
 const DEFAULT_OVERLAY = { style: "tag", corner: "bl", when: "always", font: "small", accent: "#e8202a", text: "#ffffff",
   bg: "#000000", opacity: 0.7, time_format: "24h", fade: true, show_sec: 12, every_min: 3, custom_text: "", headline: "name",
   lines: "auto", separator: "dot", uppercase: false, order: [...ORDERABLE],
@@ -407,9 +410,91 @@ const WallPreview = {
         a wider place on the wall, or the Custom layout.</span></div>`,
 };
 
+// --- the Custom caption's arrangement: 3 columns × 4 lines, each line a left part and a right end --------------------
+// ov.slots[k] = [column, line] or [column, line, "right"] (webcam_caption.custom_grid / right_kinds); sections sharing a
+// part of a line follow ov.order. Dragging is SortableJS (mouse and touch); the DOM is put back and Vue redraws.
+const CaptionGrid = {
+  props: { ov: Object, hasText: Function },
+  setup(props) {
+    const root = ref(null);
+    const sortables = [];
+    const slotOf = (k) => props.ov.slots?.[k] || DEFAULT_SLOTS[k] || [1, 3];
+    const shown = computed(() => {
+      const o = props.ov.order || [];
+      return [...o, ...ORDERABLE.filter((k) => !o.includes(k))].filter((k) => k in DEFAULT_SLOTS && props.ov.show[k]);
+    });
+    const zone = (c, l, side) => shown.value.filter((k) => {
+      const s = slotOf(k);
+      return s[0] === c && s[1] === l && (s[2] === "right" ? "right" : "left") === side;
+    });
+    const filled = (c, l) => zone(c, l, "left").length + zone(c, l, "right").length > 0;
+    const usedCols = computed(() => [1, 2, 3].filter((c) => [1, 2, 3, 4].some((l) => filled(c, l))));
+    const lineSize = (c, l) => props.ov.line_sizes?.[`${c}.${l}`] || (c === (usedCols.value[0] || 1) && l === 1 ? "headline" : "detail");
+    const setLineSize = (c, l, v) => { (props.ov.line_sizes || (props.ov.line_sizes = {}))[`${c}.${l}`] = v; };
+    const colAlign = (c) => props.ov.columns?.[c - 1]?.align || (usedCols.value.length > 1 && c === usedCols.value.at(-1) ? "right" : "left");
+    const setColAlign = (c, v) => {
+      const cols = props.ov.columns || (props.ov.columns = []);
+      while (cols.length < c) cols.push({});
+      cols[c - 1] = { ...cols[c - 1], align: v };
+    };
+    // k goes to (c, l, side): before `before` if that's already there, else after the last section there
+    const place = (k, c, l, side, before) => {
+      const slots = props.ov.slots || (props.ov.slots = {});
+      const there = zone(c, l, side).filter((x) => x !== k);
+      slots[k] = side === "right" ? [c, l, "right"] : [c, l];
+      const o = props.ov.order || (props.ov.order = [...ORDERABLE]);
+      for (const x of ORDERABLE) if (!o.includes(x)) o.push(x);
+      const anchor = there.includes(before) ? before : null;
+      if (!anchor && !there.length) return;
+      o.splice(o.indexOf(k), 1);
+      o.splice(anchor ? o.indexOf(anchor) : o.indexOf(there.at(-1)) + 1, 0, k);
+    };
+    onMounted(() => {
+      root.value.querySelectorAll(".cg-zone").forEach((el) => sortables.push(Sortable.create(el, {
+        group: "caption-grid", animation: 140, draggable: ".cg-chip", ghostClass: "sortable-ghost", chosenClass: "sortable-chosen",
+        onEnd(evt) {
+          const { item, from, to, oldIndex, newIndex } = evt;
+          const before = item.nextElementSibling?.dataset?.k || null;
+          if (to !== from || oldIndex !== newIndex) {
+            to.removeChild(item);                             // put the node back where Vue drew it; the data moves it
+            from.insertBefore(item, from.children[oldIndex] || null);
+          }
+          if (from === to && oldIndex === newIndex) return;
+          place(item.dataset.k, +to.dataset.col, +to.dataset.line, to.dataset.side, before);
+        },
+      })));
+    });
+    onBeforeUnmount(() => sortables.forEach((x) => x.destroy()));
+    const label = (k) => (k === "live" ? "LIVE" : SECTIONS[k]);
+    const ALIGN_ICONS = { left: "AlignLeft", center: "AlignCenter", right: "AlignRight" };
+    return { root, zone, filled, usedCols, lineSize, setLineSize, colAlign, setColAlign, label, LINE_SIZES, ALIGNS, ALIGN_ICONS };
+  },
+  template: `<div class="cg" ref="root">
+    <div></div>
+    <div v-for="c in 3" :key="'h' + c" class="cg-colhead" :class="{unused: !usedCols.includes(c)}">
+      <span>Column {{ c }}</span>
+      <div class="seg mini" v-if="usedCols.includes(c)"><button v-for="a in ALIGNS" :key="a.value" type="button" :class="{on: colAlign(c) === a.value}"
+        @click="setColAlign(c, a.value)" :title="'Column ' + c + ': ' + a.label.toLowerCase()"><Icon :name="ALIGN_ICONS[a.value]" :size="12"/></button></div></div>
+    <template v-for="l in 4" :key="'l' + l">
+      <div class="cg-linehead">Line {{ l }}</div>
+      <div v-for="c in 3" :key="c + '.' + l" class="cg-cell" :class="{filled: filled(c, l)}">
+        <div class="cg-parts">
+          <div class="cg-zone" :data-col="c" :data-line="l" data-side="left"><span v-for="k in zone(c, l, 'left')" :key="k" :data-k="k"
+            class="cg-chip" :class="{live: k === 'live', blank: !hasText(k)}" :title="hasText(k) ? 'Drag to move' : 'Nothing to show yet'">{{ label(k) }}</span></div>
+          <div class="cg-zone cg-right" :data-col="c" :data-line="l" data-side="right" title="Sections here sit at the line's right edge"><span
+            v-for="k in zone(c, l, 'right')" :key="k" :data-k="k" class="cg-chip" :class="{live: k === 'live', blank: !hasText(k)}"
+            :title="hasText(k) ? 'Drag to move' : 'Nothing to show yet'">{{ label(k) }}</span></div>
+        </div>
+        <select v-if="filled(c, l)" class="cg-size" :value="lineSize(c, l)" @change="setLineSize(c, l, $event.target.value)" title="Text size of this line">
+          <option v-for="s in LINE_SIZES" :key="s.value" :value="s.value">{{ s.label }}</option></select>
+      </div>
+    </template>
+  </div>`,
+};
+
 // --- editor -------------------------------------------------------------------------------------------------------
 const WebcamEditor = {
-  components: { CropEditor, WallPreview },
+  components: { CropEditor, WallPreview, CaptionGrid },
   setup() {
     seed(["modules", "webcams"], { cams: {} });
     const id = computed(() => store.route.params[0]);
@@ -470,41 +555,12 @@ const WebcamEditor = {
     const toggleShow = (k) => { ov.value.show[k] = !ov.value.show[k]; };
     // the detail sections that are on, in their order (drag to reorder; the headline isn't a detail)
     const orderOn = computed(() => (ov.value.order || []).filter((k) => k !== "live" && ov.value.show[k] && k !== (ov.value.headline || "name")));
-    // --- the Custom layout: column and line for each section, order within a line, line sizes, column alignment ---
-    const slotOf = (k) => (ov.value.slots?.[k] || DEFAULT_SLOTS[k] || [1, 3]);
-    const setSlot = (k, i, v) => {
-      const slots = ov.value.slots || (ov.value.slots = {});
-      const cur = [...slotOf(k)];
-      cur[i] = v;
-      slots[k] = cur;
-    };
     // sections that will actually have text on the wall (the renderer skips empty ones)
     const hasText = (k) => ({ place: !!cam.value.place, credit: !!cam.value.credit, custom: !!ov.value.custom_text?.trim(),
       weather: Number.isFinite(cam.value.lat), sun: Number.isFinite(cam.value.lat) }[k] ?? true);
     const needsLocation = computed(() => (ov.value.show.weather || ov.value.show.sun) && !(Number.isFinite(cam.value.lat) && Number.isFinite(cam.value.lon)));
     const galleryLoc = computed(() => GALLERY.flatMap((g) => g.cams).find((g) => g.source.url === cam.value.source?.url && g.lat != null) || null);
     const useGalleryLoc = () => { cam.value.lat = galleryLoc.value.lat; cam.value.lon = galleryLoc.value.lon; };
-    const customRows = computed(() => (ov.value.order || []).filter((k) => ov.value.show[k] && hasText(k))
-      .map((k) => ({ k, col: slotOf(k)[0], line: slotOf(k)[1] }))
-      .sort((a, b) => a.col - b.col || a.line - b.line));
-    const moveInLine = (k, d) => {                        // swap with the neighbour on the same column and line
-      const same = customRows.value.filter((r) => r.col === slotOf(k)[0] && r.line === slotOf(k)[1]).map((r) => r.k);
-      const i = same.indexOf(k), j = i + d;
-      if (j < 0 || j >= same.length) return;
-      const o = ov.value.order, a = o.indexOf(k), b = o.indexOf(same[j]);
-      [o[a], o[b]] = [o[b], o[a]];
-    };
-    const sameLine = (k) => customRows.value.filter((r) => r.col === slotOf(k)[0] && r.line === slotOf(k)[1]).map((r) => r.k);
-    const usedLines = computed(() => [...new Set(customRows.value.map((r) => `${r.col}.${r.line}`))]);
-    const usedCols = computed(() => [...new Set(customRows.value.map((r) => r.col))].sort());
-    const lineSize = (key) => ov.value.line_sizes?.[key] || (key === `${usedCols.value[0] || 1}.1` ? "headline" : "detail");
-    const setLineSize = (key, v) => { (ov.value.line_sizes || (ov.value.line_sizes = {}))[key] = v; };
-    const colAlign = (c) => ov.value.columns?.[c - 1]?.align || (usedCols.value.length > 1 && c === usedCols.value.at(-1) ? "right" : "left");
-    const setColAlign = (c, v) => {
-      const cols = ov.value.columns || (ov.value.columns = []);
-      while (cols.length < c) cols.push({});
-      cols[c - 1] = { ...cols[c - 1], align: v };
-    };
     // "Preview on display" (the save bar) puts this webcam on the wall for the preview, then releases it
     let held = null;                                     // what the preview hook put on the wall
     onMounted(() => {
@@ -540,8 +596,8 @@ const WebcamEditor = {
     };
     const customCrop = (s) => !!cam.value.crops?.[s];
     return { id, cam, shape, zone, ov, colour, probe, testing, test, used, addToRotation, play, remove, captionToAll, toggleShow, customCrop,
-      orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, customRows, setSlot, moveInLine, sameLine, usedLines, usedCols, lineSize, setLineSize, colAlign,
-      setColAlign, CONTAINERS, LINE_SIZES, ALIGNS, feedFor, feedPill, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
+      orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, hasText, customCols,
+      CONTAINERS, feedFor, feedPill, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
   },
   template: `<div class="page" v-if="cam">
     <div class="page-head"><div class="grow">
@@ -628,22 +684,11 @@ const WebcamEditor = {
               <Field label="Sections" hint="Click to turn on or off" v-if="ov.style !== 'dot'"><div class="row" style="gap:6px">
                 <button v-for="(l, k) in SECTIONS" :key="k" type="button" class="chip" :class="{off: !ov.show[k]}" style="height:26px; padding:0 10px" @click="toggleShow(k)">{{ l }}</button></div></Field>
               <template v-if="ov.style === 'custom'">
-                <Field label="Arrangement" hint="Pick a column and line for each section; ↑↓ order sections that share a line">
-                  <table class="wc-arrange"><thead><tr><th>Section</th><th>Column</th><th>Line</th><th></th></tr></thead><tbody>
-                    <tr v-for="r in customRows" :key="r.k"><td>{{ SECTIONS[r.k] }}</td>
-                      <td><div class="seg mini"><button v-for="c in 3" :key="c" type="button" :class="{on: r.col === c}" @click="setSlot(r.k, 0, c)">{{ c }}</button></div></td>
-                      <td><div class="seg mini"><button v-for="l in 4" :key="l" type="button" :class="{on: r.line === l}" @click="setSlot(r.k, 1, l)">{{ l }}</button></div></td>
-                      <td class="nowrap"><template v-if="sameLine(r.k).length > 1">
-                        <button class="btn sm ghost icon-only" @click="moveInLine(r.k, -1)" :disabled="sameLine(r.k)[0] === r.k" title="Earlier in the line"><Icon name="ChevronLeft" :size="13"/></button>
-                        <button class="btn sm ghost icon-only" @click="moveInLine(r.k, 1)" :disabled="sameLine(r.k).at(-1) === r.k" title="Later in the line"><Icon name="ChevronRight" :size="13"/></button></template></td></tr>
-                  </tbody></table></Field>
-                <Field label="Line sizes"><div class="stack" style="gap:4px">
-                  <div v-for="key in usedLines" :key="key" class="row nowrap" style="gap:8px"><span class="mono faint" style="width:90px">col {{ key.split('.')[0] }} · line {{ key.split('.')[1] }}</span>
-                    <Seg :modelValue="lineSize(key)" @update:modelValue="v => setLineSize(key, v)" :options="LINE_SIZES"/></div></div></Field>
+                <Field label="Arrangement" hint="Drag sections between columns and lines; drop one in a line's right end (→|) to push it to the right edge">
+                  <CaptionGrid :ov="ov" :has-text="hasText"/></Field>
                 <div class="row" style="gap:16px; align-items:flex-start">
                   <Field label="Container"><Seg v-model="ov.container" :options="CONTAINERS"/></Field>
-                  <Field v-for="c in usedCols" :key="c" :label="'Column ' + c"><Seg :modelValue="colAlign(c)" @update:modelValue="v => setColAlign(c, v)" :options="ALIGNS"/></Field>
-                  <Field label="Divider" v-if="usedCols.length > 1"><Toggle :modelValue="ov.divider !== false" @update:modelValue="v => ov.divider = v"/></Field>
+                  <Field label="Divider" v-if="customCols(ov) > 1"><Toggle :modelValue="ov.divider !== false" @update:modelValue="v => ov.divider = v"/></Field>
                 </div>
               </template>
               <Field label="Image time" v-if="ov.show.age" hint="When the still was taken (DriveBC gives it to the second)">
