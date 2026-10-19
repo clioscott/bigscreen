@@ -145,3 +145,73 @@ def test_drivebc_webcam_validates():
     cfg["modules"]["webcams"]["cams"]["lg"]["source"] = {"type": "drivebc"}
     with pytest.raises(config.ConfigError):
         config.validate(cfg)
+
+
+# --- PR #17 review regressions ----------------------------------------------------------------------------------
+def test_camera_api_down_still_gets_the_image(monkeypatch):
+    import requests
+
+    def get(url, *a, **k):
+        if "/api/webcams/" in url:
+            raise OSError("DriveBC API down")
+        return _Resp(_jpeg(), last_modified=None)
+    monkeypatch.setattr(requests, "get", get)
+    frame, at = webcams.fetch_still("drivebc", "https://www.drivebc.ca/images/18.jpg")
+    assert frame is not None and abs(at - time.time()) < 5
+
+
+def test_thumbnails_skip_the_camera_api_and_remember_failures(monkeypatch):
+    import requests
+    from hub import app as hub_app
+    calls = []
+
+    def get(url, *a, **k):
+        calls.append(url)
+        if "/images/77.jpg" in url:
+            raise OSError("no such camera")
+        return _Resp(_jpeg(), last_modified=None)
+    monkeypatch.setattr(requests, "get", get)
+    hub_app._dbc_thumbs.clear()
+    hub_app._dbc_thumb_failed.clear()
+    r = hub_app.webcams_drivebc_thumb(18)
+    assert r.media_type == "image/jpeg" and not any("/api/webcams/" in u for u in calls)
+    from fastapi import HTTPException
+    for _ in range(2):
+        with pytest.raises(HTTPException):
+            hub_app.webcams_drivebc_thumb(77)
+    assert sum("/images/77.jpg" in u for u in calls) == 1           # not retried within the minute
+
+
+def test_probe_reports_a_bad_still_instead_of_failing(monkeypatch):
+    import requests
+    from hub import app as hub_app
+    monkeypatch.setattr(requests, "get", lambda *a, **k: (_ for _ in ()).throw(OSError("bad host")))
+    r = hub_app.webcams_probe({"source": {"type": "image", "url": "https://nope.example/x.jpg"}})
+    assert r["ok"] is False and "bad host" in r["error"]
+
+
+def test_refresh_validation_and_safe_pi_cast():
+    from hub import config
+    from display.modules import webcam as wc
+    base = {"label": "x", "source": {"type": "image", "url": "https://x/c.jpg"}}
+    for bad in ("soon", 5, 9999):
+        cfg = {"system": {}, "layout": {}, "modules": {"webcams": {"cams": {"a": {**base, "source": {**base["source"], "refresh_sec": bad}}}}}}
+        with pytest.raises(config.ConfigError):
+            config.validate(cfg)
+    assert "refresh" not in wc.stream_query({"source": {**base["source"], "refresh_sec": "soon"}}, "full", 448, 134)
+
+
+def test_still_feeds_have_no_pacer_and_take_a_new_refresh(monkeypatch):
+    import threading
+    import requests
+    get, _ = _fake_get(_jpeg(), {"is_on": True, "last_update_modified": "2026-10-18T13:29:17-07:00"})
+    monkeypatch.setattr(requests, "get", get)
+    before = {t.name for t in threading.enumerate()}
+    src = {"type": "image", "url": "https://x.example/cam2.jpg", "refresh_sec": 60}
+    f = webcams.feed(src)
+    try:
+        assert not ({t.name for t in threading.enumerate()} - before) & {"webcam-pacer"}
+        assert webcams.feed({**src, "refresh_sec": 300}) is f and f.refresh == 300
+    finally:
+        f.last_view = 0
+        f._stop.set()

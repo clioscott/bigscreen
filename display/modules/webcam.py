@@ -37,8 +37,11 @@ def stream_query(cam: dict, shape: str, w: int, h: int) -> dict:
          "w": int(w), "h": int(h)}
     if src.get("type") == "drivebc":
         q["id"] = int(src.get("id") or 0)
-    if src.get("refresh_sec"):
-        q["refresh"] = int(src["refresh_sec"])
+    try:
+        if src.get("refresh_sec"):
+            q["refresh"] = int(float(src["refresh_sec"]))
+    except (TypeError, ValueError):
+        pass
     crop = (cam.get("crops") or {}).get(shape)
     if isinstance(crop, dict) and crop.get("w"):
         q.update(x=round(float(crop.get("x", 0)), 5), y=round(float(crop.get("y", 0)), 5),
@@ -208,7 +211,7 @@ class WebcamPanel:
                 return "skip"
         wx = cam.get("_wx") or self._weather(now).get(entry.get("cam"))   # _wx: a preview of an unsaved location
         still = (cam.get("source") or {}).get("type") in ("drivebc", "image")
-        extra = {"taken": st.frame_t - st.age} if still and st.age is not None else None    # the picture's capture time
+        extra = {"taken": round(st.frame_t - st.age)} if still and st.age is not None else None   # capture time (s)
         draw_caption(c, zone, cam, now - started, self.font, wx=wx, extra=extra)
         return None
 

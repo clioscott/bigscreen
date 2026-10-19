@@ -367,6 +367,8 @@ def webcams_traffic():
 
 
 _dbc_thumbs: dict = {}               # camera id -> (fetched at, jpeg)
+_dbc_thumb_failed: dict = {}         # camera id -> when its fetch failed (not retried for a minute)
+_dbc_thumb_slots = threading.Semaphore(6)   # DriveBC fetches at once (a city tab asks for ~100 thumbnails)
 
 
 @app.get("/api/webcams/drivebc/{cid}.jpg")
@@ -374,10 +376,17 @@ def webcams_drivebc_thumb(cid: int):
     """A DriveBC camera's latest image, 320 px wide, cached a minute (the page's thumbnails)."""
     hit = _dbc_thumbs.get(cid)
     if not hit or time.time() - hit[0] > 60:
+        if time.time() - _dbc_thumb_failed.get(cid, 0) < 60:
+            raise HTTPException(404, f"DriveBC camera {cid} isn't answering")
+        if not _dbc_thumb_slots.acquire(timeout=20):
+            raise HTTPException(503, "busy")
         try:
-            frame, _ = webcams.fetch_still("drivebc", webcams.DRIVEBC_IMAGE.format(id=cid))
+            frame, _ = webcams.fetch_still("drivebc", webcams.DRIVEBC_IMAGE.format(id=cid), meta=False)
         except Exception as e:
+            _dbc_thumb_failed[cid] = time.time()
             raise HTTPException(502, f"DriveBC camera {cid}: {e}")
+        finally:
+            _dbc_thumb_slots.release()
         im = Image.fromarray(frame)
         out = io.BytesIO()
         im.resize((320, round(im.height * 320 / im.width))).save(out, "JPEG", quality=80)
@@ -810,7 +819,12 @@ def webcams_probe(payload: dict = Body(...)):
     try:
         kind, url = webcams.check_source(payload.get("source"))
         if kind in webcams.STILLS:
-            frame, at = webcams.fetch_still(kind, url)
+            try:
+                frame, at = webcams.fetch_still(kind, url)
+            except webcams.SourceError:
+                raise
+            except Exception as e:
+                return {"ok": False, "error": f"couldn't fetch the image: {e}"[:300]}
             age = int((time.time() - at) // 60)
             return {"ok": True, "title": f"still image, {frame.shape[1]}×{frame.shape[0]}, taken {age} min ago"}
         _media, title = webcams.resolve(kind, url, fresh=True)
@@ -963,7 +977,8 @@ def webcams_preview_set(payload: dict = Body(...)):
                                "since": _webcam_previews.get(token, {}).get("since", now)}
     from display.modules import webcam as wc
     try:
-        dropped = wc.caption_dropped(cam, tuple(zones[shape]), wx)
+        still = (cam.get("source") or {}).get("type") in webcams.STILLS
+        dropped = wc.caption_dropped(cam, tuple(zones[shape]), wx, {"taken": time.time()} if still else None)
     except Exception:
         dropped = []
     return {"token": token, "zone": zones[shape], "dropped": dropped, "has_weather": bool(wx)}
@@ -992,7 +1007,7 @@ async def webcams_preview(token: str):
         if time.time() - cur.get("wx_at", 0) > 20 and _wants_wx(cam_now):   # pick up fetched / newer weather
             cur["wx"], cur["wx_at"] = _webcam_wx(cur.get("id"), cam_now), time.time()
         wx = cur.get("wx")
-        extra = {"taken": _feed.image_t} if getattr(_feed, "image_t", None) else None
+        extra = {"taken": round(_feed.image_t)} if getattr(_feed, "image_t", None) else None
         img = wc.render_preview(cam_now, None if frame is None else webcams.render(frame, w, h, crop, colour),
                                 (w, h), time.time() - t0, wx=wx, extra=extra)
         out = io.BytesIO()

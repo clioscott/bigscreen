@@ -244,6 +244,14 @@ def _validate_webcams(wc):
             fps_ok = False
         if not fps_ok:
             raise ConfigError(f"webcam {name}: frame rate must be 1–30")
+        refresh = (cam.get("source") or {}).get("refresh_sec")
+        if refresh not in (None, ""):
+            try:
+                ok = 20 <= float(refresh) <= 3600
+            except (TypeError, ValueError):
+                ok = False
+            if not ok:
+                raise ConfigError(f"webcam {name}: fetch every must be 20-3600 s")
         _validate_overlay(name, cam.get("overlay"))
         crops = cam.get("crops") or {}
         if not isinstance(crops, dict):

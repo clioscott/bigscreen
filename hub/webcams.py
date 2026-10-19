@@ -100,16 +100,20 @@ def drivebc_meta(url):
     return at, why
 
 
-def fetch_still(kind, url, known_at=None):
+def fetch_still(kind, url, known_at=None, meta=True):
     """(RGB array WORK_W wide, the image's time) for a still source. DriveBC's caption strip (the bottom ~6 %) goes.
-    For DriveBC, when the picture is still the one taken at known_at, nothing is downloaded: (None, known_at)."""
+    For DriveBC, when the picture is still the one taken at known_at, nothing is downloaded: (None, known_at).
+    meta=False skips DriveBC's camera API (thumbnails): the time is then the fetch time."""
     import io
     from email.utils import parsedate_to_datetime
 
     import requests
     dbc_at = None
-    if kind == "drivebc":
-        dbc_at, why = drivebc_meta(url)
+    if kind == "drivebc" and meta:
+        try:
+            dbc_at, why = drivebc_meta(url)
+        except Exception:                                   # the camera API is down: the image may still be fine
+            dbc_at, why = None, ""
         if why and known_at is None:
             raise SourceError(why)
         if known_at is not None and dbc_at is not None and dbc_at == known_at:
@@ -220,7 +224,8 @@ class Feed:
         self.refresh = refresh
         self._still = None
         threading.Thread(target=self._run, name=f"webcam-{urlparse(url).netloc}", daemon=True).start()
-        threading.Thread(target=self._pace, name="webcam-pacer", daemon=True).start()
+        if kind not in STILLS:                              # stills publish directly
+            threading.Thread(target=self._pace, name="webcam-pacer", daemon=True).start()
 
     # viewers -------------------------------------------------------------------------------------------------
     def attach(self):
@@ -528,6 +533,8 @@ def feed(src, fps=15) -> Feed:
         if f is not None and f.state != "stopped":
             f.last_view = time.time()
             f.raise_fps(fps)
+            if kind in STILLS:
+                f.refresh = refresh_of(src)
             return f
         live = [x for x in _feeds.values() if x.state != "stopped" and x.kind not in STILLS]
         if kind not in STILLS and len(live) >= MAX_FEEDS:
