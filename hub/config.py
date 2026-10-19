@@ -175,11 +175,11 @@ def _validate_overlay(name, ov):
     if not isinstance(slots, dict):
         raise ConfigError(f"webcam {name}: caption slots must be an object")
     for kind, slot in slots.items():
-        ok = kind in FIELDS and isinstance(slot, list) and len(slot) == 2 \
-            and all(isinstance(v, int) and not isinstance(v, bool) for v in slot) \
-            and 1 <= slot[0] <= 3 and 1 <= slot[1] <= 4
+        ok = kind in FIELDS and isinstance(slot, list) and len(slot) in (2, 3) \
+            and all(isinstance(v, int) and not isinstance(v, bool) for v in slot[:2]) \
+            and 1 <= slot[0] <= 3 and 1 <= slot[1] <= 4 and (len(slot) == 2 or slot[2] in ("left", "right"))
         if not ok:
-            raise ConfigError(f"webcam {name}: caption slot for {kind} must be [column 1-3, line 1-4]")
+            raise ConfigError(f"webcam {name}: caption slot for {kind} must be [column 1-3, line 1-4, left|right]")
     sizes = ov.get("line_sizes", {})
     if not isinstance(sizes, dict) or any(v not in LINE_SIZES or not re.fullmatch(r"[1-3]\.[1-4]", str(key))
                                           for key, v in sizes.items()):

@@ -683,3 +683,34 @@ def test_wall_preview_batches_weather_and_skips_webcams_without_it(monkeypatch):
     assert cams["a"]["_wx"]["temp"] == 12.0 and cams["b"]["_wx"]["temp"] == 12.0
     assert "_wx" not in cams["c"] and "_wx" not in cams["d"]                                  # no weather shown / no place
     assert len(calls) == 1 and len(calls[0]) == 2                                             # one request for both
+
+
+# --- custom layout: a section pushed to its line's right end ----------------------------------------------------
+def test_custom_right_end_puts_the_time_in_the_corner():
+    """A slot's third value "right" draws the section flush with the column's right edge, the rest still at the left."""
+    from display.gfx import Canvas
+    slots = {"live": [1, 1], "name": [1, 1], "place": [1, 2], "time": [1, 2, "right"]}
+    ov = cap.overlay_of({"overlay": {"style": "custom", "slots": slots}})
+    assert cap.right_kinds(ov) == {"time"}
+    spots = {}
+    real = cap.graphics.DrawText
+
+    def spy(c, f, x, y, col, s):
+        spots[s] = (x, x + cap._tw(f, s))
+        return real(c, f, x, y, col, s)
+    cap.graphics.DrawText = spy
+    try:
+        cap._l_custom(cap.Ctx(Canvas(448, 134), (0, 0, 448, 134), ov, _font), cap.Content(CAM, ov, wx=WX))
+    finally:
+        cap.graphics.DrawText = real
+    clock = cap.Content(CAM, ov).clock()
+    assert spots[clock][1] == spots[CAM["label"]][1]          # the time ends where the headline (the widest line) ends
+    assert spots[CAM["place"]][0] < spots[clock][0]           # the place stays at the left
+
+
+def test_custom_right_slot_validation():
+    from hub import config
+    config.validate(_cfg({"cams": {"a": {**CAM, "overlay": {"style": "custom", "slots": {"time": [1, 2, "right"]}}}}}))
+    for bad in ({"time": [1, 2, "middle"]}, {"time": [1, 2, "right", 4]}):
+        with pytest.raises(config.ConfigError):
+            config.validate(_cfg({"cams": {"a": {**CAM, "overlay": {"style": "custom", "slots": bad}}}}))

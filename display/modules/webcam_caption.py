@@ -16,7 +16,8 @@
     when        always | intro (the first INTRO_SEC of a play) | periodic (show_sec every every_min minutes)
     taken_format time (default: "taken 17:05:42") | relative ("3 min ago") | both — the "age" section of a still
     custom layout only:
-    slots       {section: [column 1-3, line 1-4]}; sections sharing a line follow `order`
+    slots       {section: [column 1-3, line 1-4, "right"?]}; sections sharing a line follow `order`; "right" puts
+                the section at the line's right end (e.g. the time in the box's bottom-right corner)
     line_sizes  {"column.line": headline | detail | big}
     columns     [{align: left | center | right}, …]; divider: true draws a line between columns
     container   box | strip | outline | board
@@ -1025,6 +1026,12 @@ def custom_grid(ct, ov):
     return grid
 
 
+def right_kinds(ov):
+    """The sections pushed to the right end of their line (a slot's optional third value, "right")."""
+    slots = ov.get("slots") if isinstance(ov.get("slots"), dict) else {}
+    return {k for k, v in slots.items() if isinstance(v, list) and len(v) > 2 and v[2] == "right"}
+
+
 def _l_custom(k, ct):
     """Your arrangement: up to 3 columns × 4 lines, sections in the order you set; each line's size and each column's
     alignment chosen per webcam. Container: box (in the chosen position), strip (full width), outline, or board."""
@@ -1042,6 +1049,11 @@ def _l_custom(k, ct):
     put = _outlined if container == "outline" else graphics.DrawText
     pad, gap = 3, 9
     sp_name = k.sep
+    pushed = right_kinds(ov)
+    split_gap = 6                                          # the least space between a line's left and right parts
+
+    def sides(kinds):
+        return [kd for kd in kinds if kd not in pushed], [kd for kd in kinds if kd in pushed]
 
     def font_of(col, line):
         sz = sizes.get(f"{col}.{line}") or ("headline" if (col, line) == (min(grid), 1) else "detail")
@@ -1053,8 +1065,12 @@ def _l_custom(k, ct):
         w_ = _tw(f, _text(ct, kind))
         return w_ + (9 if kind == "weather" and ct.icon else 0)
 
-    def line_width(f, kinds):
+    def run_width(f, kinds):
         return sum(piece_width(f, kd) for kd in kinds) + sum(_joint(f, a, b) for a, b in zip(kinds, kinds[1:]))
+
+    def line_width(f, kinds):
+        left, right = sides(kinds)
+        return run_width(f, left) + run_width(f, right) + (split_gap if left and right else 0)
 
     def _joint(f, a, b):                                   # a separator between sections; just a gap beside LIVE
         return 3 if "live" in (a, b) else _tw(f, _sep(f, sp_name))
@@ -1131,8 +1147,15 @@ def _l_custom(k, ct):
         align = _col_align(cols_cfg, col, i, len(layout))
         ty = by + pad
         for f, kinds, w_ in lines:
-            x = x0 + (cw - w_ if align == "right" else (cw - w_) // 2 if align == "center" else 0)
-            _draw_line(k, ct, f, x, ty, kinds, w_, color, put)
+            left, right = sides(kinds)
+            if right:                                      # a split line spans the column: right part flush right
+                rw = min(run_width(f, right), cw)
+                if left:
+                    _draw_line(k, ct, f, x0, ty, left, max(0, cw - rw - split_gap), color, put)
+                _draw_line(k, ct, f, x0 + cw - rw, ty, right, rw, color, put)
+            else:
+                x = x0 + (cw - w_ if align == "right" else (cw - w_) // 2 if align == "center" else 0)
+                _draw_line(k, ct, f, x, ty, kinds, w_, color, put)
             ty += f.height + 1
 
 
