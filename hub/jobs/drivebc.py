@@ -202,7 +202,8 @@ def run(cfg):
         cams = []
         if items or stale_samples:
             try:
-                cams = common.session.get(f"{API}/webcams/", timeout=40).json()
+                from hub import traffic
+                cams = traffic.fix_all(common.session.get(f"{API}/webcams/", timeout=40).json())   # corrected directions
             except Exception as e:
                 print(f"webcams: {e}", flush=True)
         keep = set()

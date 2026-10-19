@@ -69,7 +69,8 @@ def run(cfg):
     old = {c.get("cam"): c for c in (read_json(paths.DATA_DIR / "bridges.json", {}) or {}).get("cams", [])
            if c.get("cam") and c.get("tiles")}
     listing = common.session.get(f"{API}/webcams/", timeout=40).json()
-    by_id = {c.get("id"): c for c in (listing if isinstance(listing, list) else listing.get("results", []))}
+    from hub import traffic
+    by_id = {c.get("id"): c for c in traffic.fix_all(listing if isinstance(listing, list) else listing.get("results", []))}
     have = lambda tiles: bool(tiles) and all((OUT / name).exists() for name in tiles.values())
     out, fetched, errors = [], 0, []
     bridges = cams_of(cfg)
