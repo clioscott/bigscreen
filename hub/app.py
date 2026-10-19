@@ -358,37 +358,43 @@ def _dbc_list():
     return _webcams["list"]
 
 
-_city = {"at": 0.0, "lists": {}, "tried": 0.0, "urls": {}}    # city -> its own camera views (hub/traffic.py)
+_city = {"at": {}, "lists": {}, "tried": 0.0, "urls": {}, "loaded": False}   # per city: crawled at, its views
 _city_lock = threading.Lock()                # one crawl at a time
 CITY_CACHE = paths.CACHE_DIR / "city_cams.json"
 COV_CACHE = paths.CACHE_DIR / "cov_cams.json"   # before Richmond joined: Vancouver's views only
 
 
-def _city_index():
-    _city["urls"] = {c["id"]: c["source"]["url"] for cams in _city["lists"].values() for c in cams}
+def _set_lists(lists):
+    """Swap in new lists, the thumbnail index first (so a thumbnail for a camera just listed never 404s)."""
+    _city["urls"] = {c["id"]: c["source"]["url"] for cams in lists.values() for c in cams}
+    _city["lists"] = lists
 
 
-def _city_refresh():
+def _stale_cities(now):
+    return [c for c in traffic.CITY_SOURCES
+            if not _city["lists"].get(c) or now - (_city["at"].get(c) or 0) > 86400]
+
+
+def _city_refresh(cities):
     from hub.bc import common
     get = lambda u: common.session.get(u, timeout=20).text
     try:
-        lists = dict(_city["lists"])
-        for city, crawl in traffic.CITY_SOURCES.items():
+        lists, at, changed = dict(_city["lists"]), dict(_city["at"]), False
+        for city in cities:
             old = lists.get(city) or []
             try:
-                got = crawl(get)
+                got = traffic.CITY_SOURCES[city](get)
             except Exception as e:
                 print(f"{city} cameras: {e}", flush=True)
                 continue
             if got and len(got) >= 0.8 * len(old):             # a crawl that lost many pages keeps the old list
-                lists[city] = got
+                lists[city], at[city], changed = got, time.time(), True
             else:
                 print(f"{city} cameras: only {len(got)} views, keeping {len(old)}", flush=True)
-        if all(lists.get(c) for c in traffic.CITY_SOURCES):    # every city fresh: wait a day
-            _city["at"] = time.time()
-        _city["lists"] = lists
-        _city_index()
-        atomic_write_json(CITY_CACHE, {"at": _city["at"], "lists": lists})
+        if changed:
+            _set_lists(lists)
+            _city["at"] = at
+            atomic_write_json(CITY_CACHE, {"at": at, "lists": lists})
     except Exception as e:
         print(f"City cameras: {e}", flush=True)
     finally:
@@ -396,20 +402,22 @@ def _city_refresh():
 
 
 def _city_lists():
-    """{city: its own camera views} (Vancouver's and Richmond's, hub/traffic.py), refreshed daily in the background
-    and kept on disk; a city missing from the cache is crawled at once."""
-    if not _city["lists"]:
+    """{city: its own camera views} (Vancouver's and Richmond's, hub/traffic.py), each re-crawled daily in the
+    background and kept on disk; a city missing from the cache is crawled at once."""
+    if not _city["loaded"]:
+        _city["loaded"] = True
         saved = read_json(CITY_CACHE, {}) or {}
         if not saved and COV_CACHE.exists():
             old = read_json(COV_CACHE, {}) or {}
-            saved = {"at": 0.0, "lists": {"Vancouver": old.get("list") or []}}
-        _city["lists"], _city["at"] = saved.get("lists") or {}, saved.get("at") or 0.0
-        _city_index()
+            saved = {"at": {}, "lists": {"Vancouver": old.get("list") or []}}
+        at = saved.get("at")
+        _city["at"] = at if isinstance(at, dict) else {}
+        _set_lists(saved.get("lists") or {})
     now = time.time()
-    stale = now - _city["at"] > 86400 or not all(_city["lists"].get(c) for c in traffic.CITY_SOURCES)
+    stale = _stale_cities(now)
     if stale and now - _city["tried"] > 3600 and _city_lock.acquire(blocking=False):
         _city["tried"] = now                                 # a failed crawl is retried an hour later, not per request
-        threading.Thread(target=_city_refresh, name="city-cams", daemon=True).start()
+        threading.Thread(target=_city_refresh, args=(stale,), name="city-cams", daemon=True).start()
     return _city["lists"]
 
 

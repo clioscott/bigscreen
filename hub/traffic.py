@@ -225,24 +225,42 @@ def _unique(views):
 # the approach, so no direction is claimed. The images are the City's (© City of Richmond), shown as its page shows them.
 RMD_BASE = "https://www.richmond.ca/services/transportation/trafficcameras/"
 RMD_IMAGES = "https://www.richmond.ca/trafficcam/"
-_RMD_MARKER = re.compile(r"L\.marker\(\[\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*\].*?bindPopup\(\"<h6>(.*?)</h6>"
-                         r"<a href='(IntersectionDetails\.aspx\?id=\d+)'", re.S)
+_RMD_MARKER = re.compile(r"\[\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*\].*?bindPopup\(\"<h6>(.*?)</h6>"
+                         r"<a href='(IntersectionDetails\.aspx\?id=\d+)'", re.S)          # within one marker's code
 _BOUND = {"nb": "Northbound", "sb": "Southbound", "eb": "Eastbound", "wb": "Westbound"}
-_RMD_IMG = re.compile(r'<img[^>]*\bsrc="(' + re.escape(RMD_IMAGES) + r'[^"/]+\.jpe?g)"[^>]*\balt="([^"]*)"', re.I)
+_IMG_TAG = re.compile(r"<img\b[^>]*>", re.I)
+_ATTR = lambda name: re.compile(r'\b' + name + r'\s*=\s*"([^"]*)"', re.I)
+_SRC, _ALT = _ATTR("src"), _ATTR("alt")
+_RMD_SRC = re.compile(re.escape(RMD_IMAGES) + r'[^"/]+\.jpe?g$', re.I)
+
+
+def _rmd_images(html):
+    """[(src, alt)] of the City's camera images on a details page, whatever the attribute order."""
+    out = []
+    for tag in _IMG_TAG.findall(html or ""):
+        src, alt = _SRC.search(tag), _ALT.search(tag)
+        if src and _RMD_SRC.match(src.group(1)):
+            out.append((src.group(1), alt.group(1) if alt else ""))
+    return out
 
 
 def richmond_markers(html):
     """[(lat, lon, name, details page URL)] from the City of Richmond's camera map page."""
     import html as h
-    return [(float(la), float(lo), h.unescape(name).strip(), RMD_BASE + page)
-            for la, lo, name, page in _RMD_MARKER.findall(html or "")]
+    out = []
+    for chunk in (html or "").split("L.marker(")[1:]:      # one marker each: a popup-less one can't borrow the next's
+        m = _RMD_MARKER.search(chunk)
+        if m:
+            la, lo, name, page = m.groups()
+            out.append((float(la), float(lo), h.unescape(name).strip(), RMD_BASE + page))
+    return out
 
 
 def richmond_views(lat, lon, name, html):
     """The cameras on one Richmond intersection page: one per image, named with the approach from its alt text."""
     import html as h
     out = []
-    for src, alt in _RMD_IMG.findall(html or ""):
+    for src, alt in _rmd_images(html):
         alt = h.unescape(alt).replace("Live Camera Image:", "").strip()
         word = alt[len(name):].strip(" -") if alt.lower().startswith(name.lower()) else ""
         stem = src.rsplit("/", 1)[-1].rsplit(".", 1)[0]
