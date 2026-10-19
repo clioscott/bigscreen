@@ -190,7 +190,7 @@ def cov_views(row, html):
         out.append({"id": "cov-" + stem, "name": f"{name} - {word}" if word else name,
                     "caption": name, "lat": lat, "lon": lon, "orientation": "", "look": "", "highway": "", "on": True,
                     "delayed": False, "updated": None, "period": 300, "turns": False, "corrected": False,
-                    "city": "Vancouver", "credit": "City of Vancouver", "thumb": f"/api/webcams/cov/{stem}.jpg",
+                    "city": "Vancouver", "credit": "City of Vancouver", "thumb": f"/api/webcams/city/cov-{stem}.jpg",
                     "source": {"type": "image", "url": COV_BASE + src, "refresh_sec": 120}})
     return out
 
@@ -207,10 +207,85 @@ def cov_cameras(get):
         except Exception:
             return []
     with ThreadPoolExecutor(4) as ex:                  # ~220 small pages, once a day
-        views = [v for vs in ex.map(one, rows) for v in vs]
+        return _unique([v for vs in ex.map(one, rows) for v in vs])
+
+
+def _unique(views):
     seen, out = set(), []
     for v in views:
         if v["id"] not in seen and v["lat"] is not None:
             seen.add(v["id"])
             out.append(v)
     return out
+
+
+# --- City of Richmond intersection cameras ------------------------------------------------------------------------
+# The City's camera map page has a marker per intersection (where, its name, its details page); the details page shows
+# one image per approach ("... Eastbound"), plain JPEGs with an exact Last-Modified. Like Vancouver's, "Eastbound" names
+# the approach, so no direction is claimed. The images are the City's (© City of Richmond), shown as its page shows them.
+RMD_BASE = "https://www.richmond.ca/services/transportation/trafficcameras/"
+RMD_IMAGES = "https://www.richmond.ca/trafficcam/"
+_RMD_MARKER = re.compile(r"\[\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*\].*?bindPopup\(\"<h6>(.*?)</h6>"
+                         r"<a href='(IntersectionDetails\.aspx\?id=\d+)'", re.S)          # within one marker's code
+_BOUND = {"nb": "Northbound", "sb": "Southbound", "eb": "Eastbound", "wb": "Westbound"}
+_IMG_TAG = re.compile(r"<img\b[^>]*>", re.I)
+_ATTR = lambda name: re.compile(r'\b' + name + r'\s*=\s*"([^"]*)"', re.I)
+_SRC, _ALT = _ATTR("src"), _ATTR("alt")
+_RMD_SRC = re.compile(re.escape(RMD_IMAGES) + r'[^"/]+\.jpe?g$', re.I)
+
+
+def _rmd_images(html):
+    """[(src, alt)] of the City's camera images on a details page, whatever the attribute order."""
+    out = []
+    for tag in _IMG_TAG.findall(html or ""):
+        src, alt = _SRC.search(tag), _ALT.search(tag)
+        if src and _RMD_SRC.match(src.group(1)):
+            out.append((src.group(1), alt.group(1) if alt else ""))
+    return out
+
+
+def richmond_markers(html):
+    """[(lat, lon, name, details page URL)] from the City of Richmond's camera map page."""
+    import html as h
+    out = []
+    for chunk in (html or "").split("L.marker(")[1:]:      # one marker each: a popup-less one can't borrow the next's
+        m = _RMD_MARKER.search(chunk)
+        if m:
+            la, lo, name, page = m.groups()
+            out.append((float(la), float(lo), h.unescape(name).strip(), RMD_BASE + page))
+    return out
+
+
+def richmond_views(lat, lon, name, html):
+    """The cameras on one Richmond intersection page: one per image, named with the approach from its alt text."""
+    import html as h
+    out = []
+    for src, alt in _rmd_images(html):
+        alt = h.unescape(alt).replace("Live Camera Image:", "").strip()
+        word = alt[len(name):].strip(" -") if alt.lower().startswith(name.lower()) else ""
+        stem = src.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+        if not word:                                    # some pages leave it out: the file says it ("..._eb.jpg")
+            word = _BOUND.get(stem.rsplit("_", 1)[-1].lower(), "")
+        out.append({"id": "rmd-" + stem, "name": f"{name} - {word}" if word else name,
+                    "caption": name, "lat": lat, "lon": lon, "orientation": "", "look": "", "highway": "", "on": True,
+                    "delayed": False, "updated": None, "period": 60, "turns": False, "corrected": False,
+                    "city": "Richmond", "credit": "City of Richmond", "thumb": f"/api/webcams/city/rmd-{stem}.jpg",
+                    "source": {"type": "image", "url": src, "refresh_sec": 60}})
+    return out
+
+
+def richmond_cameras(get):
+    """Every City of Richmond camera view. get(url) -> text. Pages that fail are skipped."""
+    from concurrent.futures import ThreadPoolExecutor
+    markers = richmond_markers(get(RMD_BASE))
+
+    def one(m):
+        try:
+            return richmond_views(m[0], m[1], m[2], get(m[3]))
+        except Exception:
+            return []
+    with ThreadPoolExecutor(4) as ex:                  # ~160 small pages, once a day
+        return _unique([v for vs in ex.map(one, markers) for v in vs])
+
+
+CITY_SOURCES = {"Vancouver": cov_cameras, "Richmond": richmond_cameras}    # city -> crawler: the views in that city

@@ -274,7 +274,7 @@ def test_city_of_vancouver_pages_become_image_cameras():
     assert [c["name"] for c in v] == ["Cambie Bridge - North", "Cambie Bridge - South"]
     assert v[0]["source"] == {"type": "image", "url": "https://trafficcams.vancouver.ca/cameraimages/CambieBridgeNorth.jpg",
                               "refresh_sec": 120}
-    assert v[0]["orientation"] == "" and v[0]["credit"] == "City of Vancouver" and v[0]["thumb"].endswith("/CambieBridgeNorth.jpg")
+    assert v[0]["orientation"] == "" and v[0]["credit"] == "City of Vancouver" and v[0]["thumb"] == "/api/webcams/city/cov-CambieBridgeNorth.jpg"
     import json
     pages = {traffic.COV_LIST: json.dumps([row, {"name": "x", "url": "https://elsewhere.example/a.htm"}]), row["url"]: html}
     assert len(traffic.cov_cameras(pages.__getitem__)) == 2                    # only the City's own pages are read
@@ -287,12 +287,80 @@ def test_fixing_twice_changes_nothing():
 
 def test_city_crawl_backs_off_and_keeps_a_good_list(monkeypatch, tmp_path):
     from hub import app as hub_app
-    monkeypatch.setattr(hub_app, "COV_CACHE", tmp_path / "cov.json")
-    full = [{"id": f"cov-{i}"} for i in range(100)]
-    monkeypatch.setattr(hub_app, "_cov", {"at": 1.0, "list": list(full), "tried": 0.0})
-    monkeypatch.setattr(traffic, "cov_cameras", lambda get: full[:50])         # a crawl that lost half the pages
+    monkeypatch.setattr(hub_app, "CITY_CACHE", tmp_path / "city.json")
+    full = [{"id": f"cov-{i}", "source": {"url": f"https://x/{i}.jpg"}} for i in range(100)]
+    monkeypatch.setattr(hub_app, "_city", {"at": {"Vancouver": 1.0}, "lists": {"Vancouver": list(full)}, "tried": 0.0,
+                                           "urls": {}, "loaded": True})
+    monkeypatch.setattr(traffic, "CITY_SOURCES", {"Vancouver": lambda get: full[:50],          # lost half its pages
+                                                  "Richmond": lambda get: (_ for _ in ()).throw(OSError("down"))})
     started = []
-    monkeypatch.setattr(hub_app.threading, "Thread", lambda target, **k: started.append(target) or type("T", (), {"start": lambda s: target()})())
-    hub_app._cov_list()
-    hub_app._cov_list()                                                      # within the hour: no second crawl
-    assert len(started) == 1 and len(hub_app._cov["list"]) == 100 and not hub_app._cov_lock.locked()
+    monkeypatch.setattr(hub_app.threading, "Thread",
+                        lambda target, **k: started.append(target) or type("T", (), {"start": lambda s: target(*k.get("args", ()))})())
+    hub_app._city_lists()
+    hub_app._city_lists()                                                    # within the hour: no second crawl
+    assert len(started) == 1 and len(hub_app._city["lists"]["Vancouver"]) == 100 and not hub_app._city_lock.locked()
+    assert hub_app._city["at"] == {"Vancouver": 1.0}                        # neither city counts as freshly crawled
+
+
+def test_old_vancouver_cache_is_reused_and_richmond_crawled(monkeypatch, tmp_path):
+    import json
+    from hub import app as hub_app
+    old = [{"id": "cov-A", "source": {"url": "https://trafficcams.vancouver.ca/cameraimages/A.jpg"}}]
+    (tmp_path / "cov.json").write_text(json.dumps({"at": 5.0, "list": old}))
+    monkeypatch.setattr(hub_app, "CITY_CACHE", tmp_path / "city.json")
+    monkeypatch.setattr(hub_app, "COV_CACHE", tmp_path / "cov.json")
+    monkeypatch.setattr(hub_app, "_city", {"at": {}, "lists": {}, "tried": 0.0, "urls": {}, "loaded": False})
+    rmd = [{"id": "rmd-x_eb", "source": {"url": "https://www.richmond.ca/trafficcam/x_eb.jpg"}}]
+    monkeypatch.setattr(traffic, "CITY_SOURCES", {"Vancouver": lambda get: old, "Richmond": lambda get: rmd})
+    monkeypatch.setattr(hub_app.threading, "Thread", lambda target, **k: type("T", (), {"start": lambda s: target(*k.get("args", ()))})())
+    lists = hub_app._city_lists()
+    assert set(lists) == {"Vancouver", "Richmond"} and set(hub_app._city["at"]) == {"Vancouver", "Richmond"}
+    assert hub_app._city["urls"]["rmd-x_eb"].endswith("/x_eb.jpg")
+    assert json.loads((tmp_path / "city.json").read_text())["lists"]["Richmond"] == rmd
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException):
+        hub_app.webcams_city_thumb("rmd-not-listed")                         # never an arbitrary URL
+
+
+def test_richmond_map_and_pages_become_image_cameras():
+    page = ("""<script> L.marker([49.162741, -123.145126], { alt: 'x', icon: VideoIcon }).addTo(mymap)
+               .bindPopup("<h6>7100 block at Granville Avenue</h6><a href='IntersectionDetails.aspx?id=2753'>Live</a>");</script>
+               <script> L.marker([49.17, -123.13], {}).addTo(mymap)
+               .bindPopup("<h6>Garden City Road &amp; Williams Road</h6><a href='IntersectionDetails.aspx?id=9'>Live</a>");</script>""")
+    m = traffic.richmond_markers(page)
+    assert m[0] == (49.162741, -123.145126, "7100 block at Granville Avenue", traffic.RMD_BASE + "IntersectionDetails.aspx?id=2753")
+    assert m[1][2] == "Garden City Road & Williams Road"
+    html = ('<img id="a" onerror="imageNotFound(this)" src="https://www.richmond.ca/trafficcam/vdd_granville_7100_eb.jpg" '
+            'alt="Live Camera Image: 7100 block at Granville Avenue Eastbound" />'
+            '<img src="https://www.richmond.ca/trafficcam/vdd_granville_7100_nb.jpg" alt="Live Camera Image: 7100 block at Granville Avenue" />'
+            '<img src="https://elsewhere.example/trafficcam/z.jpg" alt="Live Camera Image: z" />')
+    v = traffic.richmond_views(49.16, -123.14, "7100 block at Granville Avenue", html)
+    assert [c["name"] for c in v] == ["7100 block at Granville Avenue - Eastbound", "7100 block at Granville Avenue - Northbound"]
+    assert v[0]["id"] == "rmd-vdd_granville_7100_eb" and v[0]["thumb"] == "/api/webcams/city/rmd-vdd_granville_7100_eb.jpg"
+    assert v[0]["source"]["type"] == "image" and v[0]["credit"] == "City of Richmond" and v[0]["orientation"] == ""
+    pages = {traffic.RMD_BASE: page, m[0][3]: html, m[1][3]: ""}
+    assert len(traffic.richmond_cameras(pages.__getitem__)) == 2
+
+
+def test_only_stale_cities_are_crawled(monkeypatch, tmp_path):
+    import time as _t
+    from hub import app as hub_app
+    monkeypatch.setattr(hub_app, "CITY_CACHE", tmp_path / "city.json")
+    van = [{"id": "cov-A", "source": {"url": "https://x/A.jpg"}}]
+    monkeypatch.setattr(hub_app, "_city", {"at": {"Vancouver": _t.time()}, "lists": {"Vancouver": van}, "tried": 0.0,
+                                           "urls": {}, "loaded": True})
+    crawled = []
+    monkeypatch.setattr(traffic, "CITY_SOURCES", {"Vancouver": lambda get: crawled.append("V") or van,
+                                                  "Richmond": lambda get: crawled.append("R") or []})
+    monkeypatch.setattr(hub_app.threading, "Thread",
+                        lambda target, args=(), **k: type("T", (), {"start": lambda s: target(*args)})())
+    hub_app._city_lists()
+    assert crawled == ["R"]                                                  # Vancouver is fresh: left alone
+
+
+def test_richmond_parsing_is_robust():
+    page = ("""L.marker([49.1, -123.1], { icon: StaticCameraIcon }).addTo(mymap);
+               L.marker([49.2, -123.2], {}).addTo(mymap).bindPopup("<h6>B</h6><a href='IntersectionDetails.aspx?id=2'>x</a>");""")
+    assert traffic.richmond_markers(page) == [(49.2, -123.2, "B", traffic.RMD_BASE + "IntersectionDetails.aspx?id=2")]
+    html = '<img alt="Live Camera Image: B Westbound" class="x" src="https://www.richmond.ca/trafficcam/b_wb.jpg">'
+    assert [c["name"] for c in traffic.richmond_views(49.2, -123.2, "B", html)] == ["B - Westbound"]
