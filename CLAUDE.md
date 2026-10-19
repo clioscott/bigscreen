@@ -150,7 +150,8 @@ once (`hold: false`), so the rotation resumes by itself.
   wherever the hub reads DriveBC's camera list (this page, the camera map, the DriveBC and Bridges jobs).
   The cities' own intersection cameras (`traffic.CITY_SOURCES`: City of Vancouver ~850 views from open data, City of
   Richmond ~600 from its camera map) are crawled daily in the background, cached in `cache/city_cams.json`, and join
-  their city's tab as `image` sources; thumbnails `/api/webcams/city/{id}.jpg` (listed cameras only). The DriveBC camera map
+  their city's tab as `image` sources; thumbnails `/api/webcams/city/{id}.jpg` (listed cameras only). The Map tab draws
+  them as a layer (one marker per intersection, its views listed with Add); By city → "<city> on the map". The DriveBC camera map
   (`cameramap.js`) lives there now, with "Add as a webcam".
 - Ready-made webcams: `hub/web/ui/pages/webcam_gallery.js` (YouTube ids; a restarted stream gets a new id). Cards show
   real frames from `/api/webcams/snapshot.jpg`, which never waits: the cached still (fresh or stale), else 503 +
