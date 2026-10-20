@@ -20,6 +20,8 @@ How it plays:
     pauses this side rather than letting its screens run out unseen).
   * A preview (``play``) shows any entry now. Played once, it runs by the entry's own rules and then the rotation
     resumes: the screen it interrupted starts again. With ``hold`` it repeats until stopped or ``ttl_sec`` passes.
+  * A jump (``goto``) plays an entry now as part of the rotation (even if its rules don't hold): the rotation then
+    carries on with the entry after it.
   * Config reloads keep the position and the screen that's playing.
   * A panel that can't show its entry (a webcam that won't come up) returns "skip": the screen ends at once.
 """
@@ -336,6 +338,34 @@ class Rotation:
                     self._start(self.entries[i], i, "rotation", now)
                     return
             self.cur = None
+
+    def goto(self, index, entry=None, now=None) -> int:
+        """Jump the rotation to an entry: it plays now (once, even if its rules don't hold or it's switched off) and
+        the rotation carries on after it. ``entry`` (as the panel last saw it) guards against a list edited since:
+        the entry at ``index`` must match it, else the nearest one that does is used. Returns the index played."""
+        now = now or time.time()
+        with self._lock:
+            n = len(self.entries)
+            keys = [entry_key(e) for e in self.entries]
+            try:
+                i = int(index)
+            except (TypeError, ValueError):
+                i = -1
+            if isinstance(entry, dict) and entry.get("panel"):
+                want = entry_key(normalise(entry) or entry)
+                if not (0 <= i < n and keys[i] == want):
+                    found = [j for j, k in enumerate(keys) if k == want]
+                    if not found:
+                        raise LookupError("that entry isn't in the rotation (save the config first?)")
+                    i = min(found, key=lambda j: abs(j - i))
+            if not 0 <= i < n:
+                raise LookupError(f"no entry {index} in the {self.side} rotation")
+            self.preview = None
+            self.pending = [j for j in self.pending if j != i]
+            self.pos = i
+            self._idle_t = 0.0
+            self._start(self.entries[i], i, "rotation", now)
+            return i
 
     def skip_unavailable(self):
         """The panel can't be drawn here (not built yet): move on without counting it as shown."""
