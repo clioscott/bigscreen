@@ -1,6 +1,6 @@
 import { ref, computed } from "vue";
 import { store, toast, seed, PANEL_TYPES, WEATHER_SCREENS, RULES, ALERT_LEVELS, HAZARDS, DAYS, ruleText, areaLabel, entryTitle,
-  playOnDisplay, PHASES, ALERT_RULES } from "../core.js";
+  playOnDisplay, rotationGoto, PHASES, ALERT_RULES } from "../core.js";
 import { NowPlaying } from "../nowplaying.js";
 
 function entrySub(e) {
@@ -216,6 +216,16 @@ export const Rotation = {
       const j = p.cycle.findIndex((x) => sameEntry(x, e));
       return j >= 0 && p.eligible[j] === false && e.enabled !== false;
     };
+    // ⇥ jumps the rotation there; only for entries the wall has (an unsaved new one isn't in its list yet)
+    const onWall = (side, i) => !!disp.value[side]?.cycle?.some((x) => sameEntry(x, cycle.value[side][i]));
+    const jumpTitle = (side, i) => !disp.value[side]?.cycle ? "Jump here (the wall isn't answering)"
+      : !onWall(side, i) ? "Save first: the wall doesn't have this screen yet"
+      : "Jump here: play it now, then the rotation carries on from it"
+        + (cycle.value[side][i].enabled === false ? " (it's off: plays this once)" : waiting(side, i) ? " (its rules don't hold: plays this once)" : "");
+    const jump = (side, i) => {
+      const { variants, rules, ...own } = cycle.value[side][i];
+      return rotationGoto(side, i, own);
+    };
     const add = (side) => {
       cycle.value[side].push({ panel: "headlines", rules: [], advance: "cycles", cycles: 1, max_sec: 1800 });
       open.value = `${side}:${cycle.value[side].length - 1}`;
@@ -230,13 +240,14 @@ export const Rotation = {
     };
     // ▶ shows the entry at its own size (an alert entry with nothing new would otherwise show an empty half panel)
     const play = (side, e, hold) => { const { variants, ...own } = e; return playOnDisplay(own, { side, hold }); };
-    return { cycle, open, isCurrent, waiting, add, remove, moveTo, play, entryTitle, entrySub, advanceText, ruleText, variantText, PANEL_TYPES,
+    return { cycle, open, isCurrent, waiting, onWall, jumpTitle, jump, add, remove, moveTo, play, entryTitle, entrySub, advanceText, ruleText, variantText, PANEL_TYPES,
       life: computed(() => store.draft.modules.alert_lifecycle) };
   },
   template: `<div class="page">
     <div class="page-head"><div class="grow"><h1>Rotation</h1>
       <p>What each half of the wall cycles through, and when. Every screen plays to its end; rules decide which screens come up.
-        ▶ plays a screen once and returns to the rotation; ⏸ holds it on the wall.</p></div></div>
+        ⇥ jumps the rotation to a screen and carries on from there; ▶ plays a screen once and returns to where the rotation was;
+        ⏸ holds it on the wall.</p></div></div>
     <NowPlaying/>
     <div class="card" style="margin-bottom:16px"><div class="card-head"><Icon name="Siren" :size="16"/><h3>Alerts on the wall</h3></div>
       <div class="card-body stack">
@@ -269,6 +280,7 @@ export const Rotation = {
               </div>
               <span class="pill" :class="{accent: e.advance === 'cycles'}"><Icon :name="e.advance === 'cycles' ? 'Repeat' : 'Timer'" :size="12"/>{{ advanceText(e) }}</span>
               <span class="live" v-if="isCurrent(side, i)" title="On screen now"></span>
+              <button class="btn sm ghost icon-only" :title="jumpTitle(side, i)" :disabled="!onWall(side, i)" @click="jump(side, i)"><Icon name="ArrowRightToLine" :size="14"/></button>
               <button class="btn sm ghost icon-only" title="Play once now, then back to the rotation" @click="play(side, e, false)"><Icon name="Play" :size="14"/></button>
               <button class="btn sm ghost icon-only" title="Hold it on the wall" @click="play(side, e, true)"><Icon name="Pause" :size="14"/></button>
               <button class="btn sm ghost icon-only" :title="'Move to the ' + (side === 'left' ? 'right' : 'left')" @click="moveTo(side, i)"><Icon name="ArrowLeftRight" :size="14"/></button>
