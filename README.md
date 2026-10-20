@@ -117,15 +117,16 @@ hot-reload on the wall, no restart needed.
 - **438 bitmap fonts**, always drawn at native size ([credits](assets/fonts/CREDITS.md)).
 <!-- /gen:features -->
 
-**Live webcams**: video from YouTube live streams or any HLS / MJPEG / RTSP camera, as a rotation screen on one side, full
-width or the whole wall. The hub decodes each stream with ffmpeg (yt-dlp finds the video behind a YouTube page) and
+**Live webcams**: video from YouTube live streams or any HLS / MJPEG / RTSP camera, as a rotation screen on one side,
+full width or the whole wall. The hub decodes each stream with ffmpeg (yt-dlp finds the video behind a YouTube page) and
 sends the Pi frames already cropped to its zone, so the Pi never decodes video. Each webcam keeps its own crop for every
 place on the wall, colour adjustments, and a caption in one of twelve layouts (lower third, split bar with a big clock,
 world clock, departure board, ticker, chips and more) built from the sections you pick and order: name, place, local
 time, weather and sunrise/sunset at the camera (Open-Meteo), date, time difference, your own line and who runs the
-camera. DriveBC's highway cameras are there too (by bridge and tunnel, by city, or on a map), shown as stills with the
-exact time each picture was taken. Set up on the control panel's Webcams page, with a live preview of exactly what the
-wall will show.
+camera. A ready-made gallery of about a hundred 24/7 streams (Vancouver, Calgary, Toronto, Seattle, San Francisco, New
+York, Boston and more) can be browsed by city and kind, as a grid or on a map. DriveBC's highway cameras are there too
+(by bridge and tunnel, by city, or on a map), shown as stills with the exact time each picture was taken. Set up on the
+control panel's Webcams page, with a live preview of exactly what the wall will show.
 
 ## Gallery
 

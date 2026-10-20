@@ -1,17 +1,12 @@
 // DriveBC camera map: every highway camera in and around the screen's area, which way each one looks,
 // what's on the roads, and which camera each event (and sample) shows. A small pan/zoom tile map, no library.
-import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, watch, onMounted } from "vue";
 import { api, fail } from "../core.js";
+import { useSlippyMap } from "./slippymap.js";
 
-const TILE = "/api/tiles/{layer}/{z}/{x}/{y}.png";          // Esri's dark grey canvas and its labels, via the hub's tile cache
 const BEARING = { N: 0, NE: 45, E: 90, SE: 135, S: 180, SW: 225, W: 270, NW: 315 };
 const LOOK = { N: "north", NE: "northeast", E: "east", SE: "southeast", S: "south", SW: "southwest", W: "west", NW: "northwest" };
 const COL = { event: "#ff8a1f", sample: "#c77dff", cam: "#7c8cff", off: "#5b6273", city: "#34c38f" };
-
-const wx = (lon, z) => (lon + 180) / 360 * 256 * 2 ** z;
-const wy = (lat, z) => { const s = Math.sin(lat * Math.PI / 180); return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * 256 * 2 ** z; };
-const lonOf = (x, z) => x / (256 * 2 ** z) * 360 - 180;
-const latOf = (y, z) => { const n = Math.PI - 2 * Math.PI * y / (256 * 2 ** z); return 180 / Math.PI * Math.atan(Math.sinh(n)); };
 
 export const CameraMap = {
   // addable: show "Add as a webcam" for the selected camera (Webcams page); added: camera ids already webcams
@@ -23,14 +18,13 @@ export const CameraMap = {
     const st = ref({ cameras: [], events: [], samples: [], bbox: null });
     const loading = ref(true);
     const el = ref(null);
-    const size = ref({ w: 900, h: 600 });
-    const view = ref({ lon: -122.95, lat: 49.2, z: 11 });
+    const { size, view, px, onScreen, tiles, fit: fitBox, down, move, up, wheel, zoomAt, dragged } =
+      useSlippyMap(el, { lon: -122.95, lat: 49.2, z: 11 }, { minZ: 8, maxZ: 16 });
     const sel = ref(null);
     const showSamples = ref(true);
     const showCity = ref(true);
     const selSpot = ref(null);                                 // a selected intersection (city cameras)
     const query = ref("");
-    let ro;
 
     const load = async () => {
       try {
@@ -40,35 +34,12 @@ export const CameraMap = {
       loading.value = false;
     };
     let fitted = false;
-    const fit = ([lo0, la0, lo1, la1]) => {
-      const { w, h } = size.value;
-      let z = 14;
-      while (z > 3 && (wx(lo1, z) - wx(lo0, z) > w - 20 || wy(la0, z) - wy(la1, z) > h - 20)) z--;
-      view.value = { lon: (lo0 + lo1) / 2, lat: latOf((wy(la0, z) + wy(la1, z)) / 2, z), z };
-      fitted = true;
-    };
+    const fit = (b) => { fitBox(b); fitted = true; };
     onMounted(() => {
-      ro = new ResizeObserver(() => { if (el.value) size.value = { w: el.value.clientWidth, h: el.value.clientHeight }; });
-      if (el.value) { ro.observe(el.value); size.value = { w: el.value.clientWidth, h: el.value.clientHeight }; }
       if (props.focus) fit(props.focus);                    // right away, not after the camera list arrives
       load();
     });
-    onBeforeUnmount(() => ro && ro.disconnect());
     watch(() => props.focus, (b) => { if (b) fit(b); });
-
-    // the view: top-left world pixel, and screen position of a lon/lat
-    const origin = computed(() => ({ x: wx(view.value.lon, view.value.z) - size.value.w / 2, y: wy(view.value.lat, view.value.z) - size.value.h / 2 }));
-    const px = (lon, lat) => ({ x: wx(lon, view.value.z) - origin.value.x, y: wy(lat, view.value.z) - origin.value.y });
-    const tiles = computed(() => {
-      const z = view.value.z, n = 2 ** z, o = origin.value, out = [];
-      for (let tx = Math.floor(o.x / 256); tx * 256 < o.x + size.value.w; tx++) {
-        for (let ty = Math.max(0, Math.floor(o.y / 256)); ty * 256 < o.y + size.value.h && ty < n; ty++) {
-          out.push({ key: `${z}/${tx}/${ty}`, x: tx * 256 - o.x, y: ty * 256 - o.y,
-            src: TILE.replace("{z}", z).replace("{x}", ((tx % n) + n) % n).replace("{y}", ty) });
-        }
-      }
-      return out;
-    });
 
     // which cameras are in use
     const use = computed(() => {
@@ -95,7 +66,7 @@ export const CameraMap = {
           cone = `M${p.x},${p.y} L${p.x + Math.sin(a0) * r},${p.y - Math.cos(a0) * r} A${r},${r} 0 0 1 ${p.x + Math.sin(a1) * r},${p.y - Math.cos(a1) * r} Z`;
         }
         return { c, p, cone, col: colOf(c), used: !!use.value[c.id] };
-      }).filter(({ p }) => p.x > -40 && p.y > -40 && p.x < size.value.w + 40 && p.y < size.value.h + 40)
+      }).filter(({ p }) => onScreen(p, 40))
         .sort((a, b) => a.used - b.used);                       // cameras in use drawn on top
     });
     // the cities' cameras: one marker per intersection, all its views listed when picked
@@ -112,9 +83,9 @@ export const CameraMap = {
       if (!showCity.value) return [];
       const q = query.value.toLowerCase();
       return spots.value.filter((s) => !q || s.name.toLowerCase().includes(q)).map((s) => ({ s, p: px(s.lon, s.lat) }))
-        .filter(({ p }) => p.x > -20 && p.y > -20 && p.x < size.value.w + 20 && p.y < size.value.h + 20);
+        .filter(({ p }) => onScreen(p));
     });
-    const pickSpot = (s) => { if (drag?.moved) return; selSpot.value = s; sel.value = null; };
+    const pickSpot = (s) => { if (dragged()) return; selSpot.value = s; sel.value = null; };
     const word = (v, i) => (v.name.includes(" - ") ? v.name.split(" - ").pop() : v.look ? `Looking ${v.look}` : `View ${i + 1}`);
     const credits = computed(() => [...new Set(spots.value.map((s) => s.credit).filter(Boolean))].join(", "));
     const lines = computed(() => [
@@ -123,36 +94,7 @@ export const CameraMap = {
     ].map(({ e, col }) => ({ e, col, pts: (e.points || []).map(([lo, la]) => px(lo, la)) })));
     const path = (pts) => pts.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
 
-    // panning and zooming
-    let drag = null;
-    const down = (ev) => { if (ev.button !== 0) return; drag = { x: ev.clientX, y: ev.clientY, o: { ...origin.value }, moved: false }; };
-    const move = (ev) => {
-      if (!drag) return;
-      const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
-      if (!drag.moved && Math.abs(dx) + Math.abs(dy) > 3) {      // capture only once it is a drag, so a click still reaches a camera
-        drag.moved = true;
-        ev.currentTarget.setPointerCapture(ev.pointerId);
-      }
-      if (!drag.moved) return;
-      const z = view.value.z;
-      view.value = { z, lon: lonOf(drag.o.x - dx + size.value.w / 2, z), lat: latOf(drag.o.y - dy + size.value.h / 2, z) };
-    };
-    const up = () => { setTimeout(() => { drag = null; }, 0); };
-    const zoomAt = (dz, sx, sy) => {
-      const z = view.value.z, nz = Math.max(8, Math.min(17, z + dz));
-      if (nz === z) return;
-      const lon = lonOf(origin.value.x + sx, z), lat = latOf(origin.value.y + sy, z);      // keep the point under the cursor
-      view.value = { z: nz, lon: lonOf(wx(lon, nz) - sx + size.value.w / 2, nz), lat: latOf(wy(lat, nz) - sy + size.value.h / 2, nz) };
-    };
-    let wheelAt = 0;
-    const wheel = (ev) => {
-      ev.preventDefault();
-      if (Date.now() - wheelAt < 180) return;
-      wheelAt = Date.now();
-      const r = el.value.getBoundingClientRect();
-      zoomAt(ev.deltaY < 0 ? 1 : -1, ev.clientX - r.left, ev.clientY - r.top);
-    };
-    const pick = (c) => { if (drag?.moved) return; sel.value = c; selSpot.value = null; };
+    const pick = (c) => { if (dragged()) return; sel.value = c; selSpot.value = null; };
     const goTo = (c) => {
       sel.value = c;
       const z = Math.max(view.value.z, 14);
