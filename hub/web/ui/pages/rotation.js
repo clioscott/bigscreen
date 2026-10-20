@@ -221,7 +221,9 @@ export const Rotation = {
     const jumpTitle = (side, i) => !disp.value[side]?.cycle ? "Jump here (the wall isn't answering)"
       : !onWall(side, i) ? "Save first: the wall doesn't have this screen yet"
       : "Jump here: play it now, then the rotation carries on from it"
-        + (cycle.value[side][i].enabled === false ? " (it's off: plays this once)" : waiting(side, i) ? " (its rules don't hold: plays this once)" : "");
+        + (cycle.value[side][i].enabled === false ? " (it's off: plays this once)"
+          : !waiting(side, i) ? "" : cycle.value[side][i].panel.endsWith("_alert") ? " (no alert to show right now: carries on from the next one)"
+          : " (its rules don't hold: plays this once)");
     const jump = (side, i) => {
       const { variants, rules, ...own } = cycle.value[side][i];
       return rotationGoto(side, i, own);
