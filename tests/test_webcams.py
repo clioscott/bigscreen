@@ -183,6 +183,15 @@ def test_gallery_entries_are_valid_webcams():
             for n, (i, lbl) in enumerate(ids)}
     config.validate(_cfg({"cams": cams}))
     assert all(re.fullmatch(r"[A-Za-z0-9_-]{11}", i) for i, _ in ids)
+    # a channel that restarts its stream plays by its /live address: those URLs are what gets saved
+    handles = re.findall(r'live: "(@[^"]+)"', js)
+    assert handles and all(re.fullmatch(r"@[A-Za-z0-9._-]+", h) for h in handles)
+    config.validate(_cfg({"cams": {f"l{n}": {"label": h, "source": {"type": "youtube", "url": f"https://www.youtube.com/{h}/live"}}
+                                   for n, h in enumerate(handles)}}))
+    # every webcam is of a kind the page knows
+    kinds = set(re.findall(r"^  (\w+): \{ label:", js[js.index("export const CATS"):js.index("export const CITIES")], re.M))
+    used = re.findall(r'\{ id: "[^"]+",[^}]*? cat: "([^"]+)"', js)
+    assert len(used) == len(ids) and set(used) <= kinds
 
 
 def _wait_idle(timeout=3.0):

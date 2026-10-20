@@ -118,7 +118,7 @@ function usedIn(id) {
 // one (ask again after Retry-After), or 404 when the stream is down (then YouTube's thumbnail, or nothing).
 const youtubeId = (url) => { try { const u = new URL(url); return u.searchParams.get("v") || ""; } catch { return ""; } };
 const SnapImg = {
-  props: { source: Object },
+  props: { source: Object, vid: String },                 // vid: the YouTube id to fall back on when the URL has none (…/@channel/live)
   setup(props) {
     const url = ref("");
     const state = ref("loading");
@@ -141,7 +141,7 @@ const SnapImg = {
           return;
         }
       } catch {}
-      const id = props.source.type === "youtube" ? youtubeId(props.source.url) : "";
+      const id = props.vid || (props.source.type === "youtube" ? youtubeId(props.source.url) : "");
       if (id) { url.value = thumb({ id }); state.value = "ok"; } else state.value = "none";
     };
     // only once it is on screen: a long gallery would otherwise queue a grab on the hub for every webcam in it
@@ -330,11 +330,12 @@ const GalleryMap = {
           <span class="faint">numbered dot = several webcams: click to zoom in</span>
         </div>
         <div style="position:absolute; right:6px; top:4px; font-size:10.5px; color:#9aa; background:rgba(0,0,0,.5); padding:1px 5px; border-radius:4px" @pointerdown.stop>Basemap © Esri, HERE, Garmin, © OpenStreetMap contributors</div>
+        <div v-if="!cams.length" class="faint" style="position:absolute; inset:0; display:grid; place-items:center; pointer-events:none">No webcam matches.</div>
       </div>
       <div style="width:320px; flex:none; border-left:1px solid var(--line); overflow:auto; height:calc(100vh - 260px); min-height:420px">
         <div v-if="sel.length" class="card-body stack">
           <div v-for="c in sel" :key="c.id" class="stack" style="gap:6px">
-            <span class="wc-thumb" style="border-radius:8px; overflow:hidden"><SnapImg :source="c.source"/><span class="live">LIVE</span></span>
+            <span class="wc-thumb" style="border-radius:8px; overflow:hidden"><SnapImg :source="c.source" :vid="c.id"/><span class="live">LIVE</span></span>
             <div><b>{{ c.label }}</b><div class="faint" style="font-size:12.5px">{{ c.place }} · {{ CATS[c.cat]?.label }}</div></div>
             <div class="faint" style="font-size:12.5px">{{ c.note }}<span v-if="c.credit"> · {{ c.credit }}</span></div>
             <div class="row">
@@ -362,7 +363,7 @@ const LiveGallery = {
     watch(mode, (m) => { store.galleryMode = m; });
     const inCity = computed(() => (city.value === "all" ? GALLERY : GALLERY.filter((c) => c.city === city.value)));
     const match = (c) => !query.value || `${c.label} ${c.place} ${c.note} ${c.credit} ${c.cityLabel}`.toLowerCase().includes(query.value.toLowerCase());
-    const shown = computed(() => (query.value ? GALLERY : inCity.value).filter((c) => (!cat.value || c.cat === cat.value) && match(c)));
+    const shown = computed(() => (query.value ? GALLERY : inCity.value).filter((c) => (query.value || !cat.value || c.cat === cat.value) && match(c)));
     const cats = computed(() => Object.entries(CATS).map(([k, v]) => ({ k, ...v, n: inCity.value.filter((c) => c.cat === k).length })).filter((x) => x.n));
     // the grid, a section per kind (or per city while searching)
     const groups = computed(() => {
@@ -390,13 +391,13 @@ const LiveGallery = {
                 @click="cat = cat === x.k ? '' : x.k"><span :style="{background: x.col, width: '7px', height: '7px', borderRadius: '50%', display: 'inline-block'}"></span>
           {{ x.label }} <span class="faint">{{ x.n }}</span></button></div>
     </div>
-    <GalleryMap v-if="mode === 'map'" :cams="shown" :have="have" :fit-key="(query ? 'q' : city) + '|' + cat" @pick="$emit('pick', $event)"/>
+    <GalleryMap v-if="mode === 'map'" :cams="shown" :have="have" :fit-key="query ? 'q|' + query : city + '|' + cat" @pick="$emit('pick', $event)"/>
     <template v-else>
       <div class="card-body" v-for="g in groups" :key="g.key" style="padding-top:4px">
         <div class="wc-subhead"><Icon :name="g.icon" :size="13" style="vertical-align:-2px"/> {{ g.label }}</div>
         <div class="wc-gallery">
           <button v-for="c in g.cams" :key="c.id" type="button" class="wc-pick" :class="{have: have(c)}" @click="$emit('pick', c)" :title="c.note">
-            <span class="wc-thumb"><SnapImg :source="c.source"/><span class="live">LIVE</span>
+            <span class="wc-thumb"><SnapImg :source="c.source" :vid="c.id"/><span class="live">LIVE</span>
               <span class="wc-have" v-if="have(c)"><Icon name="Check" :size="13"/>added</span></span>
             <b>{{ c.label }}</b><span class="faint">{{ c.place }}</span><span class="faint wc-note">{{ c.note }}</span>
           </button></div></div>
@@ -426,7 +427,7 @@ const WebcamList = {
       return id;
     };
     // the gallery: ready-made webcams; one you already have opens its page instead
-    const haveId = (c) => cams.value.find(([, x]) => x.source?.url === c.source.url)?.[0];
+    const haveId = (c) => cams.value.find(([, x]) => x.source?.url === c.source.url || (x.source?.type === "youtube" && youtubeId(x.source.url) === c.id))?.[0];
     const pick = (c) => {
       const have = haveId(c);
       if (have) return go(`webcams/${have}`);
@@ -737,7 +738,7 @@ const WebcamEditor = {
       shield: /\d/.test(String(ov.value.shield?.route ?? "")),
       weather: Number.isFinite(cam.value.lat), sun: Number.isFinite(cam.value.lat) }[k] ?? true);
     const needsLocation = computed(() => (ov.value.show.weather || ov.value.show.sun) && !(Number.isFinite(cam.value.lat) && Number.isFinite(cam.value.lon)));
-    const galleryLoc = computed(() => GALLERY.find((g) => g.source.url === cam.value.source?.url && g.lat != null) || null);
+    const galleryLoc = computed(() => GALLERY.find((g) => (g.source.url === cam.value.source?.url || g.id === youtubeId(cam.value.source?.url || "")) && g.lat != null) || null);
     const useGalleryLoc = () => { cam.value.lat = galleryLoc.value.lat; cam.value.lon = galleryLoc.value.lon; };
     // "Preview on display" (the save bar) puts this webcam on the wall for the preview, then releases it
     let held = null;                                     // what the preview hook put on the wall

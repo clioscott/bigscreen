@@ -558,7 +558,7 @@ def describe():
 # workers grab it. A source that failed is not tried again for SNAP_RETRY, so dead streams cost nothing per page load.
 SNAP_TTL = 3600.0            # a still older than this is refreshed (and served meanwhile)
 SNAP_RETRY = 600.0           # after a failed grab
-SNAP_KEEP = 500              # stills kept on disk (the gallery has ~300 webcams)
+SNAP_KEEP = 500              # stills kept on disk (the gallery has ~100 webcams, plus DriveBC)
 SNAP_WORKERS = 4             # grabs at once: each is ~5 s of yt-dlp + ~4 s of ffmpeg, mostly waiting on the network
 _snap_queue: "queue.Queue" = queue.Queue()
 _snap_busy: set = set()      # keys queued or being grabbed
