@@ -123,7 +123,8 @@ sends the Pi frames already cropped to its zone, so the Pi never decodes video. 
 place on the wall, colour adjustments, and a caption in one of twelve layouts (lower third, split bar with a big clock,
 world clock, departure board, ticker, chips and more) built from the sections you pick and order: name, place, local
 time, weather and sunrise/sunset at the camera (Open-Meteo), date, time difference, your own line and who runs the
-camera. DriveBC's highway cameras are there too (by bridge and tunnel, by city, or on a map), shown as stills with the
+camera. A ready-made gallery of about a hundred 24/7 streams (Vancouver, Calgary, Toronto, Seattle, San Francisco, New
+York, Boston and more) can be browsed by city and kind, as a grid or on a map. DriveBC's highway cameras are there too (by bridge and tunnel, by city, or on a map), shown as stills with the
 exact time each picture was taken. Set up on the control panel's Webcams page, with a live preview of exactly what the
 wall will show.
 

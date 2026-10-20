@@ -3,8 +3,9 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
 import Sortable from "sortablejs";
 import { store, api, fail, toast, seed, go, clone, dirty, previewOnDisplay, playOnDisplay, rotationAction } from "../core.js";
-import { GALLERY, snap, thumb } from "./webcam_gallery.js";
+import { GALLERY, CITIES, CATS, snap, thumb } from "./webcam_gallery.js";
 import { CameraMap } from "./cameramap.js";
+import { useSlippyMap } from "./slippymap.js";
 
 export const SHAPES = {
   left: { label: "Left side", panel: "webcam", side: "left", icon: "PanelLeft" },
@@ -143,12 +144,18 @@ const SnapImg = {
       const id = props.source.type === "youtube" ? youtubeId(props.source.url) : "";
       if (id) { url.value = thumb({ id }); state.value = "ok"; } else state.value = "none";
     };
-    onMounted(() => load());
-    watch(() => srcUrl(props.source), () => { clearTimeout(timer); state.value = "loading"; url.value = ""; load(); });
-    onBeforeUnmount(() => { alive = false; clearTimeout(timer); if (blobUrl) URL.revokeObjectURL(blobUrl); });
-    return { url, state };
+    // only once it is on screen: a long gallery would otherwise queue a grab on the hub for every webcam in it
+    const box = ref(null);
+    let io = null;
+    onMounted(() => {
+      io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { io.disconnect(); io = null; load(); } }, { rootMargin: "200px" });
+      io.observe(box.value);
+    });
+    watch(() => srcUrl(props.source), () => { if (io) return; clearTimeout(timer); state.value = "loading"; url.value = ""; load(); });
+    onBeforeUnmount(() => { alive = false; clearTimeout(timer); io?.disconnect(); if (blobUrl) URL.revokeObjectURL(blobUrl); });
+    return { url, state, box };
   },
-  template: `<img v-if="url" :src="url" alt=""><span v-else class="wc-snap-wait">{{ state === 'loading' ? 'live frame…' : '' }}</span>`,
+  template: `<img v-if="url" :src="url" alt=""><span v-else ref="box" class="wc-snap-wait">{{ state === 'loading' ? 'live frame…' : '' }}</span>`,
 };
 
 // --- traffic cams: DriveBC highway cameras (stills that refresh every few minutes) ---------------------------------
@@ -253,9 +260,154 @@ const TrafficCams = {
   </div>`,
 };
 
+// --- live webcams: the ready-made gallery (webcam_gallery.js) by city and kind, as a grid or on a map ---------------
+// the map: one dot per webcam, coloured by kind; webcams too close together at this zoom share a numbered dot
+const GalleryMap = {
+  components: { SnapImg },
+  props: { cams: Array, have: Function, fitKey: String },          // fitKey changes → fit the map to the cams again
+  emits: ["pick"],
+  setup(props) {
+    const el = ref(null);
+    const { size, view, px, onScreen, tiles, fit, down, move, up, wheel, zoomAt, dragged } =
+      useSlippyMap(el, { lon: -98, lat: 45, z: 3 }, { minZ: 2, maxZ: 16 });
+    const sel = ref([]);                                           // the webcams picked (several when a dot is shared)
+    const fitAll = () => {
+      const pts = props.cams.filter((c) => c.lat != null);
+      if (!pts.length) return;
+      const lons = pts.map((c) => c.lon), lats = pts.map((c) => c.lat);
+      fit([Math.min(...lons) - 0.01, Math.min(...lats) - 0.01, Math.max(...lons) + 0.01, Math.max(...lats) + 0.01], 13);
+    };
+    onMounted(fitAll);
+    watch(() => props.fitKey, () => { sel.value = []; fitAll(); });
+    const dots = computed(() => {
+      const cell = 22, by = {};
+      for (const c of props.cams) {
+        if (c.lat == null) continue;
+        const p = px(c.lon, c.lat);
+        if (!onScreen(p, 30)) continue;
+        const k = `${Math.round(p.x / cell)},${Math.round(p.y / cell)}`;
+        (by[k] = by[k] || { key: k, cams: [], x: 0, y: 0 }).cams.push(c);
+        by[k].x += p.x; by[k].y += p.y;
+      }
+      return Object.values(by).map((d) => ({ ...d, x: d.x / d.cams.length, y: d.y / d.cams.length,
+        col: (CATS[d.cams[0].cat] || {}).col || "#7c8cff", on: d.cams.some((c) => sel.value.includes(c)) }));
+    });
+    const pick = (d) => {
+      if (dragged()) return;
+      const spread = new Set(d.cams.map((c) => `${c.lat.toFixed(3)},${c.lon.toFixed(3)}`)).size > 1;
+      if (spread && view.value.z < 15) {                              // a crowd: zoom in on it
+        const lons = d.cams.map((c) => c.lon), lats = d.cams.map((c) => c.lat);
+        fit([Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats)], Math.min(16, view.value.z + 4));
+        return;
+      }
+      sel.value = d.cams;
+    };
+    const kinds = computed(() => [...new Set(props.cams.map((c) => c.cat))].map((k) => ({ k, ...CATS[k] })).filter((k) => k.label));
+    return { el, size, tiles, down, move, up, wheel, zoomAt, dots, pick, sel, fitAll, kinds, CATS };
+  },
+  template: `<div style="display:flex; min-height:0; border-top:1px solid var(--line)">
+      <div ref="el" @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up" @wheel="wheel"
+           style="position:relative; flex:1; height:calc(100vh - 260px); min-height:420px; overflow:hidden; background:#0e1116; cursor:grab; touch-action:none; user-select:none">
+        <img v-for="t in tiles" :key="t.key" :src="t.src.replace('{layer}', 'esri_dark')" draggable="false"
+             :style="{position: 'absolute', left: t.x + 'px', top: t.y + 'px', width: '256px', height: '256px', pointerEvents: 'none'}" alt="">
+        <img v-for="t in tiles" :key="'n' + t.key" :src="t.src.replace('{layer}', 'esri_dark_labels')" draggable="false"
+             :style="{position: 'absolute', left: t.x + 'px', top: t.y + 'px', width: '256px', height: '256px', pointerEvents: 'none', opacity: .8}" alt="">
+        <svg :width="size.w" :height="size.h" style="position:absolute; inset:0">
+          <g v-for="d in dots" :key="d.key" @click.stop="pick(d)" style="cursor:pointer">
+            <circle :cx="d.x" :cy="d.y" :r="d.cams.length > 1 ? 9 : 5.5" :fill="d.col" stroke="#000" stroke-width="1.4"/>
+            <text v-if="d.cams.length > 1" :x="d.x" :y="d.y + 3.5" text-anchor="middle" font-size="10" font-weight="700" fill="#000">{{ d.cams.length }}</text>
+            <circle v-if="d.on" :cx="d.x" :cy="d.y" :r="d.cams.length > 1 ? 13 : 10" fill="none" stroke="#fff" stroke-width="1.5"/>
+            <title>{{ d.cams.map(c => c.label).join('\\n') }}</title>
+          </g>
+        </svg>
+        <div style="position:absolute; left:10px; top:10px; display:flex; flex-direction:column; gap:4px" @pointerdown.stop>
+          <button class="btn sm icon-only" @click="zoomAt(1, size.w / 2, size.h / 2)"><Icon name="Plus" :size="14"/></button>
+          <button class="btn sm icon-only" @click="zoomAt(-1, size.w / 2, size.h / 2)"><Icon name="Minus" :size="14"/></button>
+          <button class="btn sm icon-only" @click="fitAll" title="Show them all"><Icon name="Maximize2" :size="14"/></button>
+        </div>
+        <div style="position:absolute; left:10px; bottom:8px; max-width:calc(100% - 20px); display:flex; flex-wrap:wrap; gap:4px 12px; font-size:12px; white-space:nowrap; background:rgba(0,0,0,.6); padding:4px 9px; border-radius:7px" @pointerdown.stop>
+          <span v-for="k in kinds" :key="k.k"><span :style="{background: k.col, display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%'}"></span> {{ k.label }}</span>
+          <span class="faint">numbered dot = several webcams: click to zoom in</span>
+        </div>
+        <div style="position:absolute; right:6px; top:4px; font-size:10.5px; color:#9aa; background:rgba(0,0,0,.5); padding:1px 5px; border-radius:4px" @pointerdown.stop>Basemap © Esri, HERE, Garmin, © OpenStreetMap contributors</div>
+      </div>
+      <div style="width:320px; flex:none; border-left:1px solid var(--line); overflow:auto; height:calc(100vh - 260px); min-height:420px">
+        <div v-if="sel.length" class="card-body stack">
+          <div v-for="c in sel" :key="c.id" class="stack" style="gap:6px">
+            <span class="wc-thumb" style="border-radius:8px; overflow:hidden"><SnapImg :source="c.source"/><span class="live">LIVE</span></span>
+            <div><b>{{ c.label }}</b><div class="faint" style="font-size:12.5px">{{ c.place }} · {{ CATS[c.cat]?.label }}</div></div>
+            <div class="faint" style="font-size:12.5px">{{ c.note }}<span v-if="c.credit"> · {{ c.credit }}</span></div>
+            <div class="row">
+              <button v-if="!have(c)" class="btn sm primary" @click="$emit('pick', c)"><Icon name="Plus" :size="13"/>Add as a webcam</button>
+              <button v-else class="btn sm" @click="$emit('pick', c)"><Icon name="Check" :size="13"/>Added · open it</button></div>
+          </div>
+          <button class="btn sm ghost" @click="sel = []"><Icon name="X" :size="13"/>Close</button>
+        </div>
+        <div v-else class="card-body faint" style="font-size:12.5px">Click a dot to see that webcam's live picture and add it.
+          Drag to pan, scroll to zoom.</div>
+      </div>
+    </div>`,
+};
+
+const LiveGallery = {
+  components: { SnapImg, GalleryMap },
+  props: { have: Function },
+  emits: ["pick"],
+  setup() {
+    const city = ref(store.galleryCity || CITIES[0].key);
+    const cat = ref("");
+    const mode = ref(store.galleryMode || "grid");
+    const query = ref("");
+    watch(city, (c) => { store.galleryCity = c; cat.value = ""; });
+    watch(mode, (m) => { store.galleryMode = m; });
+    const inCity = computed(() => (city.value === "all" ? GALLERY : GALLERY.filter((c) => c.city === city.value)));
+    const match = (c) => !query.value || `${c.label} ${c.place} ${c.note} ${c.credit} ${c.cityLabel}`.toLowerCase().includes(query.value.toLowerCase());
+    const shown = computed(() => (query.value ? GALLERY : inCity.value).filter((c) => (!cat.value || c.cat === cat.value) && match(c)));
+    const cats = computed(() => Object.entries(CATS).map(([k, v]) => ({ k, ...v, n: inCity.value.filter((c) => c.cat === k).length })).filter((x) => x.n));
+    // the grid, a section per kind (or per city while searching)
+    const groups = computed(() => {
+      if (query.value) {
+        return CITIES.map((x) => ({ key: x.key, label: x.label, icon: "MapPin", cams: shown.value.filter((c) => c.city === x.key) })).filter((g) => g.cams.length);
+      }
+      return Object.entries(CATS).map(([k, v]) => ({ key: k, label: v.label, icon: v.icon, cams: shown.value.filter((c) => c.cat === k) })).filter((g) => g.cams.length);
+    });
+    return { CITIES, city, cat, cats, mode, query, shown, groups, total: GALLERY.length };
+  },
+  template: `<div class="card" style="margin-top:16px">
+    <div class="card-head"><Icon name="Video" :size="16"/><h3>Live webcams</h3>
+      <span class="faint" style="font-size:12px">{{ total }} 24/7 YouTube streams · click to add</span><span class="spacer"></span>
+      <input class="input" v-model="query" placeholder="Search every city" style="max-width:200px; height:28px">
+      <Seg v-model="mode" :options="[{value:'grid', label:'Grid', icon:'LayoutGrid'}, {value:'map', label:'Map', icon:'Map'}]"/></div>
+    <div class="card-body stack" style="gap:8px; padding-bottom:6px" v-if="!query">
+      <div class="row" style="gap:6px; flex-wrap:wrap">
+        <button v-for="x in CITIES" :key="x.key" type="button" class="chip" :class="{off: city !== x.key}" style="height:26px; padding:0 10px"
+                @click="city = x.key">{{ x.label }} <span class="faint">{{ x.cams.length }}</span></button>
+        <button type="button" class="chip" :class="{off: city !== 'all'}" style="height:26px; padding:0 10px" @click="city = 'all'">
+          <Icon name="Globe" :size="13"/>Everywhere <span class="faint">{{ total }}</span></button></div>
+      <div class="row" style="gap:6px; flex-wrap:wrap">
+        <button type="button" class="chip" :class="{off: cat}" style="height:24px; padding:0 9px; font-size:12px" @click="cat = ''">All kinds</button>
+        <button v-for="x in cats" :key="x.k" type="button" class="chip" :class="{off: cat !== x.k}" style="height:24px; padding:0 9px; font-size:12px"
+                @click="cat = cat === x.k ? '' : x.k"><span :style="{background: x.col, width: '7px', height: '7px', borderRadius: '50%', display: 'inline-block'}"></span>
+          {{ x.label }} <span class="faint">{{ x.n }}</span></button></div>
+    </div>
+    <GalleryMap v-if="mode === 'map'" :cams="shown" :have="have" :fit-key="(query ? 'q' : city) + '|' + cat" @pick="$emit('pick', $event)"/>
+    <template v-else>
+      <div class="card-body" v-for="g in groups" :key="g.key" style="padding-top:4px">
+        <div class="wc-subhead"><Icon :name="g.icon" :size="13" style="vertical-align:-2px"/> {{ g.label }}</div>
+        <div class="wc-gallery">
+          <button v-for="c in g.cams" :key="c.id" type="button" class="wc-pick" :class="{have: have(c)}" @click="$emit('pick', c)" :title="c.note">
+            <span class="wc-thumb"><SnapImg :source="c.source"/><span class="live">LIVE</span>
+              <span class="wc-have" v-if="have(c)"><Icon name="Check" :size="13"/>added</span></span>
+            <b>{{ c.label }}</b><span class="faint">{{ c.place }}</span><span class="faint wc-note">{{ c.note }}</span>
+          </button></div></div>
+      <div class="card-body faint" v-if="!groups.length">No webcam matches{{ query ? ' “' + query + '”' : '' }}.</div>
+    </template>
+  </div>`,
+};
+
 // --- list ---------------------------------------------------------------------------------------------------
 const WebcamList = {
-  components: { SnapImg, TrafficCams },
+  components: { SnapImg, TrafficCams, LiveGallery },
   setup() {
     const wc = seed(["modules", "webcams"], { cams: {} });
     const cams = computed(() => Object.entries(store.draft.modules.webcams.cams || {}));
@@ -286,7 +438,7 @@ const WebcamList = {
       return u.length ? `in the rotation ×${u.length}` : "not in the rotation";
     };
     const srcHost = (s) => (s?.type === "drivebc" ? `DriveBC camera ${s.id}` : host(s?.url));
-    return { wc, cams, feedFor, feedPill, add, host, srcHost, hasSource, usedText, go, GALLERY, haveId, pick };
+    return { wc, cams, feedFor, feedPill, add, host, srcHost, hasSource, usedText, go, haveId, pick };
   },
   template: `<div class="page">
     <div class="page-head"><div class="grow"><h1>Webcams</h1>
@@ -303,15 +455,7 @@ const WebcamList = {
       </div>
       <div class="empty" v-if="!cams.length">No webcams yet.</div>
     </div>
-    <div class="card" style="margin-top:16px" v-for="g in GALLERY" :key="g.group">
-      <div class="card-head"><Icon :name="g.icon" :size="16"/><h3>{{ g.group }}</h3><span class="faint" style="font-size:12px">live now · click to add</span></div>
-      <div class="card-body wc-gallery">
-        <button v-for="c in g.cams" :key="c.id" type="button" class="wc-pick" :class="{have: haveId(c)}" @click="pick(c)" :title="c.note">
-          <span class="wc-thumb"><SnapImg :source="c.source"/><span class="live">LIVE</span>
-            <span class="wc-have" v-if="haveId(c)"><Icon name="Check" :size="13"/>added</span></span>
-          <b>{{ c.label }}</b><span class="faint">{{ c.place }}</span><span class="faint wc-note">{{ c.note }}</span>
-        </button>
-      </div></div>
+    <LiveGallery :have="haveId" @pick="pick"/>
     <TrafficCams :cams="cams" @add="add($event, false)"/>
     <div class="faint" style="font-size:12.5px; margin-top:10px">Or use Add webcam with any YouTube live page, an HLS / MJPEG / RTSP stream URL,
       a DriveBC camera number, or any still image URL.</div>
@@ -593,7 +737,7 @@ const WebcamEditor = {
       shield: /\d/.test(String(ov.value.shield?.route ?? "")),
       weather: Number.isFinite(cam.value.lat), sun: Number.isFinite(cam.value.lat) }[k] ?? true);
     const needsLocation = computed(() => (ov.value.show.weather || ov.value.show.sun) && !(Number.isFinite(cam.value.lat) && Number.isFinite(cam.value.lon)));
-    const galleryLoc = computed(() => GALLERY.flatMap((g) => g.cams).find((g) => g.source.url === cam.value.source?.url && g.lat != null) || null);
+    const galleryLoc = computed(() => GALLERY.find((g) => g.source.url === cam.value.source?.url && g.lat != null) || null);
     const useGalleryLoc = () => { cam.value.lat = galleryLoc.value.lat; cam.value.lon = galleryLoc.value.lon; };
     // "Preview on display" (the save bar) puts this webcam on the wall for the preview, then releases it
     let held = null;                                     // what the preview hook put on the wall
