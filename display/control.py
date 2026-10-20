@@ -7,6 +7,8 @@
     POST /play                   {"side": "left"|"right", "entry": {...rotation entry}, "hold": false, "ttl_sec": 3600}
                                  show an entry now: once (by its own rules, then the rotation resumes) or held
     POST /rotation               {"side": "left"|"right" (omit: both), "action": "next"|"prev"|"stop"|"hold"|"release"}
+                                 or {"side", "action": "goto", "index": n, "entry": {...}}: play entry n now and carry on
+                                 from there (``entry``, as the caller saw it, finds it again if the list changed)
     POST /override               {"side": …, "panel": "...", "duration_sec": 60, "once": false, ...entry fields}
                                  older form of /play: held for duration_sec (or played once with "once")
     POST /override/clear         {"side": "left"|"right"} or {} for both: stop previews
@@ -137,9 +139,18 @@ def _make_handler(app):
                 return self._json({"ok": True})
             if u.path == "/rotation":
                 act = body.get("action")
+                if act == "goto":
+                    eng = app.screen.engines.get(body.get("side"))
+                    if not eng:
+                        return self._json({"error": "goto needs side left|right"}, 400)
+                    try:
+                        i = eng.goto(body.get("index"), body.get("entry"))
+                    except LookupError as e:
+                        return self._json({"error": str(e)}, 409)
+                    return self._json({"ok": True, "index": i, "panels": app.screen.describe()})
                 sides = [body["side"]] if body.get("side") else ["left", "right"]
                 if act not in ("next", "prev", "stop", "hold", "release") or any(x not in app.screen.engines for x in sides):
-                    return self._json({"error": "need action next|prev|stop|hold|release and side left|right"}, 400)
+                    return self._json({"error": "need action next|prev|goto|stop|hold|release and side left|right"}, 400)
                 for x in sides:
                     eng = app.screen.engines[x]
                     {"next": eng.next, "prev": eng.prev, "stop": eng.stop,

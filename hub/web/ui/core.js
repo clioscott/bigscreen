@@ -285,6 +285,15 @@ export async function rotationAction(action, side) {
     setTimeout(refreshDisplay, 300);
   } catch (err) { fail(err); }
 }
+// jump the rotation to an entry: it plays now and the rotation carries on after it (the display finds the entry
+// again by what it shows if the saved list differs from the index)
+export async function rotationGoto(side, index, entry) {
+  try {
+    await api("/api/display/rotation", { json: { action: "goto", side, index, entry } });
+    toast("Jumped there: the rotation carries on from it");
+    setTimeout(refreshDisplay, 300);
+  } catch (err) { fail(err); }
+}
 export function entryTitle(e) {
   if (!e) return "";
   const t = PANEL_TYPES[e.panel];

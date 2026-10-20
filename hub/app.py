@@ -852,7 +852,8 @@ def display_play(payload: dict = Body(...)):
 
 @app.post("/api/display/rotation")
 def display_rotation(payload: dict = Body(...)):
-    """{"side"?, "action": "next"|"prev"|"stop"|"hold"|"release"}"""
+    """{"side"?, "action": "next"|"prev"|"stop"|"hold"|"release"}, or {"side", "action": "goto", "index", "entry"}:
+    jump the rotation to that entry (it plays now and the rotation carries on after it)."""
     return _display_call("/rotation", payload)
 
 
