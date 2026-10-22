@@ -82,4 +82,8 @@ and `assets/data`. Attribution is shown on screen where the provider asks for it
   (Open North) — open government licences.
 - Maps: [Natural Earth](https://www.naturalearthdata.com) (public domain) and © [OpenStreetMap](https://www.openstreetmap.org/copyright)
   contributors (ODbL) via Overpass; basemap tiles © [Esri](https://www.esri.com) and © [CARTO](https://carto.com/attributions).
+- Time zone map: rules from the [IANA tz database](https://www.iana.org/time-zones) (public domain, via the
+  [tzdata](https://pypi.org/project/tzdata/) package) and zone boundaries from
+  [timezone-boundary-builder](https://github.com/evansiroky/timezone-boundary-builder) by Evan Siroky, built from
+  © OpenStreetMap contributors (ODbL); both fetched by the hub at run time, not stored here.
 - Headlines: publishers' own RSS feeds (titles only).
