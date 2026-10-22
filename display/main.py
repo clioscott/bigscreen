@@ -226,6 +226,11 @@ class Screen:
         self.panels["bridges"] = self.bridges.draw
         self.full_panels["bridges_full"] = self.bridges.draw
         self.takeover_panels["bridges_wall"] = self.bridges.draw
+        from display.modules.tzmap import TzMapPanel          # US/Canada by UTC offset (hub/jobs/timezones.py)
+        self.tzmap = keep("tzmap", ("timezones",), lambda: TzMapPanel(cfg, getattr(loader, "data_dir", None)))
+        self.panels["timezones"] = self.tzmap.draw
+        self.full_panels["timezones_full"] = self.tzmap.draw
+        self.takeover_panels["timezones_wall"] = self.tzmap.draw
         from display.modules.webcam import WebcamPanel        # live video decoded by the hub (control panel → Webcams)
         self.webcam = keep("webcam", ("webcams",), lambda: WebcamPanel(cfg, getattr(loader, "data_dir", None)))
         self.panels["webcam"] = self.webcam.draw

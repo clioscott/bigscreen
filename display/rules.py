@@ -13,6 +13,8 @@ An entry's ``rules`` is a list; all of them must hold. Each rule is ``{"if": <co
     {"if": "hours", "from": "07:00", "to": "22:00"}           local time in [from, to) (wraps past midnight)
     {"if": "days", "days": [0, 1, 2, 3, 4]}                   weekday (Mon = 0)
     {"if": "fresh", "max_age_min": 30}                        the entry's own data is no older than this
+    {"if": "timechange", "days_after": 0}                     a clock change is coming (the time zone map's warning,
+                                                              modules.timezones.warn_days) or was under N days ago
     {"if": "naad"} / "roads" / "quakes" / "tsunami" / "wildfire"   that BC alert screen has something to show
     … "phase": "full" | "half"                                  (alert and BC rules) only alerts at that stage of their
                                                               life on the wall (display/modules/alert_life.py): "full" =
@@ -174,6 +176,9 @@ class Env:
             scr = getattr(self.s, "bc", {}).get(cond)
             ph = r.get("phase")
             return bool(scr) and self._get(f"bc_{cond}_{ph}", lambda: scr.active(ph), 2.0)
+        if cond == "timechange":
+            tzm = getattr(self.s, "tzmap", None)
+            return bool(tzm) and self._get(f"tzc_{r.get('days_after')}", lambda: tzm.changing(r.get("days_after") or 0), 30.0)
         if cond == "fresh":
             age = self.data_age(entry)
             return age is not None and age <= float(r.get("max_age_min") or 30) * 60
