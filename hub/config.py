@@ -164,7 +164,12 @@ def _validate_timezones(tz):
     for key in ("title", "upcoming_label", "now_label", "test_label"):
         if tz.get(key) is not None and (not isinstance(tz[key], str) or len(tz[key]) > 30):
             raise ConfigError(f"timezones.{key} must be text of at most 30 characters")
-    for key in ("names", "offset_names", "places", "colors", "country_labels", "country_short"):
+    if tz.get("legend_rows") is not None and tz["legend_rows"] not in ("traditional", "offset"):
+        raise ConfigError("timezones.legend_rows must be traditional or offset")
+    lh = tz.get("list_hide")
+    if lh is not None and (not isinstance(lh, list) or not all(isinstance(z, str) for z in lh)):
+        raise ConfigError("timezones.list_hide must be a list of zone names")
+    for key in ("names", "offset_names", "places", "colors", "country_labels", "country_short", "row_names"):
         d = tz.get(key)
         if d is None:
             continue
@@ -176,7 +181,8 @@ def _validate_timezones(tz):
     v = tz.get("canada_boost")
     if v is not None and (not num(v) or not 0.5 <= v <= 2):
         raise ConfigError("timezones.canada_boost must be 0.5–2")
-    for k in list(tz.get("colors") or {}) + [k.split(":")[-1] for k in tz.get("offset_names") or {}]:
+    for k in list(tz.get("colors") or {}) + list(tz.get("row_names") or {}) + \
+            [k.split(":")[-1] for k in tz.get("offset_names") or {}]:
         try:
             int(k)
         except ValueError:

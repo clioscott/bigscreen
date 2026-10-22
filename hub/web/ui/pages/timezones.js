@@ -39,6 +39,11 @@ export const Timezones = {
       if (!Object.keys(o).length) delete tz.value[k];
     };
     const cities = computed(() => tz.value.cities || d.value.cities || []);
+    const setListed = (id, on) => {
+      const hide = new Set(val("list_hide") || []);
+      if (on) hide.delete(id); else hide.add(id);
+      set("list_hide", [...hide]);
+    };
     const editCities = () => { if (!tz.value.cities) tz.value.cities = clone(d.value.cities); return tz.value.cities; };
     const addCity = () => editCities().push({ name: "New city", lat: 49.0, lon: -100.0, on: true });
 
@@ -99,7 +104,7 @@ export const Timezones = {
       catch (e) { fail(e); running.value = false; }
     };
     const zoneName = (z) => z.replace(/^(America|Pacific)\//, "").replace(/_/g, " ");
-    return { d, state, shape, page, asOf, custom, tz, val, set, dictVal, dictSet, cities, editCities, addCity, offsets, colorOf,
+    return { setListed, d, state, shape, page, asOf, custom, tz, val, set, dictVal, dictSet, cities, editCities, addCity, offsets, colorOf,
       pagesAt, preview, play, addToRotation, used, rebuild, running, SHAPES, ago, when, offText, zoneName };
   },
   template: `<div class="page">
@@ -139,6 +144,12 @@ export const Timezones = {
               <Field label="Clock"><Seg :modelValue="val('time_format')" @update:modelValue="v => set('time_format', v)" :options="[{value:'12h', label:'12 h'}, {value:'24h', label:'24 h'}]"/></Field>
               <Field label="Times on the map"><Seg :modelValue="val('map_labels')" @update:modelValue="v => set('map_labels', v)"
                 :options="[{value:'auto', label:'When no legend'}, {value:'on', label:'Always'}, {value:'off', label:'Never'}]"/></Field></div>
+            <Field label="Legend rows" hint="Canada and the US in columns side by side, so their times line up">
+              <Seg :modelValue="val('legend_rows')" @update:modelValue="v => set('legend_rows', v)"
+                :options="[{value:'traditional', label:'Old zones (Pacific, Mountain…)'}, {value:'offset', label:'UTC offsets'}]"/></Field>
+            <div class="row" style="flex-wrap:wrap; gap:6px" v-if="val('legend_rows') !== 'offset'">
+              <span v-for="(n, off) in {'-480': 'PACIFIC', '-420': 'MOUNTAIN', '-360': 'CENTRAL', '-300': 'EASTERN', '-240': 'ATLANTIC'}" :key="off" class="row nowrap" style="gap:4px">
+                <input class="input" style="width:100px" :placeholder="n" :value="dictVal('row_names', off)" @input="dictSet('row_names', off, $event.target.value)" maxlength="12"></span></div>
             <ToggleRow :modelValue="val('show_utc')" @update:modelValue="v => set('show_utc', v)" label="UTC offset in the legend"/>
             <ToggleRow :modelValue="val('show_places')" @update:modelValue="v => set('show_places', v)" label="Places in the legend" hint="BC, AB, US Pacific…; places with new rules this year are coloured"/>
             <details><summary class="faint">Zone names (by abbreviation)</summary>
@@ -146,9 +157,10 @@ export const Timezones = {
                 <span v-for="(n, ab) in state?.defaults?.names || {}" :key="ab" class="row nowrap" style="gap:4px"><span class="mono faint" style="width:40px">{{ ab }}</span>
                   <input class="input" style="width:110px" :placeholder="n" :value="dictVal('names', ab)" @input="dictSet('names', ab, $event.target.value)" maxlength="30"></span></div>
               <div class="faint" style="font-size:12.5px; margin-top:6px">An offset's name comes from its zones' abbreviations (Vancouver becomes MST on Nov 1, so BC is "Mountain"); name an offset yourself under Colours.</div></details>
-            <details><summary class="faint">Places (per zone)</summary>
+            <details><summary class="faint">Zones: in the list, and their places</summary>
               <div class="stack" style="gap:4px; margin-top:8px">
                 <div v-for="z in state?.zones || []" :key="z.id" class="row nowrap" style="gap:8px">
+                  <Toggle :modelValue="!(val('list_hide') || []).includes(z.id)" @update:modelValue="v => setListed(z.id, v)" title="In the list (it's on the map either way)"/>
                   <span style="width:170px" class="mono">{{ zoneName(z.id) }}</span><span class="faint" style="width:110px">{{ z.abbr }} {{ offText(z.off) }}</span>
                   <input class="input grow" :placeholder="state.defaults.places[z.id] || '(none)'" :value="dictVal('places', z.id)" @input="dictSet('places', z.id, $event.target.value)" maxlength="30">
                   <button v-if="state.defaults.places[z.id] && tz.places?.[z.id] !== ''" class="btn sm ghost icon-only" title="Leave out of the legend" @click="dictSet('places', z.id, '')"><Icon name="EyeOff" :size="14"/></button>
@@ -167,7 +179,7 @@ export const Timezones = {
             <Field label="Canada, brighter than the US by" hint="1× = the same; the border is drawn as a heavy line either way">
               <Slider :modelValue="val('canada_boost')" @update:modelValue="v => set('canada_boost', v)" :min="0.5" :max="2" :step="0.05" :format="v => v.toFixed(2) + '×'"/></Field>
             <ToggleRow :modelValue="val('highlight_new')" @update:modelValue="v => set('highlight_new', v)" label="Hatch zones with new rules" hint="On the upcoming map: zones whose offset differs from a year before"/>
-            <ToggleRow :modelValue="val('insets')" @update:modelValue="v => set('insets', v)" label="Alaska and Hawaii insets"/>
+            <ToggleRow :modelValue="val('insets')" @update:modelValue="v => set('insets', v)" label="Alaska and Hawaii insets" hint="On the map only; they're left out of the list (see Zones under Text)"/>
           </div></div>
 
         <div class="card"><div class="card-head"><Icon name="MapPin" :size="16"/><h3>Cities</h3><span class="spacer"></span>

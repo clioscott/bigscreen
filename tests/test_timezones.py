@@ -67,7 +67,7 @@ def test_rule_diff_names_the_zone_and_moment():
 
 
 def _data(changes_at=NOV1):
-    return {"zones": [{"id": "America/Vancouver", "cc": "CA"}, {"id": "America/Los_Angeles", "cc": "US"}],
+    return {"zones": [{"id": "America/Vancouver", "cc": "CA", "home": -480}, {"id": "America/Los_Angeles", "cc": "US", "home": -480}],
             "states": [{"from": changes_at - 86400 * 30, "offs": [-420, -420], "abbrs": ["PDT", "PDT"]},
                        {"from": changes_at, "offs": [-420, -480], "abbrs": ["MST", "PST"]}],
             "changes": [{"start": changes_at, "end": changes_at, "changed": [1], "new": [0]}]}
@@ -182,7 +182,8 @@ def test_config_validation():
                           "cities": mod.DEFAULT_CITIES, "time_format": "24h"}))
     for bad in ({"warn_days": 99}, {"warn_pages": "x"}, {"colors": {"-420": "red"}}, {"colors": {"pst": "#ffffff"}},
                 {"cities": [{"name": "X", "lat": 99, "lon": 0}]}, {"cities": [{"name": "", "lat": 1, "lon": 1}]},
-                {"title": "x" * 40}, {"fill": 0}, {"names": {"PST": 5}}):
+                {"title": "x" * 40}, {"fill": 0}, {"names": {"PST": 5}}, {"legend_rows": "x"},
+                {"list_hide": "Pacific/Honolulu"}, {"row_names": {"pac": "P"}}):
         with pytest.raises(config.ConfigError):
             config.validate(_cfg(bad))
 
@@ -261,24 +262,50 @@ def test_frames_are_drawn_once_a_minute(data_dir, monkeypatch):
     assert len(calls) == 1 and c.buf.any()
 
 
-@pytest.mark.parametrize("size", [(448, 192), (448, 134), (223, 134)])
-def test_every_shape_has_a_legend_with_both_countries(data_dir, size):
-    lay = mod.layout(*size)
-    assert lay["legend"] is not None                                          # the times always show
+def _table_data():
+    """Vancouver (CA, Pacific), LA (US, Pacific), Edmonton (CA, Mountain), Honolulu (US, hidden from the list)."""
+    zones = [{"id": "America/Vancouver", "cc": "CA", "home": -480, "area": 10},
+             {"id": "America/Los_Angeles", "cc": "US", "home": -480, "area": 10},
+             {"id": "America/Edmonton", "cc": "CA", "home": -420, "area": 10},
+             {"id": "Pacific/Honolulu", "cc": "US", "home": -600, "area": 1}]
+    st = {"from": 0, "offs": [-420, -480, -360, -600], "abbrs": ["MST", "PST", "CST", "HST"]}
+    return {"zones": zones, "states": [st]}, st
+
+
+def test_legend_rows_line_up_canada_and_the_us_by_old_zone():
+    d, st = _table_data()
+    t = mod.table_of(d, st, mod.settings({}))
+    assert [r["label"] for r in t] == ["PACIFIC", "MOUNTAIN"]                  # Hawaii is on the map, not the list
+    pac = t[0]["cells"]
+    assert [e["off"] for e in pac["CA"]] == [-420] and [e["off"] for e in pac["US"]] == [-480]
+    assert "US" not in t[1]["cells"]
+    t = mod.table_of(d, st, mod.settings({"legend_rows": "offset"}))
+    assert [r["label"] for r in t] == ["UTC-8", "UTC-7", "UTC-6"]
+    assert set(t[1]["cells"]) == {"CA"} and set(t[0]["cells"]) == {"US"}
+    t = mod.table_of(d, st, mod.settings({"list_hide": [], "row_names": {"-480": "WEST"}}))
+    assert [r["label"] for r in t] == ["HAWAII", "WEST", "MOUNTAIN"]
+
+
+def test_unnamed_small_times_stay_off_the_list():
+    d, st = _table_data()
+    d["zones"].append({"id": "America/Creston", "cc": "CA", "home": -420, "area": 1})
+    st["offs"].append(-420)
+    st["abbrs"].append("MST")
+    cells = mod.table_of(d, st, mod.settings({}))[1]["cells"]["CA"]
+    assert [e["off"] for e in cells] == [-360]                                # Edmonton's, not Creston's
+
+
+def test_boundaries_follow_each_change(data_dir):
+    """The white lines between offsets are redrawn from each moment's offsets: none between the two zones while
+    they share an offset, one once they differ."""
     p = mod.TzMapPanel(type("C", (), {"modules": {}})(), data_dir)
     p._load(time.time())
-    drawn = []
-    p._row = lambda c, cx, cy, w, h, g, *a: drawn.append(g["cc"])
-    orig = p._legend_compact
-
-    def compact(c, x, y, w, h, groups, *a):
-        drawn.extend(g["cc"] for s in p._sections(groups) for g in s[2])
-        return orig(c, x, y, w, h, groups, *a)
-    p._legend_compact = compact
-    mod_size = p._map_for(*size)
-    from display.gfx import Canvas
-    p._draw(Canvas(*size), mod_size, "now", mod.state_at(p.data, time.time()), None, time.time(), None)
-    assert set(drawn) == {"CA", "US"}
+    p.data["zones"] = [dict(z, cc="US") for z in p.data["zones"]]          # one country: no border in the way
+    m = p._map_for(448, 192)
+    x, y = (int(v) for v in mod.to_px(m["frames"][0], -100.0, 45.0))      # the edge between the two squares
+    white = lambda st: [tuple(px) for px in p._background(m, st, [], [])[y, x - 2:x + 2]].count((255, 255, 255))
+    same, split = p.data["states"]
+    assert white(same) == 0 and white(split) >= 1
 
 
 def test_cities_are_off_by_default():

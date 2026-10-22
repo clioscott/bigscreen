@@ -10,6 +10,7 @@ the control panel). The rasters are rebuilt only when the boundaries, the wall's
 from __future__ import annotations
 
 import time
+from datetime import datetime, timezone
 
 import numpy as np
 
@@ -21,6 +22,9 @@ OUT = paths.DATA_DIR / "tzmap"
 STATE = tz.CACHE / "state.json"
 HORIZON_DAYS = 400
 CLUSTER_GAP = 26 * 3600            # transitions closer than this are one night's clock change
+# the zone a place traditionally belonged to (the legend's rows): its standard offset in January 2019, before
+# Yukon (2020) and BC, Alberta, the NWT and Manitoba (2026) stopped changing clocks
+HOME_AT = datetime(2019, 1, 15, 12, tzinfo=timezone.utc).timestamp()
 
 
 def zone_sizes(cfg) -> dict:
@@ -158,7 +162,8 @@ def run(cfg):
         "generated_at": now, "rules": {"version": version, "source": source, "latest": check.get("latest"),
                                         "checked_at": now, "error": check["error"]},
         "boundaries": pack["tag"],
-        "zones": [{"id": z, "cc": ids[z], "area": tz.area(pack["zones"][z])} for z in zones],
+        "zones": [{"id": z, "cc": ids[z], "home": tz._offset(o, HOME_AT)[0], "area": tz.area(pack["zones"][z])}
+                  for z, o in zip(zones, zone_objs)],
         "states": states, "changes": changes, "maps": maps, "rule_updates": updates[:12]})
     return {"ok": True, "tzdata": version, "source": source, "boundaries": pack["tag"], "zones": len(zones),
             "changes": len(changes), "errors": errors[:3]}
