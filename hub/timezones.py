@@ -15,6 +15,7 @@ border and lakes come from Natural Earth (public domain) in the geodata the weat
 from __future__ import annotations
 
 import gzip
+import hashlib
 import io
 import json
 import math
@@ -57,7 +58,7 @@ def _version_of(root: Path) -> str | None:
     """IANA version of a zoneinfo directory (from tzdata.zi's first line)."""
     try:
         with open(root / "tzdata.zi", encoding="utf-8") as f:
-            m = re.match(r"#\s*version\s+(\S+)", f.readline())
+            m = re.match(r"#\s*version\s+(\d{4}[a-z]+)", f.readline())     # "2026b-dirty" (some wheels) → 2026b
         return m.group(1) if m else None
     except OSError:
         return None
@@ -67,6 +68,8 @@ def _cached_versions():
     out = {}
     if TZDATA_DIR.is_dir():
         for d in TZDATA_DIR.iterdir():
+            if d.name.startswith(".") or not (d / "zoneinfo" / "zone.tab").exists():   # unfinished extraction
+                continue
             v = _version_of(d / "zoneinfo")
             if v:
                 out[v] = d / "zoneinfo"
@@ -81,22 +84,30 @@ def check_tzdata() -> dict:
         wheel = next(u for u in info["urls"] if u["filename"].endswith(".whl"))
         pkg = info["info"]["version"]
         d = TZDATA_DIR / pkg
-        if not (d / "zoneinfo" / "tzdata.zi").exists():
+        if not (d / "zoneinfo" / "zone.tab").exists():
             raw = _get(wheel["url"], timeout=60).content
+            want = (wheel.get("digests") or {}).get("sha256")
+            if not want or hashlib.sha256(raw).hexdigest() != want:
+                raise ValueError("the tzdata wheel doesn't match PyPI's sha256")
             TZDATA_DIR.mkdir(parents=True, exist_ok=True)
-            tmp = Path(tempfile.mkdtemp(dir=TZDATA_DIR))
-            with zipfile.ZipFile(io.BytesIO(raw)) as z:
-                for name in z.namelist():
-                    if not name.startswith("tzdata/zoneinfo/") or name.endswith("/") or ".." in name:
-                        continue
-                    if name.endswith((".py", ".pyc")):
-                        continue
-                    out = tmp / "zoneinfo" / name[len("tzdata/zoneinfo/"):]
-                    out.parent.mkdir(parents=True, exist_ok=True)
-                    out.write_bytes(z.read(name))
-            if d.exists():
-                shutil.rmtree(d)
-            tmp.replace(d)
+            tmp = Path(tempfile.mkdtemp(dir=TZDATA_DIR, prefix=".tmp-"))
+            try:
+                base = (tmp / "zoneinfo").resolve()
+                with zipfile.ZipFile(io.BytesIO(raw)) as z:
+                    for name in z.namelist():
+                        rel = name[len("tzdata/zoneinfo/"):]
+                        if not name.startswith("tzdata/zoneinfo/") or not rel or name.endswith(("/", ".py", ".pyc")):
+                            continue
+                        out = (base / rel).resolve()
+                        if base not in out.parents:                 # absolute or climbing names stay out
+                            continue
+                        out.parent.mkdir(parents=True, exist_ok=True)
+                        out.write_bytes(z.read(name))
+                if d.exists():
+                    shutil.rmtree(d)
+                tmp.replace(d)
+            finally:
+                shutil.rmtree(tmp, ignore_errors=True)
         latest = _version_of(d / "zoneinfo")
         for v, p in sorted(_cached_versions().items())[:-3]:      # keep the newest three
             shutil.rmtree(p.parent, ignore_errors=True)
@@ -171,8 +182,9 @@ def schedule(z, t0: float, t1: float, step=3600) -> list:
     return out
 
 
-def rule_diff(old: dict, new: dict, t0: float) -> list:
-    """Zones whose offsets differ between two versions' schedules after t0: [{zone, at, old, new}]."""
+def rule_diff(old: dict, new: dict, t0: float, t1: float = float("inf")) -> list:
+    """Zones whose offsets differ between two versions' schedules in [t0, t1] (t1: where the shorter of the two
+    schedules ends, so changes past it aren't mistaken for new rules): [{zone, at, old, new}]."""
     def at(sched, t):
         cur = sched[0]
         for s in sched:
@@ -186,7 +198,7 @@ def rule_diff(old: dict, new: dict, t0: float) -> list:
             out.append({"zone": tzid, "at": None, "old": a and at(a, t0), "new": b and at(b, t0),
                         "what": "added" if b else "removed"})
             continue
-        times = sorted({s[0] for s in a + b if s[0] >= t0} | {int(t0)})
+        times = sorted({s[0] for s in a + b if t0 <= s[0] <= t1} | {int(t0)})
         for t in times:
             if at(a, t) != at(b, t):
                 out.append({"zone": tzid, "at": t, "old": at(a, t), "new": at(b, t), "what": "changed"})
@@ -199,22 +211,31 @@ def latest_boundaries_tag() -> str | None:
     return _get(TBB_LATEST, timeout=20).json().get("tag_name")
 
 
-def boundaries(keep: set, tag: str | None) -> dict:
-    """The US/Canada zones' polygons for a timezone-boundary-builder release (downloaded and cut down once):
-    {"tag", "zones": {tzid: [[exterior, hole, …], …]}} with rings as [[lon, lat], …]."""
+def boundaries(keep: set, tag: str | None) -> tuple[dict, str]:
+    """The US/Canada zones' polygons for a timezone-boundary-builder release (downloaded and cut down once per
+    release): ({"tag", "zones": {tzid: [[exterior, hole, …], …]}} with rings as [[lon, lat], …], error). When the
+    newest release can't be had, the last one cached is used (a zone it lacks just isn't drawn)."""
     CACHE.mkdir(parents=True, exist_ok=True)
     have = sorted(CACHE.glob("zones-*.json.gz"))
-    if tag is None and have:
-        tag = have[-1].name[len("zones-"):-len(".json.gz")]
+    load = lambda p: json.loads(gzip.decompress(p.read_bytes()))
     if tag is None:
+        if have:
+            return load(have[-1]), ""
         raise RuntimeError("no time zone boundaries yet and GitHub can't be reached")
     path = CACHE / f"zones-{tag}.json.gz"
     if path.exists():
-        pack = json.loads(gzip.decompress(path.read_bytes()))
-        if keep <= set(pack["zones"]):
-            return pack
+        return load(path), ""
+    try:
+        return _fetch_boundaries(tag, keep, path, have), ""
+    except Exception as e:
+        if have:
+            return load(have[-1]), f"boundaries {tag}: {e}"
+        raise
+
+
+def _fetch_boundaries(tag, keep, path, have):
     url = f"https://github.com/evansiroky/timezone-boundary-builder/releases/download/{tag}/timezones.shapefile.zip"
-    tmp = Path(tempfile.mkdtemp(dir=CACHE))
+    tmp = Path(tempfile.mkdtemp(dir=CACHE, prefix=".tmp-"))
     try:
         zp = tmp / "tz.zip"
         with _get(url, timeout=600, stream=True) as r, open(zp, "wb") as f:
@@ -228,7 +249,9 @@ def boundaries(keep: set, tag: str | None) -> dict:
         pack = {"tag": tag, "zones": _cut(tmp / "tz", keep)}
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    path.write_bytes(gzip.compress(json.dumps(pack, separators=(",", ":")).encode()))
+    part = path.with_suffix(".part")
+    part.write_bytes(gzip.compress(json.dumps(pack, separators=(",", ":")).encode()))
+    part.replace(path)
     for p in have:
         if p != path:
             p.unlink(missing_ok=True)

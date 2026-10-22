@@ -182,3 +182,77 @@ def test_config_validation():
                 {"title": "x" * 40}, {"fill": 0}, {"names": {"PST": 5}}):
         with pytest.raises(config.ConfigError):
             config.validate(_cfg(bad))
+
+
+def test_warning_lasts_through_the_change_night():
+    s = mod.settings({})
+    d = _data()
+    d["changes"][0]["end"] = NOV1 + 6 * 3600                                  # Newfoundland first, Alaska last
+    assert [k for k, _, _ in mod.pages_at(d, NOV1 + 3600, s)] == ["upcoming", "now"]
+    assert [k for k, _, _ in mod.pages_at(d, NOV1 + 7 * 3600, s)] == ["now"]
+
+
+def test_rule_diff_ignores_changes_past_the_shorter_schedule():
+    t0 = NOV1 - 86400
+    old = {"A": _sched((t0, -420, "PDT"), (NOV1, -480, "PST"))}                # ended before spring
+    new = {"A": _sched((t0, -420, "PDT"), (NOV1, -480, "PST"), (NOV1 + 130 * 86400, -420, "PDT"))}
+    assert tz.rule_diff(old, new, t0, NOV1 + 100 * 86400) == []
+
+
+def test_version_ignores_build_suffixes(tmp_path):
+    (tmp_path / "tzdata.zi").write_text("# version 2026b-dirty\n")
+    assert tz._version_of(tmp_path) == "2026b"
+
+
+def test_wheel_extraction_stays_in_its_folder(tmp_path, monkeypatch):
+    import hashlib
+    import io
+    import zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("tzdata/zoneinfo/tzdata.zi", "# version 2026z\n")
+        z.writestr("tzdata/zoneinfo/zone.tab", "CA\t+4916-12307\tAmerica/Vancouver\n")
+        z.writestr("tzdata/zoneinfo//" + str(tmp_path / "escaped.txt").lstrip("/"), "x")
+        z.writestr("tzdata/zoneinfo/../../escaped2.txt", "x")
+    raw = buf.getvalue()
+
+    class R:
+        def __init__(self, data):
+            self.data = data
+            self.content = data if isinstance(data, bytes) else b""
+
+        def json(self):
+            return self.data
+
+    info = {"info": {"version": "2026.99"}, "urls": [{"filename": "tzdata-2026.99-py2.py3-none-any.whl", "url": "w",
+                                                       "digests": {"sha256": hashlib.sha256(raw).hexdigest()}}]}
+    monkeypatch.setattr(tz, "TZDATA_DIR", tmp_path / "tzd")
+    monkeypatch.setattr(tz, "_get", lambda url, **kw: R(raw if url == "w" else info))
+    assert tz.check_tzdata() == {"latest": "2026z", "pypi": "2026.99", "error": ""}
+    assert not (tmp_path / "escaped.txt").exists() and not (tmp_path / "escaped2.txt").exists()
+    info["urls"][0]["digests"]["sha256"] = "0" * 64                          # a tampered download is refused
+    monkeypatch.setattr(tz, "TZDATA_DIR", tmp_path / "tzd2")
+    assert "sha256" in tz.check_tzdata()["error"]
+
+
+def test_boundaries_fall_back_to_the_last_release(tmp_path, monkeypatch):
+    import gzip
+    monkeypatch.setattr(tz, "CACHE", tmp_path)
+    (tmp_path / "zones-2026a.json.gz").write_bytes(gzip.compress(json.dumps(_pack()).encode()))
+    monkeypatch.setattr(tz, "_fetch_boundaries", lambda *a: (_ for _ in ()).throw(OSError("offline")))
+    pack, err = tz.boundaries({"America/Vancouver", "America/New_Zone"}, "2026f")
+    assert pack["zones"] and "offline" in err
+    pack, err = tz.boundaries({"America/New_Zone"}, "2026a")                  # a cached release is never refetched
+    assert err == ""
+
+
+def test_frames_are_drawn_once_a_minute(data_dir, monkeypatch):
+    p = mod.TzMapPanel(type("C", (), {"modules": {}})(), data_dir)
+    from display.gfx import Canvas
+    calls = []
+    orig = p._draw
+    monkeypatch.setattr(p, "_draw", lambda *a: (calls.append(1), orig(*a)))
+    c = Canvas(448, 192)
+    for _ in range(5):
+        p.draw(c, (0, 0, 448, 192), {"panel": "timezones_wall"}, False)
+    assert len(calls) == 1 and c.buf.any()

@@ -98,22 +98,25 @@ def run(cfg):
         tag = None
         errors.append(f"GitHub: {e}")
     _harness.progress(1, 4, "boundaries")
-    pack = tz.boundaries(set(ids), tag)
+    pack, err = tz.boundaries(set(ids), tag)
+    if err:
+        errors.append(err)
     zones = _west_to_east(pack, ids)
     zone_objs = [tz.zone(root, z) for z in zones]
     now = time.time()
     t0 = now - 86400
-    scheds = {z: tz.schedule(o, t0, now + HORIZON_DAYS * 86400) for z, o in zip(zones, zone_objs)}
+    until = now + HORIZON_DAYS * 86400
+    scheds = {z: tz.schedule(o, t0, until) for z, o in zip(zones, zone_objs)}
     _harness.progress(2, 4, "rules")
 
     updates = st.get("rule_updates") or []
     prev = st.get("rules_version")
     if prev and prev != version:
-        diff = tz.rule_diff(st.get("rules_sched") or {}, scheds, now)
+        diff = tz.rule_diff(st.get("rules_sched") or {}, scheds, now, min(until, st.get("rules_until") or until))
         updates.insert(0, {"at": now, "from": prev, "to": version, "changes": diff})
     if st.get("boundaries") and st["boundaries"] != pack["tag"]:
         updates.insert(0, {"at": now, "boundaries_from": st["boundaries"], "boundaries_to": pack["tag"], "changes": []})
-    st.update(rules_version=version, rules_sched=scheds, boundaries=pack["tag"], rule_updates=updates[:12])
+    st.update(rules_version=version, rules_sched=scheds, rules_until=until, boundaries=pack["tag"], rule_updates=updates[:12])
 
     states = build_states(scheds, zones, t0)
     changes = build_changes(states, zone_objs)

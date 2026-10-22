@@ -95,7 +95,7 @@ DEFAULT_NAMES = {"HST": "Hawaii", "HDT": "Aleutian", "AKST": "Alaska", "AKDT": "
                  "NDT": "Newfoundland"}
 
 DEFAULT_COLORS = {"-600": "#a77bff", "-540": "#ff78d2", "-480": "#ff5f5f", "-420": "#ff9d3a", "-360": "#f5e04a",
-                  "-300": "#5fdc6e", "-240": "#3ccfe0", "-210": "#5b8cff", "-180": "#8f9bff"}
+                  "-300": "#5fdc6e", "-240": "#3ccfe0", "-210": "#5b8cff", "-180": "#8f9bff", "-150": "#3fe0b0"}
 
 DEFAULTS = {
     "title": "TIME ZONES", "upcoming_label": "UPCOMING", "now_label": "NOW", "test_label": "TEST",
@@ -223,7 +223,8 @@ def pages_at(data, t, s):
     warn_days (first, or alone with warn_pages "upcoming")."""
     now = state_at(data, t)
     days = float(s.get("warn_days") or 0)
-    nxt = next((c for c in data.get("changes") or [] if c["start"] > t), None)
+    # a change is still coming until its night's last transition (Newfoundland goes 6.5 h before Alaska)
+    nxt = next((c for c in data.get("changes") or [] if c["end"] > t), None)
     if nxt is None or days <= 0 or t < nxt["start"] - days * 86400:
         return [("now", now, None)]
     up = [("upcoming", state_at(data, nxt["end"]), nxt)]
@@ -308,6 +309,8 @@ class TzMapPanel:
         self._mtime = None
         self._checked = 0.0
         self._bg = {}                          # cache key -> rendered map (h, w, 3)
+        self._frames = {}                      # cache key -> the whole zone, drawn (it changes once a minute)
+        self._sig = json.dumps(self.s, sort_keys=True)
         self.started, self.passes = {}, {}
         self.fonts = {}
 
@@ -372,7 +375,7 @@ class TzMapPanel:
 
     # map ------------------------------------------------------------------------------------------------------
     def _background(self, m, state, new, groups):
-        key = (m["idx"].shape, id(m["idx"]), state["from"], tuple(sorted(new)), json.dumps(self.s, sort_keys=True))
+        key = (id(m["idx"]), state["from"], tuple(sorted(new)))
         bg = self._bg.get(key)
         if bg is not None:
             return bg
@@ -439,9 +442,21 @@ class TzMapPanel:
         return None
 
     def render(self, c, zone, m, kind, state, change, now, test=None):
+        """Draw the zone, from a copy made earlier this minute when nothing else differs."""
         x, y, w, h = zone
-        x += (w - m["zone"][0]) // 2
-        y += (h - m["zone"][1]) // 2
+        key = (m["key"], kind, state["from"], (change or {}).get("start"), int(now // 60), test, id(self.data))
+        img = self._frames.get(key)
+        if img is None:
+            scratch = Canvas(m["zone"][0], m["zone"][1])
+            self._draw(scratch, m, kind, state, change, now, test)
+            img = scratch.buf
+            if len(self._frames) > 4:
+                self._frames.clear()
+            self._frames[key] = img
+        c.Blit(img, x + (w - m["zone"][0]) // 2, y + (h - m["zone"][1]) // 2)
+
+    def _draw(self, c, m, kind, state, change, now, test):
+        x = y = 0
         groups = groups_of(self.data, state, self.s)
         new = (change or {}).get("new", []) if kind == "upcoming" else []
         mx, my, mw, mh = m["rect"]
@@ -560,7 +575,10 @@ class TzMapPanel:
         anchors = (state.get("anchors") or {}).get(m["key"]) or []
         small = self.font(FONT_SMALL)
         boxes = []
+        hidden = [f2["box"] for f2 in m["frames"][1:]] if not self.s.get("insets", True) else []
         for off, ax, ay, room in anchors:
+            if any(bx <= ax < bx + bw and by <= ay < by + bh for bx, by, bw, bh in hidden):
+                continue
             text = clock_text(now, off, self.s.get("time_format", "12h"))[0]
             # room is the distance to the area's edge, x counted at 0.55 (hub/timezones.py anchors): a label may
             # overlap the edge a little

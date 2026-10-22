@@ -31,9 +31,11 @@ export const Timezones = {
     const set = (k, v) => { tz.value[k] = v; };
     // dictionaries keep only what differs from the defaults
     const dictVal = (k, key) => (tz.value[k] || {})[key] ?? "";
+    // (a place may be set to "" to leave a default one out of the legend)
     const dictSet = (k, key, v) => {
       const o = tz.value[k] || (tz.value[k] = {});
-      if (v === "" || v === (d.value[k] || {})[key]) delete o[key]; else o[key] = v;
+      const def = (d.value[k] || {})[key];
+      if (v === def || (v === "" && (k !== "places" || !def))) delete o[key]; else o[key] = v;
       if (!Object.keys(o).length) delete tz.value[k];
     };
     const cities = computed(() => tz.value.cities || d.value.cities || []);
@@ -46,7 +48,14 @@ export const Timezones = {
       for (const g of [...(state.value?.groups || []), ...(state.value?.changes || []).flatMap((c) => c.groups)]) if (!seen.has(g.off)) seen.set(g.off, g.name);
       return [...seen.entries()].sort((a, b) => a[0] - b[0]).map(([off, name]) => ({ off, name }));
     });
-    const colorOf = (off) => (tz.value.colors || {})[off] || (d.value.colors || {})[off] || "#cccccc";
+    // an offset nobody picked a colour for gets the same hue as on the wall (tzmap.color_of)
+    const hue = (off) => {
+      const h = (((off + 720) * 7) % 360) / 60, f = h - Math.floor(h), v = 255, p = Math.round(255 * 0.4);
+      const q = Math.round(255 * (1 - 0.6 * f)), t = Math.round(255 * (1 - 0.6 * (1 - f)));
+      const rgb = [[v, t, p], [q, v, p], [p, v, t], [p, q, v], [t, p, v], [v, p, q]][Math.floor(h) % 6];
+      return "#" + rgb.map((x) => x.toString(16).padStart(2, "0")).join("");
+    };
+    const colorOf = (off) => (tz.value.colors || {})[off] || (d.value.colors || {})[off] || hue(off);
 
     // the moment previewed / tested: now, just after a coming change, or a date of your own
     const asOfTs = computed(() => {
@@ -92,8 +101,8 @@ export const Timezones = {
   },
   template: `<div class="page">
     <div class="page-head"><div class="grow"><h1>Time zone map</h1>
-      <p>The US and Canada shaded by UTC offset, with the time in each. BC, Alberta, the NWT and Manitoba stop changing their clocks
-        on Nov 1, 2026, so after that the map no longer lines up with the old Pacific / Mountain / Central bands. Before every clock change
+      <p>The US and Canada shaded by UTC offset, with the time in each, from the newest tz database (as of tzdata 2026e, BC, Alberta,
+        the NWT and Manitoba stop changing their clocks on Nov 1, 2026, so the map no longer lines up with the old Pacific / Mountain / Central bands). Before every clock change
         the wall also shows the map as it will be, labelled as upcoming; it switches when the clocks change.</p></div>
       <button class="btn" :disabled="running" @click="rebuild"><Icon :name="running ? 'LoaderCircle' : 'RefreshCw'" :size="15" :class="{spin: running}"/>Check rules now</button></div>
     <div class="two-col">
@@ -133,7 +142,9 @@ export const Timezones = {
               <div class="stack" style="gap:4px; margin-top:8px">
                 <div v-for="z in state?.zones || []" :key="z.id" class="row nowrap" style="gap:8px">
                   <span style="width:170px" class="mono">{{ zoneName(z.id) }}</span><span class="faint" style="width:110px">{{ z.abbr }} {{ offText(z.off) }}</span>
-                  <input class="input grow" :placeholder="state.defaults.places[z.id] || '(none)'" :value="dictVal('places', z.id)" @input="dictSet('places', z.id, $event.target.value)" maxlength="30"></div></div></details>
+                  <input class="input grow" :placeholder="state.defaults.places[z.id] || '(none)'" :value="dictVal('places', z.id)" @input="dictSet('places', z.id, $event.target.value)" maxlength="30">
+                  <button v-if="state.defaults.places[z.id] && tz.places?.[z.id] !== ''" class="btn sm ghost icon-only" title="Leave out of the legend" @click="dictSet('places', z.id, '')"><Icon name="EyeOff" :size="14"/></button>
+                  <button v-if="tz.places?.[z.id] === ''" class="btn sm ghost icon-only" title="Show the default again" @click="dictSet('places', z.id, state.defaults.places[z.id])"><Icon name="Eye" :size="14"/></button></div></div></details>
           </div></div>
 
         <div class="card"><div class="card-head"><Icon name="Palette" :size="16"/><h3>Colours</h3></div>
