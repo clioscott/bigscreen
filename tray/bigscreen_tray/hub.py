@@ -14,6 +14,8 @@ PANEL_LABELS = {
     "blank": "Blank", "quake": "Earthquake warning", "font_specimen": "Font specimen",
     "webcam": "Webcam", "webcam_full": "Webcam (full width)", "webcam_wall": "Webcam (whole wall)",
     "bridges": "Bridges now", "bridges_full": "Bridges now (full width)", "bridges_wall": "Bridges now (whole wall)",
+    "timezones": "Time zone map", "timezones_full": "Time zone map (full width)",
+    "timezones_wall": "Time zone map (whole wall)",
 }
 WEATHER_SCREENS = {"current": "Current conditions", "hourly": "Hourly forecast", "forecast": "7-day forecast",
                    "warning": "Warnings"}

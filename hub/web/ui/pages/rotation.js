@@ -9,7 +9,7 @@ function entrySub(e) {
     const tr = store.draft.modules.weather_maps?.tracks?.[e.track];
     if (tr) bits.push(areaLabel(tr.area, true));
   }
-  if (PANEL_TYPES[e.panel]?.full) bits.push(["weather_alert", "webcam_wall", "bridges_wall"].includes(e.panel) ? "whole wall" : "full width");
+  if (PANEL_TYPES[e.panel]?.full) bits.push(["weather_alert", "webcam_wall", "bridges_wall", "timezones_wall"].includes(e.panel) ? "whole wall" : "full width");
   if (e.priority === "next") bits.push("jumps the queue");
   return bits.join(" · ");
 }
@@ -70,6 +70,9 @@ const RuleRow = {
     </template>
     <template v-else-if="r.if === 'fresh'">
       <span class="faint">under</span><Stepper v-model="r.max_age_min" :min="5" :max="1440" :step="5" unit=" min"/><span class="faint">old</span>
+    </template>
+    <template v-else-if="r.if === 'timechange'">
+      <span class="faint">and for</span><Stepper v-model="r.days_after" :min="0" :max="14" :step="1" unit=" days"/><span class="faint">after</span>
     </template>
     <span class="grow"></span>
     <button class="btn sm ghost icon-only" title="Remove this rule" @click="$emit('remove')"><Icon name="X" :size="14"/></button>

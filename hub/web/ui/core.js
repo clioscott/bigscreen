@@ -51,6 +51,7 @@ export const SECTIONS = [
   ["Weather maps", ["modules", "weather_maps"]],
   ["Webcams", ["modules", "webcams"]],
   ["Bridges now", ["modules", "bridges"]],
+  ["Time zone map", ["modules", "timezones"]],
   ["Weather data", ["modules", "weather"]],
   ["Weather alerts", ["modules", "weather_alerts"]],
   ["Japan EEW", ["modules", "japan_eew"]],
@@ -204,6 +205,9 @@ export const PANEL_TYPES = {
   bridges: { label: "Bridges now", icon: "Construction", passes: true, passWord: "pass through every bridge", note: "2×2, paging through the bridges" },
   bridges_full: { label: "Bridges now (full width)", icon: "Construction", full: true, passes: true, passWord: "pass through every bridge" },
   bridges_wall: { label: "Bridges now (whole wall)", icon: "Construction", full: true, passes: true, passWord: "pass through every bridge", note: "Covers the ticker and clock too" },
+  timezones: { label: "Time zone map", icon: "Globe", passes: true, passWord: "pass through its pages", note: "The map with the times written on it" },
+  timezones_full: { label: "Time zone map (full width)", icon: "Globe", full: true, passes: true, passWord: "pass through its pages" },
+  timezones_wall: { label: "Time zone map (whole wall)", icon: "Globe", full: true, passes: true, passWord: "pass through its pages", note: "Covers the ticker and clock too" },
   blank: { label: "Blank", icon: "Square", passes: false },
 };
 // the stage of an alert's life on the wall (display/modules/alert_life.py) a rule can ask for
@@ -232,6 +236,7 @@ export const RULES = {
   quakes: { label: "there's an earthquake to show", icon: "Activity", make: () => ({}) },
   tsunami: { label: "a tsunami message is in effect", icon: "Waves", make: () => ({}) },
   wildfire: { label: "there's a wildfire or evacuation to show", icon: "Flame", make: () => ({}) },
+  timechange: { label: "the clocks are about to change", icon: "Globe", make: () => ({ days_after: 0 }) },
 };
 const LEGACY_WHEN = { calendar_has_events: [{ if: "calendar_events" }], no_events: [{ if: "calendar_events", not: true }],
   weather_has_alert: [{ if: "forecast_warning" }], weather_alert_active: [{ if: "alert" }] };
@@ -250,6 +255,7 @@ export function ruleText(r) {
   else if (r.if === "hours") s = `it's ${r.from}–${r.to}`;
   else if (r.if === "days") s = `it's ${(r.days || []).map((d) => DAYS[d]).join(", ") || "no day"}`;
   else if (r.if === "fresh") s = `its data is under ${r.max_age_min ?? 30} min old`;
+  else if (r.if === "timechange" && r.days_after > 0) s = `the clocks are about to change or changed in the last ${r.days_after === 1 ? "day" : r.days_after + " days"}`;
   if (r.phase && ALERT_RULES.includes(r.if)) s += ` (${PHASES[r.phase] || r.phase})`;
   return (r.not ? "not when " : "when ") + s;
 }
