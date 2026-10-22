@@ -67,7 +67,7 @@ def test_rule_diff_names_the_zone_and_moment():
 
 
 def _data(changes_at=NOV1):
-    return {"zones": [{"id": "America/Vancouver"}, {"id": "America/Los_Angeles"}],
+    return {"zones": [{"id": "America/Vancouver", "cc": "CA"}, {"id": "America/Los_Angeles", "cc": "US"}],
             "states": [{"from": changes_at - 86400 * 30, "offs": [-420, -420], "abbrs": ["PDT", "PDT"]},
                        {"from": changes_at, "offs": [-420, -480], "abbrs": ["MST", "PST"]}],
             "changes": [{"start": changes_at, "end": changes_at, "changed": [1], "new": [0]}]}
@@ -86,12 +86,15 @@ def test_warning_pages_before_a_change_and_none_after():
     assert [k for k, _, _ in mod.pages_at(d, NOV1 - 3 * 86400, mod.settings({"warn_days": 0}))] == ["now"]
 
 
-def test_groups_are_named_from_abbreviations_or_overrides():
+def test_groups_are_per_country_and_named_from_abbreviations_or_overrides():
     d = _data()
     g = mod.groups_of(d, d["states"][1], mod.settings({}))
-    assert [(x["off"], x["name"], x["places"]) for x in g] == [(-480, "Pacific", ["US Pacific"]), (-420, "Mountain", ["BC"])]
-    g = mod.groups_of(d, d["states"][1], mod.settings({"offset_names": {"-420": "BC time"}}))
-    assert g[1]["name"] == "BC time"
+    assert [(x["cc"], x["off"], x["name"], x["places"]) for x in g] == [("CA", -420, "Mountain", ["BC"]),
+                                                                         ("US", -480, "Pacific", [])]
+    g = mod.groups_of(d, d["states"][0], mod.settings({}))                 # same offset, still one row per country
+    assert [(x["cc"], x["off"]) for x in g] == [("CA", -420), ("US", -420)]
+    g = mod.groups_of(d, d["states"][1], mod.settings({"offset_names": {"CA:-420": "BC time", "-480": "West"}}))
+    assert [x["name"] for x in g] == ["BC time", "West"]
     assert mod.fmt_offset(-210) == "UTC-3:30" and mod.fmt_offset(-480) == "UTC-8"
 
 
@@ -113,8 +116,8 @@ def test_rasterize_and_anchors():
     assert idx.shape == (rect[3], rect[2]) and set(np.unique(idx)) == {0, 1, 2}
     x, y = mod.to_px(frames[0], -107.5, 45.0)
     assert idx[int(y), int(x)] == 1                                           # the projection lines up with the raster
-    a = tz.anchors(idx, [-420, -480])
-    assert {r[0] for r in a} == {-420, -480} and all(r[3] > 3 for r in a)
+    a = tz.anchors(idx, [-420, -480], ["CA", "US"])
+    assert {(r[0], r[1]) for r in a} == {("CA", -420), ("US", -480)} and all(r[4] > 3 for r in a)
 
 
 @pytest.fixture
@@ -131,7 +134,7 @@ def data_dir(tmp_path):
                      "idx": f"{key}.idx.bin", "lines": f"{key}.lines.bin",
                      "crc": {"idx": tz.crc(idx), "lines": tz.crc(lines)}}
         for s in d["states"]:
-            s.setdefault("anchors", {})[key] = tz.anchors(idx, s["offs"])
+            s.setdefault("anchors", {})[key] = tz.anchors(idx, s["offs"], [z["cc"] for z in d["zones"]])
     d["maps"] = maps
     (tmp_path / "tzmap.json").write_text(json.dumps(d))
     return str(tmp_path)
@@ -256,3 +259,27 @@ def test_frames_are_drawn_once_a_minute(data_dir, monkeypatch):
     for _ in range(5):
         p.draw(c, (0, 0, 448, 192), {"panel": "timezones_wall"}, False)
     assert len(calls) == 1 and c.buf.any()
+
+
+@pytest.mark.parametrize("size", [(448, 192), (448, 134), (223, 134)])
+def test_every_shape_has_a_legend_with_both_countries(data_dir, size):
+    lay = mod.layout(*size)
+    assert lay["legend"] is not None                                          # the times always show
+    p = mod.TzMapPanel(type("C", (), {"modules": {}})(), data_dir)
+    p._load(time.time())
+    drawn = []
+    p._row = lambda c, cx, cy, w, h, g, *a: drawn.append(g["cc"])
+    orig = p._legend_compact
+
+    def compact(c, x, y, w, h, groups, *a):
+        drawn.extend(g["cc"] for s in p._sections(groups) for g in s[2])
+        return orig(c, x, y, w, h, groups, *a)
+    p._legend_compact = compact
+    mod_size = p._map_for(*size)
+    from display.gfx import Canvas
+    p._draw(Canvas(*size), mod_size, "now", mod.state_at(p.data, time.time()), None, time.time(), None)
+    assert set(drawn) == {"CA", "US"}
+
+
+def test_cities_are_off_by_default():
+    assert not any(c["on"] for c in mod.DEFAULTS["cities"])

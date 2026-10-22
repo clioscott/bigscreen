@@ -42,11 +42,14 @@ export const Timezones = {
     const editCities = () => { if (!tz.value.cities) tz.value.cities = clone(d.value.cities); return tz.value.cities; };
     const addCity = () => editCities().push({ name: "New city", lat: 49.0, lon: -100.0, on: true });
 
-    // every offset the map shows now or after a coming change, for colours and names
+    // every offset the map shows now or after a coming change, for colours, with its name in each country
     const offsets = computed(() => {
       const seen = new Map();
-      for (const g of [...(state.value?.groups || []), ...(state.value?.changes || []).flatMap((c) => c.groups)]) if (!seen.has(g.off)) seen.set(g.off, g.name);
-      return [...seen.entries()].sort((a, b) => a[0] - b[0]).map(([off, name]) => ({ off, name }));
+      for (const g of [...(state.value?.groups || []), ...(state.value?.changes || []).flatMap((c) => c.groups)]) {
+        const o = seen.get(g.off) || seen.set(g.off, {}).get(g.off);
+        if (!o[g.cc]) o[g.cc] = g.name;
+      }
+      return [...seen.entries()].sort((a, b) => a[0] - b[0]).map(([off, names]) => ({ off, names }));
     });
     // an offset nobody picked a colour for gets the same hue as on the wall (tzmap.color_of)
     const hue = (off) => {
@@ -96,7 +99,7 @@ export const Timezones = {
       catch (e) { fail(e); running.value = false; }
     };
     const zoneName = (z) => z.replace(/^(America|Pacific)\//, "").replace(/_/g, " ");
-    return { state, shape, page, asOf, custom, tz, val, set, dictVal, dictSet, cities, editCities, addCity, offsets, colorOf,
+    return { d, state, shape, page, asOf, custom, tz, val, set, dictVal, dictSet, cities, editCities, addCity, offsets, colorOf,
       pagesAt, preview, play, addToRotation, used, rebuild, running, SHAPES, ago, when, offText, zoneName };
   },
   template: `<div class="page">
@@ -116,7 +119,7 @@ export const Timezones = {
               <div class="faint" style="font-size:12.5px">{{ c.changed.length }} of {{ state.zones.length }} zones change offset.
                 <span v-if="c.new.length">New rules this year: <b>{{ c.new.map(zoneName).join(", ") }}</b>.</span></div>
               <div class="row" style="flex-wrap:wrap; gap:6px">
-                <span v-for="g in c.groups" :key="g.off" class="pill" :style="{borderColor: colorOf(g.off)}">{{ offText(g.off) }} {{ g.name }}<span class="faint" v-if="g.places.length">&nbsp;· {{ g.places.join(" ") }}</span></span></div>
+                <span v-for="g in c.groups" :key="g.cc + g.off" class="pill" :style="{borderColor: colorOf(g.off)}"><b>{{ g.cc }}</b>&nbsp;{{ offText(g.off) }} {{ g.name }}<span class="faint" v-if="g.places.length">&nbsp;· {{ g.places.join(" ") }}</span></span></div>
             </div>
           </div></div>
 
@@ -127,6 +130,11 @@ export const Timezones = {
               <Field label="Upcoming label"><input class="input" :value="val('upcoming_label')" @input="set('upcoming_label', $event.target.value)" maxlength="30"></Field>
               <Field label="Now label"><input class="input" :value="val('now_label')" @input="set('now_label', $event.target.value)" maxlength="30"></Field>
               <Field label="Test label"><input class="input" :value="val('test_label')" @input="set('test_label', $event.target.value)" maxlength="30"></Field></div>
+            <div class="row" style="flex-wrap:wrap">
+              <Field v-for="cc in ['CA', 'US']" :key="cc" :label="(cc === 'CA' ? 'Canada' : 'US') + ' heading (wide / narrow)'">
+                <div class="row nowrap" style="gap:4px">
+                  <input class="input" style="width:130px" :placeholder="d.country_labels?.[cc]" :value="dictVal('country_labels', cc)" @input="dictSet('country_labels', cc, $event.target.value)" maxlength="30">
+                  <input class="input" style="width:80px" :placeholder="d.country_short?.[cc]" :value="dictVal('country_short', cc)" @input="dictSet('country_short', cc, $event.target.value)" maxlength="12"></div></Field></div>
             <div class="row" style="flex-wrap:wrap">
               <Field label="Clock"><Seg :modelValue="val('time_format')" @update:modelValue="v => set('time_format', v)" :options="[{value:'12h', label:'12 h'}, {value:'24h', label:'24 h'}]"/></Field>
               <Field label="Times on the map"><Seg :modelValue="val('map_labels')" @update:modelValue="v => set('map_labels', v)"
@@ -152,8 +160,12 @@ export const Timezones = {
             <div v-for="o in offsets" :key="o.off" class="row nowrap" style="gap:10px">
               <span class="mono" style="width:80px">{{ offText(o.off) }}</span>
               <ColorPick :modelValue="colorOf(o.off)" @update:modelValue="v => dictSet('colors', String(o.off), v)"/>
-              <input class="input grow" :placeholder="o.name" :value="dictVal('offset_names', String(o.off))" @input="dictSet('offset_names', String(o.off), $event.target.value)" maxlength="30"></div>
+              <input v-for="(n, cc) in o.names" :key="cc" class="input grow" style="min-width:0" :title="'Name in ' + (cc === 'CA' ? 'Canada' : 'the US')"
+                :placeholder="cc + ': ' + n" :value="dictVal('offset_names', cc + ':' + o.off)" @input="dictSet('offset_names', cc + ':' + o.off, $event.target.value)" maxlength="30"></div>
+            <div class="faint" style="font-size:12.5px">Colours go by offset, so areas with the same clock time match across the border; the names are per country.</div>
             <Field label="Area brightness"><Slider :modelValue="val('fill')" @update:modelValue="v => set('fill', v)" :min="0.15" :max="1" :step="0.05"/></Field>
+            <Field label="Canada, brighter than the US by" hint="1× = the same; the border is drawn as a heavy line either way">
+              <Slider :modelValue="val('canada_boost')" @update:modelValue="v => set('canada_boost', v)" :min="0.5" :max="2" :step="0.05" :format="v => v.toFixed(2) + '×'"/></Field>
             <ToggleRow :modelValue="val('highlight_new')" @update:modelValue="v => set('highlight_new', v)" label="Hatch zones with new rules" hint="On the upcoming map: zones whose offset differs from a year before"/>
             <ToggleRow :modelValue="val('insets')" @update:modelValue="v => set('insets', v)" label="Alaska and Hawaii insets"/>
           </div></div>
@@ -168,7 +180,7 @@ export const Timezones = {
             <span class="spacer"></span><button class="btn sm ghost icon-only" title="Remove" @click="editCities().splice(i, 1)"><Icon name="X" :size="14"/></button></div>
           <div class="card-body stack">
             <ToggleRow :modelValue="val('city_times')" @update:modelValue="v => set('city_times', v)" label="Time after each city's name"/>
-            <div class="faint" style="font-size:12.5px">Cities are drawn in this order wherever their names fit; one that would overlap another is left as a dot.</div></div>
+            <div class="faint" style="font-size:12.5px">All off by default (names take room on the map). Cities are drawn in this order wherever their names fit; one that would overlap another is left as a dot.</div></div>
         </div>
 
         <div class="card"><div class="card-head"><Icon name="ShieldCheck" :size="16"/><h3>Rules</h3></div>

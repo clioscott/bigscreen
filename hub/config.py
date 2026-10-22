@@ -164,7 +164,7 @@ def _validate_timezones(tz):
     for key in ("title", "upcoming_label", "now_label", "test_label"):
         if tz.get(key) is not None and (not isinstance(tz[key], str) or len(tz[key]) > 30):
             raise ConfigError(f"timezones.{key} must be text of at most 30 characters")
-    for key in ("names", "offset_names", "places", "colors"):
+    for key in ("names", "offset_names", "places", "colors", "country_labels", "country_short"):
         d = tz.get(key)
         if d is None:
             continue
@@ -173,7 +173,10 @@ def _validate_timezones(tz):
     for k, v in (tz.get("colors") or {}).items():
         if not (len(v) == 7 and v.startswith("#") and all(ch in "0123456789abcdefABCDEF" for ch in v[1:])):
             raise ConfigError(f"timezones colour for {k} must be #rrggbb")
-    for k in list(tz.get("colors") or {}) + list(tz.get("offset_names") or {}):
+    v = tz.get("canada_boost")
+    if v is not None and (not num(v) or not 0.5 <= v <= 2):
+        raise ConfigError("timezones.canada_boost must be 0.5–2")
+    for k in list(tz.get("colors") or {}) + [k.split(":")[-1] for k in tz.get("offset_names") or {}]:
         try:
             int(k)
         except ValueError:

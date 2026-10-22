@@ -150,15 +150,16 @@ def run(cfg):
     for s in states:
         key = tuple(s["offs"])
         if key not in memo:
-            memo[key] = {k: tz.anchors(a, s["offs"]) for k, a in idxs.items()}
+            memo[key] = {k: tz.anchors(a, s["offs"], [ids[z] for z in zones]) for k, a in idxs.items()}
         s["anchors"] = memo[key]
 
     atomic_write_json(STATE, st)
     atomic_write_json(paths.DATA_DIR / "tzmap.json", {
         "generated_at": now, "rules": {"version": version, "source": source, "latest": check.get("latest"),
                                         "checked_at": now, "error": check["error"]},
-        "boundaries": pack["tag"], "zones": [{"id": z, "area": tz.area(pack["zones"][z])} for z in zones], "states": states, "changes": changes,
-        "maps": maps, "rule_updates": updates[:12]})
+        "boundaries": pack["tag"],
+        "zones": [{"id": z, "cc": ids[z], "area": tz.area(pack["zones"][z])} for z in zones],
+        "states": states, "changes": changes, "maps": maps, "rule_updates": updates[:12]})
     return {"ok": True, "tzdata": version, "source": source, "boundaries": pack["tag"], "zones": len(zones),
             "changes": len(changes), "errors": errors[:3]}
 

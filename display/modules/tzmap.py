@@ -1,7 +1,9 @@
 """Time zone map: the US and Canada shaded by UTC offset, with the time in each (hub/jobs/timezones.py).
 
-Panels: ``timezones`` (one side: the map, times written on it), ``timezones_full`` (map + legend under the ticker)
-and ``timezones_wall`` (map + legend on the whole wall). The hub rasterises the map once (which IANA zone each pixel
+Panels: ``timezones`` (one side: map + a narrow legend of times), ``timezones_full`` (map + legend under the ticker)
+and ``timezones_wall`` (map + legend on the whole wall). Canada and the US follow different rules now, so the legend
+has a section per country (every offset each one uses, with its time), Canada's areas are a shade brighter and the
+border is a heavy line. The hub rasterises the map once (which IANA zone each pixel
 is in, plus state/province and country lines) and lists every offset the zones will have over the next year
 ("states"), so the Pi only colours pixels by offset and writes the times; both change exactly when clocks do.
 
@@ -17,11 +19,15 @@ as it would be at that moment, with the real time of day, labelled TEST.
     page_sec         seconds per page
     time_format      12h | 24h
     names            {"PST": "Pacific", …}: zone abbreviation → the name a group of zones gets
-    offset_names     {"-420": "BC / Mountain"}: a fixed name for an offset (minutes east of UTC), over ``names``
+    offset_names     {"CA:-420": "BC time", "-480": "…"}: a fixed name for an offset (minutes east of UTC) in one
+                     country or both, over ``names``
+    country_labels, country_short   {"CA": "CANADA", "US": "UNITED STATES"}: legend section headings (short: narrow)
+    canada_boost     how much brighter Canada's areas are than the US's (1 = the same)
     places           {"America/Vancouver": "BC", …}: the short place each zone adds to its row ("" = none)
     show_places, show_utc   the legend's second line
     map_labels       auto (when there's no legend) | on | off: the time written on the map in each offset's largest area
-    cities           [{name, lat, lon, on}], drawn in order where there's room; city_times adds each one's time
+    cities           [{name, lat, lon, on}], drawn in order where there's room (all off by default); city_times adds
+                     each one's time
     insets           Alaska and Hawaii
     colors           {"-480": "#rrggbb"}: each offset's colour; fill: how bright the areas are (0.15–1)
     highlight_new    hatch zones whose offset is new this year on the upcoming map
@@ -47,41 +53,42 @@ FONT_SMALL = "fonts/alert/5x7.bdf"
 FONT_MAP = "fonts/alert/6x10.bdf"
 
 DEFAULT_CITIES = [
-    {"name": "Vancouver", "lat": 49.28, "lon": -123.12, "on": True},
+    {"name": "Vancouver", "lat": 49.28, "lon": -123.12, "on": False},
     {"name": "Seattle", "lat": 47.61, "lon": -122.33, "on": False},
-    {"name": "Calgary", "lat": 51.05, "lon": -114.07, "on": True},
+    {"name": "Calgary", "lat": 51.05, "lon": -114.07, "on": False},
     {"name": "Edmonton", "lat": 53.55, "lon": -113.49, "on": False},
     {"name": "Regina", "lat": 50.45, "lon": -104.61, "on": False},
-    {"name": "Winnipeg", "lat": 49.90, "lon": -97.14, "on": True},
-    {"name": "Toronto", "lat": 43.65, "lon": -79.38, "on": True},
+    {"name": "Winnipeg", "lat": 49.90, "lon": -97.14, "on": False},
+    {"name": "Toronto", "lat": 43.65, "lon": -79.38, "on": False},
     {"name": "Montréal", "lat": 45.50, "lon": -73.57, "on": False},
-    {"name": "Halifax", "lat": 44.65, "lon": -63.57, "on": True},
+    {"name": "Halifax", "lat": 44.65, "lon": -63.57, "on": False},
     {"name": "St. John's", "lat": 47.56, "lon": -52.71, "on": False},
-    {"name": "Los Angeles", "lat": 34.05, "lon": -118.24, "on": True},
+    {"name": "Los Angeles", "lat": 34.05, "lon": -118.24, "on": False},
     {"name": "San Francisco", "lat": 37.77, "lon": -122.42, "on": False},
-    {"name": "Phoenix", "lat": 33.45, "lon": -112.07, "on": True},
-    {"name": "Denver", "lat": 39.74, "lon": -104.99, "on": True},
+    {"name": "Phoenix", "lat": 33.45, "lon": -112.07, "on": False},
+    {"name": "Denver", "lat": 39.74, "lon": -104.99, "on": False},
     {"name": "Dallas", "lat": 32.78, "lon": -96.80, "on": False},
-    {"name": "Chicago", "lat": 41.88, "lon": -87.63, "on": True},
+    {"name": "Chicago", "lat": 41.88, "lon": -87.63, "on": False},
     {"name": "Atlanta", "lat": 33.75, "lon": -84.39, "on": False},
-    {"name": "New York", "lat": 40.71, "lon": -74.01, "on": True},
+    {"name": "New York", "lat": 40.71, "lon": -74.01, "on": False},
     {"name": "Miami", "lat": 25.76, "lon": -80.19, "on": False},
     {"name": "Anchorage", "lat": 61.22, "lon": -149.90, "on": False},
     {"name": "Honolulu", "lat": 21.31, "lon": -157.86, "on": False},
 ]
 
-# the short place each zone adds to its legend row; "" for zones another one already names (US sub-zones and the like)
+# the short place each zone adds to its legend row; "" for zones the row's name already covers (most of the US) or
+# another zone names
 DEFAULT_PLACES = {
-    "Pacific/Honolulu": "HI", "America/Adak": "", "America/Anchorage": "AK", "America/Juneau": "", "America/Sitka": "",
+    "Pacific/Honolulu": "", "America/Adak": "Aleutians", "America/Anchorage": "", "America/Juneau": "", "America/Sitka": "",
     "America/Metlakatla": "", "America/Yakutat": "", "America/Nome": "",
-    "America/Los_Angeles": "US Pacific", "America/Vancouver": "BC", "America/Whitehorse": "YT", "America/Dawson": "",
+    "America/Los_Angeles": "", "America/Vancouver": "BC", "America/Whitehorse": "YT", "America/Dawson": "",
     "America/Dawson_Creek": "", "America/Fort_Nelson": "", "America/Creston": "",
-    "America/Phoenix": "AZ", "America/Denver": "US Mountain", "America/Boise": "", "America/Edmonton": "AB",
+    "America/Phoenix": "AZ", "America/Denver": "", "America/Boise": "", "America/Edmonton": "AB",
     "America/Inuvik": "NT", "America/Cambridge_Bay": "NU", "America/Regina": "SK", "America/Swift_Current": "",
-    "America/Chicago": "US Central", "America/Indiana/Knox": "", "America/Indiana/Tell_City": "",
+    "America/Chicago": "", "America/Indiana/Knox": "", "America/Indiana/Tell_City": "",
     "America/Menominee": "", "America/North_Dakota/Center": "", "America/North_Dakota/New_Salem": "",
     "America/North_Dakota/Beulah": "", "America/Winnipeg": "MB", "America/Rankin_Inlet": "", "America/Resolute": "",
-    "America/Atikokan": "", "America/Toronto": "ON QC", "America/Iqaluit": "", "America/New_York": "US Eastern",
+    "America/Atikokan": "", "America/Toronto": "ON QC", "America/Iqaluit": "", "America/New_York": "",
     "America/Detroit": "", "America/Kentucky/Louisville": "", "America/Kentucky/Monticello": "",
     "America/Indiana/Indianapolis": "", "America/Indiana/Marengo": "", "America/Indiana/Petersburg": "",
     "America/Indiana/Vevay": "", "America/Indiana/Vincennes": "", "America/Indiana/Winamac": "",
@@ -91,18 +98,21 @@ DEFAULT_PLACES = {
 
 DEFAULT_NAMES = {"HST": "Hawaii", "HDT": "Aleutian", "AKST": "Alaska", "AKDT": "Alaska", "PST": "Pacific",
                  "PDT": "Pacific", "MST": "Mountain", "MDT": "Mountain", "CST": "Central", "CDT": "Central",
-                 "EST": "Eastern", "EDT": "Eastern", "AST": "Atlantic", "ADT": "Atlantic", "NST": "Newfoundland",
-                 "NDT": "Newfoundland"}
+                 "EST": "Eastern", "EDT": "Eastern", "AST": "Atlantic", "ADT": "Atlantic", "NST": "Nfld",
+                 "NDT": "Nfld"}
 
 DEFAULT_COLORS = {"-600": "#a77bff", "-540": "#ff78d2", "-480": "#ff5f5f", "-420": "#ff9d3a", "-360": "#f5e04a",
                   "-300": "#5fdc6e", "-240": "#3ccfe0", "-210": "#5b8cff", "-180": "#8f9bff", "-150": "#3fe0b0"}
 
+COUNTRIES = ("CA", "US")                      # legend sections, in this order
+
 DEFAULTS = {
     "title": "TIME ZONES", "upcoming_label": "UPCOMING", "now_label": "NOW", "test_label": "TEST",
+    "country_labels": {"CA": "CANADA", "US": "UNITED STATES"}, "country_short": {"CA": "CANADA", "US": "US"},
     "warn_days": 14, "warn_pages": "both", "page_sec": 12, "time_format": "12h",
     "names": DEFAULT_NAMES, "offset_names": {}, "places": {}, "show_places": True, "show_utc": True,
     "map_labels": "auto", "cities": DEFAULT_CITIES, "city_times": False, "insets": True,
-    "colors": DEFAULT_COLORS, "fill": 0.45, "highlight_new": True,
+    "colors": DEFAULT_COLORS, "fill": 0.45, "canada_boost": 1.4, "highlight_new": True,
 }
 
 
@@ -111,7 +121,7 @@ def settings(raw):
     s = dict(DEFAULTS)
     raw = raw if isinstance(raw, dict) else {}
     for k, v in raw.items():
-        if k in ("names", "colors", "places", "offset_names") and isinstance(v, dict):
+        if k in ("names", "colors", "places", "offset_names", "country_labels", "country_short") and isinstance(v, dict):
             s[k] = {**DEFAULTS[k], **v}
         elif v is not None:
             s[k] = v
@@ -145,7 +155,8 @@ INSETS = {   # name: projection, lon/lat clip, where in the map (fractions of it
     "alaska": {"proj": (-152.0, 55.0, 65.0, 60.0), "clip": (-172.0, 51.0, -129.9, 71.5), "box": (0.0, 0.70, 0.20, 0.30)},
     "hawaii": {"proj": (-157.0, 19.0, 22.0, 20.5), "clip": (-160.6, 18.8, -154.7, 22.4), "box": (0.205, 0.83, 0.12, 0.17)},
 }
-LEGEND_MIN_W = 128
+LEGEND_MIN_W = 56          # narrower than LEGEND_FULL_W: the compact legend (times only)
+LEGEND_FULL_W = 128
 
 
 def _extent(proj, pts):
@@ -238,21 +249,22 @@ def fmt_offset(m):
 
 
 def groups_of(data, state, s):
-    """The offsets in a state, west to east: [{off, zones (indices), name, places, new (indices)}]."""
+    """The offsets in a state per country (Canada first, each west to east), since the two follow different rules:
+    [{cc, off, zones (indices), name, places}]."""
     zones = data.get("zones") or []
     by = {}
     for i, off in enumerate(state["offs"]):
-        by.setdefault(off, []).append(i)
+        by.setdefault((zones[i].get("cc", "") if i < len(zones) else "", off), []).append(i)
+    order = lambda k: (COUNTRIES.index(k[0]) if k[0] in COUNTRIES else len(COUNTRIES), k[1])
     out = []
-    for off in sorted(by):
-        idx = by[off]
-        # name a group after the zones that name a place (not Atikokan's EST among Central zones, say)
-        named_zones = [i for i in idx if s["places"].get(zones[i]["id"])] or idx
+    for cc, off in sorted(by, key=order):
+        idx = by[(cc, off)]
+        # named after its zones' abbreviations, by area (Atikokan's EST doesn't make the Central zones "Eastern")
         weight = {}
-        for i in named_zones:
+        for i in idx:
             a = state["abbrs"][i]
             weight[a] = weight.get(a, 0) + float(zones[i].get("area") or 1)
-        named = s["offset_names"].get(str(off))
+        named = s["offset_names"].get(f"{cc}:{off}") or s["offset_names"].get(str(off))
         if not named:
             seen = []
             for a in sorted(weight, key=lambda a: (-weight[a], a)):
@@ -265,7 +277,7 @@ def groups_of(data, state, s):
             p = s["places"].get(zones[i]["id"], "")
             if p and p not in places:
                 places.append(p)
-        out.append({"off": off, "zones": idx, "name": named, "places": places})
+        out.append({"cc": cc, "off": off, "zones": idx, "name": named, "places": places})
     return out
 
 
@@ -382,14 +394,17 @@ class TzMapPanel:
         idx, lines = m["idx"], m["lines"]
         n = len(state["offs"])
         offs = np.array([0] + list(state["offs"]), np.int32)
-        gid = {g["off"]: i + 1 for i, g in enumerate(groups)}
-        zg = np.array([0] + [gid[o] for o in state["offs"]], np.int32)
-        g = zg[np.minimum(idx, n)]
+        zones = self.data.get("zones") or []
+        ccs = [""] + [zones[i].get("cc", "") if i < len(zones) else "" for i in range(n)]
+        # one colour per offset; Canada a shade brighter than the US, so the two read as separate areas
         fill = min(1.0, max(0.15, float(self.s.get("fill") or 0.45)))
-        full = np.zeros((len(groups) + 1, 3), np.float32)
-        for i, gr in enumerate(groups):
-            full[i + 1] = color_of(self.s, gr["off"])
-        lut = (full * fill).astype(np.uint8)
+        ca = min(1.0, fill * float(self.s.get("canada_boost") or 1.0))
+        full = np.zeros((n + 1, 3), np.float32)
+        lut = np.zeros((n + 1, 3), np.uint8)
+        for i, off in enumerate(state["offs"]):
+            full[i + 1] = color_of(self.s, off)
+            lut[i + 1] = (full[i + 1] * (ca if ccs[i + 1] == "CA" else fill)).astype(np.uint8)
+        g = np.minimum(idx, n)
         img = lut[g]
         land = idx > 0
         if new and self.s.get("highlight_new", True):              # hatch the zones whose rules are new this year
@@ -398,13 +413,28 @@ class TzMapPanel:
             img[hatch] = full[g[hatch]].astype(np.uint8)
         prov = (lines & 1).astype(bool) & land
         img[prov] = (img[prov].astype(np.uint16) * 45 // 100).astype(np.uint8)
-        img[(lines & 2).astype(bool)] = (150, 150, 150)
-        # offset boundaries: where the next pixel right or down is land at another offset
-        o = np.where(land, offs[np.minimum(idx, n)], -99999)
-        edge = np.zeros_like(land)
-        edge[:, :-1] |= land[:, :-1] & land[:, 1:] & (o[:, :-1] != o[:, 1:])
-        edge[:-1, :] |= land[:-1, :] & land[1:, :] & (o[:-1, :] != o[1:, :])
-        img[edge] = (255, 255, 255)
+        def edges(v):
+            """Land pixels whose right or lower neighbour is land with another value."""
+            e = np.zeros_like(land)
+            e[:, :-1] |= land[:, :-1] & land[:, 1:] & (v[:, :-1] != v[:, 1:])
+            e[:-1, :] |= land[:-1, :] & land[1:, :] & (v[:-1, :] != v[1:, :])
+            return e
+        # offset boundaries: 1 px white
+        img[edges(np.where(land, offs[g], -99999))] = (255, 255, 255)
+        # the Canada/US border (from the zones' countries, so it lines up with the colours): a 2 px line with a
+        # dark pixel either side
+        cc = np.array([{"CA": 1, "US": 2}.get(c, 3) for c in ccs], np.int8)[g]
+        b = edges(np.where(land, cc, 0))
+        b2 = b.copy()
+        b2[1:, :] |= b[:-1, :]
+        b2[:, 1:] |= b[:, :-1]
+        halo = np.zeros_like(b2)
+        halo[1:, :] |= b2[:-1, :]
+        halo[:-1, :] |= b2[1:, :]
+        halo[:, 1:] |= b2[:, :-1]
+        halo[:, :-1] |= b2[:, 1:]
+        img[halo & land & ~b2] = 0
+        img[b2 & land] = (235, 235, 235)
         if self.s.get("insets", True):
             img[(lines & 4).astype(bool)] = (80, 80, 80)
         else:
@@ -503,7 +533,17 @@ class TzMapPanel:
             c.FillRect(x, y, min(w, words * 5 + 30), self.font(FONT_SMALL).height + 3, Color(0, 0, 0))
         self._header_tags(c, x + 1, y + 1, w, kind, change, test)
 
+    def _sections(self, groups):
+        """[(country label, short label, groups)] in legend order: every offset shows in each country it's in."""
+        out = []
+        for cc in sorted({g["cc"] for g in groups}, key=lambda k: COUNTRIES.index(k) if k in COUNTRIES else 9):
+            out.append((str(self.s["country_labels"].get(cc, cc)), str(self.s["country_short"].get(cc, cc)),
+                        [g for g in groups if g["cc"] == cc]))
+        return out
+
     def _legend(self, c, x, y, w, h, groups, kind, change, now, new, test):
+        if w < LEGEND_FULL_W:
+            return self._legend_compact(c, x, y, w, h, groups, kind, change, now, test)
         tf, nf, sf = self.font(FONT_TIME), self.font(FONT_NAME), self.font(FONT_SMALL)
         title = str(self.s.get("title") or "")
         hy = y
@@ -511,64 +551,111 @@ class TzMapPanel:
             graphics.DrawText(c, nf, x, hy + nf.baseline, Color(235, 235, 235), title)
             hy += nf.height + 1
         hy += self._header_tags(c, x, hy, w, kind, change, test)
+        sections = self._sections(groups)
+        if not sections:
+            return
+        # a column per country, each with a row per offset
+        col_w = (w - 4 * (len(sections) - 1)) // len(sections)
+        head_h = sf.height + 3
+        avail = y + h - hy - head_h
+        rows = max(len(gs) for _, _, gs in sections)
+        row_h = min(44, avail // rows)
         second = bool(self.s.get("show_places", True) or self.s.get("show_utc", True))
-        row_min = tf.height + (sf.height + 1 if second else 0) + 1
-        avail = y + h - hy - 1
-        cols = 1
-        while cols < 3 and len(groups) * row_min > avail * cols:
-            cols += 1
-        per = -(-len(groups) // cols)
-        row_h = max(row_min, min(44, avail // max(1, per)))
-        col_w = (w - (cols - 1) * 4) // cols
-        # a roomy row (the whole wall): the big clock, with the name on a line of its own
         big = self.font(FONT_TIME_BIG)
-        tall = row_h >= big.height + nf.height + (sf.height if second else 0) + 3
-        tf, time_font = (big, FONT_TIME_BIG) if tall else (tf, FONT_TIME)
-        used = tf.height + (nf.height if tall else 0) + (sf.height + 1 if second else 0)
-        pad = max(0, (row_h - used - 2) // 2)
+        if row_h >= big.height + nf.height + (sf.height if second else 0) + 3:
+            mode = "tall"                                     # big clock, the name on a line of its own
+        elif second and row_h >= tf.height + sf.height + 2:
+            mode = "two"
+        else:
+            mode = "one"                                      # no room for the offset and places
         newset = set(new)
+        for si, (label, short, gs) in enumerate(sections):
+            cx = x + si * (col_w + 4)
+            text = label if self.tw(FONT_SMALL, label) <= col_w else short
+            graphics.DrawText(c, sf, cx, hy + sf.baseline, Color(235, 235, 235), text)
+            c.FillRect(cx, hy + sf.height + 1, col_w, 1, Color(90, 90, 90))
+            for i, g in enumerate(gs):
+                self._row(c, cx, hy + head_h + i * row_h, col_w, row_h, g, mode, now, newset)
+
+    def _row(self, c, cx, cy, col_w, row_h, g, mode, now, newset):
+        nf, sf = self.font(FONT_NAME), self.font(FONT_SMALL)
+        time_font = FONT_TIME_BIG if mode == "tall" else FONT_TIME
+        tf = self.font(time_font)
+        used = tf.height + (nf.height if mode == "tall" else 0) + (sf.height + 1 if mode != "one" else 0)
+        rgb = color_of(self.s, g["off"])
+        col = Color(*rgb)
+        c.FillRect(cx, cy, 3, row_h - 2, col)
+        cy += max(0, (row_h - used - 2) // 2)
+        tt, ap = clock_text(now, g["off"], self.s.get("time_format", "12h"))
+        tx = cx + 6
+        graphics.DrawText(c, tf, tx, cy + tf.baseline, Color(255, 255, 255), tt)
+        ex = tx + self.tw(time_font, tt) + 1
+        if ap:
+            graphics.DrawText(c, sf, ex, cy + tf.baseline, Color(170, 170, 170), ap)
+            ex += self.tw(FONT_SMALL, ap) + 3
+        else:
+            ex += 3
+        name_y = cy + tf.baseline
+        if mode == "tall":
+            ex, name_y = tx, cy + tf.height + nf.baseline
+        name = g["name"]
+        if "/" in name and ex + self.tw(FONT_NAME, name) > cx + col_w:
+            name = name.split("/")[0]
+        while name and ex + self.tw(FONT_NAME, name) > cx + col_w:
+            name = name[:-1]
+        graphics.DrawText(c, nf, ex, name_y, col, name)
+        if mode == "one":
+            return
+        ly = cy + tf.height + (nf.height if mode == "tall" else 0) + sf.baseline
+        lx = tx
         zones = self.data.get("zones") or []
-        for i, g in enumerate(groups):
-            cx = x + (i // per) * (col_w + 4)
-            cy = hy + 1 + (i % per) * row_h
-            rgb = color_of(self.s, g["off"])
-            col = Color(*rgb)
-            c.FillRect(cx, cy, 3, row_h - 2, col)
-            cy += pad
-            tt, ap = clock_text(now, g["off"], self.s.get("time_format", "12h"))
-            tx = cx + 6
-            graphics.DrawText(c, tf, tx, cy + tf.baseline, Color(255, 255, 255), tt)
-            ex = tx + self.tw(time_font, tt) + 1
-            if ap:
-                graphics.DrawText(c, sf, ex, cy + tf.baseline, Color(170, 170, 170), ap)
-                ex += self.tw(FONT_SMALL, ap) + 3
-            else:
-                ex += 3
-            name_y = cy + tf.baseline
-            if tall:
-                ex, name_y = tx, cy + tf.height + nf.baseline
-            name = g["name"]
-            if "/" in name and ex + self.tw(FONT_NAME, name) > cx + col_w:
-                name = name.split("/")[0]
-            while name and ex + self.tw(FONT_NAME, name) > cx + col_w:
-                name = name[:-1]
-            graphics.DrawText(c, nf, ex, name_y, col, name)
-            if not second:
-                continue
-            ly = cy + tf.height + (nf.height if tall else 0) + sf.baseline
-            lx = tx
-            bits = []
-            if self.s.get("show_utc", True):
-                bits.append((fmt_offset(g["off"]), Color(150, 150, 150)))
-            if self.s.get("show_places", True):
-                fresh = {self.s["places"].get(zones[z]["id"], "") for z in g["zones"] if z in newset}
-                bits += [(p, Color(*rgb) if p in fresh else Color(185, 185, 185)) for p in g["places"]]
-            for j, (text, colr) in enumerate(bits):
-                tw = self.tw(FONT_SMALL, text)
-                if lx + tw > cx + col_w:
-                    break
-                graphics.DrawText(c, sf, lx, ly, colr, text)
-                lx += tw + (6 if j == 0 and self.s.get("show_utc", True) else 4)
+        bits = []
+        if self.s.get("show_utc", True):
+            bits.append((fmt_offset(g["off"]), Color(150, 150, 150)))
+        if self.s.get("show_places", True):
+            fresh = {self.s["places"].get(zones[z]["id"], "") for z in g["zones"] if z in newset}
+            bits += [(p, Color(*rgb) if p in fresh else Color(185, 185, 185)) for p in g["places"]]
+        for j, (text, colr) in enumerate(bits):
+            tw = self.tw(FONT_SMALL, text)
+            if lx + tw > cx + col_w:
+                break
+            graphics.DrawText(c, sf, lx, ly, colr, text)
+            lx += tw + (6 if j == 0 and self.s.get("show_utc", True) else 4)
+
+    def _legend_compact(self, c, x, y, w, h, groups, kind, change, now, test):
+        """A narrow strip beside the map (one side): each country's offsets as a colour mark and the time."""
+        sf = self.font(FONT_SMALL)
+        line = sf.height + 1
+        hy = y
+        if test is not None:
+            self._tag(c, x, hy, str(self.s.get("test_label") or "TEST"), Color(220, 60, 220))
+            hy += line + 1
+        if kind == "upcoming":
+            self._tag(c, x, hy, str(self.s.get("upcoming_label") or "UPCOMING"), Color(255, 210, 40))
+            graphics.DrawText(c, sf, x, hy + line + 1 + sf.baseline, Color(255, 210, 40), change_words(change))
+            hy += 2 * line + 2
+        elif change is not None:
+            self._tag(c, x, hy, str(self.s.get("now_label") or "NOW"), Color(200, 200, 200))
+            hy += line + 1
+        sections = self._sections(groups)
+        rows = sum(len(gs) + 1 for _, _, gs in sections)
+        step = max(line, min(line + 3, (y + h - hy) // max(1, rows)))
+        for label, short, gs in sections:
+            graphics.DrawText(c, sf, x, hy + sf.baseline, Color(235, 235, 235), short)
+            c.FillRect(x, hy + sf.height, w, 1, Color(90, 90, 90))
+            hy += step
+            for g in gs:
+                if hy + sf.height > y + h:
+                    return
+                rgb = color_of(self.s, g["off"])
+                c.FillRect(x, hy, 3, sf.height - 1, Color(*rgb))
+                tt = clock_text(now, g["off"], self.s.get("time_format", "12h"))[0]
+                graphics.DrawText(c, sf, x + 5, hy + sf.baseline, Color(255, 255, 255), tt)
+                off = fmt_offset(g["off"])[3:]
+                ox = x + w - self.tw(FONT_SMALL, off)
+                if ox > x + 5 + self.tw(FONT_SMALL, tt) + 2:
+                    graphics.DrawText(c, sf, ox, hy + sf.baseline, Color(*rgb), off)
+                hy += step
 
     def _map_labels(self, c, x, y, m, state, groups, now):
         f = self.font(FONT_MAP)
@@ -576,7 +663,7 @@ class TzMapPanel:
         small = self.font(FONT_SMALL)
         boxes = []
         hidden = [f2["box"] for f2 in m["frames"][1:]] if not self.s.get("insets", True) else []
-        for off, ax, ay, room in anchors:
+        for _cc, off, ax, ay, room in anchors:
             if any(bx <= ax < bx + bw and by <= ay < by + bh for bx, by, bw, bh in hidden):
                 continue
             text = clock_text(now, off, self.s.get("time_format", "12h"))[0]

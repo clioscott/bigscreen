@@ -1260,11 +1260,11 @@ def timezones_state():
                             "changed": [{"zone": zones[i], "from": before["offs"][i], "to": after["offs"][i]}
                                         for i in c["changed"]],
                             "new": [zones[i] for i in c["new"]],
-                            "groups": [{"off": g["off"], "name": g["name"], "places": g["places"]}
+                            "groups": [{"cc": g["cc"], "off": g["off"], "name": g["name"], "places": g["places"]}
                                        for g in mod.groups_of(data, after, s)]})
     return {"defaults": {**mod.DEFAULTS, "places": mod.DEFAULT_PLACES},
             "zones": [{"id": z, "off": st["offs"][i], "abbr": st["abbrs"][i]} for i, z in enumerate(zones)] if st else [],
-            "groups": [{"off": g["off"], "name": g["name"], "places": g["places"]}
+            "groups": [{"cc": g["cc"], "off": g["off"], "name": g["name"], "places": g["places"]}
                        for g in mod.groups_of(data, st, s)] if st else [],
             "changes": out_changes, "rules": data.get("rules") or {}, "boundaries": data.get("boundaries"),
             "rule_updates": data.get("rule_updates") or [], "generated_at": data.get("generated_at"),

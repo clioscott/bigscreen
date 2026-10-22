@@ -199,7 +199,9 @@ US/Canada shaded by UTC offset with the time in each (BC, Alberta, the NWT and M
 Writes `data/tzmap.json` (zones, every distinct set of offsets for a year = "states", clock "changes", rule updates
 between tzdata versions) and per-zone-size rasters `data/tzmap/<W>x<H>.{idx,lines}.bin`.
 - Display: `display/modules/tzmap.py`, panels `timezones`, `timezones_full`, `timezones_wall`; colours by offset on
-  the Pi, so it switches exactly when clocks change. `warn_days` before a change it also shows the upcoming map
+  the Pi, so it switches exactly when clocks change. Canada and the US are kept apart (they follow different rules):
+  a legend section per country listing each offset it uses with its time (a narrow one on one side), Canada a shade
+  brighter, the border a heavy line. City labels exist but are off by default. `warn_days` before a change it also shows the upcoming map
   (zones with new rules hatched). An entry's `as_of` (epoch s) tests another moment (labelled TEST).
 - Rotation rule `timechange` (`days_after`): a change is within the warning, or was under N days ago.
 - Panel page "Time zone map": labels, names, places, colours, cities, preview by date, Test once / Hold.

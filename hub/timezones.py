@@ -43,7 +43,7 @@ COUNTRIES = ("US", "CA")
 REGION = (-180.0, 17.0, -50.0, 75.0)          # lon/lat box the zones are cut to before simplifying
 SIMPLIFY_DEG = 0.01
 SS = 3                                         # supersampling when rasterising
-RASTER_VERSION = 3                             # bump when rasterising changes
+RASTER_VERSION = 4                             # bump when rasterising changes
 
 
 def _get(url, timeout=30, **kw):
@@ -132,15 +132,15 @@ def rules_root() -> tuple[Path, str, str]:
     return best
 
 
-def zone_ids(root: Path) -> list[str]:
-    """US and Canada zones (zone.tab)."""
-    out = []
+def zone_ids(root: Path) -> dict[str, str]:
+    """US and Canada zones (zone.tab): {tzid: country code}."""
+    out = {}
     for line in (root / "zone.tab").read_text(encoding="utf-8").splitlines():
         if line.startswith("#") or not line.strip():
             continue
         cc, _, tzid = line.split("\t")[:3]
         if cc in COUNTRIES:
-            out.append(tzid.strip())
+            out[tzid.strip()] = cc
     return out
 
 
@@ -445,14 +445,15 @@ def _inverse(f, x, y):
     return lon0 + np.degrees(a / n), lat
 
 
-def anchors(idx, offs):
-    """Where to write each offset's time on the map: [[offset, x, y, room], …] at the middle of its roomiest area
-    (room = distance to the nearest pixel of another offset or water)."""
+def anchors(idx, offs, ccs):
+    """Where to write each country's offsets' times on the map: [[country, offset, x, y, room], …] at the middle of
+    its roomiest area (room = distance to the nearest pixel of another offset, country or water)."""
     from scipy import ndimage
     o = np.array([-99999] + list(offs))[idx]
+    k = np.array([""] + list(ccs))[idx]
     out = []
-    for off in sorted(set(offs)):
-        mask = (o == off)
+    for cc, off in sorted(set(zip(ccs, offs))):
+        mask = (o == off) & (k == cc)
         if not mask.any():
             continue
         # wide labels: count room in x half as much
@@ -460,7 +461,7 @@ def anchors(idx, offs):
         score = dt.copy()
         score[:idx.shape[0] // 4] *= 0.6                    # rather the provinces and states than the territories
         y, x = np.unravel_index(int(np.argmax(score)), dt.shape)
-        out.append([int(off), int(x), int(y), round(float(dt[y, x]), 1)])
+        out.append([cc, int(off), int(x), int(y), round(float(dt[y, x]), 1)])
     return out
 
 
