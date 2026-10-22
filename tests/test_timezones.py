@@ -298,6 +298,24 @@ def test_a_cell_splits_places_by_rule():
     assert [(e["off"], e["places"]) for e in by_off[-1]["cells"]["CA"]] == [(-360, ["AB"])]
 
 
+def test_each_time_is_named_per_country():
+    d, st = _table_data()
+    t = mod.table_of(d, st, mod.settings({}))
+    assert t[0]["cells"]["US"][0]["names"] == ["Pacific"] and t[1]["cells"]["CA"][0]["names"] == ["Mountain"]
+    t = mod.table_of(d, st, mod.settings({"label_style": "abbr"}))
+    assert t[1]["cells"]["CA"][0]["names"] == ["MST"]
+    st2 = dict(st, offs=[-420, -420, -360, -210], abbrs=["MST", "PDT", "CST", "NST"])   # LA on daylight time
+    d["zones"][1]["cc"] = "CA"
+    e = mod.table_of(d, st2, mod.settings({}))[0]["cells"]["CA"][0]            # two zones share -7
+    assert e["names"] == ["Mountain", "Pacific"] and e["abbrs"] == ["MST", "PDT"]
+    d["zones"][1]["area"] = 1                                                 # a sliver adds no second name
+    assert mod.table_of(d, st2, mod.settings({}))[0]["cells"]["CA"][0]["names"] == ["Mountain"]
+    d["zones"][1]["area"] = 10
+    d["zones"][1]["cc"] = "US"
+    t = mod.table_of(d, st, mod.settings({"offset_names": {"CA:-420": "Pacific Time"}}))
+    assert t[1]["cells"]["CA"][0]["names"] == ["Pacific Time"]
+
+
 def test_unnamed_small_times_stay_off_the_list():
     d, st = _table_data()
     d["zones"].append({"id": "America/Creston", "cc": "CA", "home": -420, "area": 1})

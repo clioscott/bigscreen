@@ -166,6 +166,8 @@ def _validate_timezones(tz):
             raise ConfigError(f"timezones.{key} must be text of at most 30 characters")
     if tz.get("legend_rows") is not None and tz["legend_rows"] not in ("traditional", "offset"):
         raise ConfigError("timezones.legend_rows must be traditional or offset")
+    if tz.get("label_style") is not None and tz["label_style"] not in ("name", "abbr"):
+        raise ConfigError("timezones.label_style must be name or abbr")
     lh = tz.get("list_hide")
     if lh is not None and (not isinstance(lh, list) or not all(isinstance(z, str) for z in lh)):
         raise ConfigError("timezones.list_hide must be a list of zone names")

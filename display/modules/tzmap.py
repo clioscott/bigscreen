@@ -26,6 +26,7 @@ as it would be at that moment, with the real time of day, labelled TEST.
                      the columns are Canada and the US, so their times line up
     row_names        {"-480": "PACIFIC"}: traditional rows' names, by the zone's old standard offset
     list_hide        zones shown on the map but left out of the list (Newfoundland)
+    label_style      name (Mountain, from ``names``) | abbr (MST): what each time in the list is called
     rule_labels      {"dst": "DST", "fixed": "NO DST"}: traditional rows only: the tag on each time, whether its
                      places still change their clocks (a row's places that keep different rules are separate times)
     country_labels, country_short   {"CA": "CANADA", "US": "UNITED STATES"}: legend section headings (short: narrow)
@@ -118,6 +119,7 @@ HOME_NAMES = {"-600": "HAWAII", "-540": "ALASKA", "-480": "PACIFIC", "-420": "MO
 # on the map but not in the list (Alaska and Hawaii aren't on either: hub/timezones.py MAP_DROP)
 DEFAULT_LIST_HIDE = ["America/St_Johns"]
 TERRITORIES = ("YT", "NT", "NU")
+NAME_SHARE = 0.15         # a second zone name for a time needs this share of its area
 MIN_SHARE = 0.25          # a time in a traditional zone's cell with no place named needs this share of its area
                           # (Blanc-Sablon's and Creston's year-round time stay off the list)
 
@@ -125,7 +127,7 @@ DEFAULTS = {
     "title": "TIME ZONES", "upcoming_label": "UPCOMING", "now_label": "NOW", "test_label": "TEST",
     "country_labels": {"CA": "CANADA", "US": "UNITED STATES"}, "country_short": {"CA": "CA", "US": "US"},
     "legend_rows": "offset", "row_names": {}, "list_hide": DEFAULT_LIST_HIDE,
-    "rule_labels": {"dst": "DST", "fixed": "NO DST"},
+    "rule_labels": {"dst": "DST", "fixed": "NO DST"}, "label_style": "name",
     "warn_days": 14, "warn_pages": "both", "page_sec": 12, "time_format": "12h",
     "names": DEFAULT_NAMES, "offset_names": {}, "places": {}, "show_places": True, "show_utc": True,
     "map_labels": "auto", "cities": DEFAULT_CITIES, "city_times": False,
@@ -244,6 +246,29 @@ def fmt_offset(m):
     return f"UTC{sign}{h}" + (f":{mm:02d}" if mm else "")
 
 
+def names_of(zones, idx, state, s, cc, off):
+    """What zones idx (one country, one offset) are called, biggest first: from their tz abbreviations, which
+    follow each country's own naming (after Nov 1, 2026 BC is MST: "Mountain", as Wikipedia's Time in Canada has
+    it), or a fixed name from offset_names. label_style "abbr" gives the abbreviations themselves (MST, PDT)."""
+    fixed = s["offset_names"].get(f"{cc}:{off}") or s["offset_names"].get(str(off))
+    if fixed:
+        return [fixed]
+    # by area, so Atikokan's EST doesn't make the Central zones "Eastern"
+    weight = {}
+    for i in idx:
+        a = state["abbrs"][i]
+        weight[a] = weight.get(a, 0) + float(zones[i].get("area") or 1)
+    out = []
+    total = sum(weight.values()) or 1
+    for a in sorted(weight, key=lambda a: (-weight[a], a)):
+        if out and weight[a] < NAME_SHARE * total:     # a sliver (Atikokan's EST among Manitoba's CDT) adds no name
+            break
+        n = a if s.get("label_style") == "abbr" else (s["names"].get(a) or a)
+        if n not in out:
+            out.append(n)
+    return out
+
+
 def groups_of(data, state, s):
     """The offsets in a state per country (Canada first, each west to east), since the two follow different rules:
     [{cc, off, zones (indices), name, places}]."""
@@ -255,19 +280,7 @@ def groups_of(data, state, s):
     out = []
     for cc, off in sorted(by, key=order):
         idx = by[(cc, off)]
-        # named after its zones' abbreviations, by area (Atikokan's EST doesn't make the Central zones "Eastern")
-        weight = {}
-        for i in idx:
-            a = state["abbrs"][i]
-            weight[a] = weight.get(a, 0) + float(zones[i].get("area") or 1)
-        named = s["offset_names"].get(f"{cc}:{off}") or s["offset_names"].get(str(off))
-        if not named:
-            seen = []
-            for a in sorted(weight, key=lambda a: (-weight[a], a)):
-                n = s["names"].get(a) or a
-                if n not in seen:
-                    seen.append(n)
-            named = "/".join(seen[:2])
+        named = "/".join(names_of(zones, idx, state, s, cc, off)[:2])
         places = []
         for i in idx:
             p = s["places"].get(zones[i]["id"], "")
@@ -307,6 +320,11 @@ def table_of(data, state, s):
                 rank = e.pop("_rank", {})
                 e["places"] = sorted(rank, key=lambda p: rank[p])
     out = []
+    for cells_ in rows.values():
+        for cc, entries in cells_.items():
+            for e in entries.values():
+                e["names"] = names_of(zones, e["zones"], state, s, cc, e["off"])
+                e["abbrs"] = names_of(zones, e["zones"], state, dict(s, label_style="abbr"), cc, e["off"])
     for key in sorted(rows):
         cells = {}
         for cc, entries in rows[key].items():
@@ -581,7 +599,7 @@ class TzMapPanel:
             return
         # columns: the row's name, then Canada and the US side by side, so each row's times line up
         lw = min(48, max(self.tw(FONT_SMALL, r["label"]) for r in table) + 4)
-        cw_ca = (w - lw - 4) * 3 // 5
+        cw_ca = (w - lw - 4) // 2
         widths = {"CA": cw_ca, "US": w - lw - 4 - cw_ca}
         cols = [("CA", x + lw), ("US", x + lw + cw_ca + 4)]
         for cc, cx in cols:
@@ -596,6 +614,7 @@ class TzMapPanel:
         need = [max([len(r["cells"].get(cc, [])) for cc in COUNTRIES] + [1]) for r in table]
         spare = max(0, (y + h - hy) - sum(n * entry_h for n in need)) // len(table)
         newset = set(new)
+        last_ap = {}                                    # AM/PM shows on a column's first time and where it flips
         for r, n in zip(table, need):
             row_h = n * entry_h + spare
             ey = hy + max(0, (row_h - n * entry_h) // 2)
@@ -608,14 +627,18 @@ class TzMapPanel:
                 for j, e in enumerate(entries):
                     if j:                                     # a line between times that follow different rules
                         c.FillRect(cx + 8, ey + j * entry_h - 1, cw - 8, 1, Color(55, 55, 55))
-                    self._entry(c, cx, ey + j * entry_h, cw, e, now, newset)
+                    ap = clock_text(now, e["off"], self.s.get("time_format", "12h"))[1]
+                    self._entry(c, cx, ey + j * entry_h, cw, e, now, newset, show_ap=last_ap.get(cc) != ap)
+                    last_ap[cc] = ap
             hy += row_h
             if hy < y + h:
                 c.FillRect(x, hy - 1, w, 1, Color(35, 35, 35))
 
-    def _entry(self, c, cx, cy, cw, e, now, newset):
-        """One time in a cell: colour mark (hatched like the map when its zones are), the clock (7x13 bold), then
-        AM/PM and the rule tag (NO DST highlighted) over the offset and places."""
+    def _entry(self, c, cx, cy, cw, e, now, newset, show_ap=True):
+        """One time in a cell: the clock (7x13 bold), then the zone's name over AM/PM (``show_ap``) and the places
+        (rows by offset);
+        old-zone rows: a colour mark (hatched like the map when its zones are) and a rule tag (NO DST highlighted)
+        over the offset and places."""
         tf, sf, rf = self.font(FONT_TIME), self.font(FONT_SMALL), self.font(FONT_TAG)
         rgb = color_of(self.s, e["off"])
         tx = cx
@@ -627,9 +650,25 @@ class TzMapPanel:
         graphics.DrawText(c, tf, tx, cy + tf.baseline, Color(255, 255, 255), tt)
         sx = tx + self.tw(FONT_TIME, tt) + 2
         rx = sx
-        if ap:
+        by_offset = self.s.get("legend_rows") == "offset"
+        ly = cy + sf.height + sf.baseline
+        px = sx
+        if ap and show_ap and by_offset:              # rows by offset: AM/PM leads the places line
+            graphics.DrawText(c, sf, px, ly, Color(170, 170, 170), ap)
+            px += self.tw(FONT_SMALL, ap) + 4
+        elif ap and not by_offset:
             graphics.DrawText(c, sf, sx, cy + sf.baseline, Color(170, 170, 170), ap)
             rx += self.tw(FONT_SMALL, ap) + 3
+        if by_offset and e.get("names"):
+            # the zone's name in the row's colour; a time two zones share gets both ("Pacific/Mountain", or
+            # "PDT/MST" when that's too long), never just one of them
+            room = cx + cw - rx
+            name = "/".join(e["names"][:2])
+            if self.tw(FONT_SMALL, name) > room and len(e["names"]) > 1:
+                name = "/".join((e.get("abbrs") or e["names"])[:2])
+            while name and self.tw(FONT_SMALL, name) > room:
+                name = name[:-1]
+            graphics.DrawText(c, sf, rx, cy + sf.baseline, Color(*rgb), name)
         labels = self.s.get("rule_labels") or {}
         tag = "" if e.get("dst") is None else str(labels.get("dst" if e["dst"] else "fixed", "") or "")
         tw = self.tw(FONT_TAG, tag)
@@ -639,9 +678,7 @@ class TzMapPanel:
             else:
                 c.FillRect(rx - 1, cy - 1, tw + 2, rf.height + 1, Color(225, 225, 225))
                 graphics.DrawText(c, rf, rx, cy + rf.baseline, Color(0, 0, 0), tag)
-        ly = cy + sf.height + sf.baseline
-        px = sx
-        if self.s.get("show_utc", True) and self.s.get("legend_rows") != "offset":
+        if self.s.get("show_utc", True) and not by_offset:
             off = fmt_offset(e["off"])[3:]
             graphics.DrawText(c, sf, px, ly, Color(*rgb), off)
             px += self.tw(FONT_SMALL, off) + 4

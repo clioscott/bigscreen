@@ -154,6 +154,9 @@ export const Timezones = {
               <div class="row nowrap" style="gap:4px">
                 <input class="input" style="width:110px" :placeholder="d.rule_labels?.dst" :value="dictVal('rule_labels', 'dst')" @input="dictSet('rule_labels', 'dst', $event.target.value)" maxlength="12">
                 <input class="input" style="width:110px" :placeholder="d.rule_labels?.fixed" :value="dictVal('rule_labels', 'fixed')" @input="dictSet('rule_labels', 'fixed', $event.target.value)" maxlength="12"></div></Field>
+            <Field label="Each time is called" hint="From the zones' tz abbreviations, so each country's own naming: after Nov 1 BC is Mountain (MST) beside the US's Pacific (PST)">
+              <Seg :modelValue="val('label_style')" @update:modelValue="v => set('label_style', v)"
+                :options="[{value:'name', label:'Mountain, Pacific…'}, {value:'abbr', label:'MST, PST…'}]"/></Field>
             <ToggleRow :modelValue="val('show_utc')" @update:modelValue="v => set('show_utc', v)" label="UTC offset in the legend"/>
             <ToggleRow :modelValue="val('show_places')" @update:modelValue="v => set('show_places', v)" label="Places in the legend" hint="BC, AB, US Pacific…; places with new rules this year are coloured"/>
             <details><summary class="faint">Zone names (by abbreviation)</summary>
