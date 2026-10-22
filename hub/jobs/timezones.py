@@ -105,7 +105,7 @@ def run(cfg):
     pack, err = tz.boundaries(set(ids), tag)
     if err:
         errors.append(err)
-    zones = _west_to_east(pack, ids)
+    zones = [z for z in _west_to_east(pack, ids) if z not in tz.MAP_DROP]
     zone_objs = [tz.zone(root, z) for z in zones]
     now = time.time()
     t0 = now - 86400
@@ -162,8 +162,9 @@ def run(cfg):
         "generated_at": now, "rules": {"version": version, "source": source, "latest": check.get("latest"),
                                         "checked_at": now, "error": check["error"]},
         "boundaries": pack["tag"],
-        "zones": [{"id": z, "cc": ids[z], "home": tz._offset(o, HOME_AT)[0], "area": tz.area(pack["zones"][z])}
-                  for z, o in zip(zones, zone_objs)],
+        # dst: the zone still changes its clocks (its offset changes within the next year)
+        "zones": [{"id": z, "cc": ids[z], "home": tz._offset(o, HOME_AT)[0], "area": tz.area(pack["zones"][z]),
+                   "dst": len({r[1] for r in scheds[z]}) > 1} for z, o in zip(zones, zone_objs)],
         "states": states, "changes": changes, "maps": maps, "rule_updates": updates[:12]})
     return {"ok": True, "tzdata": version, "source": source, "boundaries": pack["tag"], "zones": len(zones),
             "changes": len(changes), "errors": errors[:3]}

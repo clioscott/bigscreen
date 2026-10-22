@@ -18,7 +18,6 @@ import gzip
 import hashlib
 import io
 import json
-import math
 import re
 import shutil
 import tempfile
@@ -40,10 +39,13 @@ PYPI = "https://pypi.org/pypi/tzdata/json"
 TBB_LATEST = "https://api.github.com/repos/evansiroky/timezone-boundary-builder/releases/latest"
 NE_DIR = GEODATA_ROOT / "borders"
 COUNTRIES = ("US", "CA")
+# zones left off the map (and so the list): Alaska and Hawaii
+MAP_DROP = {"Pacific/Honolulu", "America/Adak", "America/Anchorage", "America/Juneau", "America/Sitka",
+            "America/Metlakatla", "America/Yakutat", "America/Nome"}
 REGION = (-180.0, 17.0, -50.0, 75.0)          # lon/lat box the zones are cut to before simplifying
 SIMPLIFY_DEG = 0.01
 SS = 3                                         # supersampling when rasterising
-RASTER_VERSION = 4                             # bump when rasterising changes
+RASTER_VERSION = 5                             # bump when rasterising changes
 
 
 def _get(url, timeout=30, **kw):
@@ -322,72 +324,38 @@ def geodata():
 # --- rasters ------------------------------------------------------------------------------------------------------------
 def rasterize(zw, zh, pack, zone_list, geo):
     """The map for a zw×zh zone: (idx (zone index + 1 per pixel, 0 = water / outside), lines (1 province/state,
-    2 country, 4 inset frame), frames, map rect)."""
+    2 country), frames, map rect)."""
     from PIL import Image, ImageDraw
     from display.modules import tzmap
     rect = tzmap.layout(zw, zh)["map"]
     mw, mh = rect[2], rect[3]
     frames = tzmap.frames(mw, mh)
+    f = frames[0]
     W, H = mw * SS, mh * SS
     idx_ss = np.zeros((H, W), np.uint8)
     order = {z: i + 1 for i, z in enumerate(zone_list)}
-    owner = np.zeros((H, W), np.uint8)                         # which frame drew a subpixel (insets cover the main map)
 
-    def clip_ok(f, ring):
-        if f["clip"] is None:
-            return True
-        lo0, la0, lo1, la1 = f["clip"]
-        return ring[:, 0].max() >= lo0 and ring[:, 0].min() <= lo1 and ring[:, 1].max() >= la0 and ring[:, 1].min() <= la1
-
-    def px(f, ring):
+    def px(ring, k=SS):
         x, y = tzmap.to_px(f, ring[:, 0], ring[:, 1])
-        return list(zip((x * SS).tolist(), (y * SS).tolist()))
+        return list(zip((x * k).tolist(), (y * k).tolist()))
 
-    for fi, f in enumerate(frames):
-        frame_mask = Image.new("1", (W, H), 0)
-        if f["box"]:
-            bx, by, bw, bh = (v * SS for v in f["box"])
-            ImageDraw.Draw(frame_mask).rectangle([bx, by, bx + bw - 1, by + bh - 1], fill=1)
-        else:
-            frame_mask = Image.new("1", (W, H), 1)
-        fm = np.asarray(frame_mask, bool)
-        if f["box"]:
-            idx_ss[fm] = 0
-            owner[fm] = fi
-        # big zones first, so small ones drawn later stay visible where simplified edges overlap
-        tz_sorted = sorted(pack["zones"].items(), key=lambda kv: -sum(len(r[0]) for r in kv[1]))
-        for tzid, polys in tz_sorted:
-            if tzid not in order:
-                continue
-            im = Image.new("1", (W, H), 0)
-            d = ImageDraw.Draw(im)
-            drew = False
-            for poly in polys:
-                ext = np.asarray(poly[0], float)
-                if not clip_ok(f, ext):
-                    continue
-                d.polygon(px(f, ext), fill=1)
-                for hole in poly[1:]:
-                    d.polygon(px(f, np.asarray(hole, float)), fill=0)
-                drew = True
-            if drew:
-                m = np.asarray(im, bool) & fm & (owner == fi)
-                idx_ss[m] = order[tzid]
-        if f["clip"] is not None:                              # an inset drops whatever lies outside its lon/lat box
-            lo0, la0, lo1, la1 = f["clip"]
-            yy, xx = np.nonzero(fm)
-            if len(xx):
-                lon, lat = _inverse(f, (xx + 0.5) / SS, (yy + 0.5) / SS)
-                out = (lon < lo0) | (lon > lo1) | (lat < la0) | (lat > la1)
-                idx_ss[yy[out], xx[out]] = 0
-        lakes = Image.new("1", (W, H), 0)
-        d = ImageDraw.Draw(lakes)
-        for parts in geo["lakes"]:
-            for ring in parts:
-                if clip_ok(f, ring):
-                    d.polygon(px(f, ring), fill=1)
-        lm = np.asarray(lakes, bool) & fm & (owner == fi)
-        idx_ss[lm] = 0
+    # big zones first, so small ones drawn later stay visible where simplified edges overlap
+    for tzid, polys in sorted(pack["zones"].items(), key=lambda kv: -sum(len(r[0]) for r in kv[1])):
+        if tzid not in order:
+            continue
+        im = Image.new("1", (W, H), 0)
+        d = ImageDraw.Draw(im)
+        for poly in polys:
+            d.polygon(px(np.asarray(poly[0], float)), fill=1)
+            for hole in poly[1:]:
+                d.polygon(px(np.asarray(hole, float)), fill=0)
+        idx_ss[np.asarray(im, bool)] = order[tzid]
+    lakes = Image.new("1", (W, H), 0)
+    d = ImageDraw.Draw(lakes)
+    for parts in geo["lakes"]:
+        for ring in parts:
+            d.polygon(px(ring), fill=1)
+    idx_ss[np.asarray(lakes, bool)] = 0
 
     # down to LED pixels: land if most of the pixel is, in the zone that covers most of it
     blocks = idx_ss.reshape(mh, SS, mw, SS).transpose(0, 2, 1, 3).reshape(mh, mw, SS * SS)
@@ -403,46 +371,27 @@ def rasterize(zw, zh, pack, zone_list, geo):
     idx = np.where(land, best, 0).astype(np.uint8)
 
     lines = np.zeros((mh, mw), np.uint8)
-    region = np.zeros((mh, mw), np.int8)                       # which frame each LED pixel shows
-    for fi, f in enumerate(frames[1:], 1):
-        bx, by, bw, bh = f["box"]
-        region[by:by + bh, bx:bx + bw] = fi
     for bit, key in ((1, "prov"), (2, "country")):
-        for fi, f in enumerate(frames):
-            im = Image.new("1", (mw, mh), 0)
-            d = ImageDraw.Draw(im)
-            for line in geo[key]:
-                if not clip_ok(f, line):
-                    continue
-                x, y = tzmap.to_px(f, line[:, 0], line[:, 1])
-                pts = list(zip(np.floor(x).tolist(), np.floor(y).tolist()))
-                if len(pts) > 1:
-                    d.line(pts, fill=1)
-            lines[np.asarray(im, bool) & (region == fi) & (idx > 0)] |= bit
-    for f in frames[1:]:
-        bx, by, bw, bh = f["box"]
-        lines[by, bx:bx + bw] |= 4
-        lines[by + bh - 1, bx:bx + bw] |= 4
-        lines[by:by + bh, bx + bw - 1] |= 4
-        if bx > 0:
-            lines[by:by + bh, bx] |= 4
+        im = Image.new("1", (mw, mh), 0)
+        d = ImageDraw.Draw(im)
+        for line in geo[key]:
+            x, y = tzmap.to_px(f, line[:, 0], line[:, 1])
+            pts = list(zip(np.floor(x).tolist(), np.floor(y).tolist()))
+            if len(pts) > 1:
+                d.line(pts, fill=1)
+        lines[solid(np.asarray(im, bool)) & (idx > 0)] |= bit
     return idx, lines, frames, list(rect)
 
 
-def _inverse(f, x, y):
-    """Pixel → (lon, lat) for a frame (spherical LCC inverse)."""
-    lon0, lat1, lat2, lat0 = f["proj"]
-    p1, p2, p0 = (math.radians(a) for a in (lat1, lat2, lat0))
-    t = lambda p: math.tan(math.pi / 4 + p / 2)
-    n = math.log(math.cos(p1) / math.cos(p2)) / math.log(t(p2) / t(p1))
-    F = math.cos(p1) * t(p1) ** n / n
-    r0 = F / t(p0) ** n
-    X = (np.asarray(x) - f["ox"]) / f["k"]
-    Y = r0 - (f["oy"] - np.asarray(y)) / f["k"]
-    r = np.sign(n) * np.hypot(X, Y)
-    a = np.arctan2(X, Y)
-    lat = np.degrees(2 * np.arctan((F / r) ** (1 / n)) - np.pi / 2)
-    return lon0 + np.degrees(a / n), lat
+def solid(mask):
+    """A 1 px line with no diagonal-only steps (they read as a broken, dotted line on the LEDs): where two pixels
+    touch only at a corner, the pixel beside the lower one fills the gap."""
+    m = mask.copy()
+    down_right = mask[:-1, :-1] & mask[1:, 1:] & ~mask[:-1, 1:] & ~mask[1:, :-1]
+    m[1:, :-1] |= down_right
+    down_left = mask[:-1, 1:] & mask[1:, :-1] & ~mask[:-1, :-1] & ~mask[1:, 1:]
+    m[1:, 1:] |= down_left
+    return m
 
 
 def anchors(idx, offs, ccs):

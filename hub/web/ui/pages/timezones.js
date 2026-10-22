@@ -146,10 +146,14 @@ export const Timezones = {
                 :options="[{value:'auto', label:'When no legend'}, {value:'on', label:'Always'}, {value:'off', label:'Never'}]"/></Field></div>
             <Field label="Legend rows" hint="Canada and the US in columns side by side, so their times line up">
               <Seg :modelValue="val('legend_rows')" @update:modelValue="v => set('legend_rows', v)"
-                :options="[{value:'traditional', label:'Old zones (Pacific, Mountain…)'}, {value:'offset', label:'UTC offsets'}]"/></Field>
+                :options="[{value:'offset', label:'UTC offsets (like the map)'}, {value:'traditional', label:'Old zones (Pacific, Mountain…)'}]"/></Field>
             <div class="row" style="flex-wrap:wrap; gap:6px" v-if="val('legend_rows') !== 'offset'">
               <span v-for="(n, off) in {'-480': 'PACIFIC', '-420': 'MOUNTAIN', '-360': 'CENTRAL', '-300': 'EASTERN', '-240': 'ATLANTIC'}" :key="off" class="row nowrap" style="gap:4px">
                 <input class="input" style="width:100px" :placeholder="n" :value="dictVal('row_names', off)" @input="dictSet('row_names', off, $event.target.value)" maxlength="12"></span></div>
+            <Field v-if="val('legend_rows') === 'traditional'" label="Rule tags" hint="On each time in the list: places that still change their clocks, and places that don't (highlighted)">
+              <div class="row nowrap" style="gap:4px">
+                <input class="input" style="width:110px" :placeholder="d.rule_labels?.dst" :value="dictVal('rule_labels', 'dst')" @input="dictSet('rule_labels', 'dst', $event.target.value)" maxlength="12">
+                <input class="input" style="width:110px" :placeholder="d.rule_labels?.fixed" :value="dictVal('rule_labels', 'fixed')" @input="dictSet('rule_labels', 'fixed', $event.target.value)" maxlength="12"></div></Field>
             <ToggleRow :modelValue="val('show_utc')" @update:modelValue="v => set('show_utc', v)" label="UTC offset in the legend"/>
             <ToggleRow :modelValue="val('show_places')" @update:modelValue="v => set('show_places', v)" label="Places in the legend" hint="BC, AB, US Pacific…; places with new rules this year are coloured"/>
             <details><summary class="faint">Zone names (by abbreviation)</summary>
@@ -178,8 +182,7 @@ export const Timezones = {
             <Field label="Area brightness"><Slider :modelValue="val('fill')" @update:modelValue="v => set('fill', v)" :min="0.15" :max="1" :step="0.05"/></Field>
             <Field label="Canada, brighter than the US by" hint="1× = the same; the border is drawn as a heavy line either way">
               <Slider :modelValue="val('canada_boost')" @update:modelValue="v => set('canada_boost', v)" :min="0.5" :max="2" :step="0.05" :format="v => v.toFixed(2) + '×'"/></Field>
-            <ToggleRow :modelValue="val('highlight_new')" @update:modelValue="v => set('highlight_new', v)" label="Hatch zones with new rules" hint="On the upcoming map: zones whose offset differs from a year before"/>
-            <ToggleRow :modelValue="val('insets')" @update:modelValue="v => set('insets', v)" label="Alaska and Hawaii insets" hint="On the map only; they're left out of the list (see Zones under Text)"/>
+            <ToggleRow :modelValue="val('highlight_new')" @update:modelValue="v => set('highlight_new', v)" label="Hatch zones with new rules" hint="On the upcoming map: zones whose offset differs from a year before; their times in the list get hatched marks too"/>
           </div></div>
 
         <div class="card"><div class="card-head"><Icon name="MapPin" :size="16"/><h3>Cities</h3><span class="spacer"></span>

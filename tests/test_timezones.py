@@ -263,27 +263,39 @@ def test_frames_are_drawn_once_a_minute(data_dir, monkeypatch):
 
 
 def _table_data():
-    """Vancouver (CA, Pacific), LA (US, Pacific), Edmonton (CA, Mountain), Honolulu (US, hidden from the list)."""
+    """Vancouver (CA, Pacific), LA (US, Pacific), Edmonton (CA, Mountain), St John's (CA, on the map, not the list)."""
     zones = [{"id": "America/Vancouver", "cc": "CA", "home": -480, "area": 10},
              {"id": "America/Los_Angeles", "cc": "US", "home": -480, "area": 10},
              {"id": "America/Edmonton", "cc": "CA", "home": -420, "area": 10},
-             {"id": "Pacific/Honolulu", "cc": "US", "home": -600, "area": 1}]
-    st = {"from": 0, "offs": [-420, -480, -360, -600], "abbrs": ["MST", "PST", "CST", "HST"]}
+             {"id": "America/St_Johns", "cc": "CA", "home": -210, "area": 1}]
+    st = {"from": 0, "offs": [-420, -480, -360, -210], "abbrs": ["MST", "PST", "CST", "NST"]}
     return {"zones": zones, "states": [st]}, st
 
 
 def test_legend_rows_line_up_canada_and_the_us_by_old_zone():
     d, st = _table_data()
-    t = mod.table_of(d, st, mod.settings({}))
-    assert [r["label"] for r in t] == ["PACIFIC", "MOUNTAIN"]                  # Hawaii is on the map, not the list
+    t = mod.table_of(d, st, mod.settings({"legend_rows": "traditional"}))
+    assert [r["label"] for r in t] == ["PACIFIC", "MOUNTAIN"]                  # Newfoundland: the map, not the list
     pac = t[0]["cells"]
     assert [e["off"] for e in pac["CA"]] == [-420] and [e["off"] for e in pac["US"]] == [-480]
     assert "US" not in t[1]["cells"]
-    t = mod.table_of(d, st, mod.settings({"legend_rows": "offset"}))
+    t = mod.table_of(d, st, mod.settings({}))                                # the default: a row per offset
     assert [r["label"] for r in t] == ["UTC-8", "UTC-7", "UTC-6"]
     assert set(t[1]["cells"]) == {"CA"} and set(t[0]["cells"]) == {"US"}
-    t = mod.table_of(d, st, mod.settings({"list_hide": [], "row_names": {"-480": "WEST"}}))
-    assert [r["label"] for r in t] == ["HAWAII", "WEST", "MOUNTAIN"]
+    t = mod.table_of(d, st, mod.settings({"legend_rows": "traditional", "list_hide": [], "row_names": {"-480": "WEST"}}))
+    assert [r["label"] for r in t] == ["WEST", "MOUNTAIN", "NFLD"]
+
+
+def test_a_cell_splits_places_by_rule():
+    d, st = _table_data()
+    d["zones"].append({"id": "America/Cambridge_Bay", "cc": "CA", "home": -420, "area": 10, "dst": True})
+    d["zones"][2]["dst"] = False                                              # Edmonton: no more clock changes
+    st["offs"].append(-360)                                                   # same offset as Edmonton right now
+    st["abbrs"].append("MDT")
+    cell = mod.table_of(d, st, mod.settings({"legend_rows": "traditional"}))[1]["cells"]["CA"]
+    assert [(e["off"], e["dst"], e["places"]) for e in cell] == [(-360, False, ["AB"]), (-360, True, [])]
+    by_off = mod.table_of(d, st, mod.settings({}))                           # by offset: one time for both
+    assert [(e["off"], e["places"]) for e in by_off[-1]["cells"]["CA"]] == [(-360, ["AB"])]
 
 
 def test_unnamed_small_times_stay_off_the_list():
@@ -291,7 +303,7 @@ def test_unnamed_small_times_stay_off_the_list():
     d["zones"].append({"id": "America/Creston", "cc": "CA", "home": -420, "area": 1})
     st["offs"].append(-420)
     st["abbrs"].append("MST")
-    cells = mod.table_of(d, st, mod.settings({}))[1]["cells"]["CA"]
+    cells = mod.table_of(d, st, mod.settings({"legend_rows": "traditional"}))[1]["cells"]["CA"]
     assert [e["off"] for e in cells] == [-360]                                # Edmonton's, not Creston's
 
 
@@ -310,3 +322,14 @@ def test_boundaries_follow_each_change(data_dir):
 
 def test_cities_are_off_by_default():
     assert not any(c["on"] for c in mod.DEFAULTS["cities"])
+
+
+def test_lines_have_no_corner_only_steps():
+    m = np.eye(5, dtype=bool)                                                # a diagonal: pixels touch at corners only
+    s = tz.solid(m)
+    assert s[m].all()
+    for y in range(4):                                                        # each step now shares an edge
+        assert s[y, y + 1] or s[y + 1, y]
+    flip = tz.solid(m[:, ::-1])
+    for y in range(4):
+        assert flip[y, 3 - y] or flip[y + 1, 4 - y]

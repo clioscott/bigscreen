@@ -169,7 +169,8 @@ def _validate_timezones(tz):
     lh = tz.get("list_hide")
     if lh is not None and (not isinstance(lh, list) or not all(isinstance(z, str) for z in lh)):
         raise ConfigError("timezones.list_hide must be a list of zone names")
-    for key in ("names", "offset_names", "places", "colors", "country_labels", "country_short", "row_names"):
+    for key in ("names", "offset_names", "places", "colors", "country_labels", "country_short", "row_names",
+                "rule_labels"):
         d = tz.get(key)
         if d is None:
             continue
