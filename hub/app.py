@@ -1242,6 +1242,58 @@ def bridges_preview(shape: str = "full", page: int = 0, scale: int = 3):
     return Response(out.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
+# --- time zone map (hub/jobs/timezones.py, display/modules/tzmap.py) ------------------------------------------------
+@app.get("/api/timezones/state")
+def timezones_state():
+    """Defaults, the rules in use, every zone's offset now, the coming clock changes and recent rule updates."""
+    from display.modules import tzmap as mod
+    data = read_json(paths.DATA_DIR / "tzmap.json", {}) or {}
+    zones = [z["id"] for z in data.get("zones") or []]
+    now = time.time()
+    st = mod.state_at(data, now) if data.get("states") else None
+    s = mod.settings((config.load().get("modules") or {}).get("timezones"))
+    out_changes = []
+    for c in data.get("changes") or []:
+        after = mod.state_at(data, c["end"])
+        before = mod.state_at(data, c["start"] - 1)
+        out_changes.append({"start": c["start"], "end": c["end"], "words": mod.change_words(c),
+                            "changed": [{"zone": zones[i], "from": before["offs"][i], "to": after["offs"][i]}
+                                        for i in c["changed"]],
+                            "new": [zones[i] for i in c["new"]],
+                            "groups": [{"cc": g["cc"], "off": g["off"], "name": g["name"], "places": g["places"]}
+                                       for g in mod.groups_of(data, after, s)]})
+    return {"defaults": {**mod.DEFAULTS, "places": mod.DEFAULT_PLACES},
+            "zones": [{"id": z, "off": st["offs"][i], "abbr": st["abbrs"][i]} for i, z in enumerate(zones)] if st else [],
+            "groups": [{"cc": g["cc"], "off": g["off"], "name": g["name"], "places": g["places"]}
+                       for g in mod.groups_of(data, st, s)] if st else [],
+            "changes": out_changes, "rules": data.get("rules") or {}, "boundaries": data.get("boundaries"),
+            "rule_updates": data.get("rule_updates") or [], "generated_at": data.get("generated_at"),
+            "phase": [k for k, _, _ in mod.pages_at(data, now, s)] if st else [], "zones_px": _webcam_zones()}
+
+
+@app.get("/api/timezones/preview.png")
+def timezones_preview(shape: str = "wall", as_of: float = 0, page: int = 0, scale: int = 3, s: str = ""):
+    """What the wall shows for a time zone map entry; ``as_of`` (epoch s) previews another moment (a test),
+    ``s`` = the draft settings as JSON."""
+    import json as _json
+    from display.modules import tzmap as mod
+    zones = _webcam_zones()
+    if shape not in zones:
+        raise HTTPException(400, "shape must be left, right, full or wall")
+    settings = (config.load().get("modules") or {}).get("timezones") or {}
+    if s:
+        try:
+            settings = _json.loads(s)
+        except ValueError:
+            raise HTTPException(400, "s must be JSON")
+    img = mod.render_preview(str(paths.DATA_DIR), tuple(zones[shape]), settings, as_of=as_of or None, page=page)
+    im = Image.fromarray(img)
+    k = max(1, min(6, scale))
+    out = io.BytesIO()
+    im.resize((im.width * k, im.height * k), Image.NEAREST).save(out, "PNG", compress_level=1)
+    return Response(out.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
 # --- finance -----------------------------------------------------------------
 @app.get("/api/finance/data")
 def finance_data():

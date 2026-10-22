@@ -140,6 +140,65 @@ def validate(cfg):
 
     _validate_webcams(mods.get("webcams"))
     _validate_bridges(mods.get("bridges"))
+    _validate_timezones(mods.get("timezones"))
+
+
+def _validate_timezones(tz):
+    """modules.timezones (display/modules/tzmap.py)."""
+    if not tz:
+        return
+    if not isinstance(tz, dict):
+        raise ConfigError("timezones must be an object")
+    num = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool)
+    for key, lo, hi in (("warn_days", 0, 60), ("page_sec", 3, 120), ("fill", 0.15, 1)):
+        v = tz.get(key)
+        if v is not None and (not num(v) or not lo <= v <= hi):
+            raise ConfigError(f"timezones.{key} must be {lo}–{hi}")
+    v = tz.get("refresh_interval_sec")
+    if v is not None and (not num(v) or v < 600):
+        raise ConfigError("timezones.refresh_interval_sec must be at least 600")
+    for key, ok in (("warn_pages", ("both", "upcoming")), ("time_format", ("12h", "24h")),
+                    ("map_labels", ("auto", "on", "off"))):
+        if tz.get(key) is not None and tz[key] not in ok:
+            raise ConfigError(f"timezones.{key} must be one of {', '.join(ok)}")
+    for key in ("title", "upcoming_label", "now_label", "test_label"):
+        if tz.get(key) is not None and (not isinstance(tz[key], str) or len(tz[key]) > 30):
+            raise ConfigError(f"timezones.{key} must be text of at most 30 characters")
+    if tz.get("legend_rows") is not None and tz["legend_rows"] not in ("traditional", "offset"):
+        raise ConfigError("timezones.legend_rows must be traditional or offset")
+    if tz.get("label_style") is not None and tz["label_style"] not in ("name", "abbr"):
+        raise ConfigError("timezones.label_style must be name or abbr")
+    lh = tz.get("list_hide")
+    if lh is not None and (not isinstance(lh, list) or not all(isinstance(z, str) for z in lh)):
+        raise ConfigError("timezones.list_hide must be a list of zone names")
+    for key in ("names", "offset_names", "places", "colors", "country_labels", "country_short", "row_names",
+                "rule_labels"):
+        d = tz.get(key)
+        if d is None:
+            continue
+        if not isinstance(d, dict) or not all(isinstance(v, str) and len(v) <= 30 for v in d.values()):
+            raise ConfigError(f"timezones.{key} must map names to short text")
+    for k, v in (tz.get("colors") or {}).items():
+        if not (len(v) == 7 and v.startswith("#") and all(ch in "0123456789abcdefABCDEF" for ch in v[1:])):
+            raise ConfigError(f"timezones colour for {k} must be #rrggbb")
+    v = tz.get("canada_boost")
+    if v is not None and (not num(v) or not 0.5 <= v <= 2):
+        raise ConfigError("timezones.canada_boost must be 0.5–2")
+    for k in list(tz.get("colors") or {}) + list(tz.get("row_names") or {}) + \
+            [k.split(":")[-1] for k in tz.get("offset_names") or {}]:
+        try:
+            int(k)
+        except ValueError:
+            raise ConfigError(f"timezones: {k!r} isn't an offset in minutes")
+    cities = tz.get("cities")
+    if cities is not None:
+        if not isinstance(cities, list) or len(cities) > 60:
+            raise ConfigError("timezones.cities must be a list of at most 60 cities")
+        for i, c in enumerate(cities):
+            if not isinstance(c, dict) or not str(c.get("name", "")).strip():
+                raise ConfigError(f"timezones.cities[{i}] needs a name")
+            if not (num(c.get("lat")) and num(c.get("lon")) and -90 <= c["lat"] <= 90 and -180 <= c["lon"] <= 180):
+                raise ConfigError(f"city {c['name']}: latitude and longitude please")
 
 
 def _validate_overlay(name, ov):

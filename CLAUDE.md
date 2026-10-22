@@ -190,6 +190,24 @@ tsunami (`tsunami.py`, NTWC + DFO gauges), wildfire (`wildfire.py`, BCWS/EMCR, S
 - Highway shields: `assets/icons/shields/shields.json`, pixel-hinted per size by `tools/build_shields.py` from the
   Wikimedia SVGs (needs resvg-py, scikit-image; run outside the hub venv); drawn by `display/modules/shields.py`.
 
+## Time zone map
+
+US/Canada shaded by UTC offset with the time in each (BC, Alberta, the NWT and Manitoba stop changing clocks on
+2026-11-01). Job `hub/jobs/timezones.py` (every 6 h) with `hub/timezones.py`: rules from the newest tzdata (PyPI
+`tzdata`, cached in `cache/tzmap/tzdata/`, or the system's if newer), boundaries from timezone-boundary-builder
+(shapefile fetched once per release, cut to `cache/tzmap/zones-<tag>.json.gz`), NE lines/lakes from the geodata.
+Writes `data/tzmap.json` (zones, every distinct set of offsets for a year = "states", clock "changes", rule updates
+between tzdata versions) and per-zone-size rasters `data/tzmap/<W>x<H>.{idx,lines}.bin`.
+- Display: `display/modules/tzmap.py`, panels `timezones`, `timezones_full`, `timezones_wall`; colours by offset on
+  the Pi, so colours and the lines between offsets are redrawn at every clock change. Canada and the US are kept
+  apart (they follow different rules): the legend is a table with Canada and US columns and a row per UTC offset
+  (or per old zone: each zone's 2019 standard offset, `home` in tzmap.json; `legend_rows`), Canada a shade
+  brighter, the border a heavy line. Alaska and Hawaii are left out (`hub/timezones.py` MAP_DROP); Newfoundland is
+  on the map but not in the list (`list_hide`). City labels exist but are off by default. `warn_days` before a change it also shows the upcoming map
+  (zones with new rules hatched). An entry's `as_of` (epoch s) tests another moment (labelled TEST).
+- Rotation rule `timechange` (`days_after`): a change is within the warning, or was under N days ago.
+- Panel page "Time zone map": labels, names, places, colours, cities, preview by date, Test once / Hold.
+
 ## Rules
 
 - Display tuning values in `system.display` came from exhaustive hardware testing — don't change them casually.
