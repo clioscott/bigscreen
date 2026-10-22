@@ -99,7 +99,7 @@ hot-reload on the wall, no restart needed.
 - **Tsunami**: 4 themes (North Pacific, BC zones, Bulletin, Hazard sign), 3 built-in samples.
 - **Wildfire**: 4 themes (Situation map, Incident card, Fire danger sign, Evacuation notice), 3 built-in samples.
 - **Japan EEW**: 12 themes (Kyoshin Monitor, JQuake style, TV broadcast, LED countdown, Departure board, Pachinko, Fever mode, Data terminal, 号外 extra edition, Seismograph lab, Arcade cabinet, Instrument panel).
-- **14 fetch jobs** on the hub, each a short-lived subprocess with a timeout:
+- **15 fetch jobs** on the hub, each a short-lived subprocess with a timeout:
   - `alerts`: Current ECCC alerts for the configured area → data/alerts.json
   - `bridges`: Bridges now: the latest DriveBC still from a camera on each Metro Vancouver bridge → data/bridges.json + tiles
   - `calendar`: Google Calendar events → data/calendar.json (v1 format, via the v1 CalendarService)
@@ -110,6 +110,7 @@ hot-reload on the wall, no restart needed.
   - `news`: Headlines from publisher RSS/Atom feeds, grouped into categories
   - `quakes`: Quakes that matter in south-west BC → data/quakes.json
   - `shield_signs`: The real highway signs the webcam captions use → data/shields/*.png (hub/shield_signs.py)
+  - `timezones`: Time zone map: US/Canada offsets for a year from the newest tzdata, plus map rasters → data/tzmap.json
   - `tsunami`: NTWC bulletins for the BC coast → data/tsunami.json
   - `weather`: Environment Canada citypage forecast + SWOB live observations → data/weather.json
   - `webcam_weather`: Weather and sunrise/sunset at each webcam → data/webcam_weather.json (for the webcam captions)
@@ -307,7 +308,7 @@ which drives the panels and whose `graphics` code `display/gfx.py` reproduces. M
 come from [u8g2](https://github.com/olikraus/u8g2) by Oliver Kraus. Weather icons are
 [Meteocons](https://github.com/basmilius/weather-icons) by Bas Milius, and pixel icons are
 [pixelarticons](https://github.com/halfmage/pixelarticons). Data comes from Environment and Climate Change Canada,
-DriveBC, BC Wildfire Service, Alert Ready (NAAD), USGS, NRCan, NTWC, DFO, EarthScope and OpenStreetMap
-contributors. **[THIRD_PARTY.md](THIRD_PARTY.md)** lists every font, icon set and data source with its licence.
+DriveBC, BC Wildfire Service, Alert Ready (NAAD), USGS, NRCan, NTWC, DFO, EarthScope, the IANA tz database,
+timezone-boundary-builder and OpenStreetMap contributors. **[THIRD_PARTY.md](THIRD_PARTY.md)** lists every font, icon set and data source with its licence.
 
 Licensed under the [GNU GPL v2 or later](LICENSE).

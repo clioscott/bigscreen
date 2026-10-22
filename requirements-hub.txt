@@ -13,6 +13,7 @@ scikit-image>=0.24        # carto.py: finds straits narrower than a pixel
 scipy>=1.11               # carto.py, maps: morphology on land/water masks
 shapely>=2.0              # carto.py, bc maps: clipping and simplifying geometry
 pyshp>=2.3                # bc maps: ECCC/MSC shapefiles
+tzdata>=2026.5            # timezones.py: fallback rules when PyPI and the system are older
 tifffile>=2024.1          # forecast.py: GeoMet WCS fields
 websockets>=12            # quake.py: Japan EEW feeds
 resvg-py>=0.5             # shield_signs.py: real highway signs (Commons SVGs) for webcam captions
