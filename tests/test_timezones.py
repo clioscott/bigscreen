@@ -584,6 +584,31 @@ def test_zone_times_can_show_their_offset_from_home(data_dir, monkeypatch):
     assert "home" in drawn and "-1h" in drawn and "same" in drawn
 
 
+def test_map_label_lines_choose_what_each_zone_says(data_dir, monkeypatch):
+    lines = [{"kind": "time", "style": "ampm"}, {"kind": "utc", "prefix": "GMT", "color": "#00ff00"},
+             {"kind": "zone", "zone": "Etc/UTC", "prefix": "Z"}, {"kind": "home", "on": False}, {"kind": "name"}]
+    p = mod.TzMapPanel(type("C", (), {"modules": {"timezones": {"map_labels": "on", "map_label_lines": lines}}})(),
+                       data_dir)
+    p._load(time.time())
+    m = p._map_for(448, 192)
+    st = dict(mod.state_at(p.data, time.time()), offs=[-420, -480])
+    st["anchors"] = {m["key"]: [["US", -480, 120, 120, 9.0]]}
+    drawn = []
+    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s, **k: drawn.append(s))
+    from display.gfx import Canvas
+    p._map_labels(Canvas(448, 192), 0, 0, m, st, [], time.time())
+    assert drawn[0].endswith(("AM", "PM")) and "GMT-8" in drawn and "Z-8h" in drawn and len(drawn) == 4
+    assert mod.fmt_utc(-210, "hhmm") == "-03:30" and mod.fmt_utc(330) == "+5:30" and mod.fmt_utc(-480, "compact") == "-0800"
+
+
+def test_map_label_lines_are_validated():
+    import pytest
+    from hub import config
+    for bad in ([{"kind": "nope"}], [{"kind": "zone"}], [{"kind": "utc", "color": "red"}]):
+        with pytest.raises(config.ConfigError):
+            config._validate_timezones({"map_label_lines": bad})
+
+
 def test_every_list_time_has_its_am_pm(data_dir, monkeypatch):
     p = mod.TzMapPanel(type("C", (), {"modules": {"timezones": {"show_list": True, "map_labels": "off"}}})(), data_dir)
     p._load(time.time())

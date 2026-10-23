@@ -114,7 +114,55 @@ export const Timezones = {
       catch (e) { fail(e); running.value = false; }
     };
     const zoneName = (z) => z.replace(/^(America|Pacific)\//, "").replace(/_/g, " ");
-    return { labelShown, toggleLabel, setListed, d, state, shape, page, asOf, custom, tz, val, set, dictVal, dictSet, cities, editCities, addCity, offsets, colorOf,
+
+    // what each zone's map label says, a line each (map_label_lines; unset: the time, plus the older offset switch)
+    const lines = computed(() => tz.value.map_label_lines
+      || [{ kind: "time" }, ...(val("map_label_offsets") ? [{ kind: "home" }] : [])]);
+    const editLines = () => {
+      if (!tz.value.map_label_lines) { tz.value.map_label_lines = clone(lines.value); delete tz.value.map_label_offsets; }
+      return tz.value.map_label_lines;
+    };
+    const setLine = (i, k, v) => { const ln = editLines()[i]; if (v === "" || v == null) delete ln[k]; else ln[k] = v; };
+    const moveLine = (i, by) => { const ls = editLines(), [ln] = ls.splice(i, 1); ls.splice(i + by, 0, ln); };
+    const addLine = (kind) => editLines().push({ kind, ...(kind === "zone" ? { zone: "Europe/London", prefix: "LON " } : {}) });
+    // a zone's UTC offset now, from the browser's own rules (null: no such zone)
+    const zoneOff = (z) => {
+      try {
+        const p = new Intl.DateTimeFormat("en-US", { timeZone: z, timeZoneName: "longOffset" }).formatToParts(new Date())
+          .find((x) => x.type === "timeZoneName").value.match(/([+-])(\d+):?(\d+)?/);
+        return p ? (p[1] === "-" ? -1 : 1) * (+p[2] * 60 + +(p[3] || 0)) : 0;
+      } catch { return null; }
+    };
+    const delta = (d) => (d > 0 ? "+" : "-") + Math.floor(Math.abs(d) / 60) + (Math.abs(d) % 60 ? ":" + String(Math.abs(d) % 60).padStart(2, "0") : "h");
+    const utcText = (off, style) => {
+      const s = off >= 0 ? "+" : "-", h = Math.floor(Math.abs(off) / 60), m = Math.abs(off) % 60, p2 = (n) => String(n).padStart(2, "0");
+      return style === "hhmm" ? `${s}${p2(h)}:${p2(m)}` : style === "compact" ? `${s}${p2(h)}${p2(m)}` : `${s}${h}${m ? ":" + p2(m) : ""}`;
+    };
+    // how a line reads on Newfoundland's label (UTC−2:30 in summer, −3:30 in winter: shows the minutes too)
+    const example = (ln) => {
+      const off = zoneOff("America/St_Johns") ?? -150, home = zoneOff(val("home_zone") || "America/Vancouver") ?? -420;
+      const pre = ln.prefix || "", d = new Date(Date.now() + off * 60000);
+      switch (ln.kind) {
+        case "time": return (d.getUTCHours() % 12 || 12) + ":" + String(d.getUTCMinutes()).padStart(2, "0") + (ln.style === "ampm" ? (d.getUTCHours() < 12 ? "AM" : "PM") : "");
+        case "home": return pre + delta(off - home);
+        case "utc": return (ln.prefix ?? "UTC") + utcText(off, ln.style);
+        case "zone": { const r = zoneOff(ln.zone || ""); return r == null ? "(unknown zone)" : pre + (r === off ? ln.same ?? "same" : delta(off - r)); }
+        case "name": return pre + (ln.style === "abbr" ? "NDT" : "Newfoundland");
+        case "day": { const w = d.toLocaleString("en-US", { weekday: "short", timeZone: "UTC" }).toUpperCase(), m = d.toLocaleString("en-US", { month: "short", timeZone: "UTC" }).toUpperCase();
+          return pre + ({ date: `${m} ${d.getUTCDate()}`, both: `${w} ${d.getUTCDate()}` }[ln.style] || w); }
+      }
+      return "";
+    };
+    const LINE_KINDS = { time: "Time", home: "Offset from home", utc: "Offset from UTC / GMT", zone: "Offset from another zone",
+      name: "Zone name", day: "Day / date" };
+    const LINE_STYLES = {
+      time: [{ value: "", label: "7:42" }, { value: "ampm", label: "7:42PM" }],
+      utc: [{ value: "", label: "-8 / +5:30" }, { value: "hhmm", label: "-08:00" }, { value: "compact", label: "-0800" }],
+      name: [{ value: "", label: "Pacific" }, { value: "abbr", label: "PDT" }],
+      day: [{ value: "", label: "THU" }, { value: "date", label: "OCT 23" }, { value: "both", label: "THU 23" }],
+    };
+    const lineColour = (ln) => ln.color || (ln.kind === "time" ? "#ffffff" : "zone");
+    return { lines, editLines, setLine, moveLine, addLine, example, zoneOff, lineColour, LINE_KINDS, LINE_STYLES, labelShown, toggleLabel, setListed, d, state, shape, page, asOf, custom, tz, val, set, dictVal, dictSet, cities, editCities, addCity, offsets, colorOf,
       pagesAt, preview, play, addToRotation, used, rebuild, running, SHAPES, ago, when, offText, zoneName };
   },
   template: `<div class="page">
@@ -221,8 +269,37 @@ export const Timezones = {
           <div class="card-body stack">
             <ToggleRow :modelValue="val('map_labels') === 'on'" @update:modelValue="v => set('map_labels', v ? 'on' : 'off')"
               label="Each zone's time in the middle of it" hint="Once for each offset in Canada and once in the US; separate from the cities below"/>
-            <ToggleRow v-if="val('map_labels') === 'on'" :modelValue="val('map_label_offsets')" @update:modelValue="v => set('map_label_offsets', v)"
-              :label="'And how far each is from ' + zoneName(val('home_zone') || '')" hint="Under each time: +1h, -1h, +4:30; home's own: 'home', the other country at the same time: 'same'"/>
+            <div v-if="val('map_labels') === 'on'" class="stack" style="gap:6px">
+              <div class="faint" style="font-size:12.5px">What each label says, top to bottom. Times use the map font, every other line the small one under it. Examples are Newfoundland's.</div>
+              <div v-for="(ln, i) in lines" :key="i" class="row" style="flex-wrap:wrap; gap:6px; padding:6px 0; border-top:1px solid var(--line, #333)">
+                <Toggle :modelValue="ln.on !== false" @update:modelValue="v => setLine(i, 'on', v ? null : false)"/>
+                <b style="min-width:150px">{{ LINE_KINDS[ln.kind] || ln.kind }}</b>
+                <span class="mono" :style="{color: lineColour(ln) === 'zone' ? 'var(--accent)' : lineColour(ln)}" style="min-width:90px">{{ example(ln) }}</span>
+                <span class="spacer"></span>
+                <button class="btn sm ghost icon-only" title="Up" :disabled="i === 0" @click="moveLine(i, -1)"><Icon name="ArrowUp" :size="14"/></button>
+                <button class="btn sm ghost icon-only" title="Down" :disabled="i === lines.length - 1" @click="moveLine(i, 1)"><Icon name="ArrowDown" :size="14"/></button>
+                <button class="btn sm ghost icon-only" title="Remove" @click="editLines().splice(i, 1)"><Icon name="X" :size="14"/></button>
+                <div class="row" style="flex-basis:100%; flex-wrap:wrap; gap:6px; padding-left:44px">
+                  <Seg v-if="LINE_STYLES[ln.kind]" :modelValue="ln.style || ''" @update:modelValue="v => setLine(i, 'style', v)" :options="LINE_STYLES[ln.kind]"/>
+                  <input v-if="ln.kind === 'zone'" class="input mono" style="width:170px" placeholder="Europe/London" :value="ln.zone"
+                    :class="{bad: zoneOff(ln.zone || '') == null}" @change="setLine(i, 'zone', $event.target.value.trim())" title="A tz database zone">
+                  <input v-if="ln.kind !== 'time'" class="input" style="width:80px" maxlength="12" :placeholder="ln.kind === 'utc' ? 'UTC' : 'Prefix'"
+                    :value="ln.kind === 'utc' ? (ln.prefix ?? 'UTC') : ln.prefix" @input="setLine(i, 'prefix', $event.target.value)" title="Text before it (UTC, GMT, LON …)">
+                  <input v-if="ln.kind === 'home'" class="input" style="width:70px" maxlength="12" placeholder="home" :value="ln.home"
+                    @input="setLine(i, 'home', $event.target.value)" :title="'Home\'s own label (' + zoneName(val('home_zone') || '') + ')'">
+                  <input v-if="ln.kind === 'home' || ln.kind === 'zone'" class="input" style="width:70px" maxlength="12" placeholder="same" :value="ln.same"
+                    @input="setLine(i, 'same', $event.target.value)" title="A zone at the same time">
+                  <Seg :modelValue="lineColour(ln) === 'zone' ? 'zone' : 'custom'" :options="[{value:'zone', label:'Zone colour'}, {value:'custom', label:'Custom'}]"
+                    @update:modelValue="v => setLine(i, 'color', v === 'zone' ? 'zone' : '#ffffff')"/>
+                  <template v-if="lineColour(ln) !== 'zone'">
+                    <ColorPick :modelValue="lineColour(ln)" @update:modelValue="v => setLine(i, 'color', v)"/>
+                    <input class="input mono" style="width:84px" maxlength="7" :value="lineColour(ln)" title="#rrggbb"
+                      @change="/^#[0-9a-f]{6}$/i.test($event.target.value) && setLine(i, 'color', $event.target.value.toLowerCase())"></template>
+                </div></div>
+              <div class="row" style="flex-wrap:wrap; gap:6px" v-if="lines.length < 6"><span class="faint">Add</span>
+                <button v-for="(n, k) in LINE_KINDS" :key="k" class="btn sm" @click="addLine(k)"><Icon name="Plus" :size="14"/>{{ n }}</button></div>
+              <div class="faint" style="font-size:12.5px">Offset from home: +1h, -1h, +4:30 from {{ zoneName(val('home_zone') || '') }}. More lines make each label taller, so small zones may lose some of the map.</div>
+            </div>
             <div v-if="val('map_labels') === 'on'" class="row" style="flex-wrap:wrap; gap:6px">
               <template v-for="o in offsets" :key="o.off">
                 <button v-for="(n, cc) in o.names" :key="cc" type="button" class="btn sm" :class="{primary: labelShown(cc, o.off)}"

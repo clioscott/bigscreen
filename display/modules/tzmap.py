@@ -41,7 +41,15 @@ as it would be at that moment, with the real time of day, labelled TEST.
     highlight_home   its time (on the map, and in the list) with a thicker black outline
     map_label_offsets  under each zone time on the map, how far it is from home ("+1h", "-1h", "+4:30"; home's own
                      label: "home"; the other country's at the same time: "same")
-    cities           [{name, lat, lon, on}], drawn in order where there's room (all off by default)
+    map_label_lines  what each zone's map label says, a line each, top to bottom (unset: the time, plus the offset
+                     from home with map_label_offsets): [{kind, on, color, prefix, style, zone, home, same}]
+                     kind  time (style ampm: "7:42PM") | home (from home_zone; home/same: the words for no
+                           difference) | utc (prefix "UTC"/"GMT"/""; style short "-8" | hhmm "-08:00" | compact
+                           "-0800") | zone (from another zone, e.g. Europe/London, after prefix "LON ") | name
+                           (Pacific; style abbr: PDT) | day (style weekday "THU" | date "OCT 23" | both "THU 23")
+                     color "zone" (the zone's colour) or "#rrggbb"; times are white unless set, the rest "zone".
+                     Times use the map font, every other line the small one under it.
+    cities          [{name, lat, lon, on}], drawn in order where there's room (all off by default)
     city_times       off | after (each city's time after its name) | below (on a line of its own under the name);
                      true/false from older configs mean after/off
     colors           {"-480": "#rrggbb"}: each offset's colour; fill: how bright the areas are (0.15–1)
@@ -271,8 +279,41 @@ def from_home(off, home, own=True):
     d = off - home
     if d == 0:
         return "home" if own else "same"
+    return fmt_delta(d)
+
+
+def fmt_delta(d):
+    """A difference in minutes as "+1h", "-1h", "+4:30"."""
     h, m = divmod(abs(d), 60)
     return ("+" if d > 0 else "-") + (f"{h}:{m:02d}" if m else f"{h}h")
+
+
+def fmt_utc(off, style="short"):
+    """An offset from UTC with its sign: "-8", "+5:30" (short), "-08:00" (hhmm), "-0800" (compact)."""
+    sign = "+" if off >= 0 else "-"
+    h, m = divmod(abs(int(off)), 60)
+    if style == "hhmm":
+        return f"{sign}{h:02d}:{m:02d}"
+    if style == "compact":
+        return f"{sign}{h:02d}{m:02d}"
+    return f"{sign}{h}" + (f":{m:02d}" if m else "")
+
+
+def zone_offset(zone, t):
+    """A tz zone's UTC offset in minutes at t (None if the Pi doesn't know the zone)."""
+    try:
+        from zoneinfo import ZoneInfo
+        return int(datetime.fromtimestamp(t, ZoneInfo(zone)).utcoffset().total_seconds() // 60)
+    except Exception:
+        return None
+
+
+def label_lines(s):
+    """The lines each zone's map label has (map_label_lines, or the older map_label_offsets switch)."""
+    lines = s.get("map_label_lines")
+    if isinstance(lines, list):
+        return [ln for ln in lines if isinstance(ln, dict) and ln.get("on", True)]
+    return [{"kind": "time"}] + ([{"kind": "home"}] if s.get("map_label_offsets") else [])
 
 
 def fmt_offset(m):
@@ -901,13 +942,17 @@ class TzMapPanel:
         boxes = []
         hide = set(self.s.get("map_label_hide") or [])
         home, home_cc = home_offset(self.data, state, self.s)
-        offsets_on = bool(self.s.get("map_label_offsets")) and home is not None
+        specs = label_lines(self.s)
+        refs = {ln.get("zone"): zone_offset(ln.get("zone"), now) for ln in specs if ln.get("kind") == "zone"}
         # roomiest first, so a label on a thin strip (US Pacific's coast) is the one that moves aside
         for cc, off, ax, ay, room in sorted(anchors, key=lambda a: -a[4]):
             # once per offset in Canada and in the US (not Mexico), unless that one is switched off
             if cc not in COUNTRIES or f"{cc}:{off}" in hide:
                 continue
-            text = clock_text(now, off, self.s.get("time_format", "12h"))[0]
+            texts = [(ln, self._line_text(ln, now, state, cc, off, home, home_cc, refs)) for ln in specs]
+            texts = [(ln, t) for ln, t in texts if t]
+            if not texts:
+                continue
             # room is the distance to the area's edge, x counted at 0.55 (hub/timezones.py anchors): a label may
             # overlap the edge a little
             # a main zone: always full size; another (Newfoundland, Alaska) the biggest font that fits, down to the
@@ -917,37 +962,70 @@ class TzMapPanel:
             else:
                 fonts = ((FONT_MAP, f, None), (FONT_SMALL, small, None), (FONT_TAG, self.font(FONT_TAG), 2.0))
             for path, font, least in fonts:
-                tw = self.tw(path, text)
+                # times in this font, every other line in the small one (the narrow one under a narrow time)
+                sub_path = FONT_TAG if path == FONT_TAG else FONT_SMALL
+                rows = [(t, path if ln.get("kind") == "time" else sub_path, ln) for ln, t in texts]
+                tw = self.tw(rows[0][1], rows[0][0])
                 if room >= (least if least is not None else max(font.height * 0.4, tw * 0.22)):
-                    # the offset from home on a second line, in the small font (the narrow one under a narrow time)
-                    sub_text, sub_font, sub_path = "", None, None
-                    if offsets_on:
-                        sub_path = FONT_TAG if path == FONT_TAG else FONT_SMALL
-                        sub_font, sub_text = self.font(sub_path), from_home(off, home, own=cc == home_cc)
-                    sub_h = sub_font.height if sub_text else 0
-                    bw = max(tw, self.tw(sub_path, sub_text) if sub_text else 0)
+                    first = self.font(rows[0][1])
+                    hh = sum(self.font(p).height for _, p, _ in rows)
+                    bw = max(self.tw(p, t) for t, p, _ in rows)
                     # centred on the anchor, but kept inside the panel (Alaska's corner would spill off it)
                     clamp_x = lambda v: min(max(v, x0 + 1), x1 - bw - 1)
-                    clamp_y = lambda v: min(max(v, y0 + font.baseline + 1), y1 - (font.height - font.baseline) - sub_h - 1)
+                    clamp_y = lambda v: min(max(v, y0 + first.baseline + 1), y1 - (hh - first.baseline) - 1)
                     lx = clamp_x(ax - bw // 2)
-                    by = clamp_y(ay + font.baseline // 2 - 1 - sub_h // 2)
+                    by = clamp_y(ay + first.baseline // 2 - 1 - (hh - first.height) // 2)
                     is_home = self.s.get("highlight_home", True) and cc == home_cc and off == home
                     pad = 1 if is_home else 0                  # home's outline is a pixel thicker
-                    lx, by = _clear_spot(lx, by, bw + 2, font.height + sub_h + 2, font.baseline, boxes, clamp_x, clamp_y,
-                                         pad=pad)
-                    tx = x + lx + (bw - tw) // 2
-                    if is_home:
-                        # home's time (BC's): white with a thicker black outline
-                        _home_text(c, font, tx, y + by, text)
-                    else:
-                        _outlined(c, font, tx, y + by, Color(255, 255, 255), text)
-                    if sub_text:
-                        sw = self.tw(sub_path, sub_text)
-                        _outlined(c, sub_font, x + lx + (bw - sw) // 2, y + by + (font.height - font.baseline)
-                                  + sub_font.baseline, Color(*color_of(self.s, off)), sub_text)
-                    boxes.append((lx - 1 - pad, by - font.baseline - 1 - pad, bw + 2 + 2 * pad, font.height + sub_h + 2 + pad))
+                    lx, by = _clear_spot(lx, by, bw + 2, hh + 2, first.baseline, boxes, clamp_x, clamp_y, pad=pad)
+                    top = by - first.baseline
+                    for t, p, ln in rows:
+                        lf = self.font(p)
+                        tx, ty = x + lx + (bw - self.tw(p, t)) // 2, y + top + lf.baseline
+                        if ln.get("kind") == "time" and is_home:
+                            # home's time (BC's): white with a thicker black outline
+                            _home_text(c, lf, tx, ty, t)
+                        else:
+                            _outlined(c, lf, tx, ty, Color(*self._line_colour(ln, off)), t)
+                        top += lf.height
+                    boxes.append((lx - 1 - pad, by - first.baseline - 1 - pad, bw + 2 + 2 * pad, hh + 2 + pad))
                     break
         return boxes
+
+    def _line_colour(self, ln, off):
+        """A label line's colour: its own "#rrggbb", or the zone's ("zone"); times white unless set."""
+        col = ln.get("color") or ("#ffffff" if ln.get("kind") == "time" else "zone")
+        return color_of(self.s, off) if col == "zone" else _hex(col, (255, 255, 255))
+
+    def _line_text(self, ln, now, state, cc, off, home, home_cc, refs):
+        """One line of a zone's map label (map_label_lines); "" leaves it out."""
+        kind, style, pre = ln.get("kind"), ln.get("style") or "", str(ln.get("prefix") or "")
+        d = datetime.fromtimestamp(now, timezone.utc) + timedelta(minutes=off)
+        if kind == "time":
+            t, ap = clock_text(now, off, self.s.get("time_format", "12h"))
+            return t + (ap if style == "ampm" else "")
+        if kind == "home":
+            if home is None:
+                return ""
+            if off == home:
+                return pre + str(ln.get("home", "home") if cc == home_cc else ln.get("same", "same"))
+            return pre + fmt_delta(off - home)
+        if kind == "utc":
+            return str(ln.get("prefix", "UTC") or "") + fmt_utc(off, style)
+        if kind == "zone":
+            ref = refs.get(ln.get("zone"))
+            if ref is None:
+                return ""
+            return pre + (str(ln.get("same", "same")) if off == ref else fmt_delta(off - ref))
+        if kind == "name":
+            zones = self.data.get("zones") or []
+            idx = [i for i, o in enumerate(state["offs"]) if i < len(zones) and o == off and zones[i].get("cc") == cc]
+            names = names_of(zones, idx, state, dict(self.s, label_style="abbr" if style == "abbr" else "name"), cc, off)
+            return pre + (names[0] if names else "")
+        if kind == "day":
+            return pre + {"date": d.strftime("%b ").upper() + str(d.day),
+                          "both": d.strftime("%a ").upper() + str(d.day)}.get(style, d.strftime("%a").upper())
+        return ""
 
     def _cities(self, c, x, y, m, state, now, taken=()):
         cities = [cy for cy in (self.s.get("cities") or []) if cy.get("on")]
