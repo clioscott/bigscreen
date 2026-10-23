@@ -590,7 +590,10 @@ class TzMapPanel:
         mode = self.s.get("map_labels", "on")
         taken = []                               # label boxes (map pixels) the city names keep clear of
         if mode == "on" or (mode == "auto" and lay["legend"] is None):
-            taken = self._map_labels(c, x + mx, y + my, m, state, groups, now)
+            # labels may use the panel's space beside the map, but not the list's
+            zw, zh = m["zone"]
+            right = m["rect"][2] if lay["legend"] is not None else zw - mx
+            taken = self._map_labels(c, x + mx, y + my, m, state, groups, now, bounds=(-mx, -my, right, zh - my))
         self._cities(c, x + mx, y + my, m, state, now, taken)
         if lay["legend"] is not None:
             lx, ly, lw, lh = lay["legend"]
@@ -882,23 +885,38 @@ class TzMapPanel:
                                color_of(self.s, e["off"]), self._is_home(e))
             hy += n * line + gap - gap // 2
 
-    def _map_labels(self, c, x, y, m, state, groups, now):
+    def _map_labels(self, c, x, y, m, state, groups, now, bounds=None):
+        """Each zone's time in the middle of its biggest area, once per offset in Canada and in the US. The main
+        zones (the ones in the list) all get the full-size font, spilling past their area (and the map, within
+        ``bounds``: the panel, in map pixels) if they must; only zones left off the list (Alaska, the Atlantic,
+        Newfoundland) drop to smaller fonts to fit."""
         f = self.font(FONT_MAP)
+        mw, mh = m["rect"][2], m["rect"][3]
+        x0, y0, x1, y1 = bounds or (0, 0, mw, mh)
+        zones = self.data.get("zones") or []
+        listed = set(self.s.get("list_hide") or [])
+        main = {(zones[i].get("cc", ""), o) for i, o in enumerate(state["offs"])
+                if i < len(zones) and zones[i]["id"] not in listed}
         anchors = (state.get("anchors") or {}).get(m["key"]) or []
         small = self.font(FONT_SMALL)
         boxes = []
         hide = set(self.s.get("map_label_hide") or [])
         home, home_cc = home_offset(self.data, state, self.s)
         offsets_on = bool(self.s.get("map_label_offsets")) and home is not None
-        for cc, off, ax, ay, room in anchors:
+        # roomiest first, so a label on a thin strip (US Pacific's coast) is the one that moves aside
+        for cc, off, ax, ay, room in sorted(anchors, key=lambda a: -a[4]):
             # once per offset in Canada and in the US (not Mexico), unless that one is switched off
             if cc not in COUNTRIES or f"{cc}:{off}" in hide:
                 continue
             text = clock_text(now, off, self.s.get("time_format", "12h"))[0]
             # room is the distance to the area's edge, x counted at 0.55 (hub/timezones.py anchors): a label may
             # overlap the edge a little
-            # the biggest font that fits; a small place (Newfoundland) still gets the narrow one, a little over its coast
-            fonts = ((FONT_MAP, f, None), (FONT_SMALL, small, None), (FONT_TAG, self.font(FONT_TAG), 2.0))
+            # a main zone: always full size; another (Newfoundland, Alaska) the biggest font that fits, down to the
+            # narrow one a little over its coast
+            if (cc, off) in main:
+                fonts = ((FONT_MAP, f, 0.0),)
+            else:
+                fonts = ((FONT_MAP, f, None), (FONT_SMALL, small, None), (FONT_TAG, self.font(FONT_TAG), 2.0))
             for path, font, least in fonts:
                 tw = self.tw(path, text)
                 if room >= (least if least is not None else max(font.height * 0.4, tw * 0.22)):
@@ -909,11 +927,12 @@ class TzMapPanel:
                         sub_font, sub_text = self.font(sub_path), from_home(off, home, own=cc == home_cc)
                     sub_h = sub_font.height if sub_text else 0
                     bw = max(tw, self.tw(sub_path, sub_text) if sub_text else 0)
-                    # centred on the anchor, but kept inside the map (Alaska's corner would spill off it)
-                    mw, mh = m["rect"][2], m["rect"][3]
-                    lx = min(max(ax - bw // 2, 1), mw - bw - 1)
-                    by = min(max(ay + font.baseline // 2 - 1 - sub_h // 2, font.baseline + 1),
-                             mh - (font.height - font.baseline) - sub_h - 1)
+                    # centred on the anchor, but kept inside the panel (Alaska's corner would spill off it)
+                    clamp_x = lambda v: min(max(v, x0 + 1), x1 - bw - 1)
+                    clamp_y = lambda v: min(max(v, y0 + font.baseline + 1), y1 - (font.height - font.baseline) - sub_h - 1)
+                    lx = clamp_x(ax - bw // 2)
+                    by = clamp_y(ay + font.baseline // 2 - 1 - sub_h // 2)
+                    lx, by = _clear_spot(lx, by, bw + 2, font.height + sub_h + 2, font.baseline, boxes, clamp_x, clamp_y)
                     tx = x + lx + (bw - tw) // 2
                     if self.s.get("highlight_home", True) and cc == home_cc and off == home:
                         # home's time (BC's) on a box in its colour, as the list did
@@ -993,6 +1012,21 @@ def _zone_at(m, px, py):
             vals, counts = np.unique(box[box > 0], return_counts=True)
             return int(vals[np.argmax(counts)])
     return 0
+
+
+def _clear_spot(lx, by, w, h, baseline, boxes, clamp_x, clamp_y, reach=16):
+    """A label's place clear of the boxes already placed: as it is if free, else the nearest free spot within
+    ``reach`` px (left first, then right, down, up and diagonals; kept in bounds), else where it was."""
+    box = lambda x_, y_: (x_ - 1, y_ - baseline - 1, w, h)
+    if not any(_hit(box(lx, by), b) for b in boxes):
+        return lx, by
+    tries = sorted({(dx, dy) for dx in range(-reach, reach + 1, 2) for dy in range(-reach, reach + 1, 3)},
+                   key=lambda d: (abs(d[0]) + abs(d[1]) * 1.5, d[0] > 0, d[1] < 0))
+    for dx, dy in tries:
+        nx, ny = clamp_x(lx + dx), clamp_y(by + dy)
+        if not any(_hit(box(nx, ny), b) for b in boxes):
+            return nx, ny
+    return lx, by
 
 
 def _hit(a, b):
