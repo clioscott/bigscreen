@@ -33,7 +33,8 @@ as it would be at that moment, with the real time of day, labelled TEST.
     canada_boost     how much brighter Canada's areas are than the US's (1 = the same)
     places           {"America/Vancouver": "BC", …}: the short place each zone adds to its row ("" = none)
     show_places, show_utc   the legend's second line
-    map_labels       on | off | auto (only without a legend): each zone's time written in the middle of its biggest
+    show_list        the list of times beside the map (off: the map fills its zone, and its labels carry the times)
+    map_labels       on | off | auto (only without the list): each zone's time written in the middle of its biggest
                      area, once for each offset in Canada and once in the US (the panel's toggle sets on/off)
     map_label_hide   ["CA:-240", …]: those zone times left off the map (country and offset in minutes)
     home_zone        the zone the others are compared with (America/Vancouver)
@@ -142,7 +143,7 @@ DEFAULTS = {
     "home_zone": "America/Vancouver", "highlight_home": True, "map_label_offsets": False,
     "warn_days": 14, "warn_pages": "both", "page_sec": 12, "time_format": "12h",
     "names": DEFAULT_NAMES, "offset_names": {}, "places": {}, "show_places": True, "show_utc": True,
-    "map_labels": "auto", "cities": DEFAULT_CITIES, "city_times": False,
+    "map_labels": "on", "show_list": False, "cities": DEFAULT_CITIES, "city_times": False,
     "colors": DEFAULT_COLORS, "fill": 0.45, "canada_boost": 1.4, "highlight_new": True,
 }
 
@@ -186,6 +187,7 @@ EXTENT_MAIN = [(-148.0, 60.6), (-139.1, 60.0), (-133.2, 54.0), (-124.8, 48.4), (
                (-81.8, 24.5), (-52.6, 47.6), (-55.6, 52.0), (-64.5, 60.4), (-73.0, 62.6)]
 LEGEND_MIN_W = 56          # narrower than LEGEND_FULL_W: the compact legend (times only)
 LEGEND_FULL_W = 128
+HEADER_BESIDE_W = 95       # the map's side margin that fits the title and tags beside it
 
 
 def _extent(proj, pts):
@@ -197,13 +199,15 @@ _MAIN_BOX = _extent(PROJ_MAIN, EXTENT_MAIN)
 ASPECT = (_MAIN_BOX[2] - _MAIN_BOX[0]) / (_MAIN_BOX[3] - _MAIN_BOX[1])
 
 
-def layout(w, h):
-    """Where the map and the legend go in a w×h zone: {"map": (x, y, w, h), "legend": (x, y, w, h) | None}."""
+def layout(w, h, legend=False):
+    """Where the map (and, with ``legend``, the list) go in a w×h zone: {"map": (x, y, w, h), "legend": (x, y, w, h) |
+    None}. The map is the same size either way (the hub rasterises it once): centred alone, or at the left with the
+    list beside it when there's room."""
     mw = min(w, int(round(h * ASPECT)))
-    if w - mw - 2 >= LEGEND_MIN_W:
+    if legend and w - mw - 2 >= LEGEND_MIN_W:
         return {"map": (0, 0, mw, h), "legend": (mw + 2, 0, w - mw - 2, h)}
-    mh = min(h, int(round(w / ASPECT)))
-    return {"map": ((w - mw) // 2 if mw < w else 0, (h - mh) // 2, min(w, mw), mh), "legend": None}
+    mh = h if mw < w else min(h, int(round(w / ASPECT)))
+    return {"map": ((w - mw) // 2, (h - mh) // 2, mw, mh), "legend": None}
 
 
 def frames(mw, mh):
@@ -579,10 +583,11 @@ class TzMapPanel:
         x = y = 0
         groups = groups_of(self.data, state, self.s)
         new = (change or {}).get("new", []) if kind == "upcoming" else []
-        mx, my, mw, mh = m["rect"]
+        lay = layout(*m["zone"], legend=bool(self.s.get("show_list")))
+        mx, my = lay["map"][:2]                  # the raster's size from the hub, placed for this layout
+        mw = m["rect"][2]
         c.Blit(self._background(m, state, new, groups), x + mx, y + my)
-        lay = layout(*m["zone"])
-        mode = self.s.get("map_labels", "auto")
+        mode = self.s.get("map_labels", "on")
         taken = []                               # label boxes (map pixels) the city names keep clear of
         if mode == "on" or (mode == "auto" and lay["legend"] is None):
             taken = self._map_labels(c, x + mx, y + my, m, state, groups, now)
@@ -590,6 +595,8 @@ class TzMapPanel:
         if lay["legend"] is not None:
             lx, ly, lw, lh = lay["legend"]
             self._legend(c, x + lx, y + ly, lw, lh, state, kind, change, now, new, test)
+        elif mx >= HEADER_BESIDE_W:                    # room beside the map (full width, whole wall): the header there
+            self._header_beside(c, x + 3, y + 2, mx - 6, kind, change, test)
         else:
             self._header_on_map(c, x + mx, y + my, mw, kind, change, test)
 
@@ -616,6 +623,15 @@ class TzMapPanel:
             d = datetime.fromtimestamp(test, timezone.utc) - timedelta(hours=8)
             graphics.DrawText(c, f, cx, y + f.baseline + 1, Color(220, 60, 220), d.strftime("%b ").upper() + str(d.day))
         return f.height + 2 if (test is not None or change is not None) else 0
+
+    def _header_beside(self, c, x, y, w, kind, change, test):
+        """The title and the UPCOMING / NOW / TEST tags in the space beside a centred map."""
+        nf = self.font(FONT_NAME)
+        title = str(self.s.get("title") or "")
+        if title and self.tw(FONT_NAME, title) <= w:
+            graphics.DrawText(c, nf, x, y + nf.baseline, Color(235, 235, 235), title)
+            y += nf.height + 2
+        self._header_tags(c, x, y, w, kind, change, test)
 
     def _header_on_map(self, c, x, y, w, kind, change, test):
         if kind == "upcoming" or change is not None or test is not None:
@@ -844,7 +860,8 @@ class TzMapPanel:
         small = self.font(FONT_SMALL)
         boxes = []
         hide = set(self.s.get("map_label_hide") or [])
-        home, home_cc = home_offset(self.data, state, self.s) if self.s.get("map_label_offsets") else (None, None)
+        home, home_cc = home_offset(self.data, state, self.s)
+        offsets_on = bool(self.s.get("map_label_offsets")) and home is not None
         for cc, off, ax, ay, room in anchors:
             # once per offset in Canada and in the US (not Mexico), unless that one is switched off
             if cc not in COUNTRIES or f"{cc}:{off}" in hide:
@@ -859,7 +876,7 @@ class TzMapPanel:
                 if room >= (least if least is not None else max(font.height * 0.4, tw * 0.22)):
                     # the offset from home on a second line, in the small font (the narrow one under a narrow time)
                     sub_text, sub_font, sub_path = "", None, None
-                    if home is not None:
+                    if offsets_on:
                         sub_path = FONT_TAG if path == FONT_TAG else FONT_SMALL
                         sub_font, sub_text = self.font(sub_path), from_home(off, home, own=cc == home_cc)
                     sub_h = sub_font.height if sub_text else 0
@@ -869,7 +886,13 @@ class TzMapPanel:
                     lx = min(max(ax - bw // 2, 1), mw - bw - 1)
                     by = min(max(ay + font.baseline // 2 - 1 - sub_h // 2, font.baseline + 1),
                              mh - (font.height - font.baseline) - sub_h - 1)
-                    _outlined(c, font, x + lx + (bw - tw) // 2, y + by, Color(255, 255, 255), text)
+                    tx = x + lx + (bw - tw) // 2
+                    if self.s.get("highlight_home", True) and cc == home_cc and off == home:
+                        # home's time (BC's) on a box in its colour, as the list did
+                        c.FillRect(tx - 1, y + by - font.baseline - 1, tw + 2, font.height + 1, Color(*color_of(self.s, off)))
+                        graphics.DrawText(c, font, tx, y + by, Color(0, 0, 0), text)
+                    else:
+                        _outlined(c, font, tx, y + by, Color(255, 255, 255), text)
                     if sub_text:
                         sw = self.tw(sub_path, sub_text)
                         _outlined(c, sub_font, x + lx + (bw - sw) // 2, y + by + (font.height - font.baseline)

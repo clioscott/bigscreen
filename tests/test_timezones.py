@@ -365,7 +365,7 @@ def test_the_list_leaves_atlantic_and_newfoundland_to_the_map():
 
 def test_roomy_rows_on_the_whole_wall(data_dir, monkeypatch):
     """The whole wall has room for the big layout (clock, name, places)."""
-    p = mod.TzMapPanel(type("C", (), {"modules": {}})(), data_dir)
+    p = mod.TzMapPanel(type("C", (), {"modules": {"timezones": {"show_list": True}}})(), data_dir)
     p._load(time.time())
     used = []
     monkeypatch.setattr(p, "_entry_big", lambda *a, **k: used.append("big"))
@@ -489,7 +489,7 @@ def test_a_lakeshore_city_still_gets_its_zone():
 
 
 def test_zone_times_on_the_map_once_per_country(data_dir, monkeypatch):
-    p = mod.TzMapPanel(type("C", (), {"modules": {"timezones": {"map_labels": "on"}}})(), data_dir)
+    p = mod.TzMapPanel(type("C", (), {"modules": {"timezones": {"map_labels": "on", "highlight_home": False}}})(), data_dir)
     p._load(time.time())
     m = p._map_for(448, 192)
     st = dict(mod.state_at(p.data, time.time()))
@@ -555,7 +555,7 @@ def test_offsets_from_home():
 
 
 def test_home_time_is_highlighted_in_the_list(data_dir, monkeypatch):
-    p = mod.TzMapPanel(type("C", (), {"modules": {}})(), data_dir)
+    p = mod.TzMapPanel(type("C", (), {"modules": {"timezones": {"show_list": True}}})(), data_dir)
     p._load(time.time())
     homes = []
     monkeypatch.setattr(p, "_time", lambda c, f, path, x, y, t, rgb, home: homes.append(home))
@@ -585,7 +585,7 @@ def test_zone_times_can_show_their_offset_from_home(data_dir, monkeypatch):
 
 
 def test_every_list_time_has_its_am_pm(data_dir, monkeypatch):
-    p = mod.TzMapPanel(type("C", (), {"modules": {}})(), data_dir)
+    p = mod.TzMapPanel(type("C", (), {"modules": {"timezones": {"show_list": True, "map_labels": "off"}}})(), data_dir)
     p._load(time.time())
     seen = []
     real = mod.graphics.DrawText
@@ -597,3 +597,29 @@ def test_every_list_time_has_its_am_pm(data_dir, monkeypatch):
         p._draw(Canvas(*size), p._map_for(*size), "now", mod.state_at(p.data, time.time()), None, time.time(), None)
         times = [s for s in seen if ":" in s and s[0].isdigit()]
         assert len([s for s in seen if s in ("AM", "PM")]) == len(times)
+
+
+@pytest.mark.parametrize("size", [(448, 192), (448, 134), (223, 134)])
+def test_the_map_alone_fills_its_zone(data_dir, size):
+    lay = mod.layout(*size)
+    assert lay["legend"] is None
+    x, y, w, h = lay["map"]
+    assert x == (size[0] - w) // 2 and h == size[1]                           # centred, full height
+    assert mod.layout(*size, legend=True)["map"][2:] == lay["map"][2:]        # the same raster with the list on
+    a = mod.render_preview(data_dir, size, {}, page=0)
+    assert a.shape == (size[1], size[0], 3) and a[:, x:x + w].any()
+
+
+def test_home_zone_time_is_highlighted_on_the_map(data_dir, monkeypatch):
+    p = mod.TzMapPanel(type("C", (), {"modules": {}})(), data_dir)
+    p._load(time.time())
+    m = p._map_for(448, 192)
+    st = dict(mod.state_at(p.data, time.time()), offs=[-420, -480])
+    st["anchors"] = {m["key"]: [["CA", -420, 60, 60, 9.0], ["US", -480, 120, 120, 9.0]]}
+    outlined, boxed = [], []
+    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s: outlined.append(s))
+    real = mod.graphics.DrawText
+    monkeypatch.setattr(mod.graphics, "DrawText", lambda c, f, x, y, col, s: boxed.append(s) or real(c, f, x, y, col, s))
+    from display.gfx import Canvas
+    p._map_labels(Canvas(448, 192), 0, 0, m, st, [], time.time())
+    assert len(outlined) == 1 and len(boxed) == 1                             # BC's on its box, the US's outlined
