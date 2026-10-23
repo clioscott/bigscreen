@@ -111,7 +111,7 @@ def _pack():
 
 
 def test_rasterize_and_anchors():
-    idx, lines, frames, rect = tz.rasterize(448, 192, _pack(), ["America/Vancouver", "America/Los_Angeles"],
+    idx, lines, frames, rect, water = tz.rasterize(448, 192, _pack(), ["America/Vancouver", "America/Los_Angeles"],
                                             {"prov": [], "country": [], "lakes": []})
     assert idx.shape == (rect[3], rect[2]) and set(np.unique(idx)) == {0, 1, 2}
     x, y = mod.to_px(frames[0], -107.5, 45.0)
@@ -126,13 +126,14 @@ def data_dir(tmp_path):
     d = _data(time.time() + 5 * 86400)
     maps = {}
     for key, (w, h) in {"448x192": (448, 192), "448x134": (448, 134), "223x134": (223, 134)}.items():
-        idx, lines, frames, rect = tz.rasterize(w, h, _pack(), [z["id"] for z in d["zones"]],
+        idx, lines, frames, rect, water = tz.rasterize(w, h, _pack(), [z["id"] for z in d["zones"]],
                                                 {"prov": [], "country": [], "lakes": []})
         idx.tofile(tmp_path / "tzmap" / f"{key}.idx.bin")
         lines.tofile(tmp_path / "tzmap" / f"{key}.lines.bin")
+        water.tofile(tmp_path / "tzmap" / f"{key}.water.bin")
         maps[key] = {"key": key, "zone": [w, h], "rect": rect, "size": [rect[2], rect[3]], "frames": frames,
-                     "idx": f"{key}.idx.bin", "lines": f"{key}.lines.bin",
-                     "crc": {"idx": tz.crc(idx), "lines": tz.crc(lines)}}
+                     "idx": f"{key}.idx.bin", "lines": f"{key}.lines.bin", "water": f"{key}.water.bin",
+                     "crc": {"idx": tz.crc(idx), "lines": tz.crc(lines), "water": tz.crc(water)}}
         for s in d["states"]:
             s.setdefault("anchors", {})[key] = tz.anchors(idx, s["offs"], [z["cc"] for z in d["zones"]])
     d["maps"] = maps
@@ -370,3 +371,50 @@ def test_roomy_rows_on_the_whole_wall(data_dir, monkeypatch):
     st = mod.state_at(p.data, time.time())
     p._draw(Canvas(448, 192), p._map_for(448, 192), "now", st, None, time.time(), None)
     assert used and set(used) == {"big"}
+
+
+def test_big_lakes_and_their_islands(tmp_path, monkeypatch):
+    """Rank-0 lakes (the Great Lakes) are kept, and a lake's (or the sea's) islands stay land."""
+    import shapefile
+    w = shapefile.Writer(str(tmp_path / "ne_10m_lakes"), shapeType=shapefile.POLYGON)
+    w.field("scalerank", "N")
+    outer = [(-110, 41), (-110, 49), (-90, 49), (-90, 41), (-110, 41)]          # clockwise
+    island = [(-102, 44), (-98, 44), (-98, 46), (-102, 46), (-102, 44)]         # counter-clockwise
+    w.poly([outer, island])
+    w.record(0)
+    w.close()
+    monkeypatch.setattr(tz, "NE_DIR", tmp_path)
+    lakes = tz._ne_lakes()
+    assert len(lakes) == 1 and [tz._is_hole(r) for r in lakes[0]] == [False, True]
+    idx, lines, frames, rect, water = tz.rasterize(448, 192, _pack(), ["America/Vancouver", "America/Los_Angeles"],
+                                            {"prov": [], "country": [], "lakes": [], "sea": lakes})   # sea: same rule
+    at = lambda lon, lat: idx[int(mod.to_px(frames[0], lon, lat)[1]), int(mod.to_px(frames[0], lon, lat)[0])]
+    assert at(-106, 45) == 0                                                  # lake
+    assert at(-100, 45) == 2                                                  # the island: land (LA's square)
+    assert at(-112, 45) == 1                                                  # outside the lake
+
+
+def test_tidy_smooths_the_coast():
+    idx = np.zeros((20, 20), np.uint8)
+    idx[2:18, 2:10], idx[2:18, 10:18] = 1, 2                                  # two zones' land
+    idx[5, 5] = 0                                                             # a 1 px water speck in zone 1
+    idx[0, 19] = 2                                                            # a 1 px land speck at sea
+    idx[9, 18] = 2                                                            # a 1 px point off the coast
+    t = tz.tidy(idx)
+    assert t[5, 5] == 1 and t[0, 19] == 0                                     # speck filled, island speck gone
+    assert t[10, 5] == 1 and t[10, 14] == 2                                   # the zones keep their land
+    assert t[9, 18] == 0                                                      # the point is trimmed
+
+
+def test_tidy_keeps_islands_and_straits():
+    idx = np.zeros((20, 30), np.uint8)
+    idx[2:18, 2:12] = 1                                                       # mainland
+    idx[2:18, 13:24] = 1                                                      # an island across a 1 px strait
+    for k in range(5):                                                        # a chain of 1 px keys, corner to corner
+        idx[18 - k, 26 + k // 2] = 1
+    idx[10, 28] = 1                                                           # and a 2 px island (PEI-sized)
+    idx[10, 29] = 1
+    t = tz.tidy(idx)
+    assert (t[2:18, 12] == 0).all()                                           # the strait stays open
+    assert (t[18 - np.arange(5), 26 + np.arange(5) // 2] == 1).all()          # the keys are kept
+    assert t[10, 28] == 1 and t[10, 29] == 1

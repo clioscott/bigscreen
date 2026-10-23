@@ -415,7 +415,9 @@ class TzMapPanel:
             maps = {}
             for key, m in (data.get("maps") or {}).items():
                 arrs = {}
-                for kind in ("idx", "lines"):
+                for kind in ("idx", "lines", "water"):
+                    if kind not in m:                          # rasters from before the water layer
+                        continue
                     fp = os.path.join(self.dir, "tzmap", m[kind])
                     raw = open(fp, "rb").read() if os.path.exists(fp) else b""
                     if zlib.crc32(raw) != m["crc"][kind]:          # not all here yet: try again on the next look
@@ -473,18 +475,24 @@ class TzMapPanel:
             img[hatch] = full[g[hatch]].astype(np.uint8)
         prov = (lines & 1).astype(bool) & land
         img[prov] = (img[prov].astype(np.uint16) * 45 // 100).astype(np.uint8)
+        # the lines follow the zones over their water too (lakes, straits, territorial waters), so they carry on
+        # through the Great Lakes instead of stopping at each shore
+        wz = m.get("water")
+        zg = np.minimum(np.where(land, idx, wz), n) if wz is not None else g
+        zoned = zg > 0
+
         def edges(v):
-            """Land pixels whose right or lower neighbour is land with another value."""
-            e = np.zeros_like(land)
-            e[:, :-1] |= land[:, :-1] & land[:, 1:] & (v[:, :-1] != v[:, 1:])
-            e[:-1, :] |= land[:-1, :] & land[1:, :] & (v[:-1, :] != v[1:, :])
+            """Zoned pixels (land or water) whose right or lower neighbour is zoned with another value."""
+            e = np.zeros_like(zoned)
+            e[:, :-1] |= zoned[:, :-1] & zoned[:, 1:] & (v[:, :-1] != v[:, 1:])
+            e[:-1, :] |= zoned[:-1, :] & zoned[1:, :] & (v[:-1, :] != v[1:, :])
             return e
         # offset boundaries: 1 px white
-        img[edges(np.where(land, offs[g], -99999))] = (255, 255, 255)
+        img[edges(np.where(zoned, offs[zg], -99999))] = (255, 255, 255)
         # the Canada/US border (from the zones' countries, so it lines up with the colours): a 2 px line with a
-        # dark pixel either side
-        cc = np.array([{"CA": 1, "US": 2}.get(c, 3) for c in ccs], np.int8)[g]
-        b = edges(np.where(land, cc, 0))
+        # dark pixel either side on land
+        cc = np.array([{"CA": 1, "US": 2}.get(c, 3) for c in ccs], np.int8)[zg]
+        b = edges(np.where(zoned, cc, 0))
         b2 = b.copy()
         b2[1:, :] |= b[:-1, :]
         b2[:, 1:] |= b[:, :-1]
@@ -494,7 +502,7 @@ class TzMapPanel:
         halo[:, 1:] |= b2[:, :-1]
         halo[:, :-1] |= b2[:, 1:]
         img[halo & land & ~b2] = 0
-        img[b2 & land] = (235, 235, 235)
+        img[b2 & zoned] = (235, 235, 235)
         if len(self._bg) > 6:
             self._bg.clear()
         self._bg[key] = img

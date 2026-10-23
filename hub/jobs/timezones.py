@@ -126,25 +126,28 @@ def run(cfg):
     changes = build_changes(states, zone_objs)
 
     sizes = zone_sizes(cfg)
-    sig = [tz.RASTER_VERSION, pack["tag"], sorted(sizes), zones]
+    sig = [tz.RASTER_VERSION, pack["tag"], sorted(sizes), zones, tz.sea_source()]
     old = read_json(paths.DATA_DIR / "tzmap.json", {}) or {}
     maps = old.get("maps") or {}
     if st.get("raster_sig") != sig or not all((OUT / m.get("idx", "-")).exists() for m in maps.values()) \
             or set(maps) != set(sizes):
         geo = tz.geodata()
+        if geo["error"]:
+            errors.append(geo["error"])
         maps = {}
         for key, (zw, zh) in sizes.items():
-            idx, lines, frames, rect = tz.rasterize(zw, zh, pack, zones, geo)
-            for kind, arr in (("idx", idx), ("lines", lines)):
+            idx, lines, frames, rect, water = tz.rasterize(zw, zh, pack, zones, geo)
+            for kind, arr in (("idx", idx), ("lines", lines), ("water", water)):
                 tmp = OUT / f"{key}.{kind}.bin.tmp"
                 arr.tofile(tmp)
                 tmp.replace(OUT / f"{key}.{kind}.bin")
             maps[key] = {"key": key, "zone": [zw, zh], "rect": rect, "size": [rect[2], rect[3]], "frames": frames,
                          "idx": f"{key}.idx.bin", "lines": f"{key}.lines.bin",
-                         "crc": {"idx": tz.crc(idx), "lines": tz.crc(lines)}}
+                         "water": f"{key}.water.bin",
+                         "crc": {"idx": tz.crc(idx), "lines": tz.crc(lines), "water": tz.crc(water)}}
         st["raster_sig"] = sig
         for p in OUT.iterdir():
-            if not any(p.name in (m["idx"], m["lines"]) for m in maps.values()):
+            if not any(p.name in (m["idx"], m["lines"], m["water"]) for m in maps.values()):
                 p.unlink(missing_ok=True)
     _harness.progress(3, 4, "labels")
 
