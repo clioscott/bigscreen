@@ -590,6 +590,7 @@ def test_every_list_time_has_its_am_pm(data_dir, monkeypatch):
     seen = []
     real = mod.graphics.DrawText
     monkeypatch.setattr(mod.graphics, "DrawText", lambda c, f, x, y, col, s: seen.append(s) or real(c, f, x, y, col, s))
+    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s: mod.graphics.DrawText(c, f, x, y, col, s))  # once
     from display.gfx import Canvas
     for size in ((448, 192), (448, 134)):
         seen.clear()
@@ -616,13 +617,25 @@ def test_home_zone_time_is_highlighted_on_the_map(data_dir, monkeypatch):
     m = p._map_for(448, 192)
     st = dict(mod.state_at(p.data, time.time()), offs=[-420, -480])
     st["anchors"] = {m["key"]: [["CA", -420, 60, 60, 9.0], ["US", -480, 120, 120, 9.0]]}
-    outlined, boxed = [], []
-    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s: outlined.append(s))
-    real = mod.graphics.DrawText
-    monkeypatch.setattr(mod.graphics, "DrawText", lambda c, f, x, y, col, s: boxed.append(s) or real(c, f, x, y, col, s))
+    boxed, outlined = [], []
+    real = mod._boxed
+    monkeypatch.setattr(mod, "_boxed", lambda c, f, x, y, tw, rgb, s: boxed.append(s) or real(c, f, x, y, tw, rgb, s))
+    real_o = mod._outlined
+    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s: outlined.append(col.rgb) or real_o(c, f, x, y, col, s))
     from display.gfx import Canvas
     p._map_labels(Canvas(448, 192), 0, 0, m, st, [], time.time())
-    assert len(outlined) == 1 and len(boxed) == 1                             # BC's on its box, the US's outlined
+    assert len(boxed) == 1                                                    # BC's, on its box
+    assert outlined == [(255, 255, 255), (255, 255, 255)]                     # both white with a black outline
+
+
+def test_boxed_text_is_white_outlined_on_the_colour():
+    from display.gfx import Canvas
+    c = Canvas(40, 20)
+    p = mod.TzMapPanel(type("C", (), {"modules": {}})(), "")
+    f = p.font(mod.FONT_MAP)
+    mod._boxed(c, f, 5, 12, p.tw(mod.FONT_MAP, "1:00"), (255, 157, 58), "1:00")
+    colours = {tuple(px) for row in c.buf for px in row}
+    assert (255, 255, 255) in colours and (0, 0, 0) in colours and (255, 157, 58) in colours
 
 
 @pytest.mark.parametrize("size", [(448, 192), (448, 134)])

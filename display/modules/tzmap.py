@@ -730,10 +730,9 @@ class TzMapPanel:
         return any(zones[z]["id"] == self.s.get("home_zone") for z in e["zones"] if z < len(zones))
 
     def _time(self, c, font, path, x, y, text, rgb, home):
-        """A clock in the list (y = its top): white, or home's on a box in its colour with dark digits."""
+        """A clock in the list (y = its top): white, or home's white outlined in black on a box in its colour."""
         if home:
-            c.FillRect(x - 1, y - 1, self.tw(path, text) + 2, font.height + 1, Color(*rgb))
-            graphics.DrawText(c, font, x, y + font.baseline, Color(0, 0, 0), text)
+            _boxed(c, font, x, y + font.baseline, self.tw(path, text), rgb, text)
         else:
             graphics.DrawText(c, font, x, y + font.baseline, Color(255, 255, 255), text)
 
@@ -935,9 +934,8 @@ class TzMapPanel:
                     lx, by = _clear_spot(lx, by, bw + 2, font.height + sub_h + 2, font.baseline, boxes, clamp_x, clamp_y)
                     tx = x + lx + (bw - tw) // 2
                     if self.s.get("highlight_home", True) and cc == home_cc and off == home:
-                        # home's time (BC's) on a box in its colour, as the list did
-                        c.FillRect(tx - 1, y + by - font.baseline - 1, tw + 2, font.height + 1, Color(*color_of(self.s, off)))
-                        graphics.DrawText(c, font, tx, y + by, Color(0, 0, 0), text)
+                        # home's time (BC's): white, outlined in black, on a box in its colour
+                        _boxed(c, font, tx, y + by, tw, color_of(self.s, off), text)
                     else:
                         _outlined(c, font, tx, y + by, Color(255, 255, 255), text)
                     if sub_text:
@@ -1031,6 +1029,12 @@ def _clear_spot(lx, by, w, h, baseline, boxes, clamp_x, clamp_y, reach=16):
 
 def _hit(a, b):
     return a[0] < b[0] + b[2] and b[0] < a[0] + a[2] and a[1] < b[1] + b[3] and b[1] < a[1] + a[3]
+
+
+def _boxed(c, font, x, y, tw, rgb, s):
+    """White text outlined in black on a box in ``rgb`` (y = the baseline); the box leaves room for the outline."""
+    c.FillRect(x - 2, y - font.baseline - 2, tw + 4, font.height + 3, Color(*rgb))
+    _outlined(c, font, x, y, Color(255, 255, 255), s)
 
 
 def _outlined(c, font, x, y, color, s):
