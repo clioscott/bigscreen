@@ -46,7 +46,8 @@ MAP_DROP = {"Pacific/Honolulu", "America/Adak", "America/Anchorage", "America/Ju
 REGION = (-180.0, 17.0, -50.0, 75.0)          # lon/lat box the zones are cut to before simplifying
 SIMPLIFY_DEG = 0.01
 SS = 3                                         # supersampling when rasterising
-RASTER_VERSION = 8                             # bump when rasterising changes
+WATER_LINE_PX = 2                              # how far offshore the lines between zones carry on
+RASTER_VERSION = 10                            # bump when rasterising changes
 
 
 def _get(url, timeout=30, **kw):
@@ -363,7 +364,8 @@ def geodata():
 # --- rasters ------------------------------------------------------------------------------------------------------------
 def rasterize(zw, zh, pack, zone_list, geo):
     """The map for a zw×zh zone: (idx (zone index + 1 per pixel, 0 = water / outside), lines (1 province/state,
-    2 country), frames, map rect)."""
+    2 country), frames, map rect, water (the zone a water pixel belongs to: lakes and territorial waters, so the
+    lines between offsets and the border carry on through the Great Lakes and the straits; 0 elsewhere))."""
     from PIL import Image, ImageDraw
     from display.modules import tzmap
     rect = tzmap.layout(zw, zh)["map"]
@@ -389,26 +391,27 @@ def rasterize(zw, zh, pack, zone_list, geo):
             for hole in poly[1:]:
                 d.polygon(px(np.asarray(hole, float)), fill=0)
         idx_ss[np.asarray(im, bool)] = order[tzid]
+    zoned_ss = idx_ss.copy()                                   # the zones before the water is cut out
+    lake_ss = None
     for key in ("sea", "lakes"):                               # the sea and lakes, each with its islands kept land
         water = Image.new("1", (W, H), 0)
         d = ImageDraw.Draw(water)
         for parts in geo.get(key) or []:
             for ring in sorted(parts, key=_is_hole):
                 d.polygon(px(ring), fill=0 if _is_hole(ring) else 1)
-        idx_ss[np.asarray(water, bool)] = 0
+        wm = np.asarray(water, bool)
+        idx_ss[wm] = 0
+        if key == "lakes":
+            lake_ss = wm
 
     # down to LED pixels: land if most of the pixel is, in the zone that covers most of it
-    blocks = idx_ss.reshape(mh, SS, mw, SS).transpose(0, 2, 1, 3).reshape(mh, mw, SS * SS)
-    land = (blocks > 0).sum(axis=2) * 2 >= SS * SS
-    best = np.zeros((mh, mw), np.uint8)
-    bestn = np.zeros((mh, mw), np.int16)
-    for z in np.unique(blocks):
-        if z == 0:
-            continue
-        n = (blocks == z).sum(axis=2)
-        better = n > bestn
-        best[better], bestn[better] = z, n[better]
-    idx = tidy(np.where(land, best, 0).astype(np.uint8))
+    idx = tidy(_down(idx_ss, mw, mh))
+    # the zones' water the lines may cross: lakes, and sea within WATER_LINE_PX of a coast (straits, not the
+    # middle of Hudson Bay, which is all Nunavut's)
+    from scipy import ndimage
+    lake = _down(lake_ss.astype(np.uint8), mw, mh) > 0
+    near = ndimage.binary_dilation(idx > 0, iterations=WATER_LINE_PX)
+    water = np.where((idx == 0) & (lake | near), _down(zoned_ss, mw, mh), 0).astype(np.uint8)
 
     lines = np.zeros((mh, mw), np.uint8)
     for bit, key in ((1, "prov"), (2, "country")):
@@ -420,7 +423,22 @@ def rasterize(zw, zh, pack, zone_list, geo):
             if len(pts) > 1:
                 d.line(pts, fill=1)
         lines[solid(np.asarray(im, bool)) & (idx > 0)] |= bit
-    return idx, lines, frames, list(rect)
+    return idx, lines, frames, list(rect), water
+
+
+def _down(ss, mw, mh):
+    """Supersampled zone indices → LED pixels: covered if most of the pixel is, by the zone covering most of it."""
+    blocks = ss.reshape(mh, SS, mw, SS).transpose(0, 2, 1, 3).reshape(mh, mw, SS * SS)
+    covered = (blocks > 0).sum(axis=2) * 2 >= SS * SS
+    best = np.zeros((mh, mw), np.uint8)
+    bestn = np.zeros((mh, mw), np.int16)
+    for z in np.unique(blocks):
+        if z == 0:
+            continue
+        n = (blocks == z).sum(axis=2)
+        better = n > bestn
+        best[better], bestn[better] = z, n[better]
+    return np.where(covered, best, 0).astype(np.uint8)
 
 
 def tidy(idx, speck=3):

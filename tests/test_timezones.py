@@ -111,7 +111,7 @@ def _pack():
 
 
 def test_rasterize_and_anchors():
-    idx, lines, frames, rect = tz.rasterize(448, 192, _pack(), ["America/Vancouver", "America/Los_Angeles"],
+    idx, lines, frames, rect, water = tz.rasterize(448, 192, _pack(), ["America/Vancouver", "America/Los_Angeles"],
                                             {"prov": [], "country": [], "lakes": []})
     assert idx.shape == (rect[3], rect[2]) and set(np.unique(idx)) == {0, 1, 2}
     x, y = mod.to_px(frames[0], -107.5, 45.0)
@@ -126,13 +126,14 @@ def data_dir(tmp_path):
     d = _data(time.time() + 5 * 86400)
     maps = {}
     for key, (w, h) in {"448x192": (448, 192), "448x134": (448, 134), "223x134": (223, 134)}.items():
-        idx, lines, frames, rect = tz.rasterize(w, h, _pack(), [z["id"] for z in d["zones"]],
+        idx, lines, frames, rect, water = tz.rasterize(w, h, _pack(), [z["id"] for z in d["zones"]],
                                                 {"prov": [], "country": [], "lakes": []})
         idx.tofile(tmp_path / "tzmap" / f"{key}.idx.bin")
         lines.tofile(tmp_path / "tzmap" / f"{key}.lines.bin")
+        water.tofile(tmp_path / "tzmap" / f"{key}.water.bin")
         maps[key] = {"key": key, "zone": [w, h], "rect": rect, "size": [rect[2], rect[3]], "frames": frames,
-                     "idx": f"{key}.idx.bin", "lines": f"{key}.lines.bin",
-                     "crc": {"idx": tz.crc(idx), "lines": tz.crc(lines)}}
+                     "idx": f"{key}.idx.bin", "lines": f"{key}.lines.bin", "water": f"{key}.water.bin",
+                     "crc": {"idx": tz.crc(idx), "lines": tz.crc(lines), "water": tz.crc(water)}}
         for s in d["states"]:
             s.setdefault("anchors", {})[key] = tz.anchors(idx, s["offs"], [z["cc"] for z in d["zones"]])
     d["maps"] = maps
@@ -385,7 +386,7 @@ def test_big_lakes_and_their_islands(tmp_path, monkeypatch):
     monkeypatch.setattr(tz, "NE_DIR", tmp_path)
     lakes = tz._ne_lakes()
     assert len(lakes) == 1 and [tz._is_hole(r) for r in lakes[0]] == [False, True]
-    idx, lines, frames, rect = tz.rasterize(448, 192, _pack(), ["America/Vancouver", "America/Los_Angeles"],
+    idx, lines, frames, rect, water = tz.rasterize(448, 192, _pack(), ["America/Vancouver", "America/Los_Angeles"],
                                             {"prov": [], "country": [], "lakes": [], "sea": lakes})   # sea: same rule
     at = lambda lon, lat: idx[int(mod.to_px(frames[0], lon, lat)[1]), int(mod.to_px(frames[0], lon, lat)[0])]
     assert at(-106, 45) == 0                                                  # lake
@@ -402,3 +403,20 @@ def test_tidy_smooths_the_coast():
     t = tz.tidy(idx)
     assert t[5, 5] == 1 and t[0, 19] == 0                                     # speck filled, island speck gone
     assert t[10, 5] == 1 and t[10, 14] == 2                                   # the zones keep their land
+
+
+def test_lines_carry_on_through_a_zones_water(tmp_path, monkeypatch):
+    """A lake on the line between two zones is water, and the line between them still crosses it."""
+    lake = [[np.array([(-104, 43), (-104, 47), (-96, 47), (-96, 43), (-104, 43)], float)]]   # straddles -100
+    idx, lines, frames, rect, water = tz.rasterize(448, 192, _pack(), ["America/Vancouver", "America/Los_Angeles"],
+                                                   {"prov": [], "country": [], "lakes": lake, "sea": []})
+    x, y = (int(v) for v in mod.to_px(frames[0], -100.0, 45.0))
+    assert idx[y, x] == 0 and idx[y, x - 3] == 0                             # the lake is water
+    assert water[y, x - 3] == 1 and water[y, x + 3] == 2                      # still each zone's water
+    d = {"zones": [{"id": "America/Vancouver", "cc": "US"}, {"id": "America/Los_Angeles", "cc": "US"}],
+         "states": [{"from": 0, "offs": [-420, -480], "abbrs": ["MST", "PST"]}]}
+    p = mod.TzMapPanel(type("C", (), {"modules": {}})(), str(tmp_path))
+    p.data = d
+    m = {"idx": idx, "lines": lines, "water": water, "frames": frames}
+    bg = p._background(m, d["states"][0], [], [])
+    assert (bg[y, x - 2:x + 3] == 255).all(axis=1).any()                      # the white line crosses the lake

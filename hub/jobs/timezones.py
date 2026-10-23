@@ -134,17 +134,18 @@ def run(cfg):
         geo = tz.geodata()
         maps = {}
         for key, (zw, zh) in sizes.items():
-            idx, lines, frames, rect = tz.rasterize(zw, zh, pack, zones, geo)
-            for kind, arr in (("idx", idx), ("lines", lines)):
+            idx, lines, frames, rect, water = tz.rasterize(zw, zh, pack, zones, geo)
+            for kind, arr in (("idx", idx), ("lines", lines), ("water", water)):
                 tmp = OUT / f"{key}.{kind}.bin.tmp"
                 arr.tofile(tmp)
                 tmp.replace(OUT / f"{key}.{kind}.bin")
             maps[key] = {"key": key, "zone": [zw, zh], "rect": rect, "size": [rect[2], rect[3]], "frames": frames,
                          "idx": f"{key}.idx.bin", "lines": f"{key}.lines.bin",
-                         "crc": {"idx": tz.crc(idx), "lines": tz.crc(lines)}}
+                         "water": f"{key}.water.bin",
+                         "crc": {"idx": tz.crc(idx), "lines": tz.crc(lines), "water": tz.crc(water)}}
         st["raster_sig"] = sig
         for p in OUT.iterdir():
-            if not any(p.name in (m["idx"], m["lines"]) for m in maps.values()):
+            if not any(p.name in (m["idx"], m["lines"], m["water"]) for m in maps.values()):
                 p.unlink(missing_ok=True)
     _harness.progress(3, 4, "labels")
 
