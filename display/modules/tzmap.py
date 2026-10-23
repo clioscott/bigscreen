@@ -58,8 +58,8 @@ FONT_TIME_BIG = "fonts/alert/9x15B.bdf"         # legend rows with room for it (
 FONT_NAME = "fonts/alert/6x10.bdf"
 FONT_SMALL = "fonts/alert/5x7.bdf"
 FONT_MAP = "fonts/alert/6x10.bdf"
-FONT_TAG = "fonts/alert/tom-thumb.bdf"
-BIG_ENTRY_H = 34                               # a roomy list time: 9x15 clock, 6x10 name, 5x7 places         # the list's DST / NO DST tags (narrow, so they fit beside the time)
+FONT_TAG = "fonts/alert/tom-thumb.bdf"         # the list's DST / NO DST tags (narrow, so they fit beside the time)
+BIG_ENTRY_H = 34                               # a roomy list time: 9x15 clock, 6x10 name, 5x7 places
 
 DEFAULT_CITIES = [
     {"name": "Vancouver", "lat": 49.28, "lon": -123.12, "on": False},
