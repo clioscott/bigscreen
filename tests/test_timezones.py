@@ -351,3 +351,22 @@ def test_lines_have_no_corner_only_steps():
     flip = tz.solid(m[:, ::-1])
     for y in range(4):
         assert flip[y, 3 - y] or flip[y + 1, 4 - y]
+
+
+def test_the_list_leaves_atlantic_and_newfoundland_to_the_map():
+    hide = set(mod.DEFAULTS["list_hide"])
+    assert {"America/Halifax", "America/Moncton", "America/Goose_Bay", "America/St_Johns"} <= hide
+    assert "America/Toronto" not in hide
+
+
+def test_roomy_rows_on_the_whole_wall(data_dir, monkeypatch):
+    """The whole wall has room for the big layout (clock, name, places)."""
+    p = mod.TzMapPanel(type("C", (), {"modules": {}})(), data_dir)
+    p._load(time.time())
+    used = []
+    monkeypatch.setattr(p, "_entry_big", lambda *a, **k: used.append("big"))
+    monkeypatch.setattr(p, "_entry", lambda *a, **k: used.append("small"))
+    from display.gfx import Canvas
+    st = mod.state_at(p.data, time.time())
+    p._draw(Canvas(448, 192), p._map_for(448, 192), "now", st, None, time.time(), None)
+    assert used and set(used) == {"big"}
