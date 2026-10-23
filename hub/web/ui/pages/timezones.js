@@ -145,13 +145,18 @@ export const Timezones = {
               <Field label="Upcoming label"><input class="input" :value="val('upcoming_label')" @input="set('upcoming_label', $event.target.value)" maxlength="30"></Field>
               <Field label="Now label"><input class="input" :value="val('now_label')" @input="set('now_label', $event.target.value)" maxlength="30"></Field>
               <Field label="Test label"><input class="input" :value="val('test_label')" @input="set('test_label', $event.target.value)" maxlength="30"></Field></div>
+            <template v-if="val('show_list')">
             <div class="row" style="flex-wrap:wrap">
               <Field v-for="cc in ['CA', 'US']" :key="cc" :label="(cc === 'CA' ? 'Canada' : 'US') + ' heading (wide / narrow)'">
                 <div class="row nowrap" style="gap:4px">
                   <input class="input" style="width:130px" :placeholder="d.country_labels?.[cc]" :value="dictVal('country_labels', cc)" @input="dictSet('country_labels', cc, $event.target.value)" maxlength="30">
                   <input class="input" style="width:80px" :placeholder="d.country_short?.[cc]" :value="dictVal('country_short', cc)" @input="dictSet('country_short', cc, $event.target.value)" maxlength="12"></div></Field></div>
+            </template>
             <div class="row" style="flex-wrap:wrap">
               <Field label="Clock"><Seg :modelValue="val('time_format')" @update:modelValue="v => set('time_format', v)" :options="[{value:'12h', label:'12 h'}, {value:'24h', label:'24 h'}]"/></Field></div>
+            <ToggleRow :modelValue="val('show_list')" @update:modelValue="v => set('show_list', v)" label="Show the list beside the map"
+              hint="Off: the map fills the panel and its labels carry the times (see Cities)"/>
+            <template v-if="val('show_list')">
             <Field label="Legend rows" hint="Canada and the US in columns side by side, so their times line up">
               <Seg :modelValue="val('legend_rows')" @update:modelValue="v => set('legend_rows', v)"
                 :options="[{value:'offset', label:'UTC offsets (like the map)'}, {value:'traditional', label:'Old zones (Pacific, Mountain…)'}]"/></Field>
@@ -165,13 +170,16 @@ export const Timezones = {
             <Field label="Each time is called" hint="From the zones' tz abbreviations, so each country's own naming: after Nov 1 BC is Mountain (MST) beside the US's Pacific (PST)">
               <Seg :modelValue="val('label_style')" @update:modelValue="v => set('label_style', v)"
                 :options="[{value:'name', label:'Mountain, Pacific…'}, {value:'abbr', label:'MST, PST…'}]"/></Field>
+            </template>
             <div class="row" style="flex-wrap:wrap">
-              <Field label="Home" hint="The list highlights its time (if it's in the list); the map's offsets count from it">
+              <Field label="Home" hint="Its time is highlighted; the map's offsets count from it">
                 <select class="input" :value="val('home_zone')" @change="set('home_zone', $event.target.value)">
                   <option v-for="z in (state?.zones || []).filter(z => z.cc !== 'MX')" :key="z.id" :value="z.id">{{ zoneName(z.id) }}</option></select></Field>
-              <ToggleRow :modelValue="val('highlight_home')" @update:modelValue="v => set('highlight_home', v)" label="Highlight home's time in the list"/></div>
+              <ToggleRow :modelValue="val('highlight_home')" @update:modelValue="v => set('highlight_home', v)" label="Highlight home's time" hint="Its zone time on the map, and in the list"/></div>
+            <template v-if="val('show_list')">
             <ToggleRow :modelValue="val('show_utc')" @update:modelValue="v => set('show_utc', v)" label="UTC offset in the legend"/>
             <ToggleRow :modelValue="val('show_places')" @update:modelValue="v => set('show_places', v)" label="Places in the legend" hint="BC, AB, US Pacific…; places with new rules this year are coloured"/>
+            </template>
             <details><summary class="faint">Zone names (by abbreviation)</summary>
               <div class="row" style="flex-wrap:wrap; gap:6px; margin-top:8px">
                 <span v-for="(n, ab) in state?.defaults?.names || {}" :key="ab" class="row nowrap" style="gap:4px"><span class="mono faint" style="width:40px">{{ ab }}</span>
