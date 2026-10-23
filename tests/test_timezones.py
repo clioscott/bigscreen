@@ -418,3 +418,8 @@ def test_tidy_keeps_islands_and_straits():
     assert (t[2:18, 12] == 0).all()                                           # the strait stays open
     assert (t[18 - np.arange(5), 26 + np.arange(5) // 2] == 1).all()          # the keys are kept
     assert t[10, 28] == 1 and t[10, 29] == 1
+
+
+def test_alaska_is_on_the_map_but_not_the_list():
+    assert "America/Anchorage" not in tz.MAP_DROP and "Pacific/Honolulu" in tz.MAP_DROP
+    assert {"America/Anchorage", "America/Juneau", "America/Sitka"} <= set(mod.DEFAULTS["list_hide"])

@@ -25,7 +25,7 @@ as it would be at that moment, with the real time of day, labelled TEST.
                      zone as it was, e.g. Pacific: BC beside the US west coast, its places split by rule and tagged);
                      the columns are Canada and the US, so their times line up
     row_names        {"-480": "PACIFIC"}: traditional rows' names, by the zone's old standard offset
-    list_hide        zones shown on the map but left out of the list (Newfoundland and Atlantic: four rows)
+    list_hide        zones shown on the map but left out of the list (Newfoundland, Atlantic, Alaska: four rows)
     label_style      name (Mountain, from ``names``) | abbr (MST): what each time in the list is called
     rule_labels      {"dst": "DST", "fixed": "NO DST"}: traditional rows only: the tag on each time, whether its
                      places still change their clocks (a row's places that keep different rules are separate times)
@@ -117,10 +117,11 @@ COUNTRIES = ("CA", "US")                      # legend columns, in this order
 # the legend's rows by default: the zones as they were (a zone's standard offset in 2019, hub/jobs/timezones.py)
 HOME_NAMES = {"-600": "HAWAII", "-540": "ALASKA", "-480": "PACIFIC", "-420": "MOUNTAIN", "-360": "CENTRAL",
               "-300": "EASTERN", "-240": "ATLANTIC", "-210": "NFLD"}
-# on the map but not in the list, so it has the four main zones (Alaska and Hawaii aren't on either:
-# hub/timezones.py MAP_DROP): Newfoundland and Atlantic
+# on the map but not in the list, so it has the four main zones: Newfoundland, Atlantic and Alaska (its corner
+# of the map, in its own colour; Hawaii isn't on either: hub/timezones.py MAP_DROP)
 DEFAULT_LIST_HIDE = ["America/St_Johns", "America/Halifax", "America/Glace_Bay", "America/Moncton",
-                     "America/Goose_Bay", "America/Blanc-Sablon"]
+                     "America/Goose_Bay", "America/Blanc-Sablon", "America/Anchorage", "America/Juneau",
+                     "America/Sitka", "America/Metlakatla", "America/Yakutat", "America/Nome"]
 TERRITORIES = ("YT", "NT", "NU")
 NAME_SHARE = 0.15         # a second zone name for a time needs this share of its area
 MIN_SHARE = 0.25          # a time in a traditional zone's cell with no place named needs this share of its area
@@ -169,10 +170,11 @@ def lcc(lon0, lat1, lat2, lat0):
     return fwd
 
 
-# main map (lon0, lat1, lat2, lat0) and the places that must fit: BC's corner at 60°N 139°W, Haida Gwaii, the
+# main map (lon0, lat1, lat2, lat0) and the places that must fit: Alaska's Gulf coast to Prince William Sound (the
+# rest of Alaska is cut off), BC's corner at 60°N 139°W, Haida Gwaii, the
 # Florida Keys, Newfoundland and the tip of Quebec (the territories show where the frame's top cuts them)
 PROJ_MAIN = (-96.0, 35.0, 55.0, 45.0)
-EXTENT_MAIN = [(-139.1, 60.0), (-133.2, 54.0), (-124.8, 48.4), (-124.4, 40.4), (-117.1, 32.5), (-97.1, 25.8),
+EXTENT_MAIN = [(-148.0, 60.6), (-139.1, 60.0), (-133.2, 54.0), (-124.8, 48.4), (-124.4, 40.4), (-117.1, 32.5), (-97.1, 25.8),
                (-81.8, 24.5), (-52.6, 47.6), (-55.6, 52.0), (-64.5, 60.4), (-73.0, 62.6)]
 LEGEND_MIN_W = 56          # narrower than LEGEND_FULL_W: the compact legend (times only)
 LEGEND_FULL_W = 128

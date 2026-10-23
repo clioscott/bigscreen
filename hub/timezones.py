@@ -40,14 +40,13 @@ PYPI = "https://pypi.org/pypi/tzdata/json"
 TBB_LATEST = "https://api.github.com/repos/evansiroky/timezone-boundary-builder/releases/latest"
 NE_DIR = GEODATA_ROOT / "borders"
 COUNTRIES = ("US", "CA")
-# zones left off the map (and so the list): Alaska and Hawaii
-MAP_DROP = {"Pacific/Honolulu", "America/Adak", "America/Anchorage", "America/Juneau", "America/Sitka",
-            "America/Metlakatla", "America/Yakutat", "America/Nome"}
+# zones left off the map (and so the list): Hawaii and the Aleutians (Alaska's corner shows, cut off by the frame)
+MAP_DROP = {"Pacific/Honolulu", "America/Adak"}
 REGION = (-180.0, 17.0, -50.0, 75.0)          # lon/lat box the zones are cut to before simplifying
 SIMPLIFY_DEG = 0.01
 SS = 3                                         # supersampling when rasterising
 WATER_LINE_PX = 2                              # how far offshore the lines between zones carry on
-RASTER_VERSION = 11                            # bump when rasterising changes
+RASTER_VERSION = 12                            # bump when rasterising changes
 
 
 def _get(url, timeout=30, **kw):
