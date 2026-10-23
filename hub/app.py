@@ -1252,20 +1252,23 @@ def timezones_state():
     now = time.time()
     st = mod.state_at(data, now) if data.get("states") else None
     s = mod.settings((config.load().get("modules") or {}).get("timezones"))
+    ccs = [z.get("cc", "") for z in data.get("zones") or []]
+    listed = lambda i: ccs[i] in mod.COUNTRIES                  # Canada and the US (Mexico is on the map only)
     out_changes = []
     for c in data.get("changes") or []:
         after = mod.state_at(data, c["end"])
         before = mod.state_at(data, c["start"] - 1)
         out_changes.append({"start": c["start"], "end": c["end"], "words": mod.change_words(c),
                             "changed": [{"zone": zones[i], "from": before["offs"][i], "to": after["offs"][i]}
-                                        for i in c["changed"]],
-                            "new": [zones[i] for i in c["new"]],
+                                        for i in c["changed"] if listed(i)],
+                            "new": [zones[i] for i in c["new"] if listed(i)],
                             "groups": [{"cc": g["cc"], "off": g["off"], "name": g["name"], "places": g["places"]}
-                                       for g in mod.groups_of(data, after, s)]})
+                                       for g in mod.groups_of(data, after, s) if g["cc"] in mod.COUNTRIES]})
     return {"defaults": {**mod.DEFAULTS, "places": mod.DEFAULT_PLACES},
-            "zones": [{"id": z, "off": st["offs"][i], "abbr": st["abbrs"][i]} for i, z in enumerate(zones)] if st else [],
+            "zones": [{"id": z, "cc": ccs[i], "off": st["offs"][i], "abbr": st["abbrs"][i]}
+                      for i, z in enumerate(zones)] if st else [],
             "groups": [{"cc": g["cc"], "off": g["off"], "name": g["name"], "places": g["places"]}
-                       for g in mod.groups_of(data, st, s)] if st else [],
+                       for g in mod.groups_of(data, st, s) if g["cc"] in mod.COUNTRIES] if st else [],
             "changes": out_changes, "rules": data.get("rules") or {}, "boundaries": data.get("boundaries"),
             "rule_updates": data.get("rule_updates") or [], "generated_at": data.get("generated_at"),
             "phase": [k for k, _, _ in mod.pages_at(data, now, s)] if st else [], "zones_px": _webcam_zones()}

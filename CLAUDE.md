@@ -202,8 +202,8 @@ between tzdata versions) and per-zone-size rasters `data/tzmap/<W>x<H>.{idx,line
   the Pi, so colours and the lines between offsets are redrawn at every clock change. Canada and the US are kept
   apart (they follow different rules): the legend is a table with Canada and US columns and a row per UTC offset
   (or per old zone: each zone's 2019 standard offset, `home` in tzmap.json; `legend_rows`), Canada a shade
-  brighter, the border a heavy line. Alaska and Hawaii are left out (`hub/timezones.py` MAP_DROP); Newfoundland is
-  on the map but not in the list (`list_hide`). City labels exist but are off by default. `warn_days` before a change it also shows the upcoming map
+  brighter, the border a heavy line. Hawaii is left out (`hub/timezones.py` MAP_DROP); Alaska (its corner of the
+  map), Newfoundland and Atlantic are on the map but not in the list (`list_hide`). City labels exist but are off by default. `warn_days` before a change it also shows the upcoming map
   (zones with new rules hatched). An entry's `as_of` (epoch s) tests another moment (labelled TEST).
 - Rotation rule `timechange` (`days_after`): a change is within the warning, or was under N days ago.
 - Panel page "Time zone map": labels, names, places, colours, cities, preview by date, Test once / Hold.

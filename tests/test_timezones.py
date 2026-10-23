@@ -243,12 +243,15 @@ def test_wheel_extraction_stays_in_its_folder(tmp_path, monkeypatch):
 def test_boundaries_fall_back_to_the_last_release(tmp_path, monkeypatch):
     import gzip
     monkeypatch.setattr(tz, "CACHE", tmp_path)
-    (tmp_path / "zones-2026a.json.gz").write_bytes(gzip.compress(json.dumps(_pack()).encode()))
+    asked = dict(_pack(), asked=["America/Vancouver", "America/Los_Angeles", "America/New_Zone"])
+    (tmp_path / "zones-2026a.json.gz").write_bytes(gzip.compress(json.dumps(asked).encode()))
     monkeypatch.setattr(tz, "_fetch_boundaries", lambda *a: (_ for _ in ()).throw(OSError("offline")))
     pack, err = tz.boundaries({"America/Vancouver", "America/New_Zone"}, "2026f")
     assert pack["zones"] and "offline" in err
-    pack, err = tz.boundaries({"America/New_Zone"}, "2026a")                  # a cached release is never refetched
+    pack, err = tz.boundaries({"America/New_Zone"}, "2026a")                  # asked for before: never refetched
     assert err == ""
+    pack, err = tz.boundaries({"America/Other"}, "2026a")                     # new, but offline: the cached one
+    assert pack["zones"] and "offline" in err
 
 
 def test_frames_are_drawn_once_a_minute(data_dir, monkeypatch):
@@ -418,3 +421,31 @@ def test_tidy_keeps_islands_and_straits():
     assert (t[2:18, 12] == 0).all()                                           # the strait stays open
     assert (t[18 - np.arange(5), 26 + np.arange(5) // 2] == 1).all()          # the keys are kept
     assert t[10, 28] == 1 and t[10, 29] == 1
+
+
+def test_alaska_is_on_the_map_but_not_the_list():
+    assert "America/Anchorage" not in tz.MAP_DROP and "Pacific/Honolulu" in tz.MAP_DROP
+    assert {"America/Anchorage", "America/Juneau", "America/Sitka"} <= set(mod.DEFAULTS["list_hide"])
+
+
+def test_mexico_is_on_the_map_but_not_the_list():
+    d, st = _table_data()
+    d["zones"].append({"id": "America/Tijuana", "cc": "MX", "home": -480, "area": 50})
+    st["offs"].append(-480)
+    st["abbrs"].append("PST")
+    t = mod.table_of(d, st, mod.settings({}))
+    assert all(set(r["cells"]) <= {"CA", "US"} for r in t)
+    assert "MX" in tz.COUNTRIES
+
+
+def test_boundaries_are_cut_again_only_for_newly_asked_zones(tmp_path, monkeypatch):
+    import gzip
+    monkeypatch.setattr(tz, "CACHE", tmp_path)
+    pack = dict(_pack(), tag="2026e", asked=["America/Vancouver", "America/Los_Angeles", "America/Nowhere"])
+    (tmp_path / "zones-2026e.json.gz").write_bytes(gzip.compress(json.dumps(pack).encode()))
+    fetched = []
+    monkeypatch.setattr(tz, "_fetch_boundaries", lambda tag, keep, *a: fetched.append(keep) or dict(pack, asked=sorted(keep)))
+    tz.boundaries({"America/Vancouver", "America/Nowhere"}, "2026e")       # asked before, even if it isn't there
+    assert fetched == []
+    tz.boundaries({"America/Vancouver", "America/Tijuana"}, "2026e")       # a zone nobody asked for: cut again
+    assert fetched == [{"America/Vancouver", "America/Tijuana"}]

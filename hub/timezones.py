@@ -39,15 +39,14 @@ SYSTEM_ZONEINFO = Path("/usr/share/zoneinfo")
 PYPI = "https://pypi.org/pypi/tzdata/json"
 TBB_LATEST = "https://api.github.com/repos/evansiroky/timezone-boundary-builder/releases/latest"
 NE_DIR = GEODATA_ROOT / "borders"
-COUNTRIES = ("US", "CA")
-# zones left off the map (and so the list): Alaska and Hawaii
-MAP_DROP = {"Pacific/Honolulu", "America/Adak", "America/Anchorage", "America/Juneau", "America/Sitka",
-            "America/Metlakatla", "America/Yakutat", "America/Nome"}
+COUNTRIES = ("US", "CA", "MX")                 # on the map (the list only has Canada and the US)
+# zones left off the map (and so the list): Hawaii and the Aleutians (Alaska's corner shows, cut off by the frame)
+MAP_DROP = {"Pacific/Honolulu", "America/Adak"}
 REGION = (-180.0, 17.0, -50.0, 75.0)          # lon/lat box the zones are cut to before simplifying
 SIMPLIFY_DEG = 0.01
 SS = 3                                         # supersampling when rasterising
 WATER_LINE_PX = 2                              # how far offshore the lines between zones carry on
-RASTER_VERSION = 11                            # bump when rasterising changes
+RASTER_VERSION = 13                            # bump when rasterising changes
 
 
 def _get(url, timeout=30, **kw):
@@ -216,9 +215,10 @@ def latest_boundaries_tag() -> str | None:
 
 
 def boundaries(keep: set, tag: str | None) -> tuple[dict, str]:
-    """The US/Canada zones' polygons for a timezone-boundary-builder release (downloaded and cut down once per
-    release): ({"tag", "zones": {tzid: [[exterior, hole, …], …]}} with rings as [[lon, lat], …], error). When the
-    newest release can't be had, the last one cached is used (a zone it lacks just isn't drawn)."""
+    """The map's zones' polygons for a timezone-boundary-builder release (downloaded and cut down once per release,
+    and again only when zones nobody asked for before are wanted, e.g. Mexico's): ({"tag", "asked", "zones":
+    {tzid: [[exterior, hole, …], …]}} with rings as [[lon, lat], …], error). When the newest release can't be
+    had, the last one cached is used (a zone it lacks just isn't drawn)."""
     CACHE.mkdir(parents=True, exist_ok=True)
     have = sorted(CACHE.glob("zones-*.json.gz"))
     load = lambda p: json.loads(gzip.decompress(p.read_bytes()))
@@ -227,13 +227,15 @@ def boundaries(keep: set, tag: str | None) -> tuple[dict, str]:
             return load(have[-1]), ""
         raise RuntimeError("no time zone boundaries yet and GitHub can't be reached")
     path = CACHE / f"zones-{tag}.json.gz"
-    if path.exists():
-        return load(path), ""
+    cached = load(path) if path.exists() else None
+    # a zone the release lacks stays lacking: only zones never asked for before mean cutting the release again
+    if cached is not None and not keep - set(cached.get("asked") or cached["zones"]):
+        return cached, ""
     try:
         return _fetch_boundaries(tag, keep, path, have), ""
     except Exception as e:
-        if have:
-            return load(have[-1]), f"boundaries {tag}: {e}"
+        if cached is not None or have:
+            return cached or load(have[-1]), f"boundaries {tag}: {e}"
         raise
 
 
@@ -250,7 +252,7 @@ def _fetch_boundaries(tag, keep, path, have):
                 if name.endswith((".shp", ".shx", ".dbf")) and "/" not in name.strip("/") and ".." not in name:
                     (tmp / ("tz" + name[name.rindex("."):])).write_bytes(z.read(name))
         zp.unlink()
-        pack = {"tag": tag, "zones": _cut(tmp / "tz", keep)}
+        pack = {"tag": tag, "asked": sorted(keep), "zones": _cut(tmp / "tz", keep)}
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     part = path.with_suffix(".part")
@@ -373,7 +375,7 @@ def geodata():
             err = "no sea polygons (osm_water_cache): coasts include territorial waters"
     except Exception as e:                       # a broken shapefile: draw without it, and say so
         sea, err = [], f"sea polygons: {e}"
-    return {"prov": _ne_lines("ne_50m_admin_1_states_provinces_lines", lambda rec: rec["ADM0_A3"] in ("USA", "CAN")),
+    return {"prov": _ne_lines("ne_50m_admin_1_states_provinces_lines", lambda rec: rec["ADM0_A3"] in ("USA", "CAN", "MEX")),
             "country": _ne_lines("ne_50m_admin_0_boundary_lines_land"),
             "lakes": _ne_lakes(), "sea": sea, "error": err}
 

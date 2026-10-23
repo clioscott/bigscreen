@@ -121,7 +121,7 @@ export const Timezones = {
             <div v-for="(c, i) in state?.changes || []" :key="c.start" class="stack" style="gap:4px">
               <div class="row"><b>{{ c.words }}</b><span class="faint">{{ when(c.start) }} – {{ when(c.end) }}</span>
                 <span class="spacer"></span><button class="btn sm" @click="asOf = 'after:' + i; page = 0"><Icon name="Eye" :size="14"/>Preview after</button></div>
-              <div class="faint" style="font-size:12.5px">{{ c.changed.length }} of {{ state.zones.length }} zones change offset.
+              <div class="faint" style="font-size:12.5px">{{ c.changed.length }} of {{ state.zones.filter(z => z.cc !== 'MX').length }} Canadian and US zones change offset.
                 <span v-if="c.new.length">New rules this year: <b>{{ c.new.map(zoneName).join(", ") }}</b>.</span></div>
               <div class="row" style="flex-wrap:wrap; gap:6px">
                 <span v-for="g in c.groups" :key="g.cc + g.off" class="pill" :style="{borderColor: colorOf(g.off)}"><b>{{ g.cc }}</b>&nbsp;{{ offText(g.off) }} {{ g.name }}<span class="faint" v-if="g.places.length">&nbsp;· {{ g.places.join(" ") }}</span></span></div>
@@ -167,7 +167,8 @@ export const Timezones = {
             <details><summary class="faint">Zones: in the list, and their places</summary>
               <div class="stack" style="gap:4px; margin-top:8px">
                 <div v-for="z in state?.zones || []" :key="z.id" class="row nowrap" style="gap:8px">
-                  <Toggle :modelValue="!(val('list_hide') || []).includes(z.id)" @update:modelValue="v => setListed(z.id, v)" title="In the list (it's on the map either way)"/>
+                  <Toggle v-if="z.cc !== 'MX'" :modelValue="!(val('list_hide') || []).includes(z.id)" @update:modelValue="v => setListed(z.id, v)" title="In the list (it's on the map either way)"/>
+                  <span v-else class="faint" style="width:36px" title="Mexico is on the map, never in the list">map</span>
                   <span style="width:170px" class="mono">{{ zoneName(z.id) }}</span><span class="faint" style="width:110px">{{ z.abbr }} {{ offText(z.off) }}</span>
                   <input class="input grow" :placeholder="state.defaults.places[z.id] || '(none)'" :value="dictVal('places', z.id)" @input="dictSet('places', z.id, $event.target.value)" maxlength="30">
                   <button v-if="state.defaults.places[z.id] && tz.places?.[z.id] !== ''" class="btn sm ghost icon-only" title="Leave out of the legend" @click="dictSet('places', z.id, '')"><Icon name="EyeOff" :size="14"/></button>
@@ -179,7 +180,7 @@ export const Timezones = {
             <div v-for="o in offsets" :key="o.off" class="row nowrap" style="gap:10px">
               <span class="mono" style="width:80px">{{ offText(o.off) }}</span>
               <ColorPick :modelValue="colorOf(o.off)" @update:modelValue="v => dictSet('colors', String(o.off), v)"/>
-              <input v-for="(n, cc) in o.names" :key="cc" class="input grow" style="min-width:0" :title="'Name in ' + (cc === 'CA' ? 'Canada' : 'the US')"
+              <input v-for="(n, cc) in o.names" :key="cc" class="input grow" style="min-width:0" :title="'Name in ' + ({CA: 'Canada', US: 'the US', MX: 'Mexico'}[cc] || cc)"
                 :placeholder="cc + ': ' + n" :value="dictVal('offset_names', cc + ':' + o.off)" @input="dictSet('offset_names', cc + ':' + o.off, $event.target.value)" maxlength="30"></div>
             <div class="faint" style="font-size:12.5px">Colours go by offset, so areas with the same clock time match across the border; the names are per country.</div>
             <Field label="Area brightness"><Slider :modelValue="val('fill')" @update:modelValue="v => set('fill', v)" :min="0.15" :max="1" :step="0.05"/></Field>
