@@ -543,3 +543,42 @@ def test_a_corner_zone_time_stays_on_the_map(data_dir, monkeypatch):
     boxes = p._map_labels(Canvas(448, 192), 0, 0, m, st, [], time.time())
     (bx, by, bw, bh), = boxes
     assert bx >= 0 and by >= 0 and bx + bw <= m["rect"][2] and by + bh <= m["rect"][3]
+
+
+def test_offsets_from_home():
+    assert mod.from_home(-420, -480) == "+1h" and mod.from_home(-480, -420) == "-1h"
+    assert mod.from_home(-210, -420) == "+3:30" and mod.from_home(-420, -420) == "home"
+    assert mod.from_home(-420, -420, own=False) == "same"
+    d, st = _table_data()
+    assert mod.home_offset(d, st, mod.settings({})) == (-420, "CA")           # Vancouver
+    assert mod.home_offset(d, st, mod.settings({"home_zone": "America/Nowhere"})) == (None, None)
+
+
+def test_home_time_is_highlighted_in_the_list(data_dir, monkeypatch):
+    p = mod.TzMapPanel(type("C", (), {"modules": {}})(), data_dir)
+    p._load(time.time())
+    homes = []
+    monkeypatch.setattr(p, "_time", lambda c, f, path, x, y, t, rgb, home: homes.append(home))
+    from display.gfx import Canvas
+    st = mod.state_at(p.data, time.time())
+    p._draw(Canvas(448, 192), p._map_for(448, 192), "now", st, None, time.time(), None)
+    assert homes.count(True) == 1                                             # Vancouver's time, once
+    p.s["highlight_home"] = False
+    homes.clear()
+    p._frames.clear()
+    p._draw(Canvas(448, 192), p._map_for(448, 192), "now", st, None, time.time(), None)
+    assert True not in homes
+
+
+def test_zone_times_can_show_their_offset_from_home(data_dir, monkeypatch):
+    p = mod.TzMapPanel(type("C", (), {"modules": {"timezones": {"map_labels": "on", "map_label_offsets": True}}})(),
+                       data_dir)
+    p._load(time.time())
+    m = p._map_for(448, 192)
+    st = dict(mod.state_at(p.data, time.time()), offs=[-420, -480])
+    st["anchors"] = {m["key"]: [["CA", -420, 60, 60, 9.0], ["US", -480, 120, 120, 9.0], ["US", -420, 30, 140, 9.0]]}
+    drawn = []
+    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s: drawn.append(s))
+    from display.gfx import Canvas
+    p._map_labels(Canvas(448, 192), 0, 0, m, st, [], time.time())
+    assert "home" in drawn and "-1h" in drawn and "same" in drawn

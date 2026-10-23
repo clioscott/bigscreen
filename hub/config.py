@@ -164,6 +164,8 @@ def _validate_timezones(tz):
                     ("map_labels", ("auto", "on", "off"))):
         if tz.get(key) is not None and tz[key] not in ok:
             raise ConfigError(f"timezones.{key} must be one of {', '.join(ok)}")
+    if tz.get("home_zone") is not None and (not isinstance(tz["home_zone"], str) or "/" not in tz["home_zone"]):
+        raise ConfigError("timezones.home_zone must be a zone like America/Vancouver")
     mh = tz.get("map_label_hide")
     if mh is not None and (not isinstance(mh, list) or not all(isinstance(k, str) and re.fullmatch(r"(CA|US):-?\d+", k)
                                                                 for k in mh)):
