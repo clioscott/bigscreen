@@ -486,3 +486,16 @@ def test_a_lakeshore_city_still_gets_its_zone():
     assert mod._zone_at(m, 6, 5) == 2                                          # on its zone's water
     assert mod._zone_at(dict(m, water=None), 6, 5) == 1                        # nearest land, 2 px away
     assert mod._zone_at(dict(m, water=None), 9, 5) == 0                        # nothing near
+
+
+def test_zone_times_on_the_map_once_per_country(data_dir, monkeypatch):
+    p = mod.TzMapPanel(type("C", (), {"modules": {"timezones": {"map_labels": "on"}}})(), data_dir)
+    p._load(time.time())
+    m = p._map_for(448, 192)
+    st = dict(mod.state_at(p.data, time.time()))
+    st["anchors"] = {m["key"]: [["CA", -420, 40, 40, 9.0], ["US", -480, 80, 80, 9.0], ["MX", -480, 90, 120, 9.0]]}
+    drawn = []
+    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s: drawn.append((x, y)))
+    from display.gfx import Canvas
+    p._map_labels(Canvas(448, 192), 0, 0, m, st, [], time.time())
+    assert len(drawn) == 2                                                    # Canada and the US, not Mexico

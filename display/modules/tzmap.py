@@ -33,7 +33,8 @@ as it would be at that moment, with the real time of day, labelled TEST.
     canada_boost     how much brighter Canada's areas are than the US's (1 = the same)
     places           {"America/Vancouver": "BC", …}: the short place each zone adds to its row ("" = none)
     show_places, show_utc   the legend's second line
-    map_labels       auto (when there's no legend) | on | off: the time written on the map in each offset's largest area
+    map_labels       on | off | auto (only without a legend): each zone's time written in the middle of its biggest
+                     area, once for each offset in Canada and once in the US (the panel's toggle sets on/off)
     cities           [{name, lat, lon, on}], drawn in order where there's room (all off by default)
     city_times       off | after (each city's time after its name) | below (on a line of its own under the name);
                      true/false from older configs mean after/off
@@ -806,7 +807,9 @@ class TzMapPanel:
         anchors = (state.get("anchors") or {}).get(m["key"]) or []
         small = self.font(FONT_SMALL)
         boxes = []
-        for _cc, off, ax, ay, room in anchors:
+        for cc, off, ax, ay, room in anchors:
+            if cc not in COUNTRIES:                   # once per offset in Canada and in the US (not Mexico)
+                continue
             text = clock_text(now, off, self.s.get("time_format", "12h"))[0]
             # room is the distance to the area's edge, x counted at 0.55 (hub/timezones.py anchors): a label may
             # overlap the edge a little

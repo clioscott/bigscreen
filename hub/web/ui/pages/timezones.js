@@ -141,9 +141,7 @@ export const Timezones = {
                   <input class="input" style="width:130px" :placeholder="d.country_labels?.[cc]" :value="dictVal('country_labels', cc)" @input="dictSet('country_labels', cc, $event.target.value)" maxlength="30">
                   <input class="input" style="width:80px" :placeholder="d.country_short?.[cc]" :value="dictVal('country_short', cc)" @input="dictSet('country_short', cc, $event.target.value)" maxlength="12"></div></Field></div>
             <div class="row" style="flex-wrap:wrap">
-              <Field label="Clock"><Seg :modelValue="val('time_format')" @update:modelValue="v => set('time_format', v)" :options="[{value:'12h', label:'12 h'}, {value:'24h', label:'24 h'}]"/></Field>
-              <Field label="Times on the map"><Seg :modelValue="val('map_labels')" @update:modelValue="v => set('map_labels', v)"
-                :options="[{value:'auto', label:'When no legend'}, {value:'on', label:'Always'}, {value:'off', label:'Never'}]"/></Field></div>
+              <Field label="Clock"><Seg :modelValue="val('time_format')" @update:modelValue="v => set('time_format', v)" :options="[{value:'12h', label:'12 h'}, {value:'24h', label:'24 h'}]"/></Field></div>
             <Field label="Legend rows" hint="Canada and the US in columns side by side, so their times line up">
               <Seg :modelValue="val('legend_rows')" @update:modelValue="v => set('legend_rows', v)"
                 :options="[{value:'offset', label:'UTC offsets (like the map)'}, {value:'traditional', label:'Old zones (Pacific, Mountain…)'}]"/></Field>
@@ -198,6 +196,8 @@ export const Timezones = {
             <input class="input mono" type="number" step="0.01" :value="c.lon" @change="editCities()[i].lon = Number($event.target.value)" style="width:100px" title="Longitude">
             <span class="spacer"></span><button class="btn sm ghost icon-only" title="Remove" @click="editCities().splice(i, 1)"><Icon name="X" :size="14"/></button></div>
           <div class="card-body stack">
+            <ToggleRow :modelValue="val('map_labels') === 'on'" @update:modelValue="v => set('map_labels', v ? 'on' : 'off')"
+              label="Each zone's time in the middle of it" hint="Once for each offset in Canada and once in the US; separate from the cities below"/>
             <Field label="Each city's time">
               <Seg :modelValue="{true: 'after', false: 'off'}[val('city_times')] || val('city_times') || 'off'" @update:modelValue="v => set('city_times', v)"
                 :options="[{value:'off', label:'None'}, {value:'after', label:'After its name'}, {value:'below', label:'On a new line'}]"/></Field>
