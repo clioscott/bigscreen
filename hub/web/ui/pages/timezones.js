@@ -166,7 +166,7 @@ export const Timezones = {
               <Seg :modelValue="val('label_style')" @update:modelValue="v => set('label_style', v)"
                 :options="[{value:'name', label:'Mountain, Pacific…'}, {value:'abbr', label:'MST, PST…'}]"/></Field>
             <div class="row" style="flex-wrap:wrap">
-              <Field label="Home" hint="The list highlights its time; the map's offsets count from it">
+              <Field label="Home" hint="The list highlights its time (if it's in the list); the map's offsets count from it">
                 <select class="input" :value="val('home_zone')" @change="set('home_zone', $event.target.value)">
                   <option v-for="z in (state?.zones || []).filter(z => z.cc !== 'MX')" :key="z.id" :value="z.id">{{ zoneName(z.id) }}</option></select></Field>
               <ToggleRow :modelValue="val('highlight_home')" @update:modelValue="v => set('highlight_home', v)" label="Highlight home's time in the list"/></div>

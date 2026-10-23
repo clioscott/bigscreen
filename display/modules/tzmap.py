@@ -836,7 +836,7 @@ class TzMapPanel:
                     if self.s.get("legend_rows") != "offset":
                         self._swatch(c, ex, ey, 3, sf.height - 1, color_of(self.s, e["off"]),
                                      bool(newset & set(e["zones"])) and self.s.get("highlight_new", True))
-                        tx = ex + 4
+                        tx = ex + 5                         # a gap before a highlighted time's box
                     self._time(c, sf, FONT_SMALL, tx, ey, clock_text(now, e["off"], self.s.get("time_format", "12h"))[0],
                                color_of(self.s, e["off"]), self._is_home(e))
             hy += n * line + gap - gap // 2
