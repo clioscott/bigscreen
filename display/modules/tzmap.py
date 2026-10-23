@@ -304,7 +304,7 @@ def table_of(data, state, s):
     by_offset = s.get("legend_rows") == "offset"
     rows = {}
     for i, z in enumerate(zones[:len(state["offs"])]):
-        if z["id"] in hide:
+        if z["id"] in hide or z.get("cc", "") not in COUNTRIES:      # Mexico is on the map, not in the list
             continue
         off = state["offs"][i]
         key = off if by_offset else z.get("home", off)
