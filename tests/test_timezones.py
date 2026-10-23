@@ -458,7 +458,7 @@ def test_city_time_after_the_name_or_on_a_new_line(data_dir, monkeypatch, mode, 
     p._load(time.time())
     m = p._map_for(448, 192)
     drawn = []
-    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s: drawn.append((y, s)))
+    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s, **k: drawn.append((y, s)))
     from display.gfx import Canvas
     p._cities(Canvas(448, 192), 0, 0, m, mod.state_at(p.data, time.time()), time.time())
     assert len(drawn) == lines and drawn[0][1].startswith("Here")
@@ -495,7 +495,7 @@ def test_zone_times_on_the_map_once_per_country(data_dir, monkeypatch):
     st = dict(mod.state_at(p.data, time.time()))
     st["anchors"] = {m["key"]: [["CA", -420, 40, 40, 9.0], ["US", -480, 80, 80, 9.0], ["MX", -480, 90, 120, 9.0]]}
     drawn = []
-    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s: drawn.append((x, y)))
+    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s, **k: drawn.append((x, y)))
     from display.gfx import Canvas
     p._map_labels(Canvas(448, 192), 0, 0, m, st, [], time.time())
     assert len(drawn) == 2                                                    # Canada and the US, not Mexico
@@ -508,7 +508,7 @@ def test_a_small_zone_still_gets_its_time(data_dir, monkeypatch):
     st = dict(mod.state_at(p.data, time.time()))
     st["anchors"] = {m["key"]: [["CA", -210, 60, 60, 3.2], ["CA", -240, 80, 80, 1.0]]}    # Newfoundland; a sliver
     fonts = []
-    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s: fonts.append(f.height))
+    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s, **k: fonts.append(f.height))
     from display.gfx import Canvas
     p._map_labels(Canvas(448, 192), 0, 0, m, st, [], time.time())
     assert fonts == [p.font(mod.FONT_TAG).height]                             # the narrow font; the sliver none
@@ -522,7 +522,7 @@ def test_each_zone_time_can_be_switched_off(data_dir, monkeypatch):
     st = dict(mod.state_at(p.data, time.time()))
     st["anchors"] = {m["key"]: [["CA", -420, 40, 40, 9.0], ["US", -420, 80, 80, 9.0]]}
     drawn = []
-    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s: drawn.append(x))
+    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s, **k: drawn.append(x))
     from display.gfx import Canvas
     p._map_labels(Canvas(448, 192), 0, 0, m, st, [], time.time())
     assert len(drawn) == 1                                                    # the US one; Canada's is off
@@ -578,7 +578,7 @@ def test_zone_times_can_show_their_offset_from_home(data_dir, monkeypatch):
     st = dict(mod.state_at(p.data, time.time()), offs=[-420, -480])
     st["anchors"] = {m["key"]: [["CA", -420, 60, 60, 9.0], ["US", -480, 120, 120, 9.0], ["US", -420, 30, 140, 9.0]]}
     drawn = []
-    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s: drawn.append(s))
+    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s, **k: drawn.append(s))
     from display.gfx import Canvas
     p._map_labels(Canvas(448, 192), 0, 0, m, st, [], time.time())
     assert "home" in drawn and "-1h" in drawn and "same" in drawn
@@ -590,7 +590,7 @@ def test_every_list_time_has_its_am_pm(data_dir, monkeypatch):
     seen = []
     real = mod.graphics.DrawText
     monkeypatch.setattr(mod.graphics, "DrawText", lambda c, f, x, y, col, s: seen.append(s) or real(c, f, x, y, col, s))
-    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s: mod.graphics.DrawText(c, f, x, y, col, s))  # once
+    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s, **k: mod.graphics.DrawText(c, f, x, y, col, s))  # once
     from display.gfx import Canvas
     for size in ((448, 192), (448, 134)):
         seen.clear()
@@ -617,25 +617,29 @@ def test_home_zone_time_is_highlighted_on_the_map(data_dir, monkeypatch):
     m = p._map_for(448, 192)
     st = dict(mod.state_at(p.data, time.time()), offs=[-420, -480])
     st["anchors"] = {m["key"]: [["CA", -420, 60, 60, 9.0], ["US", -480, 120, 120, 9.0]]}
-    boxed, outlined = [], []
-    real = mod._boxed
-    monkeypatch.setattr(mod, "_boxed", lambda c, f, x, y, tw, rgb, s: boxed.append(s) or real(c, f, x, y, tw, rgb, s))
-    real_o = mod._outlined
-    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s: outlined.append(col.rgb) or real_o(c, f, x, y, col, s))
+    calls = []
+    real = mod._outlined
+    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s, thick=False: calls.append((col.rgb, thick))
+                        or real(c, f, x, y, col, s, thick))
     from display.gfx import Canvas
     p._map_labels(Canvas(448, 192), 0, 0, m, st, [], time.time())
-    assert len(boxed) == 1                                                    # BC's, on its box
-    assert outlined == [(255, 255, 255), (255, 255, 255)]                     # both white with a black outline
+    assert sorted(calls) == [((255, 255, 255), False), ((255, 255, 255), True)]   # BC's thick, the US's thin
 
 
-def test_boxed_text_is_white_outlined_on_the_colour():
+def test_home_text_is_white_with_a_thick_outline_and_no_box():
     from display.gfx import Canvas
-    c = Canvas(40, 20)
     p = mod.TzMapPanel(type("C", (), {"modules": {}})(), "")
     f = p.font(mod.FONT_MAP)
-    mod._boxed(c, f, 5, 12, p.tw(mod.FONT_MAP, "1:00"), (255, 157, 58), "1:00")
+    c = Canvas(40, 20)
+    c.Fill(255, 157, 58)                                                      # a zone's colour behind it
+    mod._home_text(c, f, 8, 13, "1:00")
     colours = {tuple(px) for row in c.buf for px in row}
-    assert (255, 255, 255) in colours and (0, 0, 0) in colours and (255, 157, 58) in colours
+    assert colours == {(255, 255, 255), (0, 0, 0), (255, 157, 58)}           # white, black, and the zone itself
+    thin = Canvas(40, 20)
+    thin.Fill(255, 157, 58)
+    mod._outlined(thin, f, 8, 13, mod.Color(255, 255, 255), "1:00")
+    black = lambda cv: int((cv.buf == 0).all(axis=2).sum())
+    assert black(c) > black(thin)                                             # a thicker outline
 
 
 @pytest.mark.parametrize("size", [(448, 192), (448, 134)])
@@ -668,7 +672,7 @@ def test_main_zone_times_are_all_full_size(data_dir, monkeypatch):
     st["offs"] = [-420, -480, -210]
     st["anchors"] = {m["key"]: [["US", -480, 1, 60, 1.5], ["CA", -210, 200, 60, 3.2]]}   # a thin coast; Nfld
     drawn = []
-    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s: drawn.append((f.height, x)))
+    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s, **k: drawn.append((f.height, x)))
     from display.gfx import Canvas
     p._map_labels(Canvas(448, 192), 108, 0, m, st, [], time.time(), bounds=(-108, 0, 340, 192))
     (h_main, x_main), = [d for d in drawn if d[1] < 150]                      # US Pacific, by the map's left edge
