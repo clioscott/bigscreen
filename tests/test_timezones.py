@@ -623,3 +623,22 @@ def test_home_zone_time_is_highlighted_on_the_map(data_dir, monkeypatch):
     from display.gfx import Canvas
     p._map_labels(Canvas(448, 192), 0, 0, m, st, [], time.time())
     assert len(outlined) == 1 and len(boxed) == 1                             # BC's on its box, the US's outlined
+
+
+@pytest.mark.parametrize("size", [(448, 192), (448, 134)])
+def test_the_header_beside_the_map_never_runs_into_it(data_dir, monkeypatch, size):
+    """TEST + UPCOMING + the date, stacked in the margin beside the map, never past it."""
+    p = mod.TzMapPanel(type("C", (), {"modules": {"timezones": {"upcoming_label": "UPCOMING CHANGE"}}})(), data_dir)
+    p._load(time.time())
+    m = p._map_for(*size)
+    mx = mod.layout(*size)["map"][0]
+    right = []
+    real_tag, real_text = p._tag, mod.graphics.DrawText
+    monkeypatch.setattr(p, "_tag", lambda c, x, y, t, bg, fg=None: right.append(x + p.tw(mod.FONT_SMALL, t) + 4) or 0)
+    monkeypatch.setattr(mod.graphics, "DrawText", lambda c, f, x, y, col, t: right.append(x + sum(
+        max(0, f.CharacterWidth(ord(ch))) for ch in t)) or real_text(c, f, x, y, col, t))
+    from display.gfx import Canvas
+    d = p.data
+    change = d["changes"][0]
+    p._header_beside(Canvas(*size), 3, 2, mx - 6, "upcoming", change, time.time())
+    assert right and max(right) <= mx

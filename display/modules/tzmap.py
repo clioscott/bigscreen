@@ -598,7 +598,7 @@ class TzMapPanel:
         elif mx >= HEADER_BESIDE_W:                    # room beside the map (full width, whole wall): the header there
             self._header_beside(c, x + 3, y + 2, mx - 6, kind, change, test)
         else:
-            self._header_on_map(c, x + mx, y + my, mw, kind, change, test)
+            self._header_on_map(c, x + mx, y + my, mw, m["rect"][3], kind, change, test)
 
     def _tag(self, c, x, y, text, bg, fg=Color(0, 0, 0)):
         f = self.font(FONT_SMALL)
@@ -625,19 +625,47 @@ class TzMapPanel:
         return f.height + 2 if (test is not None or change is not None) else 0
 
     def _header_beside(self, c, x, y, w, kind, change, test):
-        """The title and the UPCOMING / NOW / TEST tags in the space beside a centred map."""
-        nf = self.font(FONT_NAME)
+        """The title and the UPCOMING / NOW / TEST tags, one under another, in the space beside a centred map (each
+        line only if it fits, so nothing runs into the map)."""
+        nf, f = self.font(FONT_NAME), self.font(FONT_SMALL)
         title = str(self.s.get("title") or "")
         if title and self.tw(FONT_NAME, title) <= w:
             graphics.DrawText(c, nf, x, y + nf.baseline, Color(235, 235, 235), title)
             y += nf.height + 2
-        self._header_tags(c, x, y, w, kind, change, test)
+        for kind_, text, colr in self._header_lines(kind, change, test):
+            width = self.tw(FONT_SMALL, text) + (4 if kind_ == "tag" else 0)
+            if width > w:
+                continue
+            if kind_ == "tag":
+                self._tag(c, x, y, text, colr)
+            else:
+                graphics.DrawText(c, f, x, y + f.baseline + 1, colr, text)
+            y += f.height + 2
 
-    def _header_on_map(self, c, x, y, w, kind, change, test):
+    def _header_lines(self, kind, change, test):
+        """The header as [("tag" | "text", words, colour)]: TEST, then UPCOMING + the date or NOW + CHANGES …"""
+        out = []
+        if test is not None:
+            out.append(("tag", str(self.s.get("test_label") or "TEST"), Color(220, 60, 220)))
+        if kind == "upcoming":
+            out += [("tag", str(self.s.get("upcoming_label") or "UPCOMING"), Color(255, 210, 40)),
+                    ("text", change_words(change), Color(255, 210, 40))]
+        elif change is not None:
+            out += [("tag", str(self.s.get("now_label") or "NOW"), Color(200, 200, 200)),
+                    ("text", "CHANGES " + change_words(change), Color(150, 150, 150))]
+        elif test is not None:
+            d = datetime.fromtimestamp(test, timezone.utc) - timedelta(hours=8)
+            out.append(("text", d.strftime("%b ").upper() + str(d.day), Color(220, 60, 220)))
+        return out
+
+    def _header_on_map(self, c, x, y, w, h, kind, change, test):
+        """The tags on one line over the map's bottom-left corner (open Pacific, clear of Alaska's label)."""
         if kind == "upcoming" or change is not None or test is not None:
+            f = self.font(FONT_SMALL)
             words = 12 + len(self.s.get("upcoming_label") or "") + len(self.s.get("test_label") or "")
-            c.FillRect(x, y, min(w, words * 5 + 30), self.font(FONT_SMALL).height + 3, Color(0, 0, 0))
-        self._header_tags(c, x + 1, y + 1, w, kind, change, test)
+            top = y + h - f.height - 3
+            c.FillRect(x, top, min(w, words * 5 + 30), f.height + 3, Color(0, 0, 0))
+            self._header_tags(c, x + 1, top + 1, w, kind, change, test)
 
     def _legend(self, c, x, y, w, h, state, kind, change, now, new, test):
         if w < LEGEND_FULL_W:

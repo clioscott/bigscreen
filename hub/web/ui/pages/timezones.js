@@ -170,8 +170,8 @@ export const Timezones = {
             <Field label="Each time is called" hint="From the zones' tz abbreviations, so each country's own naming: after Nov 1 BC is Mountain (MST) beside the US's Pacific (PST)">
               <Seg :modelValue="val('label_style')" @update:modelValue="v => set('label_style', v)"
                 :options="[{value:'name', label:'Mountain, Pacific…'}, {value:'abbr', label:'MST, PST…'}]"/></Field>
-            <div class="row" style="flex-wrap:wrap">
             </template>
+            <div class="row" style="flex-wrap:wrap">
               <Field label="Home" hint="Its time is highlighted; the map's offsets count from it">
                 <select class="input" :value="val('home_zone')" @change="set('home_zone', $event.target.value)">
                   <option v-for="z in (state?.zones || []).filter(z => z.cc !== 'MX')" :key="z.id" :value="z.id">{{ zoneName(z.id) }}</option></select></Field>
