@@ -25,7 +25,7 @@ as it would be at that moment, with the real time of day, labelled TEST.
                      zone as it was, e.g. Pacific: BC beside the US west coast, its places split by rule and tagged);
                      the columns are Canada and the US, so their times line up
     row_names        {"-480": "PACIFIC"}: traditional rows' names, by the zone's old standard offset
-    list_hide        zones shown on the map but left out of the list (Newfoundland)
+    list_hide        zones shown on the map but left out of the list (Newfoundland and Atlantic: four rows)
     label_style      name (Mountain, from ``names``) | abbr (MST): what each time in the list is called
     rule_labels      {"dst": "DST", "fixed": "NO DST"}: traditional rows only: the tag on each time, whether its
                      places still change their clocks (a row's places that keep different rules are separate times)
@@ -58,7 +58,8 @@ FONT_TIME_BIG = "fonts/alert/9x15B.bdf"         # legend rows with room for it (
 FONT_NAME = "fonts/alert/6x10.bdf"
 FONT_SMALL = "fonts/alert/5x7.bdf"
 FONT_MAP = "fonts/alert/6x10.bdf"
-FONT_TAG = "fonts/alert/tom-thumb.bdf"         # the list's DST / NO DST tags (narrow, so they fit beside the time)
+FONT_TAG = "fonts/alert/tom-thumb.bdf"
+BIG_ENTRY_H = 34                               # a roomy list time: 9x15 clock, 6x10 name, 5x7 places         # the list's DST / NO DST tags (narrow, so they fit beside the time)
 
 DEFAULT_CITIES = [
     {"name": "Vancouver", "lat": 49.28, "lon": -123.12, "on": False},
@@ -116,8 +117,10 @@ COUNTRIES = ("CA", "US")                      # legend columns, in this order
 # the legend's rows by default: the zones as they were (a zone's standard offset in 2019, hub/jobs/timezones.py)
 HOME_NAMES = {"-600": "HAWAII", "-540": "ALASKA", "-480": "PACIFIC", "-420": "MOUNTAIN", "-360": "CENTRAL",
               "-300": "EASTERN", "-240": "ATLANTIC", "-210": "NFLD"}
-# on the map but not in the list (Alaska and Hawaii aren't on either: hub/timezones.py MAP_DROP)
-DEFAULT_LIST_HIDE = ["America/St_Johns"]
+# on the map but not in the list, so it has the four main zones (Alaska and Hawaii aren't on either:
+# hub/timezones.py MAP_DROP): Newfoundland and Atlantic
+DEFAULT_LIST_HIDE = ["America/St_Johns", "America/Halifax", "America/Glace_Bay", "America/Moncton",
+                     "America/Goose_Bay", "America/Blanc-Sablon"]
 TERRITORIES = ("YT", "NT", "NU")
 NAME_SHARE = 0.15         # a second zone name for a time needs this share of its area
 MIN_SHARE = 0.25          # a time in a traditional zone's cell with no place named needs this share of its area
@@ -610,29 +613,63 @@ class TzMapPanel:
             graphics.DrawText(c, sf, cx, hy + sf.baseline, Color(235, 235, 235), label)
         hy += sf.height + 2
         c.FillRect(x, hy - 1, w, 1, Color(90, 90, 90))
-        entry_h = 14
         need = [max([len(r["cells"].get(cc, [])) for cc in COUNTRIES] + [1]) for r in table]
+        # roomy (the whole wall, four rows): a big clock with the zone's name and places under it
+        big = (self.s.get("legend_rows") == "offset" and min(widths.values()) >= 80
+               and (y + h - hy) >= sum(need) * (BIG_ENTRY_H + 4))
+        entry_h = BIG_ENTRY_H if big else 14
         spare = max(0, (y + h - hy) - sum(n * entry_h for n in need)) // len(table)
         newset = set(new)
         last_ap = {}                                    # AM/PM shows on a column's first time and where it flips
         for r, n in zip(table, need):
             row_h = n * entry_h + spare
             ey = hy + max(0, (row_h - n * entry_h) // 2)
-            graphics.DrawText(c, sf, x, ey + 2 + sf.baseline, self._row_colour(r), r["label"][:max(1, lw // 5)])
+            label_y = ey + (self.font(FONT_TIME_BIG).baseline - 1 if big else 2 + sf.baseline)
+            graphics.DrawText(c, sf, x, label_y, self._row_colour(r), r["label"][:max(1, lw // 5)])
             for cc, cx in cols:
                 entries = r["cells"].get(cc) or []
                 if not entries:
-                    graphics.DrawText(c, sf, cx + 2, ey + 2 + sf.baseline, Color(70, 70, 70), "-")
+                    graphics.DrawText(c, sf, cx + 2, label_y, Color(70, 70, 70), "-")
                 cw = widths[cc]
                 for j, e in enumerate(entries):
                     if j:                                     # a line between times that follow different rules
                         c.FillRect(cx + 8, ey + j * entry_h - 1, cw - 8, 1, Color(55, 55, 55))
                     ap = clock_text(now, e["off"], self.s.get("time_format", "12h"))[1]
-                    self._entry(c, cx, ey + j * entry_h, cw, e, now, newset, show_ap=last_ap.get(cc) != ap)
+                    draw = self._entry_big if big else self._entry
+                    draw(c, cx, ey + j * entry_h, cw, e, now, newset, show_ap=last_ap.get(cc) != ap)
                     last_ap[cc] = ap
             hy += row_h
             if hy < y + h:
                 c.FillRect(x, hy - 1, w, 1, Color(35, 35, 35))
+
+    def _entry_big(self, c, cx, cy, cw, e, now, newset, show_ap=True):
+        """A roomy time: the clock (9x15 bold) and AM/PM, the zone's name (6x10, in its colour) under it, then the
+        places (places with new rules this year in the colour too)."""
+        tf, nf, sf = self.font(FONT_TIME_BIG), self.font(FONT_NAME), self.font(FONT_SMALL)
+        rgb = color_of(self.s, e["off"])
+        tt, ap = clock_text(now, e["off"], self.s.get("time_format", "12h"))
+        graphics.DrawText(c, tf, cx, cy + tf.baseline, Color(255, 255, 255), tt)
+        if ap and show_ap:
+            graphics.DrawText(c, sf, cx + self.tw(FONT_TIME_BIG, tt) + 2, cy + tf.baseline, Color(170, 170, 170), ap)
+        ny = cy + tf.height + 1
+        names = e.get("names") or []
+        name = "/".join(names[:2])
+        if self.tw(FONT_NAME, name) > cw and len(names) > 1:
+            name = "/".join((e.get("abbrs") or names)[:2])
+        while name and self.tw(FONT_NAME, name) > cw:
+            name = name[:-1]
+        graphics.DrawText(c, nf, cx, ny + nf.baseline, Color(*rgb), name)
+        if not self.s.get("show_places", True):
+            return
+        zones = self.data.get("zones") or []
+        fresh = {self.s["places"].get(zones[z]["id"], "") for z in e["zones"] if z in newset}
+        px, py = cx, ny + nf.height + sf.baseline
+        for p in sorted(e["places"], key=lambda p: p not in fresh):
+            w = self.tw(FONT_SMALL, p)
+            if px + w > cx + cw:
+                break
+            graphics.DrawText(c, sf, px, py, Color(*rgb) if p in fresh else Color(185, 185, 185), p)
+            px += w + 5
 
     def _entry(self, c, cx, cy, cw, e, now, newset, show_ap=True):
         """One time in a cell: the clock (7x13 bold), then the zone's name over AM/PM (``show_ap``) and the places
@@ -731,10 +768,14 @@ class TzMapPanel:
                               str(self.s["country_short"].get(cc, cc)))
         c.FillRect(x, hy + sf.height, w, 1, Color(90, 90, 90))
         hy += line + 1
-        for r in table_of(self.data, state, self.s):
-            n = max([len(r["cells"].get(cc, [])) for cc in COUNTRIES] + [1])
-            if hy + line * (n + 1) > y + h:
+        table = table_of(self.data, state, self.s)
+        need = [max([len(r["cells"].get(cc, [])) for cc in COUNTRIES] + [1]) + 1 for r in table]
+        gap = min(10, max(0, (y + h - hy) - sum(need) * line) // max(1, len(table)))   # rows spread over the height
+        for r, lines in zip(table, need):
+            n = lines - 1
+            if hy + line * lines > y + h:
                 return
+            hy += gap // 2
             graphics.DrawText(c, sf, x, hy + sf.baseline, self._row_colour(r), r["label"][:max(1, w // 5)])
             hy += line
             for k, cc in enumerate(COUNTRIES):
@@ -747,7 +788,7 @@ class TzMapPanel:
                         tx = ex + 4
                     graphics.DrawText(c, sf, tx, ey + sf.baseline, Color(255, 255, 255),
                                       clock_text(now, e["off"], self.s.get("time_format", "12h"))[0])
-            hy += n * line
+            hy += n * line + gap - gap // 2
 
     def _map_labels(self, c, x, y, m, state, groups, now):
         f = self.font(FONT_MAP)
