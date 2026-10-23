@@ -164,6 +164,10 @@ def _validate_timezones(tz):
                     ("map_labels", ("auto", "on", "off"))):
         if tz.get(key) is not None and tz[key] not in ok:
             raise ConfigError(f"timezones.{key} must be one of {', '.join(ok)}")
+    mh = tz.get("map_label_hide")
+    if mh is not None and (not isinstance(mh, list) or not all(isinstance(k, str) and re.fullmatch(r"(CA|US):-?\d+", k)
+                                                                for k in mh)):
+        raise ConfigError("timezones.map_label_hide must be a list like [\"CA:-240\"]")
     for key in ("title", "upcoming_label", "now_label", "test_label"):
         if tz.get(key) is not None and (not isinstance(tz[key], str) or len(tz[key]) > 30):
             raise ConfigError(f"timezones.{key} must be text of at most 30 characters")

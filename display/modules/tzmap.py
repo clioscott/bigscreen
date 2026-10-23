@@ -35,6 +35,7 @@ as it would be at that moment, with the real time of day, labelled TEST.
     show_places, show_utc   the legend's second line
     map_labels       on | off | auto (only without a legend): each zone's time written in the middle of its biggest
                      area, once for each offset in Canada and once in the US (the panel's toggle sets on/off)
+    map_label_hide   ["CA:-240", …]: those zone times left off the map (country and offset in minutes)
     cities           [{name, lat, lon, on}], drawn in order where there's room (all off by default)
     city_times       off | after (each city's time after its name) | below (on a line of its own under the name);
                      true/false from older configs mean after/off
@@ -807,18 +808,25 @@ class TzMapPanel:
         anchors = (state.get("anchors") or {}).get(m["key"]) or []
         small = self.font(FONT_SMALL)
         boxes = []
+        hide = set(self.s.get("map_label_hide") or [])
         for cc, off, ax, ay, room in anchors:
-            if cc not in COUNTRIES:                   # once per offset in Canada and in the US (not Mexico)
+            # once per offset in Canada and in the US (not Mexico), unless that one is switched off
+            if cc not in COUNTRIES or f"{cc}:{off}" in hide:
                 continue
             text = clock_text(now, off, self.s.get("time_format", "12h"))[0]
             # room is the distance to the area's edge, x counted at 0.55 (hub/timezones.py anchors): a label may
             # overlap the edge a little
-            for path, font in ((FONT_MAP, f), (FONT_SMALL, small)):
+            # the biggest font that fits; a small place (Newfoundland) still gets the narrow one, a little over its coast
+            fonts = ((FONT_MAP, f, None), (FONT_SMALL, small, None), (FONT_TAG, self.font(FONT_TAG), 2.0))
+            for path, font, least in fonts:
                 tw = self.tw(path, text)
-                if room >= max(font.height * 0.4, tw * 0.22):
-                    by = ay + font.baseline // 2 - 1
-                    _outlined(c, font, x + ax - tw // 2, y + by, Color(255, 255, 255), text)
-                    boxes.append((ax - tw // 2 - 1, by - font.baseline - 1, tw + 2, font.height + 2))
+                if room >= (least if least is not None else max(font.height * 0.4, tw * 0.22)):
+                    # centred on the anchor, but kept inside the map (Alaska's corner would spill off it)
+                    mw, mh = m["rect"][2], m["rect"][3]
+                    lx = min(max(ax - tw // 2, 1), mw - tw - 1)
+                    by = min(max(ay + font.baseline // 2 - 1, font.baseline + 1), mh - (font.height - font.baseline) - 1)
+                    _outlined(c, font, x + lx, y + by, Color(255, 255, 255), text)
+                    boxes.append((lx - 1, by - font.baseline - 1, tw + 2, font.height + 2))
                     break
         return boxes
 

@@ -39,6 +39,13 @@ export const Timezones = {
       if (!Object.keys(o).length) delete tz.value[k];
     };
     const cities = computed(() => tz.value.cities || d.value.cities || []);
+    // zone times on the map, one switch per country and offset (all on unless listed in map_label_hide)
+    const labelShown = (cc, off) => !(val("map_label_hide") || []).includes(`${cc}:${off}`);
+    const toggleLabel = (cc, off) => {
+      const key = `${cc}:${off}`, hide = new Set(val("map_label_hide") || []);
+      if (hide.has(key)) hide.delete(key); else hide.add(key);
+      set("map_label_hide", [...hide]);
+    };
     const setListed = (id, on) => {
       const hide = new Set(val("list_hide") || []);
       if (on) hide.delete(id); else hide.add(id);
@@ -47,12 +54,15 @@ export const Timezones = {
     const editCities = () => { if (!tz.value.cities) tz.value.cities = clone(d.value.cities); return tz.value.cities; };
     const addCity = () => editCities().push({ name: "New city", lat: 49.0, lon: -100.0, on: true });
 
-    // every offset the map shows now or after a coming change, for colours, with its name in each country
+    // every offset the map shows now or after a coming change, for colours, with its names in each country
+    // across the seasons (Canada's UTC−4 is Ontario/Quebec's Eastern in summer, the Atlantic's in winter)
     const offsets = computed(() => {
       const seen = new Map();
       for (const g of [...(state.value?.groups || []), ...(state.value?.changes || []).flatMap((c) => c.groups)]) {
         const o = seen.get(g.off) || seen.set(g.off, {}).get(g.off);
-        if (!o[g.cc]) o[g.cc] = g.name;
+        const names = new Set((o[g.cc] || "").split(" / ").filter(Boolean));
+        for (const n of g.name.split("/")) names.add(n);
+        o[g.cc] = [...names].join(" / ");
       }
       return [...seen.entries()].sort((a, b) => a[0] - b[0]).map(([off, names]) => ({ off, names }));
     });
@@ -104,7 +114,7 @@ export const Timezones = {
       catch (e) { fail(e); running.value = false; }
     };
     const zoneName = (z) => z.replace(/^(America|Pacific)\//, "").replace(/_/g, " ");
-    return { setListed, d, state, shape, page, asOf, custom, tz, val, set, dictVal, dictSet, cities, editCities, addCity, offsets, colorOf,
+    return { labelShown, toggleLabel, setListed, d, state, shape, page, asOf, custom, tz, val, set, dictVal, dictSet, cities, editCities, addCity, offsets, colorOf,
       pagesAt, preview, play, addToRotation, used, rebuild, running, SHAPES, ago, when, offText, zoneName };
   },
   template: `<div class="page">
@@ -198,6 +208,11 @@ export const Timezones = {
           <div class="card-body stack">
             <ToggleRow :modelValue="val('map_labels') === 'on'" @update:modelValue="v => set('map_labels', v ? 'on' : 'off')"
               label="Each zone's time in the middle of it" hint="Once for each offset in Canada and once in the US; separate from the cities below"/>
+            <div v-if="val('map_labels') === 'on'" class="row" style="flex-wrap:wrap; gap:6px">
+              <template v-for="o in offsets" :key="o.off">
+                <button v-for="(n, cc) in o.names" :key="cc" type="button" class="btn sm" :class="{primary: labelShown(cc, o.off)}"
+                  :title="labelShown(cc, o.off) ? 'Shown: click to leave it off the map' : 'Left off: click to show it'"
+                  @click="toggleLabel(cc, o.off)"><b>{{ cc }}</b>&nbsp;{{ offText(o.off) }} {{ n }}</button></template></div>
             <Field label="Each city's time">
               <Seg :modelValue="{true: 'after', false: 'off'}[val('city_times')] || val('city_times') || 'off'" @update:modelValue="v => set('city_times', v)"
                 :options="[{value:'off', label:'None'}, {value:'after', label:'After its name'}, {value:'below', label:'On a new line'}]"/></Field>
