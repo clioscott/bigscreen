@@ -157,6 +157,9 @@ def _validate_timezones(tz):
     v = tz.get("refresh_interval_sec")
     if v is not None and (not num(v) or v < 600):
         raise ConfigError("timezones.refresh_interval_sec must be at least 600")
+    ct = tz.get("city_times")
+    if ct is not None and not isinstance(ct, bool) and ct not in ("off", "after", "below"):
+        raise ConfigError("timezones.city_times must be off, after or below")
     for key, ok in (("warn_pages", ("both", "upcoming")), ("time_format", ("12h", "24h")),
                     ("map_labels", ("auto", "on", "off"))):
         if tz.get(key) is not None and tz[key] not in ok:

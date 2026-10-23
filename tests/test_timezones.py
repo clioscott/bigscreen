@@ -449,3 +449,40 @@ def test_boundaries_are_cut_again_only_for_newly_asked_zones(tmp_path, monkeypat
     assert fetched == []
     tz.boundaries({"America/Vancouver", "America/Tijuana"}, "2026e")       # a zone nobody asked for: cut again
     assert fetched == [{"America/Vancouver", "America/Tijuana"}]
+
+
+@pytest.mark.parametrize("mode,lines", [("after", 1), (True, 1), ("below", 2), ("off", 1), (False, 1)])
+def test_city_time_after_the_name_or_on_a_new_line(data_dir, monkeypatch, mode, lines):
+    p = mod.TzMapPanel(type("C", (), {"modules": {"timezones": {
+        "city_times": mode, "cities": [{"name": "Here", "lat": 45.0, "lon": -107.5, "on": True}]}}})(), data_dir)
+    p._load(time.time())
+    m = p._map_for(448, 192)
+    drawn = []
+    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s: drawn.append((y, s)))
+    from display.gfx import Canvas
+    p._cities(Canvas(448, 192), 0, 0, m, mod.state_at(p.data, time.time()), time.time())
+    assert len(drawn) == lines and drawn[0][1].startswith("Here")
+    has_time = mode in ("after", True, "below")
+    assert any(":" in s for _, s in drawn) == has_time
+    if lines == 2:
+        assert drawn[0][1] == "Here" and drawn[1][0] > drawn[0][0]          # the time under the name
+
+
+def test_city_times_validation():
+    from hub import config
+    for ok in (True, False, "off", "after", "below"):
+        config.validate(_cfg({"city_times": ok}))
+    with pytest.raises(config.ConfigError):
+        config.validate(_cfg({"city_times": "beside"}))
+
+
+def test_a_lakeshore_city_still_gets_its_zone():
+    idx = np.zeros((10, 10), np.uint8)
+    idx[:, :5] = 1
+    water = np.zeros_like(idx)
+    water[:, 5:8] = 2
+    m = {"idx": idx, "water": water}
+    assert mod._zone_at(m, 2, 5) == 1                                          # on land
+    assert mod._zone_at(m, 6, 5) == 2                                          # on its zone's water
+    assert mod._zone_at(dict(m, water=None), 6, 5) == 1                        # nearest land, 2 px away
+    assert mod._zone_at(dict(m, water=None), 9, 5) == 0                        # nothing near

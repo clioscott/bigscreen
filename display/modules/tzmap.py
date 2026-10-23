@@ -34,8 +34,9 @@ as it would be at that moment, with the real time of day, labelled TEST.
     places           {"America/Vancouver": "BC", …}: the short place each zone adds to its row ("" = none)
     show_places, show_utc   the legend's second line
     map_labels       auto (when there's no legend) | on | off: the time written on the map in each offset's largest area
-    cities           [{name, lat, lon, on}], drawn in order where there's room (all off by default); city_times adds
-                     each one's time
+    cities           [{name, lat, lon, on}], drawn in order where there's room (all off by default)
+    city_times       off | after (each city's time after its name) | below (on a line of its own under the name);
+                     true/false from older configs mean after/off
     colors           {"-480": "#rrggbb"}: each offset's colour; fill: how bright the areas are (0.15–1)
     highlight_new    hatch zones whose offset is new this year on the upcoming map
 """
@@ -825,7 +826,6 @@ class TzMapPanel:
         f = self.font(FONT_SMALL)
         mx, my, mw, mh = m["rect"]
         taken = list(taken)
-        idx = m["idx"]
         zones_n = len(state["offs"])
         for cy in cities:
             try:
@@ -835,15 +835,20 @@ class TzMapPanel:
             if p is None:
                 continue
             px, py = p
-            text = str(cy.get("name") or "")
-            if self.s.get("city_times"):
-                z = int(idx[min(max(py, 0), mh - 1), min(max(px, 0), mw - 1)])
+            lines = [str(cy.get("name") or "")]
+            mode = {True: "after", False: "off", None: "off"}.get(self.s.get("city_times"), self.s.get("city_times"))
+            if mode in ("after", "below"):
+                z = _zone_at(m, px, py)
                 if 0 < z <= zones_n:
-                    text += " " + clock_text(now, state["offs"][z - 1], self.s.get("time_format", "12h"))[0]
-            tw = self.tw(FONT_SMALL, text)
+                    t = clock_text(now, state["offs"][z - 1], self.s.get("time_format", "12h"))[0]
+                    if mode == "below":
+                        lines.append(t)
+                    else:
+                        lines[0] += " " + t
+            tw = max(self.tw(FONT_SMALL, s) for s in lines)
             spot = None
             for lx in (px + 3, px - 3 - tw):
-                box = (lx - 1, py - f.baseline // 2 - 1, tw + 2, f.height + 1)
+                box = (lx - 1, py - f.baseline // 2 - 1, tw + 2, f.height * len(lines) + 1)
                 if box[0] >= 0 and box[0] + box[2] <= mw and box[1] >= 0 and box[1] + box[3] <= mh \
                         and not any(_hit(box, b) for b in taken):
                     spot = box
@@ -855,8 +860,29 @@ class TzMapPanel:
             c.SetPixel(x + px, y + py, 255, 255, 255)
             taken.append(dot)
             if spot:
-                _outlined(c, f, x + spot[0] + 1, y + spot[1] + 1 + f.baseline, Color(255, 255, 255), text)
+                for k, s in enumerate(lines):                 # left of the dot: lines end at the dot's side
+                    sx = spot[0] + 1 + (tw - self.tw(FONT_SMALL, s) if spot[0] < px else 0)
+                    _outlined(c, f, x + sx, y + spot[1] + 1 + f.baseline + k * f.height,
+                              Color(255, 255, 255) if k == 0 else Color(200, 200, 200), s)
                 taken.append(spot)
+
+
+def _zone_at(m, px, py):
+    """The zone at a map pixel: the land's, else its water's (a city on a lakeshore: Toronto, Chicago), else the
+    nearest land within 2 px; 0 if none."""
+    idx, water = m["idx"], m.get("water")
+    h, w = idx.shape
+    px, py = min(max(px, 0), w - 1), min(max(py, 0), h - 1)
+    if idx[py, px]:
+        return int(idx[py, px])
+    if water is not None and water[py, px]:
+        return int(water[py, px])
+    for r in (1, 2):
+        box = idx[max(0, py - r):py + r + 1, max(0, px - r):px + r + 1]
+        if box.any():
+            vals, counts = np.unique(box[box > 0], return_counts=True)
+            return int(vals[np.argmax(counts)])
+    return 0
 
 
 def _hit(a, b):

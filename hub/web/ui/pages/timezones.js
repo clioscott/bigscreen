@@ -198,7 +198,9 @@ export const Timezones = {
             <input class="input mono" type="number" step="0.01" :value="c.lon" @change="editCities()[i].lon = Number($event.target.value)" style="width:100px" title="Longitude">
             <span class="spacer"></span><button class="btn sm ghost icon-only" title="Remove" @click="editCities().splice(i, 1)"><Icon name="X" :size="14"/></button></div>
           <div class="card-body stack">
-            <ToggleRow :modelValue="val('city_times')" @update:modelValue="v => set('city_times', v)" label="Time after each city's name"/>
+            <Field label="Each city's time">
+              <Seg :modelValue="{true: 'after', false: 'off'}[val('city_times')] || val('city_times') || 'off'" @update:modelValue="v => set('city_times', v)"
+                :options="[{value:'off', label:'None'}, {value:'after', label:'After its name'}, {value:'below', label:'On a new line'}]"/></Field>
             <div class="faint" style="font-size:12.5px">All off by default (names take room on the map). Cities are drawn in this order wherever their names fit; one that would overlap another is left as a dot.</div></div>
         </div>
 
