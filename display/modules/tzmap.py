@@ -590,7 +590,8 @@ class TzMapPanel:
         mode = self.s.get("map_labels", "on")
         taken = []                               # label boxes (map pixels) the city names keep clear of
         if mode == "on" or (mode == "auto" and lay["legend"] is None):
-            taken = self._map_labels(c, x + mx, y + my, m, state, groups, now)
+            zw, zh = m["zone"]                   # labels may use the panel's space beside the map
+            taken = self._map_labels(c, x + mx, y + my, m, state, groups, now, bounds=(-mx, -my, zw - mx, zh - my))
         self._cities(c, x + mx, y + my, m, state, now, taken)
         if lay["legend"] is not None:
             lx, ly, lw, lh = lay["legend"]
@@ -882,8 +883,18 @@ class TzMapPanel:
                                color_of(self.s, e["off"]), self._is_home(e))
             hy += n * line + gap - gap // 2
 
-    def _map_labels(self, c, x, y, m, state, groups, now):
+    def _map_labels(self, c, x, y, m, state, groups, now, bounds=None):
+        """Each zone's time in the middle of its biggest area, once per offset in Canada and in the US. The main
+        zones (the ones in the list) all get the full-size font, spilling past their area (and the map, within
+        ``bounds``: the panel, in map pixels) if they must; only zones left off the list (Alaska, the Atlantic,
+        Newfoundland) drop to smaller fonts to fit."""
         f = self.font(FONT_MAP)
+        mw, mh = m["rect"][2], m["rect"][3]
+        x0, y0, x1, y1 = bounds or (0, 0, mw, mh)
+        zones = self.data.get("zones") or []
+        listed = set(self.s.get("list_hide") or [])
+        main = {(zones[i].get("cc", ""), o) for i, o in enumerate(state["offs"])
+                if i < len(zones) and zones[i]["id"] not in listed}
         anchors = (state.get("anchors") or {}).get(m["key"]) or []
         small = self.font(FONT_SMALL)
         boxes = []
@@ -897,8 +908,12 @@ class TzMapPanel:
             text = clock_text(now, off, self.s.get("time_format", "12h"))[0]
             # room is the distance to the area's edge, x counted at 0.55 (hub/timezones.py anchors): a label may
             # overlap the edge a little
-            # the biggest font that fits; a small place (Newfoundland) still gets the narrow one, a little over its coast
-            fonts = ((FONT_MAP, f, None), (FONT_SMALL, small, None), (FONT_TAG, self.font(FONT_TAG), 2.0))
+            # a main zone: always full size; another (Newfoundland, Alaska) the biggest font that fits, down to the
+            # narrow one a little over its coast
+            if (cc, off) in main:
+                fonts = ((FONT_MAP, f, 0.0),)
+            else:
+                fonts = ((FONT_MAP, f, None), (FONT_SMALL, small, None), (FONT_TAG, self.font(FONT_TAG), 2.0))
             for path, font, least in fonts:
                 tw = self.tw(path, text)
                 if room >= (least if least is not None else max(font.height * 0.4, tw * 0.22)):
@@ -909,11 +924,10 @@ class TzMapPanel:
                         sub_font, sub_text = self.font(sub_path), from_home(off, home, own=cc == home_cc)
                     sub_h = sub_font.height if sub_text else 0
                     bw = max(tw, self.tw(sub_path, sub_text) if sub_text else 0)
-                    # centred on the anchor, but kept inside the map (Alaska's corner would spill off it)
-                    mw, mh = m["rect"][2], m["rect"][3]
-                    lx = min(max(ax - bw // 2, 1), mw - bw - 1)
-                    by = min(max(ay + font.baseline // 2 - 1 - sub_h // 2, font.baseline + 1),
-                             mh - (font.height - font.baseline) - sub_h - 1)
+                    # centred on the anchor, but kept inside the panel (Alaska's corner would spill off it)
+                    lx = min(max(ax - bw // 2, x0 + 1), x1 - bw - 1)
+                    by = min(max(ay + font.baseline // 2 - 1 - sub_h // 2, y0 + font.baseline + 1),
+                             y1 - (font.height - font.baseline) - sub_h - 1)
                     tx = x + lx + (bw - tw) // 2
                     if self.s.get("highlight_home", True) and cc == home_cc and off == home:
                         # home's time (BC's) on a box in its colour, as the list did

@@ -642,3 +642,22 @@ def test_the_header_beside_the_map_never_runs_into_it(data_dir, monkeypatch, siz
     change = d["changes"][0]
     p._header_beside(Canvas(*size), 3, 2, mx - 6, "upcoming", change, time.time())
     assert right and max(right) <= mx
+
+
+def test_main_zone_times_are_all_full_size(data_dir, monkeypatch):
+    """A main zone (in the list) gets the full-size font even with little room; Newfoundland (off the list) shrinks;
+    a label may use the panel beside the map."""
+    p = mod.TzMapPanel(type("C", (), {"modules": {"timezones": {"highlight_home": False}}})(), data_dir)
+    p._load(time.time())
+    m = p._map_for(448, 192)
+    st = dict(mod.state_at(p.data, time.time()), offs=[-420, -480])
+    p.data = dict(p.data, zones=p.data["zones"] + [{"id": "America/St_Johns", "cc": "CA"}])
+    st["offs"] = [-420, -480, -210]
+    st["anchors"] = {m["key"]: [["US", -480, 1, 60, 1.5], ["CA", -210, 200, 60, 3.2]]}   # a thin coast; Nfld
+    drawn = []
+    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s: drawn.append((f.height, x)))
+    from display.gfx import Canvas
+    p._map_labels(Canvas(448, 192), 108, 0, m, st, [], time.time(), bounds=(-108, 0, 340, 192))
+    (h_main, x_main), (h_nfld, _) = drawn
+    assert h_main == p.font(mod.FONT_MAP).height and h_nfld < h_main
+    assert x_main < 108                                                       # spilled left of the map, onto the panel
