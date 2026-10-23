@@ -202,7 +202,7 @@ between tzdata versions) and per-zone-size rasters `data/tzmap/<W>x<H>.{idx,line
   the Pi, so colours and the lines between offsets are redrawn at every clock change. Canada and the US are kept
   apart (they follow different rules): Canada a shade brighter, the border a heavy line. The map fills its zone
   (half width, full width or whole wall) and carries the times as labels: each zone's time once per offset per
-  country (`map_labels`, `map_label_hide`, optional offset from `home_zone`, home's time highlighted), optional
+  country (`map_labels`, `map_label_hide`, lines from `map_label_lines`: time, offset from `home_zone`, UTC or any zone, name, day; home's time highlighted), optional
   city labels. The old list beside the map (Canada and US columns, a row per UTC offset or old zone) is behind
   `show_list`, off by default. Hawaii is left out (`hub/timezones.py` MAP_DROP); Alaska is on the map, cut off by
   the frame. `warn_days` before a change it also shows the upcoming map

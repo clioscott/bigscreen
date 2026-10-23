@@ -170,6 +170,21 @@ def _validate_timezones(tz):
     if mh is not None and (not isinstance(mh, list) or not all(isinstance(k, str) and re.fullmatch(r"(CA|US):-?\d+", k)
                                                                 for k in mh)):
         raise ConfigError("timezones.map_label_hide must be a list like [\"CA:-240\"]")
+    ml = tz.get("map_label_lines")
+    if ml is not None:
+        if not isinstance(ml, list) or len(ml) > 6 or not all(isinstance(ln, dict) for ln in ml):
+            raise ConfigError("timezones.map_label_lines must be a list of at most 6 lines")
+        for ln in ml:
+            if ln.get("kind") not in ("time", "home", "utc", "zone", "name", "day"):
+                raise ConfigError("timezones.map_label_lines: kind must be time, home, utc, zone, name or day")
+            col = ln.get("color")
+            if col is not None and col != "zone" and not (isinstance(col, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", col)):
+                raise ConfigError("timezones.map_label_lines: color must be \"zone\" or #rrggbb")
+            for key in ("prefix", "home", "same", "style"):
+                if ln.get(key) is not None and (not isinstance(ln[key], str) or len(ln[key]) > 12):
+                    raise ConfigError(f"timezones.map_label_lines: {key} must be text of at most 12 characters")
+            if ln.get("kind") == "zone" and (not isinstance(ln.get("zone"), str) or "/" not in ln["zone"]):
+                raise ConfigError("timezones.map_label_lines: an offset from a zone needs a zone like Europe/London")
     for key in ("title", "upcoming_label", "now_label", "test_label"):
         if tz.get(key) is not None and (not isinstance(tz[key], str) or len(tz[key]) > 30):
             raise ConfigError(f"timezones.{key} must be text of at most 30 characters")
