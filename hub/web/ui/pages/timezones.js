@@ -165,6 +165,11 @@ export const Timezones = {
             <Field label="Each time is called" hint="From the zones' tz abbreviations, so each country's own naming: after Nov 1 BC is Mountain (MST) beside the US's Pacific (PST)">
               <Seg :modelValue="val('label_style')" @update:modelValue="v => set('label_style', v)"
                 :options="[{value:'name', label:'Mountain, Pacific…'}, {value:'abbr', label:'MST, PST…'}]"/></Field>
+            <div class="row" style="flex-wrap:wrap">
+              <Field label="Home" hint="The list highlights its time (if it's in the list); the map's offsets count from it">
+                <select class="input" :value="val('home_zone')" @change="set('home_zone', $event.target.value)">
+                  <option v-for="z in (state?.zones || []).filter(z => z.cc !== 'MX')" :key="z.id" :value="z.id">{{ zoneName(z.id) }}</option></select></Field>
+              <ToggleRow :modelValue="val('highlight_home')" @update:modelValue="v => set('highlight_home', v)" label="Highlight home's time in the list"/></div>
             <ToggleRow :modelValue="val('show_utc')" @update:modelValue="v => set('show_utc', v)" label="UTC offset in the legend"/>
             <ToggleRow :modelValue="val('show_places')" @update:modelValue="v => set('show_places', v)" label="Places in the legend" hint="BC, AB, US Pacific…; places with new rules this year are coloured"/>
             <details><summary class="faint">Zone names (by abbreviation)</summary>
@@ -208,6 +213,8 @@ export const Timezones = {
           <div class="card-body stack">
             <ToggleRow :modelValue="val('map_labels') === 'on'" @update:modelValue="v => set('map_labels', v ? 'on' : 'off')"
               label="Each zone's time in the middle of it" hint="Once for each offset in Canada and once in the US; separate from the cities below"/>
+            <ToggleRow v-if="val('map_labels') === 'on'" :modelValue="val('map_label_offsets')" @update:modelValue="v => set('map_label_offsets', v)"
+              :label="'And how far each is from ' + zoneName(val('home_zone') || '')" hint="Under each time: +1h, -1h, +4:30; home's own: 'home', the other country at the same time: 'same'"/>
             <div v-if="val('map_labels') === 'on'" class="row" style="flex-wrap:wrap; gap:6px">
               <template v-for="o in offsets" :key="o.off">
                 <button v-for="(n, cc) in o.names" :key="cc" type="button" class="btn sm" :class="{primary: labelShown(cc, o.off)}"

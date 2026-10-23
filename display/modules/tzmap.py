@@ -36,6 +36,10 @@ as it would be at that moment, with the real time of day, labelled TEST.
     map_labels       on | off | auto (only without a legend): each zone's time written in the middle of its biggest
                      area, once for each offset in Canada and once in the US (the panel's toggle sets on/off)
     map_label_hide   ["CA:-240", …]: those zone times left off the map (country and offset in minutes)
+    home_zone        the zone the others are compared with (America/Vancouver)
+    highlight_home   its time in the list on a box in its colour
+    map_label_offsets  under each zone time on the map, how far it is from home ("+1h", "-1h", "+4:30"; home's own
+                     label: "home"; the other country's at the same time: "same")
     cities           [{name, lat, lon, on}], drawn in order where there's room (all off by default)
     city_times       off | after (each city's time after its name) | below (on a line of its own under the name);
                      true/false from older configs mean after/off
@@ -135,6 +139,7 @@ DEFAULTS = {
     "country_labels": {"CA": "CANADA", "US": "UNITED STATES"}, "country_short": {"CA": "CA", "US": "US"},
     "legend_rows": "offset", "row_names": {}, "list_hide": DEFAULT_LIST_HIDE,
     "rule_labels": {"dst": "DST", "fixed": "NO DST"}, "label_style": "name",
+    "home_zone": "America/Vancouver", "highlight_home": True, "map_label_offsets": False,
     "warn_days": 14, "warn_pages": "both", "page_sec": 12, "time_format": "12h",
     "names": DEFAULT_NAMES, "offset_names": {}, "places": {}, "show_places": True, "show_utc": True,
     "map_labels": "auto", "cities": DEFAULT_CITIES, "city_times": False,
@@ -246,6 +251,24 @@ def pages_at(data, t, s):
         return [("now", now, None)]
     up = [("upcoming", state_at(data, nxt["end"]), nxt)]
     return up if s.get("warn_pages") == "upcoming" else up + [("now", now, nxt)]
+
+
+def home_offset(data, state, s):
+    """(offset, country) of the home zone in a state, or (None, None) when it isn't on the map."""
+    for i, z in enumerate((data.get("zones") or [])[:len(state["offs"])]):
+        if z["id"] == s.get("home_zone"):
+            return state["offs"][i], z.get("cc", "")
+    return None, None
+
+
+def from_home(off, home, own=True):
+    """How far an offset is from home: "+1h", "-1h", "+4:30"; no difference: "home" for home's own label (``own``),
+    "same" for another country's."""
+    d = off - home
+    if d == 0:
+        return "home" if own else "same"
+    h, m = divmod(abs(d), 60)
+    return ("+" if d > 0 else "-") + (f"{h}:{m:02d}" if m else f"{h}h")
 
 
 def fmt_offset(m):
@@ -655,15 +678,30 @@ class TzMapPanel:
             if hy < y + h:
                 c.FillRect(x, hy - 1, w, 1, Color(35, 35, 35))
 
+    def _is_home(self, e):
+        """Whether a list time is home's (BC's): its time is highlighted."""
+        if not self.s.get("highlight_home", True):
+            return False
+        zones = self.data.get("zones") or []
+        return any(zones[z]["id"] == self.s.get("home_zone") for z in e["zones"] if z < len(zones))
+
+    def _time(self, c, font, path, x, y, text, rgb, home):
+        """A clock in the list (y = its top): white, or home's on a box in its colour with dark digits."""
+        if home:
+            c.FillRect(x - 1, y - 1, self.tw(path, text) + 2, font.height + 1, Color(*rgb))
+            graphics.DrawText(c, font, x, y + font.baseline, Color(0, 0, 0), text)
+        else:
+            graphics.DrawText(c, font, x, y + font.baseline, Color(255, 255, 255), text)
+
     def _entry_big(self, c, cx, cy, cw, e, now, newset, show_ap=True):
         """A roomy time: the clock (9x15 bold) and AM/PM, the zone's name (6x10, in its colour) under it, then the
         places (places with new rules this year in the colour too)."""
         tf, nf, sf = self.font(FONT_TIME_BIG), self.font(FONT_NAME), self.font(FONT_SMALL)
         rgb = color_of(self.s, e["off"])
         tt, ap = clock_text(now, e["off"], self.s.get("time_format", "12h"))
-        graphics.DrawText(c, tf, cx, cy + tf.baseline, Color(255, 255, 255), tt)
+        self._time(c, tf, FONT_TIME_BIG, cx, cy, tt, rgb, self._is_home(e))
         if ap and show_ap:
-            graphics.DrawText(c, sf, cx + self.tw(FONT_TIME_BIG, tt) + 2, cy + tf.baseline, Color(170, 170, 170), ap)
+            graphics.DrawText(c, sf, cx + self.tw(FONT_TIME_BIG, tt) + 3, cy + tf.baseline, Color(170, 170, 170), ap)
         ny = cy + tf.height + 1
         names = e.get("names") or []
         name = "/".join(names[:2])
@@ -697,8 +735,8 @@ class TzMapPanel:
             self._swatch(c, cx, cy, 6, tf.height - 1, rgb, hatched)
             tx = cx + 8
         tt, ap = clock_text(now, e["off"], self.s.get("time_format", "12h"))
-        graphics.DrawText(c, tf, tx, cy + tf.baseline, Color(255, 255, 255), tt)
-        sx = tx + self.tw(FONT_TIME, tt) + 2
+        self._time(c, tf, FONT_TIME, tx, cy, tt, rgb, self._is_home(e))
+        sx = tx + self.tw(FONT_TIME, tt) + 3
         rx = sx
         by_offset = self.s.get("legend_rows") == "offset"
         ly = cy + sf.height + sf.baseline
@@ -798,9 +836,9 @@ class TzMapPanel:
                     if self.s.get("legend_rows") != "offset":
                         self._swatch(c, ex, ey, 3, sf.height - 1, color_of(self.s, e["off"]),
                                      bool(newset & set(e["zones"])) and self.s.get("highlight_new", True))
-                        tx = ex + 4
-                    graphics.DrawText(c, sf, tx, ey + sf.baseline, Color(255, 255, 255),
-                                      clock_text(now, e["off"], self.s.get("time_format", "12h"))[0])
+                        tx = ex + 5                         # a gap before a highlighted time's box
+                    self._time(c, sf, FONT_SMALL, tx, ey, clock_text(now, e["off"], self.s.get("time_format", "12h"))[0],
+                               color_of(self.s, e["off"]), self._is_home(e))
             hy += n * line + gap - gap // 2
 
     def _map_labels(self, c, x, y, m, state, groups, now):
@@ -809,6 +847,7 @@ class TzMapPanel:
         small = self.font(FONT_SMALL)
         boxes = []
         hide = set(self.s.get("map_label_hide") or [])
+        home, home_cc = home_offset(self.data, state, self.s) if self.s.get("map_label_offsets") else (None, None)
         for cc, off, ax, ay, room in anchors:
             # once per offset in Canada and in the US (not Mexico), unless that one is switched off
             if cc not in COUNTRIES or f"{cc}:{off}" in hide:
@@ -821,12 +860,24 @@ class TzMapPanel:
             for path, font, least in fonts:
                 tw = self.tw(path, text)
                 if room >= (least if least is not None else max(font.height * 0.4, tw * 0.22)):
+                    # the offset from home on a second line, in the small font (the narrow one under a narrow time)
+                    sub_text, sub_font, sub_path = "", None, None
+                    if home is not None:
+                        sub_path = FONT_TAG if path == FONT_TAG else FONT_SMALL
+                        sub_font, sub_text = self.font(sub_path), from_home(off, home, own=cc == home_cc)
+                    sub_h = sub_font.height if sub_text else 0
+                    bw = max(tw, self.tw(sub_path, sub_text) if sub_text else 0)
                     # centred on the anchor, but kept inside the map (Alaska's corner would spill off it)
                     mw, mh = m["rect"][2], m["rect"][3]
-                    lx = min(max(ax - tw // 2, 1), mw - tw - 1)
-                    by = min(max(ay + font.baseline // 2 - 1, font.baseline + 1), mh - (font.height - font.baseline) - 1)
-                    _outlined(c, font, x + lx, y + by, Color(255, 255, 255), text)
-                    boxes.append((lx - 1, by - font.baseline - 1, tw + 2, font.height + 2))
+                    lx = min(max(ax - bw // 2, 1), mw - bw - 1)
+                    by = min(max(ay + font.baseline // 2 - 1 - sub_h // 2, font.baseline + 1),
+                             mh - (font.height - font.baseline) - sub_h - 1)
+                    _outlined(c, font, x + lx + (bw - tw) // 2, y + by, Color(255, 255, 255), text)
+                    if sub_text:
+                        sw = self.tw(sub_path, sub_text)
+                        _outlined(c, sub_font, x + lx + (bw - sw) // 2, y + by + (font.height - font.baseline)
+                                  + sub_font.baseline, Color(*color_of(self.s, off)), sub_text)
+                    boxes.append((lx - 1, by - font.baseline - 1, bw + 2, font.height + sub_h + 2))
                     break
         return boxes
 
