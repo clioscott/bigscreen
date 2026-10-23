@@ -47,7 +47,7 @@ REGION = (-180.0, 17.0, -50.0, 75.0)          # lon/lat box the zones are cut to
 SIMPLIFY_DEG = 0.01
 SS = 3                                         # supersampling when rasterising
 WATER_LINE_PX = 2                              # how far offshore the lines between zones carry on
-RASTER_VERSION = 10                            # bump when rasterising changes
+RASTER_VERSION = 11                            # bump when rasterising changes
 
 
 def _get(url, timeout=30, **kw):
@@ -334,8 +334,6 @@ def _sea():
     from hub.weather import carto
     from hub.weather.geo import R, to_merc
     shp = carto.WATER_SIMPLE
-    if not shp.exists():
-        return []
     import shapefile
     boxes = carto._shp_bbox_index(str(shp))
     x0, y0 = to_merc(SEA_BOX[0], SEA_BOX[1])
@@ -354,11 +352,30 @@ def _sea():
     return out
 
 
+def sea_source() -> str | None:
+    """The sea shapefile's name and date (part of the rasters' signature, so they're rebuilt when it appears or
+    changes), or None when it's missing."""
+    from hub.weather import carto
+    shp = carto.WATER_SIMPLE
+    try:
+        return f"{shp.name}:{int(shp.stat().st_mtime)}:{int(shp.with_suffix('.shx').stat().st_mtime)}"
+    except OSError:
+        return None
+
+
 def geodata():
-    """Province/state lines, the border, lakes and the sea for rasterising."""
+    """Province/state lines, the border, lakes and the sea for rasterising, and an error when the sea is missing
+    (the coasts then include the territorial waters)."""
+    err = ""
+    try:
+        sea = _sea() if sea_source() else []
+        if not sea:
+            err = "no sea polygons (osm_water_cache): coasts include territorial waters"
+    except Exception as e:                       # a broken shapefile: draw without it, and say so
+        sea, err = [], f"sea polygons: {e}"
     return {"prov": _ne_lines("ne_50m_admin_1_states_provinces_lines", lambda rec: rec["ADM0_A3"] in ("USA", "CAN")),
             "country": _ne_lines("ne_50m_admin_0_boundary_lines_land"),
-            "lakes": _ne_lakes(), "sea": _sea()}
+            "lakes": _ne_lakes(), "sea": sea, "error": err}
 
 
 # --- rasters ------------------------------------------------------------------------------------------------------------
@@ -441,21 +458,30 @@ def _down(ss, mw, mh):
     return np.where(covered, best, 0).astype(np.uint8)
 
 
-def tidy(idx, speck=3):
-    """Smooth the coast for LED pixels: a 3×3 majority decides land or water (OpenStreetMap's coast is far finer
-    than a pixel, so fjords and island chains came out as specks), then land or water specks under ``speck`` px
-    go. Pixels that become land take the nearest land pixel's zone."""
+def tidy(idx, speck=2, island=2):
+    """Smooth the coast for LED pixels (OpenStreetMap's coast is far finer than a pixel, so it comes out frayed):
+    land pixels that a 3×3 majority calls water go (spurs, ragged points), but water is never filled, so straits
+    and inlets stay open (the Strait of Georgia, the Detroit River). An island the trim would mostly lose
+    (``island`` px or more: Anticosti, PEI, the Florida Keys, a chain counted with its corners) comes back as it was.
+    Then land specks under ``speck`` px go and enclosed water specks under it fill, taking the nearest zone."""
     from scipy import ndimage
     land = idx > 0
-    smooth = ndimage.uniform_filter(land.astype(np.float32), 3, mode="nearest") * 9 >= 4.5
-    for mask, keep in ((smooth, True), (~smooth, False)):
-        lab, n = ndimage.label(mask)
-        if n:
-            sizes = ndimage.sum(mask, lab, range(1, n + 1))
-            small = np.isin(lab, np.flatnonzero(sizes < speck) + 1)
-            smooth[small] = not keep
     if not land.any():
         return idx
+    corners = np.ones((3, 3), bool)
+    smooth = land & (ndimage.uniform_filter(land.astype(np.float32), 3, mode="nearest") * 9 >= 4.5)
+    lab, n = ndimage.label(land, structure=corners)
+    if n:
+        sizes = ndimage.sum(land, lab, range(1, n + 1))
+        kept = ndimage.sum(smooth, lab, range(1, n + 1))
+        lost = np.flatnonzero((sizes >= island) & (kept < 0.5 * sizes)) + 1
+        smooth |= np.isin(lab, lost)
+    for keep in (True, False):                                 # land specks, then water specks (the mask as it is now)
+        mask = smooth if keep else ~smooth
+        lab, n = ndimage.label(mask, structure=corners if keep else None)
+        if n:
+            sizes = ndimage.sum(mask, lab, range(1, n + 1))
+            smooth[np.isin(lab, np.flatnonzero(sizes < speck) + 1)] = not keep
     _, (iy, ix) = ndimage.distance_transform_edt(~land, return_indices=True)
     return np.where(smooth, idx[iy, ix], 0).astype(np.uint8)
 

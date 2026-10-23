@@ -126,12 +126,14 @@ def run(cfg):
     changes = build_changes(states, zone_objs)
 
     sizes = zone_sizes(cfg)
-    sig = [tz.RASTER_VERSION, pack["tag"], sorted(sizes), zones]
+    sig = [tz.RASTER_VERSION, pack["tag"], sorted(sizes), zones, tz.sea_source()]
     old = read_json(paths.DATA_DIR / "tzmap.json", {}) or {}
     maps = old.get("maps") or {}
     if st.get("raster_sig") != sig or not all((OUT / m.get("idx", "-")).exists() for m in maps.values()) \
             or set(maps) != set(sizes):
         geo = tz.geodata()
+        if geo["error"]:
+            errors.append(geo["error"])
         maps = {}
         for key, (zw, zh) in sizes.items():
             idx, lines, frames, rect, water = tz.rasterize(zw, zh, pack, zones, geo)

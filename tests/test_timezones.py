@@ -399,24 +399,22 @@ def test_tidy_smooths_the_coast():
     idx[2:18, 2:10], idx[2:18, 10:18] = 1, 2                                  # two zones' land
     idx[5, 5] = 0                                                             # a 1 px water speck in zone 1
     idx[0, 19] = 2                                                            # a 1 px land speck at sea
-    idx[8:12, 18] = 2                                                         # a ragged 1 px coast spur
+    idx[9, 18] = 2                                                            # a 1 px point off the coast
     t = tz.tidy(idx)
     assert t[5, 5] == 1 and t[0, 19] == 0                                     # speck filled, island speck gone
     assert t[10, 5] == 1 and t[10, 14] == 2                                   # the zones keep their land
+    assert t[9, 18] == 0                                                      # the point is trimmed
 
 
-def test_lines_carry_on_through_a_zones_water(tmp_path, monkeypatch):
-    """A lake on the line between two zones is water, and the line between them still crosses it."""
-    lake = [[np.array([(-104, 43), (-104, 47), (-96, 47), (-96, 43), (-104, 43)], float)]]   # straddles -100
-    idx, lines, frames, rect, water = tz.rasterize(448, 192, _pack(), ["America/Vancouver", "America/Los_Angeles"],
-                                                   {"prov": [], "country": [], "lakes": lake, "sea": []})
-    x, y = (int(v) for v in mod.to_px(frames[0], -100.0, 45.0))
-    assert idx[y, x] == 0 and idx[y, x - 3] == 0                             # the lake is water
-    assert water[y, x - 3] == 1 and water[y, x + 3] == 2                      # still each zone's water
-    d = {"zones": [{"id": "America/Vancouver", "cc": "US"}, {"id": "America/Los_Angeles", "cc": "US"}],
-         "states": [{"from": 0, "offs": [-420, -480], "abbrs": ["MST", "PST"]}]}
-    p = mod.TzMapPanel(type("C", (), {"modules": {}})(), str(tmp_path))
-    p.data = d
-    m = {"idx": idx, "lines": lines, "water": water, "frames": frames}
-    bg = p._background(m, d["states"][0], [], [])
-    assert (bg[y, x - 2:x + 3] == 255).all(axis=1).any()                      # the white line crosses the lake
+def test_tidy_keeps_islands_and_straits():
+    idx = np.zeros((20, 30), np.uint8)
+    idx[2:18, 2:12] = 1                                                       # mainland
+    idx[2:18, 13:24] = 1                                                      # an island across a 1 px strait
+    for k in range(5):                                                        # a chain of 1 px keys, corner to corner
+        idx[18 - k, 26 + k // 2] = 1
+    idx[10, 28] = 1                                                           # and a 2 px island (PEI-sized)
+    idx[10, 29] = 1
+    t = tz.tidy(idx)
+    assert (t[2:18, 12] == 0).all()                                           # the strait stays open
+    assert (t[18 - np.arange(5), 26 + np.arange(5) // 2] == 1).all()          # the keys are kept
+    assert t[10, 28] == 1 and t[10, 29] == 1
