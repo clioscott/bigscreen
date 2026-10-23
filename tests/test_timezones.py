@@ -370,3 +370,35 @@ def test_roomy_rows_on_the_whole_wall(data_dir, monkeypatch):
     st = mod.state_at(p.data, time.time())
     p._draw(Canvas(448, 192), p._map_for(448, 192), "now", st, None, time.time(), None)
     assert used and set(used) == {"big"}
+
+
+def test_big_lakes_and_their_islands(tmp_path, monkeypatch):
+    """Rank-0 lakes (the Great Lakes) are kept, and a lake's (or the sea's) islands stay land."""
+    import shapefile
+    w = shapefile.Writer(str(tmp_path / "ne_10m_lakes"), shapeType=shapefile.POLYGON)
+    w.field("scalerank", "N")
+    outer = [(-110, 41), (-110, 49), (-90, 49), (-90, 41), (-110, 41)]          # clockwise
+    island = [(-102, 44), (-98, 44), (-98, 46), (-102, 46), (-102, 44)]         # counter-clockwise
+    w.poly([outer, island])
+    w.record(0)
+    w.close()
+    monkeypatch.setattr(tz, "NE_DIR", tmp_path)
+    lakes = tz._ne_lakes()
+    assert len(lakes) == 1 and [tz._is_hole(r) for r in lakes[0]] == [False, True]
+    idx, lines, frames, rect = tz.rasterize(448, 192, _pack(), ["America/Vancouver", "America/Los_Angeles"],
+                                            {"prov": [], "country": [], "lakes": [], "sea": lakes})   # sea: same rule
+    at = lambda lon, lat: idx[int(mod.to_px(frames[0], lon, lat)[1]), int(mod.to_px(frames[0], lon, lat)[0])]
+    assert at(-106, 45) == 0                                                  # lake
+    assert at(-100, 45) == 2                                                  # the island: land (LA's square)
+    assert at(-112, 45) == 1                                                  # outside the lake
+
+
+def test_tidy_smooths_the_coast():
+    idx = np.zeros((20, 20), np.uint8)
+    idx[2:18, 2:10], idx[2:18, 10:18] = 1, 2                                  # two zones' land
+    idx[5, 5] = 0                                                             # a 1 px water speck in zone 1
+    idx[0, 19] = 2                                                            # a 1 px land speck at sea
+    idx[8:12, 18] = 2                                                         # a ragged 1 px coast spur
+    t = tz.tidy(idx)
+    assert t[5, 5] == 1 and t[0, 19] == 0                                     # speck filled, island speck gone
+    assert t[10, 5] == 1 and t[10, 14] == 2                                   # the zones keep their land

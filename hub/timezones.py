@@ -9,7 +9,8 @@ compared with the last one and the differences kept for the control panel.
 
 Boundaries: timezone-boundary-builder (built from OpenStreetMap, ODbL). The latest release's shapefile is downloaded
 once per release (~80 MB) and cut down to the US and Canada zones (~1 MB in the cache). States, provinces, the
-border and lakes come from Natural Earth (public domain) in the geodata the weather maps already use.
+border and lakes come from Natural Earth (public domain), and the coastline from OpenStreetMap's simplified water
+polygons (ODbL), both in the geodata the weather maps already use.
 """
 
 from __future__ import annotations
@@ -45,7 +46,7 @@ MAP_DROP = {"Pacific/Honolulu", "America/Adak", "America/Anchorage", "America/Ju
 REGION = (-180.0, 17.0, -50.0, 75.0)          # lon/lat box the zones are cut to before simplifying
 SIMPLIFY_DEG = 0.01
 SS = 3                                         # supersampling when rasterising
-RASTER_VERSION = 5                             # bump when rasterising changes
+RASTER_VERSION = 8                             # bump when rasterising changes
 
 
 def _get(url, timeout=30, **kw):
@@ -306,7 +307,9 @@ def _ne_lakes():
     r = shapefile.Reader(str(p))
     for sr in r.iterShapeRecords():
         bb = sr.shape.bbox
-        if (sr.record["scalerank"] or 9) > 3 or bb[2] < REGION[0] or bb[0] > REGION[2] or bb[3] < REGION[1] \
+        rank = sr.record["scalerank"]
+        # the biggest lakes (the Great Lakes, Winnipeg) are rank 0: not "no rank"
+        if (9 if rank is None else rank) > 3 or bb[2] < REGION[0] or bb[0] > REGION[2] or bb[3] < REGION[1] \
                 or bb[1] > REGION[3]:
             continue
         pts, parts = sr.shape.points, list(sr.shape.parts) + [len(sr.shape.points)]
@@ -314,11 +317,47 @@ def _ne_lakes():
     return out
 
 
+def _is_hole(ring) -> bool:
+    """A shapefile polygon's holes (a lake's islands) run counter-clockwise, its outer rings clockwise."""
+    x, y = ring[:, 0], ring[:, 1]
+    return float(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))) > 0
+
+
+SEA_BOX = (-142.0, 22.0, -50.0, 67.0)          # lon/lat the map can show (the sea is read for this box only)
+
+
+def _sea():
+    """The sea, as [[ring, …], …] in lon/lat (OpenStreetMap's simplified water polygons, the copy the weather maps
+    use). The zone boundaries include territorial waters (12 nautical miles off every coast), which fills in the
+    Gulf of St. Lawrence, the Bay of Fundy and the like; the sea is cut back out of them."""
+    from hub.weather import carto
+    from hub.weather.geo import R, to_merc
+    shp = carto.WATER_SIMPLE
+    if not shp.exists():
+        return []
+    import shapefile
+    boxes = carto._shp_bbox_index(str(shp))
+    x0, y0 = to_merc(SEA_BOX[0], SEA_BOX[1])
+    x1, y1 = to_merc(SEA_BOX[2], SEA_BOX[3])
+    hit = np.flatnonzero((boxes[:, 0] <= x1) & (boxes[:, 2] >= x0) & (boxes[:, 1] <= y1) & (boxes[:, 3] >= y0))
+    r = shapefile.Reader(str(shp))
+    out = []
+    for i in hit:
+        s = r.shape(int(i))
+        pts = np.asarray(s.points, float)
+        lon = np.degrees(pts[:, 0] / R)
+        lat = np.degrees(2 * np.arctan(np.exp(pts[:, 1] / R)) - np.pi / 2)
+        ll = np.column_stack((lon, lat))
+        parts = list(s.parts) + [len(pts)]
+        out.append([ll[a:b] for a, b in zip(parts[:-1], parts[1:]) if b - a >= 3])
+    return out
+
+
 def geodata():
-    """Province/state lines, the border and lakes for rasterising."""
+    """Province/state lines, the border, lakes and the sea for rasterising."""
     return {"prov": _ne_lines("ne_50m_admin_1_states_provinces_lines", lambda rec: rec["ADM0_A3"] in ("USA", "CAN")),
             "country": _ne_lines("ne_50m_admin_0_boundary_lines_land"),
-            "lakes": _ne_lakes()}
+            "lakes": _ne_lakes(), "sea": _sea()}
 
 
 # --- rasters ------------------------------------------------------------------------------------------------------------
@@ -350,12 +389,13 @@ def rasterize(zw, zh, pack, zone_list, geo):
             for hole in poly[1:]:
                 d.polygon(px(np.asarray(hole, float)), fill=0)
         idx_ss[np.asarray(im, bool)] = order[tzid]
-    lakes = Image.new("1", (W, H), 0)
-    d = ImageDraw.Draw(lakes)
-    for parts in geo["lakes"]:
-        for ring in parts:
-            d.polygon(px(ring), fill=1)
-    idx_ss[np.asarray(lakes, bool)] = 0
+    for key in ("sea", "lakes"):                               # the sea and lakes, each with its islands kept land
+        water = Image.new("1", (W, H), 0)
+        d = ImageDraw.Draw(water)
+        for parts in geo.get(key) or []:
+            for ring in sorted(parts, key=_is_hole):
+                d.polygon(px(ring), fill=0 if _is_hole(ring) else 1)
+        idx_ss[np.asarray(water, bool)] = 0
 
     # down to LED pixels: land if most of the pixel is, in the zone that covers most of it
     blocks = idx_ss.reshape(mh, SS, mw, SS).transpose(0, 2, 1, 3).reshape(mh, mw, SS * SS)
@@ -368,7 +408,7 @@ def rasterize(zw, zh, pack, zone_list, geo):
         n = (blocks == z).sum(axis=2)
         better = n > bestn
         best[better], bestn[better] = z, n[better]
-    idx = np.where(land, best, 0).astype(np.uint8)
+    idx = tidy(np.where(land, best, 0).astype(np.uint8))
 
     lines = np.zeros((mh, mw), np.uint8)
     for bit, key in ((1, "prov"), (2, "country")):
@@ -381,6 +421,25 @@ def rasterize(zw, zh, pack, zone_list, geo):
                 d.line(pts, fill=1)
         lines[solid(np.asarray(im, bool)) & (idx > 0)] |= bit
     return idx, lines, frames, list(rect)
+
+
+def tidy(idx, speck=3):
+    """Smooth the coast for LED pixels: a 3×3 majority decides land or water (OpenStreetMap's coast is far finer
+    than a pixel, so fjords and island chains came out as specks), then land or water specks under ``speck`` px
+    go. Pixels that become land take the nearest land pixel's zone."""
+    from scipy import ndimage
+    land = idx > 0
+    smooth = ndimage.uniform_filter(land.astype(np.float32), 3, mode="nearest") * 9 >= 4.5
+    for mask, keep in ((smooth, True), (~smooth, False)):
+        lab, n = ndimage.label(mask)
+        if n:
+            sizes = ndimage.sum(mask, lab, range(1, n + 1))
+            small = np.isin(lab, np.flatnonzero(sizes < speck) + 1)
+            smooth[small] = not keep
+    if not land.any():
+        return idx
+    _, (iy, ix) = ndimage.distance_transform_edt(~land, return_indices=True)
+    return np.where(smooth, idx[iy, ix], 0).astype(np.uint8)
 
 
 def solid(mask):
