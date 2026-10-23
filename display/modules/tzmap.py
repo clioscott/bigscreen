@@ -33,9 +33,12 @@ as it would be at that moment, with the real time of day, labelled TEST.
     canada_boost     how much brighter Canada's areas are than the US's (1 = the same)
     places           {"America/Vancouver": "BC", …}: the short place each zone adds to its row ("" = none)
     show_places, show_utc   the legend's second line
-    map_labels       auto (when there's no legend) | on | off: the time written on the map in each offset's largest area
-    cities           [{name, lat, lon, on}], drawn in order where there's room (all off by default); city_times adds
-                     each one's time
+    map_labels       on | off | auto (only without a legend): each zone's time written in the middle of its biggest
+                     area, once for each offset in Canada and once in the US (the panel's toggle sets on/off)
+    map_label_hide   ["CA:-240", …]: those zone times left off the map (country and offset in minutes)
+    cities           [{name, lat, lon, on}], drawn in order where there's room (all off by default)
+    city_times       off | after (each city's time after its name) | below (on a line of its own under the name);
+                     true/false from older configs mean after/off
     colors           {"-480": "#rrggbb"}: each offset's colour; fill: how bright the areas are (0.15–1)
     highlight_new    hatch zones whose offset is new this year on the upcoming map
 """
@@ -805,16 +808,25 @@ class TzMapPanel:
         anchors = (state.get("anchors") or {}).get(m["key"]) or []
         small = self.font(FONT_SMALL)
         boxes = []
-        for _cc, off, ax, ay, room in anchors:
+        hide = set(self.s.get("map_label_hide") or [])
+        for cc, off, ax, ay, room in anchors:
+            # once per offset in Canada and in the US (not Mexico), unless that one is switched off
+            if cc not in COUNTRIES or f"{cc}:{off}" in hide:
+                continue
             text = clock_text(now, off, self.s.get("time_format", "12h"))[0]
             # room is the distance to the area's edge, x counted at 0.55 (hub/timezones.py anchors): a label may
             # overlap the edge a little
-            for path, font in ((FONT_MAP, f), (FONT_SMALL, small)):
+            # the biggest font that fits; a small place (Newfoundland) still gets the narrow one, a little over its coast
+            fonts = ((FONT_MAP, f, None), (FONT_SMALL, small, None), (FONT_TAG, self.font(FONT_TAG), 2.0))
+            for path, font, least in fonts:
                 tw = self.tw(path, text)
-                if room >= max(font.height * 0.4, tw * 0.22):
-                    by = ay + font.baseline // 2 - 1
-                    _outlined(c, font, x + ax - tw // 2, y + by, Color(255, 255, 255), text)
-                    boxes.append((ax - tw // 2 - 1, by - font.baseline - 1, tw + 2, font.height + 2))
+                if room >= (least if least is not None else max(font.height * 0.4, tw * 0.22)):
+                    # centred on the anchor, but kept inside the map (Alaska's corner would spill off it)
+                    mw, mh = m["rect"][2], m["rect"][3]
+                    lx = min(max(ax - tw // 2, 1), mw - tw - 1)
+                    by = min(max(ay + font.baseline // 2 - 1, font.baseline + 1), mh - (font.height - font.baseline) - 1)
+                    _outlined(c, font, x + lx, y + by, Color(255, 255, 255), text)
+                    boxes.append((lx - 1, by - font.baseline - 1, tw + 2, font.height + 2))
                     break
         return boxes
 
@@ -825,7 +837,6 @@ class TzMapPanel:
         f = self.font(FONT_SMALL)
         mx, my, mw, mh = m["rect"]
         taken = list(taken)
-        idx = m["idx"]
         zones_n = len(state["offs"])
         for cy in cities:
             try:
@@ -835,15 +846,20 @@ class TzMapPanel:
             if p is None:
                 continue
             px, py = p
-            text = str(cy.get("name") or "")
-            if self.s.get("city_times"):
-                z = int(idx[min(max(py, 0), mh - 1), min(max(px, 0), mw - 1)])
+            lines = [str(cy.get("name") or "")]
+            mode = {True: "after", False: "off", None: "off"}.get(self.s.get("city_times"), self.s.get("city_times"))
+            if mode in ("after", "below"):
+                z = _zone_at(m, px, py)
                 if 0 < z <= zones_n:
-                    text += " " + clock_text(now, state["offs"][z - 1], self.s.get("time_format", "12h"))[0]
-            tw = self.tw(FONT_SMALL, text)
+                    t = clock_text(now, state["offs"][z - 1], self.s.get("time_format", "12h"))[0]
+                    if mode == "below":
+                        lines.append(t)
+                    else:
+                        lines[0] += " " + t
+            tw = max(self.tw(FONT_SMALL, s) for s in lines)
             spot = None
             for lx in (px + 3, px - 3 - tw):
-                box = (lx - 1, py - f.baseline // 2 - 1, tw + 2, f.height + 1)
+                box = (lx - 1, py - f.baseline // 2 - 1, tw + 2, f.height * len(lines) + 1)
                 if box[0] >= 0 and box[0] + box[2] <= mw and box[1] >= 0 and box[1] + box[3] <= mh \
                         and not any(_hit(box, b) for b in taken):
                     spot = box
@@ -855,8 +871,29 @@ class TzMapPanel:
             c.SetPixel(x + px, y + py, 255, 255, 255)
             taken.append(dot)
             if spot:
-                _outlined(c, f, x + spot[0] + 1, y + spot[1] + 1 + f.baseline, Color(255, 255, 255), text)
+                for k, s in enumerate(lines):                 # left of the dot: lines end at the dot's side
+                    sx = spot[0] + 1 + (tw - self.tw(FONT_SMALL, s) if spot[0] < px else 0)
+                    _outlined(c, f, x + sx, y + spot[1] + 1 + f.baseline + k * f.height,
+                              Color(255, 255, 255) if k == 0 else Color(200, 200, 200), s)
                 taken.append(spot)
+
+
+def _zone_at(m, px, py):
+    """The zone at a map pixel: the land's, else its water's (a city on a lakeshore: Toronto, Chicago), else the
+    nearest land within 2 px; 0 if none."""
+    idx, water = m["idx"], m.get("water")
+    h, w = idx.shape
+    px, py = min(max(px, 0), w - 1), min(max(py, 0), h - 1)
+    if idx[py, px]:
+        return int(idx[py, px])
+    if water is not None and water[py, px]:
+        return int(water[py, px])
+    for r in (1, 2):
+        box = idx[max(0, py - r):py + r + 1, max(0, px - r):px + r + 1]
+        if box.any():
+            vals, counts = np.unique(box[box > 0], return_counts=True)
+            return int(vals[np.argmax(counts)])
+    return 0
 
 
 def _hit(a, b):

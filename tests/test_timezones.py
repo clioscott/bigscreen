@@ -449,3 +449,97 @@ def test_boundaries_are_cut_again_only_for_newly_asked_zones(tmp_path, monkeypat
     assert fetched == []
     tz.boundaries({"America/Vancouver", "America/Tijuana"}, "2026e")       # a zone nobody asked for: cut again
     assert fetched == [{"America/Vancouver", "America/Tijuana"}]
+
+
+@pytest.mark.parametrize("mode,lines", [("after", 1), (True, 1), ("below", 2), ("off", 1), (False, 1)])
+def test_city_time_after_the_name_or_on_a_new_line(data_dir, monkeypatch, mode, lines):
+    p = mod.TzMapPanel(type("C", (), {"modules": {"timezones": {
+        "city_times": mode, "cities": [{"name": "Here", "lat": 45.0, "lon": -107.5, "on": True}]}}})(), data_dir)
+    p._load(time.time())
+    m = p._map_for(448, 192)
+    drawn = []
+    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s: drawn.append((y, s)))
+    from display.gfx import Canvas
+    p._cities(Canvas(448, 192), 0, 0, m, mod.state_at(p.data, time.time()), time.time())
+    assert len(drawn) == lines and drawn[0][1].startswith("Here")
+    has_time = mode in ("after", True, "below")
+    assert any(":" in s for _, s in drawn) == has_time
+    if lines == 2:
+        assert drawn[0][1] == "Here" and drawn[1][0] > drawn[0][0]          # the time under the name
+
+
+def test_city_times_validation():
+    from hub import config
+    for ok in (True, False, "off", "after", "below"):
+        config.validate(_cfg({"city_times": ok}))
+    with pytest.raises(config.ConfigError):
+        config.validate(_cfg({"city_times": "beside"}))
+
+
+def test_a_lakeshore_city_still_gets_its_zone():
+    idx = np.zeros((10, 10), np.uint8)
+    idx[:, :5] = 1
+    water = np.zeros_like(idx)
+    water[:, 5:8] = 2
+    m = {"idx": idx, "water": water}
+    assert mod._zone_at(m, 2, 5) == 1                                          # on land
+    assert mod._zone_at(m, 6, 5) == 2                                          # on its zone's water
+    assert mod._zone_at(dict(m, water=None), 6, 5) == 1                        # nearest land, 2 px away
+    assert mod._zone_at(dict(m, water=None), 9, 5) == 0                        # nothing near
+
+
+def test_zone_times_on_the_map_once_per_country(data_dir, monkeypatch):
+    p = mod.TzMapPanel(type("C", (), {"modules": {"timezones": {"map_labels": "on"}}})(), data_dir)
+    p._load(time.time())
+    m = p._map_for(448, 192)
+    st = dict(mod.state_at(p.data, time.time()))
+    st["anchors"] = {m["key"]: [["CA", -420, 40, 40, 9.0], ["US", -480, 80, 80, 9.0], ["MX", -480, 90, 120, 9.0]]}
+    drawn = []
+    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s: drawn.append((x, y)))
+    from display.gfx import Canvas
+    p._map_labels(Canvas(448, 192), 0, 0, m, st, [], time.time())
+    assert len(drawn) == 2                                                    # Canada and the US, not Mexico
+
+
+def test_a_small_zone_still_gets_its_time(data_dir, monkeypatch):
+    p = mod.TzMapPanel(type("C", (), {"modules": {"timezones": {"map_labels": "on"}}})(), data_dir)
+    p._load(time.time())
+    m = p._map_for(448, 192)
+    st = dict(mod.state_at(p.data, time.time()))
+    st["anchors"] = {m["key"]: [["CA", -210, 60, 60, 3.2], ["CA", -240, 80, 80, 1.0]]}    # Newfoundland; a sliver
+    fonts = []
+    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s: fonts.append(f.height))
+    from display.gfx import Canvas
+    p._map_labels(Canvas(448, 192), 0, 0, m, st, [], time.time())
+    assert fonts == [p.font(mod.FONT_TAG).height]                             # the narrow font; the sliver none
+
+
+def test_each_zone_time_can_be_switched_off(data_dir, monkeypatch):
+    p = mod.TzMapPanel(type("C", (), {"modules": {"timezones": {"map_labels": "on", "map_label_hide": ["CA:-420"]}}})(),
+                       data_dir)
+    p._load(time.time())
+    m = p._map_for(448, 192)
+    st = dict(mod.state_at(p.data, time.time()))
+    st["anchors"] = {m["key"]: [["CA", -420, 40, 40, 9.0], ["US", -420, 80, 80, 9.0]]}
+    drawn = []
+    monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s: drawn.append(x))
+    from display.gfx import Canvas
+    p._map_labels(Canvas(448, 192), 0, 0, m, st, [], time.time())
+    assert len(drawn) == 1                                                    # the US one; Canada's is off
+    from hub import config
+    config.validate(_cfg({"map_label_hide": ["CA:-240", "US:-480"]}))
+    for bad in (["MX:-480"], ["CA:-2x"], "CA:-240"):
+        with pytest.raises(config.ConfigError):
+            config.validate(_cfg({"map_label_hide": bad}))
+
+
+def test_a_corner_zone_time_stays_on_the_map(data_dir, monkeypatch):
+    p = mod.TzMapPanel(type("C", (), {"modules": {"timezones": {"map_labels": "on"}}})(), data_dir)
+    p._load(time.time())
+    m = p._map_for(448, 192)
+    st = dict(mod.state_at(p.data, time.time()))
+    st["anchors"] = {m["key"]: [["US", -480, 2, 1, 3.9]]}                     # Alaska, at the top-left corner
+    from display.gfx import Canvas
+    boxes = p._map_labels(Canvas(448, 192), 0, 0, m, st, [], time.time())
+    (bx, by, bw, bh), = boxes
+    assert bx >= 0 and by >= 0 and bx + bw <= m["rect"][2] and by + bh <= m["rect"][3]
