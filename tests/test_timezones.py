@@ -658,6 +658,30 @@ def test_main_zone_times_are_all_full_size(data_dir, monkeypatch):
     monkeypatch.setattr(mod, "_outlined", lambda c, f, x, y, col, s: drawn.append((f.height, x)))
     from display.gfx import Canvas
     p._map_labels(Canvas(448, 192), 108, 0, m, st, [], time.time(), bounds=(-108, 0, 340, 192))
-    (h_main, x_main), (h_nfld, _) = drawn
+    (h_main, x_main), = [d for d in drawn if d[1] < 150]                      # US Pacific, by the map's left edge
+    (h_nfld, _), = [d for d in drawn if d[1] >= 150]
     assert h_main == p.font(mod.FONT_MAP).height and h_nfld < h_main
     assert x_main < 108                                                       # spilled left of the map, onto the panel
+
+
+def test_full_size_labels_move_aside_instead_of_overlapping(data_dir):
+    p = mod.TzMapPanel(type("C", (), {"modules": {"timezones": {"highlight_home": False}}})(), data_dir)
+    p._load(time.time())
+    m = p._map_for(448, 134)
+    st = dict(mod.state_at(p.data, time.time()), offs=[-420, -480])
+    st["anchors"] = {m["key"]: [["US", -480, 30, 70, 1.5], ["CA", -420, 40, 68, 9.0]]}   # thin strip beside a big area
+    from display.gfx import Canvas
+    boxes = p._map_labels(Canvas(448, 134), 143, 0, m, st, [], time.time(), bounds=(-143, 0, 305, 134))
+    assert len(boxes) == 2 and not mod._hit(boxes[0], boxes[1])
+
+
+def test_labels_keep_out_of_the_list(data_dir, monkeypatch):
+    p = mod.TzMapPanel(type("C", (), {"modules": {"timezones": {"show_list": True}}})(), data_dir)
+    p._load(time.time())
+    m = p._map_for(448, 134)
+    seen = []
+    real = p._map_labels
+    monkeypatch.setattr(p, "_map_labels", lambda *a, **k: seen.append(k["bounds"]) or real(*a, **k))
+    from display.gfx import Canvas
+    p._draw(Canvas(448, 134), m, "now", mod.state_at(p.data, time.time()), None, time.time(), None)
+    assert seen and seen[0][2] == m["rect"][2]                                # the right limit is the map's edge
