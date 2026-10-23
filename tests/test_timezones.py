@@ -582,3 +582,18 @@ def test_zone_times_can_show_their_offset_from_home(data_dir, monkeypatch):
     from display.gfx import Canvas
     p._map_labels(Canvas(448, 192), 0, 0, m, st, [], time.time())
     assert "home" in drawn and "-1h" in drawn and "same" in drawn
+
+
+def test_every_list_time_has_its_am_pm(data_dir, monkeypatch):
+    p = mod.TzMapPanel(type("C", (), {"modules": {}})(), data_dir)
+    p._load(time.time())
+    seen = []
+    real = mod.graphics.DrawText
+    monkeypatch.setattr(mod.graphics, "DrawText", lambda c, f, x, y, col, s: seen.append(s) or real(c, f, x, y, col, s))
+    from display.gfx import Canvas
+    for size in ((448, 192), (448, 134)):
+        seen.clear()
+        p._frames.clear()
+        p._draw(Canvas(*size), p._map_for(*size), "now", mod.state_at(p.data, time.time()), None, time.time(), None)
+        times = [s for s in seen if ":" in s and s[0].isdigit()]
+        assert len([s for s in seen if s in ("AM", "PM")]) == len(times)

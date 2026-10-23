@@ -656,7 +656,6 @@ class TzMapPanel:
         entry_h = BIG_ENTRY_H if big else 14
         spare = max(0, (y + h - hy) - sum(n * entry_h for n in need)) // len(table)
         newset = set(new)
-        last_ap = {}                                    # AM/PM shows on a column's first time and where it flips
         for r, n in zip(table, need):
             row_h = n * entry_h + spare
             ey = hy + max(0, (row_h - n * entry_h) // 2)
@@ -670,10 +669,8 @@ class TzMapPanel:
                 for j, e in enumerate(entries):
                     if j:                                     # a line between times that follow different rules
                         c.FillRect(cx + 8, ey + j * entry_h - 1, cw - 8, 1, Color(55, 55, 55))
-                    ap = clock_text(now, e["off"], self.s.get("time_format", "12h"))[1]
                     draw = self._entry_big if big else self._entry
-                    draw(c, cx, ey + j * entry_h, cw, e, now, newset, show_ap=last_ap.get(cc) != ap)
-                    last_ap[cc] = ap
+                    draw(c, cx, ey + j * entry_h, cw, e, now, newset)
             hy += row_h
             if hy < y + h:
                 c.FillRect(x, hy - 1, w, 1, Color(35, 35, 35))
@@ -693,14 +690,14 @@ class TzMapPanel:
         else:
             graphics.DrawText(c, font, x, y + font.baseline, Color(255, 255, 255), text)
 
-    def _entry_big(self, c, cx, cy, cw, e, now, newset, show_ap=True):
+    def _entry_big(self, c, cx, cy, cw, e, now, newset):
         """A roomy time: the clock (9x15 bold) and AM/PM, the zone's name (6x10, in its colour) under it, then the
         places (places with new rules this year in the colour too)."""
         tf, nf, sf = self.font(FONT_TIME_BIG), self.font(FONT_NAME), self.font(FONT_SMALL)
         rgb = color_of(self.s, e["off"])
         tt, ap = clock_text(now, e["off"], self.s.get("time_format", "12h"))
         self._time(c, tf, FONT_TIME_BIG, cx, cy, tt, rgb, self._is_home(e))
-        if ap and show_ap:
+        if ap:
             graphics.DrawText(c, sf, cx + self.tw(FONT_TIME_BIG, tt) + 3, cy + tf.baseline, Color(170, 170, 170), ap)
         ny = cy + tf.height + 1
         names = e.get("names") or []
@@ -722,8 +719,8 @@ class TzMapPanel:
             graphics.DrawText(c, sf, px, py, Color(*rgb) if p in fresh else Color(185, 185, 185), p)
             px += w + 5
 
-    def _entry(self, c, cx, cy, cw, e, now, newset, show_ap=True):
-        """One time in a cell: the clock (7x13 bold), then the zone's name over AM/PM (``show_ap``) and the places
+    def _entry(self, c, cx, cy, cw, e, now, newset):
+        """One time in a cell: the clock (7x13 bold), then the zone's name over AM/PM and the places
         (rows by offset);
         old-zone rows: a colour mark (hatched like the map when its zones are) and a rule tag (NO DST highlighted)
         over the offset and places."""
@@ -741,7 +738,7 @@ class TzMapPanel:
         by_offset = self.s.get("legend_rows") == "offset"
         ly = cy + sf.height + sf.baseline
         px = sx
-        if ap and show_ap and by_offset:              # rows by offset: AM/PM leads the places line
+        if ap and by_offset:                          # rows by offset: AM/PM leads the places line
             graphics.DrawText(c, sf, px, ly, Color(170, 170, 170), ap)
             px += self.tw(FONT_SMALL, ap) + 4
         elif ap and not by_offset:
