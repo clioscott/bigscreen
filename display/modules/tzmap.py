@@ -931,9 +931,12 @@ class TzMapPanel:
                     clamp_y = lambda v: min(max(v, y0 + font.baseline + 1), y1 - (font.height - font.baseline) - sub_h - 1)
                     lx = clamp_x(ax - bw // 2)
                     by = clamp_y(ay + font.baseline // 2 - 1 - sub_h // 2)
-                    lx, by = _clear_spot(lx, by, bw + 2, font.height + sub_h + 2, font.baseline, boxes, clamp_x, clamp_y)
+                    is_home = self.s.get("highlight_home", True) and cc == home_cc and off == home
+                    pad = 1 if is_home else 0                  # home's box is a pixel bigger than the outline
+                    lx, by = _clear_spot(lx, by, bw + 2, font.height + sub_h + 2, font.baseline, boxes, clamp_x, clamp_y,
+                                         pad=pad)
                     tx = x + lx + (bw - tw) // 2
-                    if self.s.get("highlight_home", True) and cc == home_cc and off == home:
+                    if is_home:
                         # home's time (BC's): white, outlined in black, on a box in its colour
                         _boxed(c, font, tx, y + by, tw, color_of(self.s, off), text)
                     else:
@@ -942,7 +945,7 @@ class TzMapPanel:
                         sw = self.tw(sub_path, sub_text)
                         _outlined(c, sub_font, x + lx + (bw - sw) // 2, y + by + (font.height - font.baseline)
                                   + sub_font.baseline, Color(*color_of(self.s, off)), sub_text)
-                    boxes.append((lx - 1, by - font.baseline - 1, bw + 2, font.height + sub_h + 2))
+                    boxes.append((lx - 1 - pad, by - font.baseline - 1 - pad, bw + 2 + 2 * pad, font.height + sub_h + 2 + pad))
                     break
         return boxes
 
@@ -1012,10 +1015,11 @@ def _zone_at(m, px, py):
     return 0
 
 
-def _clear_spot(lx, by, w, h, baseline, boxes, clamp_x, clamp_y, reach=16):
+def _clear_spot(lx, by, w, h, baseline, boxes, clamp_x, clamp_y, reach=16, pad=0):
     """A label's place clear of the boxes already placed: as it is if free, else the nearest free spot within
-    ``reach`` px (left first, then right, down, up and diagonals; kept in bounds), else where it was."""
-    box = lambda x_, y_: (x_ - 1, y_ - baseline - 1, w, h)
+    ``reach`` px (left first, then right, down, up and diagonals; kept in bounds), else where it was. ``pad`` grows
+    the label's box on the sides and top (home's coloured box)."""
+    box = lambda x_, y_: (x_ - 1 - pad, y_ - baseline - 1 - pad, w + 2 * pad, h + pad)
     if not any(_hit(box(lx, by), b) for b in boxes):
         return lx, by
     tries = sorted({(dx, dy) for dx in range(-reach, reach + 1, 2) for dy in range(-reach, reach + 1, 3)},
