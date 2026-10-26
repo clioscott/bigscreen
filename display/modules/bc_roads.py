@@ -782,7 +782,7 @@ class Screen(k.BCScreen):
     LABEL = "DRIVEBC"
 
     def extra_pages(self, item):
-        return ["camera"] if item.get("cam") else ["vms"]
+        return ["camera"] if item.get("cam") else []        # no camera: the incident map alone
 
     def half_spec(self, item, theme=None):
         col = col_of(item)
