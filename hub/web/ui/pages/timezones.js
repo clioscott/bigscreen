@@ -286,7 +286,7 @@ export const Timezones = {
                   <input v-if="ln.kind !== 'time'" class="input" style="width:80px" maxlength="12" :placeholder="ln.kind === 'utc' ? 'UTC' : 'Prefix'"
                     :value="ln.kind === 'utc' ? (ln.prefix ?? 'UTC') : ln.prefix" @input="setLine(i, 'prefix', $event.target.value)" title="Text before it (UTC, GMT, LON …)">
                   <input v-if="ln.kind === 'home'" class="input" style="width:70px" maxlength="12" placeholder="home" :value="ln.home"
-                    @input="setLine(i, 'home', $event.target.value)" :title="'Home\'s own label (' + zoneName(val('home_zone') || '') + ')'">
+                    @input="setLine(i, 'home', $event.target.value)" :title="'Label for home (' + zoneName(val('home_zone') || '') + ')'">
                   <input v-if="ln.kind === 'home' || ln.kind === 'zone'" class="input" style="width:70px" maxlength="12" placeholder="same" :value="ln.same"
                     @input="setLine(i, 'same', $event.target.value)" title="A zone at the same time">
                   <Seg :modelValue="lineColour(ln) === 'zone' ? 'zone' : 'custom'" :options="[{value:'zone', label:'Zone colour'}, {value:'custom', label:'Custom'}]"
