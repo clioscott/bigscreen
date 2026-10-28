@@ -574,7 +574,7 @@ const PlaylistTab = {
   </div>`,
 };
 
-// --- Camera grid: still cameras bulk-added from the intersection list, shown 2 × 4, one after another -----------------
+// --- Camera grid: still cameras bulk-added from the intersection list, tiles filling the frame, one after another ------
 const GridTab = {
   components: { InRotation },
   emits: ["find"],
@@ -598,7 +598,7 @@ const GridTab = {
       } catch (e) { fail(e); } finally { busy.value = false; }
     };
     const queue = () => { clearTimeout(timer); timer = setTimeout(render, 400); };
-    watch(() => [g.cams.map((c) => JSON.stringify(c.source) + c.name).join("|"), g.labels, shape.value], queue, { immediate: true });
+    watch(() => [g.cams.map((c) => JSON.stringify(c.source) + c.name).join("|"), g.labels, g.rows, g.cols, shape.value], queue, { immediate: true });
     onBeforeUnmount(() => { clearTimeout(timer); if (url) URL.revokeObjectURL(url); });
     // the hub's own thumbnail for the camera (kept with it when it was added), else a snapshot
     const thumbOf = (c) => (c.source.type === "drivebc" ? `/api/webcams/drivebc/${c.source.id}.jpg`
@@ -612,7 +612,7 @@ const GridTab = {
   },
   template: `<div class="stack">
     <div class="card"><div class="card-body stack" style="gap:10px">
-      <div class="faint" style="font-size:13px">Two rows of four squares. Each camera lands in the next square in turn (top row left to right, then the bottom row),
+      <div class="faint" style="font-size:13px">Tiles filling the whole frame, each with its camera's name. Each camera lands in the next tile in turn (top row left to right, then the next row),
         replacing what was there, until every camera below has appeared; then the rotation moves on.</div>
       <InRotation :found="found" what="The camera grid" :shapes="GRID_SHAPES"/>
     </div></div>
@@ -634,7 +634,7 @@ const GridTab = {
             <select class="input" v-model="shape" style="width:auto; height:28px"><option v-for="(s, k) in SHAPES" :key="k" :value="k">{{ s.label }}</option></select></div>
           <div class="card-body stack">
             <div class="led"><img v-if="img" :src="img" alt="" :style="{opacity: busy ? .6 : 1}"><div v-else class="placeholder">{{ busy ? 'Fetching cameras…' : 'Add cameras to see the grid' }}</div></div>
-            <div class="faint" style="font-size:12px">With every square filled (the last eight cameras). The wall fills it one square at a time.</div>
+            <div class="faint" style="font-size:12px">With every tile filled (the last cameras in the grid). The wall fills it one tile at a time.</div>
             <div class="row"><button class="btn sm" @click="play" :disabled="!g.cams.length || dirty.length" :title="dirty.length ? 'Save first' : ''"><Icon name="Play" :size="14"/>Play once on the wall</button>
               <span class="faint" style="font-size:12px">Takes about {{ Math.round(secs) }} s</span></div>
           </div></div>
@@ -642,7 +642,12 @@ const GridTab = {
           <div class="card-body fields">
             <Field label="A new camera every" hint="200 ms is five a second"><Stepper :modelValue="g.interval_ms ?? 200" @update:modelValue="v => g.interval_ms = v" :min="50" :max="5000" :step="50" unit=" ms"/></Field>
             <Field label="Hold at the end" hint="Once the last camera is in"><Stepper :modelValue="g.hold_sec ?? 3" @update:modelValue="v => g.hold_sec = v" :min="0" :max="30" unit=" s"/></Field>
-            <Field label="Names" hint="Each square's camera, small, along its bottom (squares 40 px and up)"><Toggle :modelValue="g.labels !== false" @update:modelValue="v => g.labels = v"/></Field>
+            <Field label="Rows"><Stepper :modelValue="g.rows ?? 2" @update:modelValue="v => g.rows = v" :min="1" :max="4"/></Field>
+            <Field label="Columns" hint="Auto fits the frame: 6 across full width with 2 rows">
+              <div class="row nowrap" style="gap:8px"><Seg :modelValue="g.cols == null || g.cols === 'auto' ? 'auto' : 'set'"
+                @update:modelValue="v => g.cols = v === 'auto' ? 'auto' : 6" :options="[{value:'auto', label:'Auto'}, {value:'set', label:'Set'}]"/>
+                <Stepper v-if="g.cols != null && g.cols !== 'auto'" :modelValue="g.cols" @update:modelValue="v => g.cols = v" :min="1" :max="10"/></div></Field>
+            <Field label="Names" hint="Each tile's camera, small, along its bottom"><Toggle :modelValue="g.labels !== false" @update:modelValue="v => g.labels = v"/></Field>
           </div></div>
       </div>
     </div>
