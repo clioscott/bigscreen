@@ -364,3 +364,38 @@ def test_richmond_parsing_is_robust():
     assert traffic.richmond_markers(page) == [(49.2, -123.2, "B", traffic.RMD_BASE + "IntersectionDetails.aspx?id=2")]
     html = '<img alt="Live Camera Image: B Westbound" class="x" src="https://www.richmond.ca/trafficcam/b_wb.jpg">'
     assert [c["name"] for c in traffic.richmond_views(49.2, -123.2, "B", html)] == ["B - Westbound"]
+
+
+def test_surrey_layer_becomes_image_cameras():
+    data = {"features": [
+        {"attributes": {"LOCATION": "72 Ave And King George Blvd", "CAMERA_NAME": "72_kgbv_cam2", "OWNER": "Surrey",
+                        "IMAGE": "https://example.blob.core.windows.net/x/enc_72_kgbv_cam2.jpg"},
+         "geometry": {"x": -122.8454, "y": 49.1335}},
+        {"attributes": {"LOCATION": "Fraser Hwy & 184 St", "CAMERA_NAME": "fraser_184_quadN", "OWNER": "Provincial",
+                        "IMAGE": "https://example.blob.core.windows.net/x/enc_fraser_184_quadN.jpg"},
+         "geometry": {"x": -122.7125, "y": 49.1287}},
+        {"attributes": {"LOCATION": None, "CAMERA_NAME": None, "OWNER": None, "IMAGE": None},
+         "geometry": {"x": -122.6, "y": 49.1}}]}
+    v = traffic.surrey_views(data)
+    assert [c["name"] for c in v] == ["72 Ave & King George Blvd - Camera 2", "Fraser Hwy & 184 St - North"]
+    assert v[0]["id"] == "sry-72_kgbv_cam2" and v[0]["city"] == "Surrey" and v[0]["credit"] == "City of Surrey"
+    assert v[0]["source"] == {"type": "image", "url": data["features"][0]["attributes"]["IMAGE"], "refresh_sec": 60}
+    assert v[1]["credit"].startswith("BC Transportation")
+    assert webcams.check_source(v[0]["source"])[0] == "image"
+
+
+def test_langley_layer_keeps_the_townships_direction():
+    data = {"features": [{"attributes": {
+        "name": '<b>200 St  &amp;  72 Ave</b> <br><font size="2"> <i>(Looking North)</i></font>',
+        "pic_url": "https://tol.blob.core.windows.net/%24web/traffic/100579FF73E76C49_00.jpg?time=Oct-28-2026@02:37:07"},
+        "geometry": {"x": -122.66, "y": 49.14}}]}
+    (c,) = traffic.langley_views(data)
+    assert c["name"] == "200 St & 72 Ave - looking north" and c["look"] == "north" and c["orientation"] == "N"
+    assert c["source"]["url"].endswith("_00.jpg") and c["city"] == "Langley" and c["id"] == "tol-100579FF73E76C49_00"
+
+
+def test_sfu_cameras_are_in_burnaby():
+    cams = traffic.sfu_cameras()
+    assert len(cams) == 9 and {c["city"] for c in cams} == {"Burnaby"}
+    assert all(c["source"]["url"].startswith("https://ns-webcams.its.sfu.ca/") for c in cams)
+    assert set(traffic.CITY_SOURCES) >= {"Vancouver", "Richmond", "Surrey", "Langley", "Burnaby"}
