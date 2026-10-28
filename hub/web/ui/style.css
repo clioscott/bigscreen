@@ -438,3 +438,32 @@ select.input { appearance: none; padding-right: 30px; background-image: url("dat
 /* webcams: traffic cams */
 .wc-subhead { font-size: 12.5px; font-weight: 650; color: var(--text-2); margin: 4px 0 8px; }
 .wc-pick.off { opacity: .55; }
+
+/* webcams page: tabs, the rotation strip, the list, the camera grid, picking several cameras */
+.wc-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 16px; padding: 4px; border-radius: 13px; background: var(--bg-2); border: 1px solid var(--line-2); width: max-content; max-width: 100%; }
+.wc-tabs button { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 14px; border: none; border-radius: 9px; background: transparent; color: var(--text-2); font: inherit; font-weight: 600; cursor: pointer; }
+.wc-tabs button:hover:not(.on) { color: var(--text); }
+.wc-tabs button.on { background: var(--surface-3); color: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .4); }
+.wc-tabs .n { min-width: 20px; padding: 0 6px; border-radius: 999px; background: var(--accent-soft); color: var(--text); font-size: 11.5px; line-height: 18px; text-align: center; }
+.wc-rot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; background: var(--bg-2); border: 1px solid var(--line-2); font-size: 13px; }
+.wc-rot > .icon, .wc-rot > svg { color: var(--accent); }
+.wc-list-row { gap: 10px; }
+.wc-list-row .handle { cursor: grab; color: var(--text-3); display: inline-flex; }
+.wc-list-row.off .wc-row-thumb, .wc-list-row.off b { opacity: .45; }
+.wc-kind { display: inline-block; padding: 0 5px; margin-right: 4px; border-radius: 4px; font-size: 10.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
+.wc-kind.live { background: rgba(232, 32, 42, .18); color: #ff6b73; }
+.wc-kind.still { background: rgba(124, 140, 255, .16); color: #aab4ff; }
+.wc-pickbar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 16px; background: var(--surface-2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.wc-pick.picked { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.wc-check { position: absolute; left: 6px; top: 6px; display: inline-flex; padding: 2px; border-radius: 5px; background: rgba(0, 0, 0, .65); color: #fff; }
+.wc-pick.picked .wc-check { background: var(--accent); }
+.wc-have.grid { color: #aab4ff; }
+.wc-own { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #f5a524; margin-left: 2px; }
+.wc-grid-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.wc-grid-cam { position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: #000; cursor: grab; border: 1px solid var(--line-2); }
+.wc-grid-cam img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wc-grid-cam .n { position: absolute; left: 4px; top: 4px; padding: 0 5px; border-radius: 5px; background: rgba(0, 0, 0, .7); font: 11px var(--mono); color: #fff; }
+.wc-grid-cam .x { position: absolute; right: 4px; top: 4px; display: none; border: none; border-radius: 5px; background: rgba(0, 0, 0, .75); color: #fff; padding: 2px; cursor: pointer; }
+.wc-grid-cam:hover .x { display: inline-flex; }
+.wc-grid-cam .name { position: absolute; left: 0; right: 0; bottom: 0; padding: 2px 5px; background: rgba(0, 0, 0, .65); color: #ddd; font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wc-captabs { flex-wrap: wrap; }

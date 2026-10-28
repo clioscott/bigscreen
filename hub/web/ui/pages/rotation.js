@@ -3,18 +3,34 @@ import { store, toast, seed, PANEL_TYPES, WEATHER_SCREENS, RULES, ALERT_LEVELS, 
   playOnDisplay, rotationGoto, PHASES, ALERT_RULES } from "../core.js";
 import { NowPlaying } from "../nowplaying.js";
 
+// a webcam entry without a cam plays the Webcams list (display/modules/webcam.py), a turn of per_turn webcams
+const isWebcamList = (e) => e.panel?.startsWith("webcam") && !e.panel.startsWith("webcam_grid") && !e.cam;
+const asList = (e) => { e.advance = "cycles"; e.cycles = 1; e.max_sec = e.max_sec ?? 3600; delete e.dwell_sec; };
+const listCount = () => {
+  const wc = store.draft.modules.webcams || {};
+  const pl = Array.isArray(wc.playlist) ? wc.playlist : Object.keys(wc.cams || {}).map((cam) => ({ cam }));
+  return pl.filter((x) => x.on !== false && wc.cams?.[x.cam]).length;
+};
+
 function entrySub(e) {
   const bits = [];
   if (e.panel.startsWith("map")) {
     const tr = store.draft.modules.weather_maps?.tracks?.[e.track];
     if (tr) bits.push(areaLabel(tr.area, true));
   }
-  if (PANEL_TYPES[e.panel]?.full) bits.push(["weather_alert", "webcam_wall", "bridges_wall", "timezones_wall"].includes(e.panel) ? "whole wall" : "full width");
+  if (isWebcamList(e)) bits.push(`${listCount()} webcams, in the Webcams page's order`);
+  if (e.panel.startsWith("webcam_grid")) bits.push(`${store.draft.modules.webcams?.grid?.cams?.length || 0} cameras`);
+  if (PANEL_TYPES[e.panel]?.full) bits.push(["weather_alert", "webcam_wall", "webcam_grid_wall", "bridges_wall", "timezones_wall"].includes(e.panel) ? "whole wall"
+    : e.panel.endsWith("_tall") ? "above the clock" : "full width");
   if (e.priority === "next") bits.push("jumps the queue");
   return bits.join(" · ");
 }
 function advanceText(e) {
   const t = PANEL_TYPES[e.panel] || {};
+  if (isWebcamList(e)) {
+    const n = store.draft.modules.webcams?.per_turn || 1;
+    return n === 1 ? "1 webcam a turn" : `${n} webcams a turn`;
+  }
   if (e.advance === "cycles" && t.passes) {
     const n = e.cycles ?? (e.panel.startsWith("map") ? store.draft.modules.weather_maps?.tracks?.[e.track]?.loops ?? 2 : 1);
     return e.panel === "headlines" ? (n === 1 ? "all categories once" : `all categories ×${n}`) : `${n} ${n === 1 ? "pass" : "passes"}`;
@@ -80,9 +96,9 @@ const RuleRow = {
 };
 
 // an entry's shapes: the same screen at another size (webcam / webcam_full / webcam_wall, map / map_full, …)
-const baseOf = (id) => id.replace(/_(full|wall|half)$/, "");
+const baseOf = (id) => id.replace(/_(full|wall|half|tall)$/, "");
 const shapesOf = (id) => Object.keys(PANEL_TYPES).filter((p) => baseOf(p) === baseOf(id));
-const shapeName = (id) => (id.endsWith("_wall") ? "whole wall" : id.endsWith("_half") ? "half width"
+const shapeName = (id) => (id.endsWith("_wall") ? "whole wall" : id.endsWith("_half") ? "half width" : id.endsWith("_tall") ? "above the clock"
   : PANEL_TYPES[id]?.full ? (id.endsWith("_full") ? "full width" : "full screen") : "half width");
 // "Half width when it's 07:00–17:00 and it's Mon–Fri", "Half width once its alerts are past their full-wall showings"
 const clause = (r) => (r.not && r.phase === "full" ? ["once", "its alerts are past their full-wall showings"]
@@ -107,11 +123,11 @@ const SlotEditor = {
       const pt = PANEL_TYPES[p];
       if (pt.sub === "track" && !e.track) e.track = tracks.value[0]?.[0] || Object.keys(store.draft.modules.weather_maps?.tracks || {})[0];
       if (pt.sub === "weather_screen" && !e.weather_screen) e.weather_screen = "current";
-      if (pt.sub === "cam" && !e.cam) e.cam = Object.keys(store.draft.modules.webcams?.cams || {})[0];
       if (pt.sub !== "track") delete e.track;
       if (pt.sub !== "weather_screen") delete e.weather_screen;
       if (pt.sub !== "cam") delete e.cam;
-      if (!pt.passes) { delete e.advance; delete e.cycles; delete e.max_sec; e.dwell_sec = e.dwell_sec ?? 30; }
+      if (pt.sub === "cam" && !e.cam) asList(e);
+      else if (!pt.passes) { delete e.advance; delete e.cycles; delete e.max_sec; e.dwell_sec = e.dwell_sec ?? 30; }
       if (e.variants) {                                     // keep only other sizes of the new panel
         e.variants = e.variants.filter((v) => baseOf(v.panel) === baseOf(p) && v.panel !== p);
         if (!e.variants.length) delete e.variants;
@@ -132,6 +148,15 @@ const SlotEditor = {
     const priority = computed({ get: () => props.e.priority === "next", set: (v) => { props.e.priority = v ? "next" : ""; } });
     const enabled = computed({ get: () => props.e.enabled !== false, set: (v) => { if (v) delete props.e.enabled; else props.e.enabled = false; } });
     const cams = computed(() => store.draft.modules.webcams?.cams || {});
+    // the Webcams list ends its own turn: one "pass" (capped), rather than a time
+    const camChoice = computed({
+      get: () => props.e.cam || "",
+      set: (v) => {
+        const e = props.e;
+        if (v) { e.cam = v; delete e.advance; delete e.cycles; delete e.max_sec; e.dwell_sec = e.dwell_sec ?? 60; } else { delete e.cam; asList(e); }
+      },
+    });
+    const isList = computed(() => isWebcamList(props.e));
     // other shapes at certain times (display/rotation.py "variants"): the first whose rules hold wins
     const shapes = computed(() => shapesOf(props.e.panel));
     const variants = computed(() => props.e.variants || []);
@@ -143,21 +168,27 @@ const SlotEditor = {
     };
     const removeVariant = (i) => { props.e.variants.splice(i, 1); if (!props.e.variants.length) delete props.e.variants; };
     const addVariantRule = (v) => (v.rules = v.rules || []).push({ if: "hours", ...RULES.hours.make() });
-    return { t, tracks, cams, setPanel, mode, passes, defaultLoops, rules, addRule, priority, enabled, PANEL_TYPES, WEATHER_SCREENS,
+    return { t, tracks, cams, camChoice, isList, listCount, setPanel, mode, passes, defaultLoops, rules, addRule, priority, enabled, PANEL_TYPES, WEATHER_SCREENS,
       shapes, variants, addVariant, removeVariant, addVariantRule, shapeName };
   },
   template: `<div class="slot-editor">
     <div class="field"><div class="label">Panel</div>
       <div class="type-grid"><button v-for="(pt, id) in PANEL_TYPES" :key="id" type="button" class="type-card" :class="{on: e.panel === id}"
         :disabled="id === 'calendar' && side === 'right'" @click="setPanel(id)"><Icon :name="pt.icon" :size="16"/><span style="font-size:12.5px">{{ pt.label }}</span></button></div></div>
-    <div class="fields" v-if="t.sub">
+    <div class="fields" v-if="t.sub || e.panel.startsWith('webcam_grid')">
       <Field v-if="t.sub === 'track'" label="Map"><select class="input" v-model="e.track">
         <option v-for="[id, tr] in tracks" :key="id" :value="id">{{ tr.label }}</option></select></Field>
       <Field v-if="t.sub === 'weather_screen'" label="Screen"><select class="input" v-model="e.weather_screen">
         <option v-for="(l, id) in WEATHER_SCREENS" :key="id" :value="id">{{ l }}</option></select></Field>
-      <Field v-if="t.sub === 'cam'" label="Webcam"><div class="row nowrap"><select class="input" v-model="e.cam">
-        <option v-for="(c, id) in cams" :key="id" :value="id">{{ c.label || id }}</option></select>
-        <a :href="'#/webcams/' + (e.cam || '')" class="btn sm ghost" title="Crop, colour and caption"><Icon name="Pencil" :size="14"/></a></div></Field>
+      <Field v-if="t.sub === 'cam'" label="Plays"><div class="row nowrap"><select class="input" v-model="camChoice">
+        <option value="">The Webcams list ({{ listCount() }} webcams)</option>
+        <optgroup label="Just one webcam"><option v-for="(c, id) in cams" :key="id" :value="id">{{ c.label || id }}</option></optgroup></select>
+        <a v-if="e.cam" :href="'#/webcams/' + e.cam" class="btn sm ghost" title="Crop, colour and caption"><Icon name="Pencil" :size="14"/></a></div></Field>
+      <div v-if="isList" class="callout info" style="font-size:12.5px; grid-column:1 / -1"><Icon name="ListOrdered" :size="14"/>
+        <span>Each turn plays the next webcams from the list, each for its own time. Which webcams, their order and how long each shows
+          are set on the Webcams page. <a href="#/webcams" class="btn sm" style="margin-left:6px"><Icon name="ArrowUpDown" :size="13"/>Reorder webcams</a></span></div>
+      <div v-if="e.panel.startsWith('webcam_grid')" class="callout info" style="font-size:12.5px; grid-column:1 / -1"><Icon name="Grid2x2" :size="14"/>
+        <span>The cameras, their order and the speed are set on the Webcams page. <a href="#/webcams/~grid" class="btn sm" style="margin-left:6px"><Icon name="Pencil" :size="13"/>Edit the grid</a></span></div>
     </div>
     <div class="field"><div class="label">When it comes up</div>
       <div class="rule-list">
@@ -181,7 +212,9 @@ const SlotEditor = {
           <span class="faint" style="font-size:12.5px">{{ variants.length ? 'Otherwise it plays ' + shapeName(e.panel) + '. Decided when the screen starts.' : 'Always plays ' + shapeName(e.panel) + '.' }}</span></div>
       </div>
     </div>
-    <div class="field"><div class="label">Move on to the next screen</div>
+    <div class="field" v-if="isList"><div class="label">Move on to the next screen</div>
+      <div class="hint">After its webcams (set on the Webcams page: how many a turn, and each one's time).</div></div>
+    <div class="field" v-else><div class="label">Move on to the next screen</div>
       <div class="row">
         <Seg v-if="t.passes" v-model="mode" :options="[{value:'cycles', label:'After complete passes', icon:'Repeat'}, {value:'time', label:'After a set time', icon:'Timer'}]"/>
         <template v-if="mode === 'cycles' && t.passes">

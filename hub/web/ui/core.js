@@ -199,9 +199,15 @@ export const PANEL_TYPES = {
   quake_alert_half: { label: "Earthquakes (half width)", icon: "Activity", passes: true, passWord: "pass through every quake" },
   tsunami_alert_half: { label: "Tsunami (half width)", icon: "Waves", passes: true, passWord: "pass through every message" },
   fire_alert_half: { label: "Wildfire (half width)", icon: "Flame", passes: true, passWord: "pass through every item" },
-  webcam: { label: "Webcam", icon: "Video", sub: "cam", passes: false },
-  webcam_full: { label: "Webcam (full width)", icon: "Video", sub: "cam", full: true, passes: false },
-  webcam_wall: { label: "Webcam (whole wall)", icon: "Video", sub: "cam", full: true, passes: false, note: "Covers the ticker and clock too" },
+  // webcams: without a cam, the Webcams list (its order and seconds are set on the Webcams page)
+  webcam: { label: "Webcams", icon: "Video", sub: "cam", passes: false },
+  webcam_full: { label: "Webcams (full width)", icon: "Video", sub: "cam", full: true, passes: false },
+  webcam_tall: { label: "Webcams (above the clock)", icon: "Video", sub: "cam", full: true, passes: false, note: "Covers the ticker; the clock and date stay" },
+  webcam_wall: { label: "Webcams (whole wall)", icon: "Video", sub: "cam", full: true, passes: false, note: "Covers the ticker and clock too" },
+  webcam_grid: { label: "Camera grid", icon: "Grid2x2", passes: true, passWord: "pass through every camera", note: "2 rows of 4 squares, one camera after another" },
+  webcam_grid_full: { label: "Camera grid (full width)", icon: "Grid2x2", full: true, passes: true, passWord: "pass through every camera" },
+  webcam_grid_tall: { label: "Camera grid (above the clock)", icon: "Grid2x2", full: true, passes: true, passWord: "pass through every camera", note: "Covers the ticker; the clock and date stay" },
+  webcam_grid_wall: { label: "Camera grid (whole wall)", icon: "Grid2x2", full: true, passes: true, passWord: "pass through every camera", note: "Covers the ticker and clock too" },
   bridges: { label: "Bridges now", icon: "Construction", passes: true, passWord: "pass through every bridge", note: "2×2, paging through the bridges" },
   bridges_full: { label: "Bridges now (full width)", icon: "Construction", full: true, passes: true, passWord: "pass through every bridge" },
   bridges_wall: { label: "Bridges now (whole wall)", icon: "Construction", full: true, passes: true, passWord: "pass through every bridge", note: "Covers the ticker and clock too" },
@@ -308,7 +314,8 @@ export function entryTitle(e) {
     return tr ? tr.label : `Map: ${e.track || "?"}`;
   }
   if (e.panel === "weather" || e.panel === "weather_full") return WEATHER_SCREENS[e.weather_screen || "current"] || t?.label;
-  if (e.panel?.startsWith("webcam")) return store.draft?.modules?.webcams?.cams?.[e.cam]?.label || `Webcam: ${e.cam || "?"}`;
+  if (e.panel?.startsWith("webcam_grid")) return "Camera grid";
+  if (e.panel?.startsWith("webcam")) return !e.cam ? "Webcams" : store.draft?.modules?.webcams?.cams?.[e.cam]?.label || `Webcam: ${e.cam}`;
   if (e.panel === "quake") return "Earthquake warning";
   if (e.panel === "font_specimen") return "Font specimen";
   return t?.label || e.panel;
