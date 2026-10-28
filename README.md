@@ -118,16 +118,23 @@ hot-reload on the wall, no restart needed.
 - **438 bitmap fonts**, always drawn at native size ([credits](assets/fonts/CREDITS.md)).
 <!-- /gen:features -->
 
-**Live webcams**: video from YouTube live streams or any HLS / MJPEG / RTSP camera, as a rotation screen on one side,
-full width or the whole wall. The hub decodes each stream with ffmpeg (yt-dlp finds the video behind a YouTube page) and
+**Live webcams**: video from YouTube live streams or any HLS / MJPEG / RTSP camera. The rotation has one **Webcams**
+entry that plays the Webcams list (its order, which ones are on and how long each shows are set on the Webcams page),
+on one side, full width, above the clock (over the ticker; the clock and date stay) or the whole wall, at another size
+at set hours if you like. The hub decodes each stream with ffmpeg (yt-dlp finds the video behind a YouTube page) and
 sends the Pi frames already cropped to its zone, so the Pi never decodes video. Each webcam keeps its own crop for every
-place on the wall, colour adjustments, and a caption in one of twelve layouts (lower third, split bar with a big clock,
-world clock, departure board, ticker, chips and more) built from the sections you pick and order: name, place, local
-time, weather and sunrise/sunset at the camera (Open-Meteo), date, time difference, your own line and who runs the
-camera. A ready-made gallery of about a hundred 24/7 streams (Vancouver, Calgary, Toronto, Seattle, San Francisco, New
-York, Boston and more) can be browsed by city and kind, as a grid or on a map. DriveBC's highway cameras are there too
-(by bridge and tunnel, by city, or on a map), shown as stills with the exact time each picture was taken. Set up on the
-control panel's Webcams page, with a live preview of exactly what the wall will show.
+place on the wall, colour adjustments, and a caption in one of thirteen layouts (tag, lower third, split bar with a big
+clock, world clock, departure board, ticker, underline and more) built from the sections you pick and order: name,
+place, local time, the weather at the camera (temperature, conditions, feels-like, high/low, wind, humidity,
+sunrise/sunset; Open-Meteo), date, time difference, your own line and who runs the camera, with its own text size,
+alignment, width, padding and distance from the edge. A ready-made gallery of about a hundred 24/7 YouTube streams can
+be browsed by city and kind, as a grid or on a map.
+
+**Intersection and traffic cameras**: about 2,500 stills from Metro Vancouver: the cities' own intersection cameras
+(Vancouver, Richmond, Surrey, Township of Langley, and SFU on Burnaby Mountain), crawled daily by the hub, and DriveBC's
+highway cameras, by city or bridge, as a list or on a map. Any of them can be a webcam, or be bulk-added to the
+**camera grid**: two rows of four squares that fill one camera at a time (every 200 ms by default, top row first) until
+every camera in the grid has appeared, then the rotation moves on.
 
 ## Gallery
 
