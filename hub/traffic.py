@@ -13,6 +13,7 @@ every user of the camera list (this page, the camera map, the DriveBC alert scre
 from __future__ import annotations
 
 import re
+import time
 
 # (name, short name for labels, DriveBC camera ids: the best view first, a note for the page or "")
 CROSSINGS = [
@@ -196,18 +197,36 @@ def cov_views(row, html):
 
 
 def cov_cameras(get):
-    """Every City of Vancouver camera view. get(url) -> text. Pages that fail are skipped."""
+    """Every City of Vancouver camera view. get(url) -> text. Pages that fail are tried again, then skipped."""
     import json
-    from concurrent.futures import ThreadPoolExecutor
     rows = [r for r in json.loads(get(COV_LIST)) if (r.get("url") or "").startswith(COV_BASE)]
 
-    def one(r):
+    return _unique(_crawl(rows, lambda r: cov_views(r, get(r["url"]))))
+
+
+CRAWL_PAUSE = 2.0            # before each retry round of a city's pages
+
+
+def _crawl(items, views_of, workers=2, again=2):
+    """views_of(item) for every item, a couple at a time (the cities' sites drop pages when hit harder); items that
+    fail or show no camera are tried again, one at a time, up to ``again`` more rounds."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    def one(it):
         try:
-            return cov_views(r, get(r["url"]))
+            return views_of(it)
         except Exception:
             return []
-    with ThreadPoolExecutor(4) as ex:                  # ~220 small pages, once a day
-        return _unique([v for vs in ex.map(one, rows) for v in vs])
+    with ThreadPoolExecutor(workers) as ex:
+        got = list(ex.map(one, items))
+    for _ in range(again):
+        missing = [i for i, vs in enumerate(got) if not vs]
+        if not missing:
+            break
+        time.sleep(CRAWL_PAUSE)
+        for i in missing:
+            got[i] = one(items[i])
+    return [v for vs in got for v in vs]
 
 
 def _unique(views):
@@ -275,17 +294,9 @@ def richmond_views(lat, lon, name, html):
 
 
 def richmond_cameras(get):
-    """Every City of Richmond camera view. get(url) -> text. Pages that fail are skipped."""
-    from concurrent.futures import ThreadPoolExecutor
+    """Every City of Richmond camera view. get(url) -> text. Pages that fail are tried again, then skipped."""
     markers = richmond_markers(get(RMD_BASE))
-
-    def one(m):
-        try:
-            return richmond_views(m[0], m[1], m[2], get(m[3]))
-        except Exception:
-            return []
-    with ThreadPoolExecutor(4) as ex:                  # ~160 small pages, once a day
-        return _unique([v for vs in ex.map(one, markers) for v in vs])
+    return _unique(_crawl(markers, lambda m: richmond_views(m[0], m[1], m[2], get(m[3]))))
 
 
 def _view(prefix, key, name, caption, lat, lon, city, credit, url, refresh, look=""):

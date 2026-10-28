@@ -346,6 +346,19 @@ def _validate_webcams(wc):
                 raise ConfigError(f"camera grid #{i + 1}: {e}")
             if kind not in ("drivebc", "image"):
                 raise ConfigError(f"camera grid #{i + 1}: the grid shows still cameras only")
+        near = grid.get("near", {})
+        if not isinstance(near, dict):
+            raise ConfigError("webcams.grid.near must be an object")
+        if near.get("on"):
+            try:
+                ok = -90 <= float(near["lat"]) <= 90 and -180 <= float(near["lon"]) <= 180                     and 0.05 <= float(near.get("radius", 1)) <= 50
+            except (KeyError, TypeError, ValueError):
+                ok = False
+            if not ok:
+                raise ConfigError("nearby cameras: a latitude, longitude and a radius of 0.05-50 please")
+        for key, allowed in (("unit", ("km", "mi")), ("kinds", ("city", "all"))):
+            if key in near and near[key] not in allowed:
+                raise ConfigError(f"nearby cameras: {key} must be one of {', '.join(allowed)}")
         lab = grid.get("label", {})
         from display.modules.cam_names import PARTS
         if not isinstance(lab, dict):

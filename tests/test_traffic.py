@@ -9,6 +9,11 @@ import pytest
 from hub import traffic, webcams
 
 
+@pytest.fixture(autouse=True)
+def _no_crawl_pause(monkeypatch):
+    monkeypatch.setattr(traffic, "CRAWL_PAUSE", 0)
+
+
 def _jpeg(w=800, h=468, colour=(30, 60, 90), strip=(250, 250, 250)):
     from PIL import Image
     a = np.zeros((h, w, 3), np.uint8)
@@ -316,7 +321,8 @@ def test_old_vancouver_cache_is_reused_and_richmond_crawled(monkeypatch, tmp_pat
     lists = hub_app._city_lists()
     assert set(lists) == {"Vancouver", "Richmond"} and set(hub_app._city["at"]) == {"Vancouver", "Richmond"}
     assert hub_app._city["urls"]["rmd-x_eb"].endswith("/x_eb.jpg")
-    assert json.loads((tmp_path / "city.json").read_text())["lists"]["Richmond"] == rmd
+    saved = json.loads((tmp_path / "city.json").read_text())["lists"]["Richmond"]
+    assert [{k: v for k, v in c.items() if k != "seen"} for c in saved] == rmd and saved[0]["seen"] > 0
     from fastapi import HTTPException
     with pytest.raises(HTTPException):
         hub_app.webcams_city_thumb("rmd-not-listed")                         # never an arbitrary URL

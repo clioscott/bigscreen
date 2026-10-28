@@ -467,6 +467,7 @@ function seedWebcams() {
   seed(["modules", "webcams", "playlist"], Object.keys(wc.cams || {}).map((cam) => ({ cam, sec: 60, on: true })));
   seed(["modules", "webcams", "grid"], { cams: [], interval_ms: 200, hold_sec: 3, labels: true });
   seed(["modules", "webcams", "grid", "label"], { lines: [["street1"], ["street2"]], dir: "tag", at: "bottom" });
+  seed(["modules", "webcams", "grid", "near"], { on: false, radius: 1, unit: "km", kinds: "city" });
   return wc;
 }
 
@@ -588,7 +589,7 @@ const GridTab = {
     let timer = null, url = "";
     const render = async () => {
       timer = null;
-      if (!g.cams.length) { img.value = ""; return; }
+      if (!g.cams.length && !g.near?.on) { img.value = ""; return; }
       busy.value = true;
       try {
         const r = await fetch("/api/webcams/grid/preview.png", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -601,6 +602,33 @@ const GridTab = {
     const queue = () => { clearTimeout(timer); timer = setTimeout(render, 400); };
     // the tiles' labels (display/modules/cam_names.py): which parts go on which line, the direction's place, the wording
     const lab = computed(() => g.label);                    // seeded by seedWebcams
+    // nearby cameras: every camera within the radius of a point joins the grid (the hub works them out each time)
+    const near = computed(() => g.near);
+    const matches = ref(null);
+    let nearTimer = null;
+    const findNear = async () => {
+      const n = g.near;
+      if (!n.on || !Number.isFinite(n.lat) || !Number.isFinite(n.lon)) { matches.value = null; return; }
+      try {
+        matches.value = await api(`/api/webcams/near?${qs({ lat: n.lat, lon: n.lon, radius: n.radius || 1, unit: n.unit || "km", kinds: n.kinds || "city" })}`);
+      } catch (e) { fail(e); }
+    };
+    watch(() => JSON.stringify(g.near), () => { clearTimeout(nearTimer); nearTimer = setTimeout(findNear, 300); }, { immediate: true });
+    const useHome = async () => {
+      try { const h = await api("/api/webcams/home"); g.near.lat = +h.lat.toFixed(5); g.near.lon = +h.lon.toFixed(5); } catch (e) { fail(e); }
+    };
+    // "49.1666, -123.1336" pasted into either field fills both
+    const setNearCoord = (key, ev) => {
+      const raw = ev.target.value.trim();
+      const both = raw.match(/^(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)$/);
+      if (both) { g.near.lat = +both[1]; g.near.lon = +both[2]; return; }
+      const v = Number(raw);
+      if (raw === "") delete g.near[key];
+      else if (Number.isFinite(v) && Math.abs(v) <= (key === "lat" ? 90 : 180)) g.near[key] = v;
+      else { toast(`${key === "lat" ? "Latitude" : "Longitude"}: a number please`, "bad"); ev.target.value = g.near[key] ?? ""; }
+    };
+    const inList = (c) => g.cams.some((x) => sameSrc(x.source, c.source));
+    const nearThumb = (c) => (c.source.type === "drivebc" ? `/api/webcams/drivebc/${c.source.id}.jpg` : c.thumb || snap(c.source));
     const PARTS = [{ value: "street1", label: "Street 1" }, { value: "street2", label: "Street 2" }, { value: "dir", label: "Direction" },
       { value: "view", label: "Camera no." }, { value: "name", label: "Whole name" }];
     const partsShown = computed(() => PARTS.filter((p) => p.value !== "dir" || lab.value.dir === "line"));
@@ -609,18 +637,22 @@ const GridTab = {
       const i = ln.indexOf(p);
       if (i >= 0) ln.splice(i, 1); else { ln.push(p); ln.sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b)); }
     };
-    watch(() => [g.cams.map((c) => JSON.stringify(c.source) + c.name).join("|"), g.labels, g.rows, g.cols, JSON.stringify(g.label), shape.value],
+    watch(() => [g.cams.map((c) => JSON.stringify(c.source) + c.name).join("|"), g.labels, g.rows, g.cols, JSON.stringify(g.label),
+      JSON.stringify(g.near), shape.value],
       queue, { immediate: true });
     onBeforeUnmount(() => { clearTimeout(timer); if (url) URL.revokeObjectURL(url); });
     // the hub's own thumbnail for the camera (kept with it when it was added), else a snapshot
     const thumbOf = (c) => (c.source.type === "drivebc" ? `/api/webcams/drivebc/${c.source.id}.jpg`
       : /^\/api\/webcams\/city\/[\w-]+\.jpg$/.test(c.thumb || "") ? c.thumb : snap(c.source));
-    const secs = computed(() => (g.cams.length * (g.interval_ms || 200)) / 1000 + (g.hold_sec ?? 3));
-    const play = () => {
+    const total = computed(() => g.cams.length + (g.near?.on && matches.value ? matches.value.cams.filter((c) => !inList(c)).length : 0));
+    const secs = computed(() => (total.value * (g.interval_ms || 200)) / 1000 + (g.hold_sec ?? 3));
+    // unsaved changes go to the wall as a preview first (long enough for the whole reveal), so it plays this grid
+    const play = async () => {
       const s = SHAPES[shape.value];
+      if (dirty.value.length) await previewOnDisplay(Math.max(120, Math.ceil(secs.value) + 90), { hook: false });
       playOnDisplay({ panel: GRID_SHAPES[shape.value], advance: "cycles", cycles: 1, max_sec: 600 }, { side: s.side, hold: false });
     };
-    return { GRID_SHAPES, g, lab, partsShown, togglePart, found, shape, img, busy, thumbOf, secs, play, render, SHAPES, dirty };
+    return { GRID_SHAPES, g, lab, near, matches, useHome, setNearCoord, inList, nearThumb, partsShown, togglePart, found, shape, img, busy, thumbOf, secs, play, render, SHAPES, dirty };
   },
   template: `<div class="stack">
     <div class="card"><div class="card-body stack" style="gap:10px">
@@ -639,7 +671,35 @@ const GridTab = {
               <button class="x" title="Remove" @click.stop="g.cams.splice(i, 1)"><Icon name="X" :size="12"/></button>
               <span class="name">{{ c.name }}</span></div>
           </div>
-          <div class="empty" v-if="!g.cams.length">No cameras yet. Use <b>Add cameras</b>, then <b>Select several</b> in the intersection list.</div>
+          <div class="empty" v-if="!g.cams.length">No cameras added by hand. Use <b>Add cameras</b>, then <b>Select several</b> in the
+            intersection list, or turn on <b>Nearby cameras</b>.</div>
+        </div>
+        <div class="card-head" style="border-top:1px solid var(--line)"><Icon name="LocateFixed" :size="16"/><h3>Nearby cameras</h3>
+          <span class="faint" style="font-size:12px">every camera near a point, kept up to date</span><span class="spacer"></span>
+          <Toggle :modelValue="!!near.on" @update:modelValue="v => near.on = v" title="Add every camera near a point"/></div>
+        <div class="card-body stack" v-if="near.on">
+          <div class="row" style="gap:12px; align-items:flex-end">
+            <Field label="Around" hint="Latitude, longitude (or paste both into one)">
+              <div class="row nowrap" style="gap:6px"><input class="input" style="width:110px" :value="near.lat ?? ''" @change="setNearCoord('lat', $event)" placeholder="49.1666">
+                <input class="input" style="width:120px" :value="near.lon ?? ''" @change="setNearCoord('lon', $event)" placeholder="-123.1336">
+                <button class="btn sm" @click="useHome"><Icon name="House" :size="13"/>Home</button></div></Field>
+            <Field label="Within"><div class="row nowrap" style="gap:6px">
+              <Stepper :modelValue="near.radius ?? 1" @update:modelValue="v => near.radius = v" :min="0.25" :max="50" :step="0.25"/>
+              <Seg :modelValue="near.unit || 'km'" @update:modelValue="v => near.unit = v" :options="[{value:'km', label:'km'}, {value:'mi', label:'miles'}]"/></div></Field>
+            <Field label="Which"><Seg :modelValue="near.kinds || 'city'" @update:modelValue="v => near.kinds = v"
+              :options="[{value:'city', label:'Intersections'}, {value:'all', label:'+ DriveBC highways'}]"/></Field>
+          </div>
+          <div class="faint" style="font-size:12.5px" v-if="!Number.isFinite(near.lat) || !Number.isFinite(near.lon)">Set a point (or use Home) to find the cameras around it.</div>
+          <template v-else-if="matches">
+            <div style="font-size:12.5px"><b>{{ matches.count }}</b> camera{{ matches.count === 1 ? '' : 's' }} within {{ near.radius ?? 1 }} {{ near.unit || 'km' }},
+              nearest first<span class="faint" v-if="matches.capped"> (the grid takes the nearest 200)</span>.
+              <span class="faint">They play after the ones added by hand; new cameras in the area join by themselves.</span></div>
+            <div class="wc-grid-list">
+              <div v-for="c in matches.cams.slice(0, 24)" :key="JSON.stringify(c.source)" class="wc-grid-cam" :title="c.name + ' · ' + c.credit"
+                   :style="{opacity: inList(c) ? .45 : 1}"><img :src="nearThumb(c)" loading="lazy" alt="">
+                <span class="n">{{ c.km < 1 ? Math.round(c.km * 1000) + ' m' : c.km.toFixed(1) + ' km' }}</span><span class="name">{{ c.name }}</span></div></div>
+            <div class="faint" style="font-size:12px" v-if="matches.cams.length > 24">… and {{ matches.cams.length - 24 }} more</div>
+          </template>
         </div></div>
       <div class="stack sticky">
         <div class="card"><div class="card-head"><span class="live">LIVE</span><h3>On the wall</h3><span class="spacer"></span>
@@ -647,8 +707,9 @@ const GridTab = {
           <div class="card-body stack">
             <div class="led"><img v-if="img" :src="img" alt="" :style="{opacity: busy ? .6 : 1}"><div v-else class="placeholder">{{ busy ? 'Fetching cameras…' : 'Add cameras to see the grid' }}</div></div>
             <div class="faint" style="font-size:12px">With every tile filled (the last cameras in the grid). The wall fills it one tile at a time.</div>
-            <div class="row"><button class="btn sm" @click="play" :disabled="!g.cams.length || dirty.length" :title="dirty.length ? 'Save first' : ''"><Icon name="Play" :size="14"/>Play once on the wall</button>
-              <span class="faint" style="font-size:12px">Takes about {{ Math.round(secs) }} s</span></div>
+            <div class="row"><button class="btn sm" @click="play" :disabled="!g.cams.length && !near.on"><Icon name="Play" :size="14"/>Play once on the wall</button>
+              <span class="faint" style="font-size:12px">Takes about {{ Math.round(secs) }} s{{ dirty.length ? ' · shows your unsaved changes' : '' }}.
+                The wall fetches every camera first, then flicks through them.</span></div>
           </div></div>
         <div class="card"><div class="card-head"><Icon name="SlidersHorizontal" :size="16"/><h3>Timing and labels</h3></div>
           <div class="card-body fields">

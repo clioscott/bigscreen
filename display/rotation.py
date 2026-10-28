@@ -199,8 +199,8 @@ class Rotation:
                 return None
             return {**self.cur["entry"], "_play": self.cur["id"]}
 
-    def upcoming(self, now: float):
-        """The entry that should play after the current screen, once that screen is near its end (under WARM_AHEAD
+    def upcoming(self, now: float, ahead: float = WARM_AHEAD):
+        """The entry that should play after the current screen, once that screen is near its end (under ``ahead``
         seconds left, by its time limit or, for one that runs by passes, by how long its passes have taken); else
         None. For getting the next screen's source ready (a webcam's feed)."""
         with self._lock:
@@ -214,7 +214,7 @@ class Rotation:
                 left = min(left, done_at / c["passes"] * (self.need(e) - c["passes"]) - (c["visible"] - done_at))
             elif e.get("advance") == "cycles" and _shape_key(e) in self._pass_len:  # first pass: as long as last time
                 left = min(left, self._pass_len[_shape_key(e)] * self.need(e) - c["visible"])
-            if left > WARM_AHEAD:
+            if left > ahead:
                 return None
             for i in self.pending:
                 if i < len(self.entries) and self._allows(self.entries[i]):

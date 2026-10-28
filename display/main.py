@@ -29,6 +29,7 @@ from display.gfx import Canvas, Color, graphics
 
 DATA_DIR = os.environ.get("BIGSCREEN_DATA_DIR", "/dev/shm/bigscreen")
 BOTTOM_STRIP_PX = 17
+GRID_WARM_AHEAD = 120.0      # the camera grid's tiles are fetched this far ahead of its turn (s)
 TILE_W, TILE_H = 64, 16      # dirty-tile granularity for pushing frames to the panels
 BLACK = Color(0, 0, 0)
 
@@ -268,11 +269,25 @@ class Screen:
             if not visible.get(side):
                 continue
             try:
-                nxt = self.engines[side].upcoming(now)
+                eng = self.engines[side]
+                nxt = eng.upcoming(now, ahead=GRID_WARM_AHEAD)     # the camera grid: every tile, well ahead
+                if not (nxt and str(nxt.get("panel", "")).startswith("webcam_grid")):
+                    nxt = eng.upcoming(now)
                 if nxt and str(nxt.get("panel", "")).startswith("webcam"):
-                    warm(nxt)
+                    warm(nxt, self._zone_of(nxt.get("panel"), side))
             except Exception as e:                   # never cost a frame: the webcam just loads as before
                 print(f"[webcam] warm next on {side}: {e}")
+
+    def _zone_of(self, panel, side):
+        """The area a panel draws in (as draw() hands it out): the whole wall, above the clock, full width or a side."""
+        if panel in self.takeover_panels:
+            return (0, 0, self.w, self.h)
+        if panel in self.tall_panels:
+            return (0, 0, self.w, self.status_top)
+        if panel in self.full_panels:
+            return (0, self.main_y, self.w, self.main_h)
+        return (0, self.main_y, self.cal_w, self.main_h) if side == "left" else \
+            (self.right_x, self.main_y, self.right_w, self.main_h)
 
     def _default_passes(self, entry):
         if entry.get("panel", "").startswith("map") and hasattr(self, "map_panel"):
