@@ -172,7 +172,8 @@ once (`hold: false`), so the rotation resumes by itself.
 - Sizes: `webcam` (side), `_full`, `_tall` (over the ticker, clock strip stays: `Screen.tall_panels`), `_wall`.
 - Camera grid (`webcam_grid*`): stills only, tiles filling the frame (`rows`, `cols` or auto) revealed one per
   `interval_ms`, each labelled (`display/modules/cam_names.py` splits names into streets and direction; `grid.label`:
-  lines, dir tag/line/off, at, wording, size); the hub sends all tiles at
+  lines, dir tag/line/off, at, wording, size); `grid.near` adds every camera within a radius of a point, worked out by
+  the hub each time; down cameras are skipped. The wall posts its grid to the hub, which sends all tiles and names at
   once (`/api/webcams/grid.bin`).
 - City intersection cameras: crawlers in `hub/traffic.py` `CITY_SOURCES` (Vancouver, Richmond, Surrey, Township of
   Langley, SFU), re-crawled daily by the hub (`hub/app.py` `_city_lists`). Burnaby, Coquitlam, the North Shore, New West

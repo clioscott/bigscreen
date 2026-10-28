@@ -19,6 +19,7 @@ them already cropped to the tile (/api/webcams/grid.bin), all at once.
 from __future__ import annotations
 
 import http.client
+import json
 import os
 import socket
 import threading
@@ -37,7 +38,7 @@ IDLE_SEC = 3.0               # hang up when the screen hasn't drawn this webcam 
 WARM_EVERY = 10.0            # while a webcam is next in the rotation, ask the hub to keep its feed going this often
 GIVE_UP_SEC = 25.0           # no picture this long after the play started: skip to the next screen
 MAGIC = b"BSWC"
-GRID_MAGIC = b"BSWG"
+GRID_MAGIC = b"BSG2"
 GRID_ROWS = 2                # the camera grid's rows by default; its columns fit the frame
 GRID_MAX_ROWS, GRID_MAX_COLS = 4, 10
 GRID_ASPECT = 1.1            # auto columns keep each tile about this much wider than tall (6 across full width)
@@ -205,11 +206,12 @@ class WebcamPanel:
                 self.streams.pop(k, None)
         return st
 
-    def warm(self, entry):
+    def warm(self, entry, zone=None):
         """The rotation says this webcam is next: have the hub start its feed now (in the background), so its screen
-        opens on a picture a second or so behind live instead of "loading"."""
+        opens on a picture a second or so behind live instead of "loading". The camera grid fetches all its tiles for
+        the area it will play in (zone), so its reveal starts the moment it comes up."""
         if str((entry or {}).get("panel", "")).startswith("webcam_grid"):
-            return self.grid.warm()
+            return self.grid.warm(zone)
         cid = (entry or {}).get("cam")
         if not cid and self.playlist:                         # the Webcams list: the one it plays next
             cid = self.playlist[(_list_pos["i"] + 1) % len(self.playlist)][0]
@@ -361,6 +363,8 @@ class CameraGrid:
         cams = g.get("cams") if isinstance(g.get("cams"), list) else []
         self.cams = [x for x in cams if isinstance(x, dict) and isinstance(x.get("source"), dict)]
         self.names = [str(x.get("name") or "") for x in self.cams]
+        near = g.get("near") if isinstance(g.get("near"), dict) else {}
+        self.near = near if near.get("on") else None        # cameras near a point, added by the hub as it fetches
         try:
             self.interval = max(0.05, min(5.0, float(g.get("interval_ms") or 200) / 1000))
             self.hold = max(0.0, min(30.0, float(g.get("hold_sec", 3))))
@@ -382,9 +386,14 @@ class CameraGrid:
         self._plays: dict = {}                      # zone -> {"play", "t0", "ready"}: each half of the wall its own
         self._font = None
         self._labels: dict = {}                     # tile width -> each label worked out (once, not per frame)
+        self._up: dict = {}                         # id(tiles) -> the indexes of the cameras that sent a picture
 
-    def warm(self):
-        """The rotation says the grid is next: refresh the tiles of the sizes it has drawn at (in the background)."""
+    def warm(self, zone=None):
+        """The rotation says the grid is next: fetch its tiles for that area now (in the background), or refresh the
+        sizes it has drawn at."""
+        if zone and (self.cams or self.near):
+            tw, th, _, _ = self.geometry(zone)
+            return self._load((tw, th))
         for size in list(self.tiles):
             self._load(size)
 
@@ -398,15 +407,20 @@ class CameraGrid:
 
     def _fetch(self, size, got):
         try:
+            # the cameras go with the request: the hub crops exactly the grid this config has (a preview's included)
+            body = json.dumps({"w": size[0], "h": size[1], "grid": {
+                "cams": [{"source": c["source"], "name": c.get("name") or "", **({"crop": c["crop"]} if c.get("crop") else {})}
+                         for c in self.cams], "near": self.near}})
             conn = http.client.HTTPConnection(self.hub.hostname, self.hub.port or 80, timeout=90)
-            conn.request("GET", f"/api/webcams/grid.bin?w={size[0]}&h={size[1]}",
-                         headers={"User-Agent": "bigscreen-display"})
+            conn.request("POST", "/api/webcams/grid.bin", body=body,
+                         headers={"User-Agent": "bigscreen-display", "Content-Type": "application/json"})
             r = conn.getresponse()
             body = r.read()
             conn.close()
             if r.status != 200 or body[:4] != GRID_MAGIC:
                 raise RuntimeError(f"hub {r.status}: {body[:200]!r}")
-            got["tiles"], got["at"] = unpack_grid(body), time.time()
+            got["tiles"], got["names"] = unpack_grid(body)          # the names include the nearby cameras
+            got["at"] = time.time()
         except Exception as e:
             print(f"[webcam grid] {e}")
             got["at"] = time.time() - 50                    # try again in ~10 s
@@ -430,44 +444,51 @@ class CameraGrid:
         p = self._plays.get(where)
         if transition or p is None or p["play"] != entry.get("_play"):
             p = self._plays[where] = {"play": entry.get("_play"), "t0": now, "ready": None}
-        if not self.cams:
+        if not self.cams and not self.near:
             _centre_text(c, zone, "No cameras in the grid", Color(150, 150, 150))
             return "skip" if now - p["t0"] > 4 else None
         tw, th, xs, ys = self.geometry(zone)
         self._load((tw, th))
-        tiles = (self.tiles.get((tw, th)) or {}).get("tiles")
+        got = self.tiles.get((tw, th)) or {}
+        tiles = got.get("tiles")
         if tiles is None:
             _centre_text(c, zone, "Fetching cameras" + "." * (1 + int(now * 2) % 3), Color(150, 150, 150))
             return "skip" if now - p["t0"] > GIVE_UP_SEC else None
         if p["ready"] is None:
             p["ready"] = now                                   # the reveal starts once the tiles are here
-        r = self.draw_tiles(c, tiles, (tw, th, xs, ys), now - p["ready"])
+        r = self.draw_tiles(c, tiles, (tw, th, xs, ys), now - p["ready"], got.get("names"))
         if r == "done":
             p["ready"] = None                                  # another pass reveals them all again
         return r
 
-    def draw_tiles(self, c, tiles, geo, elapsed):
-        """The grid ``elapsed`` seconds into the reveal; "done" once every camera has appeared and the hold is over."""
+    def draw_tiles(self, c, tiles, geo, elapsed, names=None):
+        """The grid ``elapsed`` seconds into the reveal; "done" once every camera has appeared and the hold is over.
+        Cameras that are down (no picture from the hub) are skipped, not shown as empty tiles; none up: "skip"."""
         tw, th, xs, ys = geo
+        names = self.names if names is None else names
+        up = self._up.get(id(tiles))
+        if up is None:                                        # once per fetch, not per frame
+            up = [i for i, t in enumerate(tiles) if t is not None and t.shape[:2] == (th, tw)]
+            self._up = {id(tiles): up}
+        if not up:
+            return "skip"
         cells = len(xs) * len(ys)
-        shown = min(len(tiles), int(elapsed / self.interval) + 1)
+        shown = min(len(up), int(elapsed / self.interval) + 1)
         for k in range(min(cells, shown)):
-            i = k + ((shown - 1 - k) // cells) * cells       # the newest camera in tile k (k, k + cells, ...)
-            tile = tiles[i]
+            i = up[k + ((shown - 1 - k) // cells) * cells]   # the newest camera in tile k (k, k + cells, ...)
             tx, ty = xs[k % len(xs)], ys[k // len(xs)]
-            if tile is not None and tile.shape[:2] == (th, tw):
-                c.Blit(tile, tx, ty)
-            else:
-                c.FillRect(tx, ty, tw, th, Color(25, 25, 30))
-            if self.labels and tw >= 24 and th >= 16 and i < len(self.names):
-                self._label(c, tx, ty, tw, th, self._labels_for(tw)[i])
-        if shown >= len(tiles) and elapsed >= len(tiles) * self.interval + self.hold:
+            c.Blit(tiles[i], tx, ty)
+            if self.labels and tw >= 24 and th >= 16 and i < len(names):
+                self._label(c, tx, ty, tw, th, self._labels_for(tw, names)[i])
+        if shown >= len(up) and elapsed >= len(up) * self.interval + self.hold:
             return "done"
         return None
 
-    def _labels_for(self, tw):
-        """Each camera's label for tiles this wide, worked out once per width: ([lines cut to fit], corner tag)."""
-        got = self._labels.get(tw)
+    def _labels_for(self, tw, names=None):
+        """Each camera's label for tiles this wide, worked out once per width and list: ([lines cut to fit], tag)."""
+        names = self.names if names is None else names
+        key = (tw, id(names))
+        got = self._labels.get(key)
         if got is None:
             from display.modules import cam_names
             from display.modules.webcam_caption import _tw
@@ -475,7 +496,7 @@ class CameraGrid:
             lines = self.label_lines
             if self.dir_place != "line":                      # the direction is only in a line when asked there
                 lines = [[p for p in ln if p != "dir"] for ln in (lines or cam_names.DEFAULT_LINES) if isinstance(ln, list)]
-            for name in self.names:
+            for name in names:
                 tag = cam_names.tag_text(name, self.dir_style, self.label_short) if self.dir_place == "tag" else ""
                 tag = tag if _tw(f, tag) + 4 <= tw else ""
                 out = []
@@ -484,7 +505,9 @@ class CameraGrid:
                         text = text[:-1]
                     out.append(text.rstrip())
                 got.append((out, tag))
-            self._labels[tw] = got
+            if len(self._labels) > 8:
+                self._labels.clear()
+            self._labels[key] = got
         return got
 
     def _label_font(self):
@@ -519,18 +542,23 @@ def _int_in(v, default, lo, hi):
         return default
 
 
-def pack_grid(tiles, w, h) -> bytes:
-    """The hub's reply: GRID_MAGIC, count u16, tile width u16, tile height u16, then per camera a flag byte (1: a
-    picture follows)."""
-    out = [GRID_MAGIC, len(tiles).to_bytes(2, "big"), int(w).to_bytes(2, "big"), int(h).to_bytes(2, "big")]
+def pack_grid(tiles, w, h, names=None) -> bytes:
+    """The hub's reply: GRID_MAGIC, count u16, tile width u16, tile height u16, the names' JSON length u32 and the
+    JSON (a list, one per camera), then per camera a flag byte (1: a picture follows)."""
+    nb = json.dumps(list(names or [])).encode()
+    out = [GRID_MAGIC, len(tiles).to_bytes(2, "big"), int(w).to_bytes(2, "big"), int(h).to_bytes(2, "big"),
+           len(nb).to_bytes(4, "big"), nb]
     for t in tiles:
         out += [b"\x01", np.ascontiguousarray(t, np.uint8).tobytes()] if t is not None else [b"\x00"]
     return b"".join(out)
 
 
-def unpack_grid(body) -> list:
+def unpack_grid(body) -> tuple:
+    """(tiles, names) from pack_grid's bytes."""
     n, w, h = (int.from_bytes(body[k:k + 2], "big") for k in (4, 6, 8))
-    per, off, tiles = w * h * 3, 10, []
+    nl = int.from_bytes(body[10:14], "big")
+    names = json.loads(body[14:14 + nl] or b"[]")
+    per, off, tiles = w * h * 3, 14 + nl, []
     for _ in range(n):
         ok, off = body[off], off + 1
         if ok:
@@ -538,7 +566,7 @@ def unpack_grid(body) -> list:
             off += per
         else:
             tiles.append(None)
-    return tiles
+    return tiles, names
 
 
 _centre_font = []

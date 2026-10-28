@@ -379,6 +379,20 @@ def _stale_cities(now):
             if not _city["lists"].get(c) or now - (_city["at"].get(c) or 0) > 86400]
 
 
+CITY_KEEP_SEC = 7 * 86400           # a camera whose page stopped answering stays listed this long (it's probably just down)
+
+
+def _keep_recent(got, old, old_at):
+    """A city's new views, plus the old ones this crawl didn't find but that were seen within CITY_KEEP_SEC (a
+    page that failed today, a camera that's down): they stay in the lists and on the map. Each view notes when it
+    was last seen."""
+    now = time.time()
+    got = [{**v, "seen": now} for v in got]
+    have = {v["id"] for v in got}
+    kept = [v for v in old if v.get("id") not in have and now - (v.get("seen") or old_at) < CITY_KEEP_SEC]
+    return got + kept
+
+
 def _city_refresh(cities):
     from hub.bc import common
     get = lambda u: common.session.get(u, timeout=20).text
@@ -392,11 +406,17 @@ def _city_refresh(cities):
                 print(f"{city} cameras: {e}", flush=True)
                 continue
             if got and len(got) >= 0.8 * len(old):             # a crawl that lost many pages keeps the old list
-                lists[city], at[city], changed = got, time.time(), True
+                lists[city], at[city], changed = _keep_recent(got, old, at.get(city) or 0), time.time(), True
                 _set_lists(dict(lists))                         # each city shows as soon as it's in
             else:
                 print(f"{city} cameras: only {len(got)} views, keeping {len(old)}", flush=True)
         if changed:
+            # never drop a city that's saved: one this crawl didn't get (or that wasn't loaded) keeps its saved list
+            saved = read_json(CITY_CACHE, {}) or {}
+            for city, cams in (saved.get("lists") or {}).items():
+                if cams and not lists.get(city):
+                    lists[city] = cams
+                    at.setdefault(city, (saved.get("at") or {}).get(city) or 0)
             _set_lists(lists)
             _city["at"] = at
             atomic_write_json(CITY_CACHE, {"at": at, "lists": lists})
@@ -412,7 +432,10 @@ def _city_lists():
     if not _city["loaded"]:
         _city["loaded"] = True
         saved = read_json(CITY_CACHE, {}) or {}
-        if not saved and COV_CACHE.exists():
+        if not saved and CITY_CACHE.exists():                # being replaced this moment: read it again
+            time.sleep(0.5)
+            saved = read_json(CITY_CACHE, {}) or {}
+        if not saved and not CITY_CACHE.exists() and COV_CACHE.exists():
             old = read_json(COV_CACHE, {}) or {}
             saved = {"at": {}, "lists": {"Vancouver": old.get("list") or []}}
         at = saved.get("at")
@@ -557,17 +580,97 @@ def _grid_tiles(cams, w, h):
         return list(ex.map(one, cams))
 
 
-def _grid_cams():
-    g = ((config.load().get("modules") or {}).get("webcams") or {}).get("grid") or {}
-    return [c for c in g.get("cams") or [] if isinstance(c, dict)][:GRID_MAX]
+def _still_ok(cam):
+    try:
+        return isinstance(cam, dict) and webcams.check_source(cam.get("source"))[0] in webcams.STILLS
+    except webcams.SourceError:
+        return False
+
+
+def _src_key(src):
+    src = src or {}
+    return (src.get("type"), src.get("id") if src.get("type") == "drivebc" else src.get("url"))
+
+
+MI_KM = 1.609344
+
+
+def _near_matches(near):
+    """Every camera within the radius of the point, nearest first: the cities' intersection cameras, and DriveBC's
+    highway ones too when near["kinds"] is "all". [{"name", "source", "thumb", "km", "lat", "lon", "credit"}]"""
+    try:
+        lat, lon = float(near["lat"]), float(near["lon"])
+        km = float(near.get("radius") or 1) * (MI_KM if near.get("unit") == "mi" else 1.0)
+    except (KeyError, TypeError, ValueError):
+        return []
+    pool = [c for cams in _city_lists().values() for c in cams]
+    if near.get("kinds") == "all":
+        from hub.jobs import drivebc
+        try:
+            pool += [{**c, "source": {"type": "drivebc", "id": c["id"]}, "credit": "DriveBC"}
+                     for city in traffic.build(_dbc_list(), drivebc.fold)["cities"] for c in city["cams"]]
+        except HTTPException:
+            pass                                               # DriveBC is down: the cities' cameras still count
+    out = []
+    for c in pool:
+        if c.get("lat") is None or not c.get("source"):
+            continue
+        d = traffic._km((lat, lon), (float(c["lat"]), float(c["lon"])))
+        if d <= km:
+            out.append((d, {"name": c.get("name") or "", "source": c["source"], "thumb": c.get("thumb") or "",
+                            "km": round(d, 2), "lat": c["lat"], "lon": c["lon"], "credit": c.get("credit") or ""}))
+    out.sort(key=lambda t: t[0])
+    return [c for _, c in out]
+
+
+def _grid_list(g):
+    """The grid's cameras: the ones added by hand (in their order), then every nearby one not already there
+    (nearest first) when the grid's "near" is on. Still cameras only, at most GRID_MAX."""
+    g = g if isinstance(g, dict) else {}
+    cams = [c for c in (g.get("cams") if isinstance(g.get("cams"), list) else []) if _still_ok(c)]
+    near = g.get("near") if isinstance(g.get("near"), dict) else {}
+    if near.get("on"):
+        have = {_src_key(c["source"]) for c in cams}
+        cams += [c for c in _near_matches(near) if _src_key(c["source"]) not in have]
+    return cams[:GRID_MAX]
+
+
+def _grid_reply(g, w, h):
+    from display.modules.webcam import pack_grid
+    w, h = max(8, min(448, int(w or 64))), max(8, min(192, int(h or 64)))
+    cams = _grid_list(g)
+    return Response(pack_grid(_grid_tiles(cams, w, h), w, h, [str(c.get("name") or "") for c in cams]),
+                    media_type="application/octet-stream")
 
 
 @app.get("/api/webcams/grid.bin")
 def webcams_grid_bin(w: int = 64, h: int = 64):
-    """The camera grid's tiles for the wall (display/modules/webcam.py CameraGrid), in the grid's order."""
-    from display.modules.webcam import pack_grid
-    w, h = max(8, min(448, int(w))), max(8, min(192, int(h)))
-    return Response(pack_grid(_grid_tiles(_grid_cams(), w, h), w, h), media_type="application/octet-stream")
+    """The camera grid's tiles for the wall (display/modules/webcam.py CameraGrid), from the saved config."""
+    return _grid_reply(((config.load().get("modules") or {}).get("webcams") or {}).get("grid"), w, h)
+
+
+@app.post("/api/webcams/grid.bin")
+def webcams_grid_bin_for(payload: dict = Body(default={})):
+    """The tiles for the grid the wall sends ({"w", "h", "grid": {"cams", "near"}}): its own config's grid, which may
+    be an unsaved preview the hub's saved config doesn't have yet. The reply names every camera (nearby ones come
+    from the hub's camera lists, which the wall doesn't have)."""
+    return _grid_reply(payload.get("grid"), payload.get("w"), payload.get("h"))
+
+
+@app.get("/api/webcams/home")
+def webcams_home():
+    """The wall's home point (the weather alerts' home), for the grid's "near" setting."""
+    from hub.bc import common
+    lon, lat = common.home(config.load())
+    return {"lat": lat, "lon": lon}
+
+
+@app.get("/api/webcams/near")
+def webcams_near(lat: float, lon: float, radius: float = 1.0, unit: str = "km", kinds: str = "city"):
+    """The cameras a grid's "near" setting would add, nearest first (the panel lists them)."""
+    radius = max(0.05, min(50.0, radius))
+    got = _near_matches({"lat": lat, "lon": lon, "radius": radius, "unit": unit, "kinds": kinds})
+    return {"count": len(got), "cams": got[:GRID_MAX], "capped": len(got) > GRID_MAX}
 
 
 @app.post("/api/webcams/grid/preview.png")
@@ -579,10 +682,10 @@ def webcams_grid_preview(payload: dict = Body(default={})):
     shape = payload.get("shape") if payload.get("shape") in zones else "full"
     g = payload.get("grid") if isinstance(payload.get("grid"), dict) else {}
     w, h = zones[shape]
-    grid = CameraGrid("http://127.0.0.1:1", {**g, "cams": (g.get("cams") or [])[:GRID_MAX]
-                                              if isinstance(g.get("cams"), list) else []})
+    cams = _grid_list(g)
+    grid = CameraGrid("http://127.0.0.1:1", {**g, "cams": cams})
     geo = grid.geometry((0, 0, w, h))
-    tiles = _grid_tiles(grid.cams, geo[0], geo[1])
+    tiles = _grid_tiles(cams, geo[0], geo[1])
     c = Canvas(w, h)
     if tiles:
         grid.draw_tiles(c, tiles, geo, len(tiles) * grid.interval + 1)

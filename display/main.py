@@ -270,9 +270,20 @@ class Screen:
             try:
                 nxt = self.engines[side].upcoming(now)
                 if nxt and str(nxt.get("panel", "")).startswith("webcam"):
-                    warm(nxt)
+                    warm(nxt, self._zone_of(nxt.get("panel"), side))
             except Exception as e:                   # never cost a frame: the webcam just loads as before
                 print(f"[webcam] warm next on {side}: {e}")
+
+    def _zone_of(self, panel, side):
+        """The area a panel draws in (as draw() hands it out): the whole wall, above the clock, full width or a side."""
+        if panel in self.takeover_panels:
+            return (0, 0, self.w, self.h)
+        if panel in self.tall_panels:
+            return (0, 0, self.w, self.status_top)
+        if panel in self.full_panels:
+            return (0, self.main_y, self.w, self.main_h)
+        return (0, self.main_y, self.cal_w, self.main_h) if side == "left" else \
+            (self.right_x, self.main_y, self.right_w, self.main_h)
 
     def _default_passes(self, entry):
         if entry.get("panel", "").startswith("map") and hasattr(self, "map_panel"):
