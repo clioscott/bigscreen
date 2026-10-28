@@ -163,3 +163,36 @@ def test_another_pass_replays(monkeypatch):
     clock[0] += 0.5
     assert g.draw(c, z, e, False) == "done"
     assert g.draw(c, z, e, False) is None                            # the reveal starts over
+
+
+def test_camera_names_split_into_streets_and_direction():
+    from display.modules import cam_names as cn
+    cases = {
+        "Cambie St and W 30th Av - North": (["Cambie St", "W 30th Ave"], "N"),
+        "No. 4 Road at Westminster Highway - Eastbound": (["No. 4 Rd", "Westminster Hwy"], "EB"),
+        "26 Ave & King George Blvd - Camera 2": (["26 Ave", "King George Blvd"], "Cam 2"),
+        "26 Ave & King George Blvd - Camera 1": (["26 Ave", "King George Blvd"], ""),
+        "200 St & 72 Ave - looking north": (["200 St", "72 Ave"], "N"),
+        "Hazelbridge Way at Cambie Road - Southbound Southbound": (["Hazelbridge Way", "Cambie Rd"], "SB"),
+        "Massey Tunnel · looking south": (["Massey Tunnel"], "S"),
+        "Gaglardi Way intersection": (["Gaglardi Way intersection"], ""),
+    }
+    for name, (lines, tag) in cases.items():
+        assert cn.label_lines(name) == lines and cn.tag_text(name) == tag, name
+    full = "No. 4 Road at Westminster Highway - Eastbound"
+    assert cn.label_lines(full, [["street1", "street2"], ["dir"]], short=False, dir_style="full") == \
+        ["No. 4 Road Westminster Highway", "Eastbound"]
+    assert cn.tag_text("200 St & 72 Ave - looking north", "full") == "Looking north"
+
+
+def test_grid_labels_follow_the_settings():
+    g = wm.CameraGrid("http://hub:1", {"cams": [{"name": "No. 4 Road at Westminster Highway - Eastbound", "source": {}}]})
+    assert g._labels_for(73) == [(["No. 4 Rd", "Westminster Hwy"], "EB")]
+    g = wm.CameraGrid("http://hub:1", {"cams": g.cams, "label": {"lines": [["street1", "dir"]], "dir": "line"}})
+    assert g._labels_for(73) == [(["No. 4 Rd EB"], "")]
+    g = wm.CameraGrid("http://hub:1", {"cams": g.cams, "label": {"dir": "off"}})
+    assert g._labels_for(73) == [(["No. 4 Rd", "Westminster Hwy"], "")]
+    c = Canvas(448, 130)                                   # drawn: names at the bottom, the tag top right
+    g = wm.CameraGrid("http://hub:1", {"cams": g.cams})
+    g._label(c, 0, 0, 73, 64, g._labels_for(73)[0])
+    assert c.buf[:7, 60:73].any() and not c.buf[:7, :40].any() and c.buf[50:64, :40].any()

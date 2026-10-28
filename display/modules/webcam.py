@@ -368,11 +368,20 @@ class CameraGrid:
             self.interval, self.hold = 0.2, 3.0
         self.rows = _int_in(g.get("rows"), GRID_ROWS, 1, GRID_MAX_ROWS)
         self.cols = None if g.get("cols") in (None, "", "auto") else _int_in(g.get("cols"), 6, 1, GRID_MAX_COLS)
+        # each tile's label (display/modules/cam_names.py): the name split into its streets, the chosen parts on each
+        # line, at the bottom or top; the direction as a small tag in the opposite corner, in a line, or not at all
+        lab = g.get("label") if isinstance(g.get("label"), dict) else {}
         self.labels = bool(g.get("labels", True))
+        self.label_lines = lab.get("lines") if isinstance(lab.get("lines"), list) else None
+        self.label_short = lab.get("short", True) is not False
+        self.label_at = "top" if lab.get("at") == "top" else "bottom"
+        self.dir_place = lab.get("dir") if lab.get("dir") in ("tag", "line", "off") else "tag"
+        self.dir_style = "full" if lab.get("dir_style") == "full" else "short"
+        self.label_size = "small" if lab.get("size") == "small" else "tiny"
         self.tiles: dict = {}                       # (tile w, tile h) -> {"at", "tiles": [array or None], "busy"}
         self._plays: dict = {}                      # zone -> {"play", "t0", "ready"}: each half of the wall its own
         self._font = None
-        self._labels: dict = {}                     # tile width -> each name trimmed to fit (once, not per frame)
+        self._labels: dict = {}                     # tile width -> each label worked out (once, not per frame)
 
     def warm(self):
         """The rotation says the grid is next: refresh the tiles of the sizes it has drawn at (in the background)."""
@@ -450,38 +459,57 @@ class CameraGrid:
                 c.Blit(tile, tx, ty)
             else:
                 c.FillRect(tx, ty, tw, th, Color(25, 25, 30))
-            if self.labels and tw >= 24 and th >= 16:
-                name = self._names_for(tw)[i] if i < len(self.names) else ""
-                if name:
-                    self._label(c, tx, ty, tw, th, name)
+            if self.labels and tw >= 24 and th >= 16 and i < len(self.names):
+                self._label(c, tx, ty, tw, th, self._labels_for(tw)[i])
         if shown >= len(tiles) and elapsed >= len(tiles) * self.interval + self.hold:
             return "done"
         return None
 
-    def _names_for(self, tw):
-        """Each camera's name cut to fit a tile this wide (worked out once per width)."""
+    def _labels_for(self, tw):
+        """Each camera's label for tiles this wide, worked out once per width: ([lines cut to fit], corner tag)."""
         got = self._labels.get(tw)
         if got is None:
+            from display.modules import cam_names
             from display.modules.webcam_caption import _tw
             f, got = self._label_font(), []
-            for text in self.names:
-                while text and _tw(f, text) > tw - 2:
-                    text = text[:-1]
-                got.append(text)
+            lines = self.label_lines
+            if self.dir_place != "line":                      # the direction is only in a line when asked there
+                lines = [[p for p in ln if p != "dir"] for ln in (lines or cam_names.DEFAULT_LINES) if isinstance(ln, list)]
+            for name in self.names:
+                tag = cam_names.tag_text(name, self.dir_style, self.label_short) if self.dir_place == "tag" else ""
+                tag = tag if _tw(f, tag) + 4 <= tw else ""
+                out = []
+                for text in cam_names.label_lines(name, lines, self.label_short, self.dir_style)[:3]:
+                    while text and _tw(f, text) > tw - 2:
+                        text = text[:-1]
+                    out.append(text.rstrip())
+                got.append((out, tag))
             self._labels[tw] = got
         return got
 
     def _label_font(self):
         if self._font is None:
             self._font = graphics.Font()
-            self._font.LoadFont(FONTS["tiny"])
+            self._font.LoadFont(FONTS["small" if self.label_size == "small" else "tiny"])
         return self._font
 
-    def _label(self, c, x, y, tw, th, text):
-        from display.modules.webcam_caption import _shade
+    def _label(self, c, x, y, tw, th, label):
+        """The tile's name lines on a shaded strip (bottom or top), and its direction tag in the opposite corner."""
+        from display.modules.webcam_caption import _shade, _tw
+        lines, tag = label
         f = self._label_font()
-        _shade(c, x, y + th - f.height - 1, tw, f.height + 1, 0.55)
-        graphics.DrawText(c, f, x + 1, y + th - 2, Color(235, 235, 235), text)
+        lh = f.height + 1
+        lines = lines[:max(0, (th - (lh if tag else 0)) // lh)]       # never more than the tile can hold
+        if lines:
+            sy = y + th - lh * len(lines) if self.label_at == "bottom" else y
+            _shade(c, x, sy, tw, lh * len(lines), 0.55)
+            for k, text in enumerate(lines):
+                graphics.DrawText(c, f, x + 1, sy + k * lh + f.baseline, Color(235, 235, 235), text)
+        if tag:
+            w = _tw(f, tag) + 3
+            ty = y if self.label_at == "bottom" else y + th - lh
+            c.FillRect(x + tw - w, ty, w, lh, Color(0, 0, 0))
+            graphics.DrawText(c, f, x + tw - w + 2, ty + f.baseline, Color(255, 200, 40), tag)
 
 
 def _int_in(v, default, lo, hi):

@@ -346,6 +346,18 @@ def _validate_webcams(wc):
                 raise ConfigError(f"camera grid #{i + 1}: {e}")
             if kind not in ("drivebc", "image"):
                 raise ConfigError(f"camera grid #{i + 1}: the grid shows still cameras only")
+        lab = grid.get("label", {})
+        from display.modules.cam_names import PARTS
+        if not isinstance(lab, dict):
+            raise ConfigError("webcams.grid.label must be an object")
+        lines = lab.get("lines", [])
+        if not isinstance(lines, list) or len(lines) > 3 or not all(
+                isinstance(ln, list) and all(p in PARTS for p in ln) for ln in lines):
+            raise ConfigError(f"camera grid labels: up to 3 lines of {', '.join(PARTS)}")
+        for key, allowed in (("at", ("bottom", "top")), ("dir", ("tag", "line", "off")), ("dir_style", ("short", "full")),
+                             ("size", ("tiny", "small"))):
+            if key in lab and lab[key] not in allowed:
+                raise ConfigError(f"camera grid labels: {key} must be one of {', '.join(allowed)}")
         if grid.get("cols") not in (None, "auto") and not (isinstance(grid["cols"], int) and 1 <= grid["cols"] <= 10):
             raise ConfigError("webcams.grid.cols must be auto or 1-10")
         for key, lo, hi in (("interval_ms", 50, 5000), ("hold_sec", 0, 30), ("rows", 1, 4)):
