@@ -186,6 +186,7 @@ class Screen:
         }
         self.full_panels = {}     # name -> draw(canvas, zone, entry, transition); takes both zones
         self.takeover_panels = {}  # like full_panels, but the whole wall (ticker and clock too)
+        self.tall_panels = {}      # full width over the ticker too, down to the clock strip (which stays)
         from display.modules.weather_alert import AlertScreen
         self.alert_screen = keep("alert_screen", ("weather_alerts",),
                                  lambda: AlertScreen(cfg.modules.get("weather_alerts", {}) or {}, loader))
@@ -236,6 +237,12 @@ class Screen:
         self.panels["webcam"] = self.webcam.draw
         self.full_panels["webcam_full"] = self.webcam.draw
         self.takeover_panels["webcam_wall"] = self.webcam.draw
+        self.tall_panels["webcam_tall"] = self.webcam.draw
+        # the camera grid: 2 rows of 4 squares, one camera after another (display/modules/webcam.py CameraGrid)
+        self.panels["webcam_grid"] = self.webcam.grid.draw
+        self.full_panels["webcam_grid_full"] = self.webcam.grid.draw
+        self.tall_panels["webcam_grid_tall"] = self.webcam.grid.draw
+        self.takeover_panels["webcam_grid_wall"] = self.webcam.grid.draw
         if maps is not None:
             from display.modules.weather_maps import MapPanel
             self.map_panel = keep("map_panel", (), lambda: MapPanel(cfg, maps))
@@ -321,7 +328,8 @@ class Screen:
                 if entry is None:
                     break
                 name = entry.get("panel", "blank")
-                if name in self.panels or name in self.full_panels or name in self.takeover_panels:
+                if name in self.panels or name in self.full_panels or name in self.takeover_panels \
+                        or name in self.tall_panels:
                     break
                 eng.skip_unavailable()
                 entry = None
@@ -335,10 +343,15 @@ class Screen:
 
         results, visible = {}, {"left": False, "right": False}
         takeover = next((s for s in ("right", "left") if chosen[s].get("panel") in self.takeover_panels), None)
-        full = None if takeover else next((s for s in ("right", "left") if chosen[s].get("panel") in self.full_panels), None)
+        tall = None if takeover else next((s for s in ("right", "left") if chosen[s].get("panel") in self.tall_panels), None)
+        full = None if takeover or tall else next((s for s in ("right", "left")
+                                                   if chosen[s].get("panel") in self.full_panels), None)
         if takeover:
             results[takeover] = run(takeover, self.takeover_panels, (0, 0, self.w, self.h))
             visible[takeover] = True
+        elif tall:
+            results[tall] = run(tall, self.tall_panels, (0, 0, self.w, self.status_top))
+            visible[tall] = True
         elif full:
             results[full] = run(full, self.full_panels, (0, self.main_y, self.w, self.main_h))
             visible[full] = True
@@ -359,10 +372,10 @@ class Screen:
         if takeover:
             return                                  # no ticker / clock while an alert has the wall
 
-        # top bar (finance) over a black mask
-        graphics.DrawLine(c, 0, self.top_h, self.w, self.top_h, self.border)
-        c.FillRect(0, 0, self.w, self.top_h, BLACK)
-        self.finance.render(c, 0, 0, self.w, self.top_h)
+        if not tall:                                # top bar (finance) over a black mask
+            graphics.DrawLine(c, 0, self.top_h, self.w, self.top_h, self.border)
+            c.FillRect(0, 0, self.w, self.top_h, BLACK)
+            self.finance.render(c, 0, 0, self.w, self.top_h)
 
         # bottom strip: clock | weekday kanji | status | date
         c.FillRect(0, self.h - 16, self.w, 16, BLACK)

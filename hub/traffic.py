@@ -288,4 +288,111 @@ def richmond_cameras(get):
         return _unique([v for vs in ex.map(one, markers) for v in vs])
 
 
-CITY_SOURCES = {"Vancouver": cov_cameras, "Richmond": richmond_cameras}    # city -> crawler: the views in that city
+def _view(prefix, key, name, caption, lat, lon, city, credit, url, refresh, look=""):
+    """One city camera view in the page's shape (an "image" source; thumbnails through /api/webcams/city)."""
+    key = re.sub(r"[^A-Za-z0-9_-]+", "_", key).strip("_")
+    o = next((k for k, v in LOOK.items() if v == look), "")
+    return {"id": f"{prefix}-{key}", "name": name, "caption": caption, "lat": lat, "lon": lon, "orientation": o,
+            "look": look, "highway": "", "on": True, "delayed": False, "updated": None, "period": refresh,
+            "turns": False, "corrected": False, "city": city, "credit": credit,
+            "thumb": f"/api/webcams/city/{prefix}-{key}.jpg", "source": {"type": "image", "url": url, "refresh_sec": refresh}}
+
+
+# --- City of Surrey intersection cameras --------------------------------------------------------------------------
+# The City's Traffic Data Hub map reads a public ArcGIS layer: one point per camera with its intersection, its name
+# ("72_kgbv_cam1", "fraser_184_quadN", "81a_kgbv_pano") and the URL of its latest JPEG (refreshed about every 30 s,
+# exact Last-Modified). A few are the Province's highway cameras, which Surrey shows too.
+SURREY_LAYER = "https://gisservices.surrey.ca/arcgis/rest/services/Public/Transportation/MapServer/2/query"
+SURREY_QUERY = {"where": "IMAGE IS NOT NULL", "outFields": "LOCATION,CAMERA_NAME,OWNER,IMAGE", "outSR": "4326",
+                "f": "json"}
+_SURREY_VIEW = {"quadn": "North", "quads": "South", "quade": "East", "quadw": "West", "pano": "Panorama"}
+
+
+def _surrey_view(cam_name):
+    """The view's word from the camera's name: "…_cam2" → "Camera 2", "…_quadN" → "North", "…_pano" → "Panorama"."""
+    tail = (cam_name or "").rsplit("_", 1)[-1].lower()
+    m = re.fullmatch(r"cam(\d+)", tail)
+    return f"Camera {m.group(1)}" if m else _SURREY_VIEW.get(tail, "")
+
+
+def surrey_views(data):
+    """Every camera view in the City of Surrey's layer (the query's JSON)."""
+    out = []
+    for f in (data or {}).get("features") or []:
+        a, g = f.get("attributes") or {}, f.get("geometry") or {}
+        url, loc = (a.get("IMAGE") or "").strip(), re.sub(r"\s+", " ", a.get("LOCATION") or "").strip()
+        if not url.startswith("https://") or not loc or g.get("x") is None:
+            continue
+        loc = re.sub(r"\s+(?:And|and)\s+", " & ", loc)
+        word = _surrey_view(a.get("CAMERA_NAME"))
+        credit = "City of Surrey" if (a.get("OWNER") or "Surrey") == "Surrey" else "BC Transportation (City of Surrey map)"
+        out.append(_view("sry", a.get("CAMERA_NAME") or url.rsplit("/", 1)[-1].rsplit(".", 1)[0],
+                         f"{loc} - {word}" if word else loc, loc, round(g["y"], 6), round(g["x"], 6),
+                         "Surrey", credit, url, 60))
+    return out
+
+
+def surrey_cameras(get):
+    """Every City of Surrey camera view. get(url) -> text."""
+    import json
+    from urllib.parse import urlencode
+    data = json.loads(get(SURREY_LAYER + "?" + urlencode(SURREY_QUERY)))
+    if isinstance(data, dict) and data.get("error"):          # ArcGIS reports trouble in a 200 ("Service not started")
+        raise RuntimeError((data["error"] or {}).get("message") or "the camera layer answered with an error")
+    return _unique(surrey_views(data))
+
+
+# --- Township of Langley intersection cameras ---------------------------------------------------------------------
+# The Township's camera tour map reads a public ArcGIS layer: name ("<b>200 St &amp; 72 Ave</b> … (Looking North)"),
+# where, and the latest JPEG (a few minutes apart). The Township says which way each one looks.
+LANGLEY_LAYER = ("https://services5.arcgis.com/frpHL0Fv8koQRVWY/arcgis/rest/services/TrafficCamerasTourPnts3_view/"
+                 "FeatureServer/0/query")
+LANGLEY_QUERY = {"where": "1=1", "outFields": "name,pic_url", "outSR": "4326", "f": "json"}
+_LOOKING_WORD = re.compile(r"\(\s*looking\s+(\w+)\s*\)", re.I)
+
+
+def langley_views(data):
+    import html as h
+    out = []
+    for f in (data or {}).get("features") or []:
+        a, g = f.get("attributes") or {}, f.get("geometry") or {}
+        url = (a.get("pic_url") or "").split("?", 1)[0].strip()
+        raw = h.unescape(a.get("name") or "")
+        m = _LOOKING_WORD.search(raw)
+        look = m.group(1).lower() if m and m.group(1).lower() in LOOK.values() else ""
+        name = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", _LOOKING_WORD.sub("", raw))).strip()
+        if not url.startswith("https://") or not name or g.get("x") is None:
+            continue
+        out.append(_view("tol", url.rsplit("/", 1)[-1].rsplit(".", 1)[0], name + (f" - looking {look}" if look else ""),
+                         name, round(g["y"], 6), round(g["x"], 6), "Langley", "Township of Langley", url, 120, look))
+    return out
+
+
+def langley_cameras(get):
+    import json
+    from urllib.parse import urlencode
+    return _unique(langley_views(json.loads(get(LANGLEY_LAYER + "?" + urlencode(LANGLEY_QUERY)))))
+
+
+# --- SFU's Burnaby Mountain cameras -------------------------------------------------------------------------------
+# SFU's road report shows these (the two roads up the mountain and the campus); fixed images, updated every 15 s.
+# Locations are placed by hand from the campus map.
+SFU_IMAGE = "https://ns-webcams.its.sfu.ca/public/images/{}-current.jpg"
+SFU_CAMS = [("gaglardi", "Gaglardi Way intersection", 49.2706, -122.9367),
+            ("udn", "University Drive North", 49.2808, -122.9095),
+            ("towern", "Tower Road North", 49.2793, -122.9139),
+            ("towers", "Tower Road South", 49.2752, -122.9140),
+            ("aqn", "SFU Academic Quadrangle North", 49.2792, -122.9172),
+            ("aqsw", "SFU Academic Quadrangle South West", 49.2783, -122.9183),
+            ("aqse", "SFU Academic Quadrangle South East", 49.2783, -122.9161),
+            ("wmcroof", "SFU Blusson Hall roof", 49.2790, -122.9145),
+            ("brh", "SFU Barbara Rae House roof", 49.2797, -122.9256)]
+
+
+def sfu_cameras(get=None):
+    return [_view("sfu", k, name, "Burnaby Mountain", lat, lon, "Burnaby", "SFU", SFU_IMAGE.format(k), 60)
+            for k, name, lat, lon in SFU_CAMS]
+
+
+CITY_SOURCES = {"Vancouver": cov_cameras, "Richmond": richmond_cameras, "Surrey": surrey_cameras,    # city -> crawler
+                "Langley": langley_cameras, "Burnaby": sfu_cameras}

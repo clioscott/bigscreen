@@ -11,6 +11,7 @@ export const SHAPES = {
   left: { label: "Left side", panel: "webcam", side: "left", icon: "PanelLeft" },
   right: { label: "Right side", panel: "webcam", side: "right", icon: "PanelRight" },
   full: { label: "Full width", panel: "webcam_full", side: "right", icon: "RectangleHorizontal", note: "ticker and clock stay" },
+  tall: { label: "Above the clock", panel: "webcam_tall", side: "right", icon: "PanelBottomClose", note: "covers the ticker; the clock and date stay" },
   wall: { label: "Whole wall", panel: "webcam_wall", side: "right", icon: "Maximize", note: "covers the ticker and clock" },
 };
 // caption layouts and sections (display/modules/webcam_caption.py draws them)
@@ -25,19 +26,29 @@ const LAYOUTS = {
   signage: { label: "Departure board", icon: "TrainFront", note: "Amber lines on a dark board" },
   ticker: { label: "Ticker", icon: "ChevronsLeft", note: "Name in a tab, details scrolling past" },
   stack: { label: "Stack", icon: "List", note: "Each section on its own outlined line" },
+  underline: { label: "Underline", icon: "Underline", note: "Big headline over an accent rule, no box" },
   custom: { label: "Custom", icon: "LayoutGrid", note: "Your own columns and lines" },
   outline: { label: "Outlined", icon: "Type", note: "Text with a black edge, no box" },
   dot: { label: "LIVE dot", icon: "CircleDot", note: "Just a blinking dot and the time" },
   none: { label: "None", icon: "EyeOff", note: "No caption" },
 };
-const FONTS = [{ value: "tiny", label: "Tiny" }, { value: "small", label: "Small" }, { value: "medium", label: "Medium" }, { value: "large", label: "Large" }];
-const SECTIONS = { name: "Name", place: "Place", time: "Local time", age: "Image time", weather: "Weather", sun: "Sunrise / sunset", date: "Date",
+const FONTS = [{ value: "tiny", label: "Tiny" }, { value: "small", label: "Small" }, { value: "medium", label: "Medium" }, { value: "large", label: "Large" },
+  { value: "xlarge", label: "Extra large" }];
+const SECTIONS = { name: "Name", place: "Place", time: "Local time", age: "Image time", weather: "Temperature", sun: "Sunrise / sunset", date: "Date",
   offset: "Time difference", daynight: "Day / night icon", live: "LIVE badge", credit: "Credit", custom: "Your text",
-  shield: "Highway shield" };
-const ORDERABLE = ["shield", "live", "name", "place", "time", "age", "weather", "date", "offset", "sun", "custom", "credit"];
+  shield: "Highway shield", conditions: "Conditions", feels: "Feels like", hilo: "High / low", wind: "Wind", humidity: "Humidity" };
+// the section chips, grouped (weather ones need the webcam's location)
+const SECTION_GROUPS = [{ label: "About the webcam", keys: ["name", "place", "credit", "custom", "live", "shield"] },
+  { label: "Time", keys: ["time", "date", "offset", "age", "daynight"] },
+  { label: "Weather there", keys: ["weather", "conditions", "feels", "hilo", "wind", "humidity", "sun"] }];
+const WX_KEYS = ["weather", "sun", "conditions", "feels", "hilo", "wind", "humidity"];
+const ORDERABLE = ["shield", "live", "name", "place", "time", "age", "weather", "conditions", "feels", "hilo", "wind", "humidity", "date", "offset", "sun",
+  "custom", "credit"];
 // the Custom layout: where each section goes (column, line) to start with; mirrors webcam_caption.DEFAULT_SLOTS
 const DEFAULT_SLOTS = { shield: [1, 1], live: [1, 1], name: [1, 1], place: [1, 2], time: [1, 2], age: [1, 2], weather: [1, 3], date: [1, 3], offset: [1, 3],
-  sun: [1, 3], custom: [1, 3], credit: [1, 3] };
+  sun: [1, 3], custom: [1, 3], credit: [1, 3], conditions: [1, 3], feels: [1, 3], hilo: [1, 3], wind: [1, 4], humidity: [1, 4] };
+const TEXT_ALIGNS = [{ value: "auto", label: "Auto" }, { value: "left", label: "Left", icon: "AlignLeft" }, { value: "center", label: "Centre", icon: "AlignCenter" },
+  { value: "right", label: "Right", icon: "AlignRight" }];
 const CONTAINERS = [{ value: "box", label: "Box" }, { value: "strip", label: "Full-width strip" }, { value: "outline", label: "Outlined" }, { value: "board", label: "Board" }];
 const LINE_SIZES = [{ value: "headline", label: "Headline" }, { value: "detail", label: "Detail" }, { value: "big", label: "Big" }];
 const ALIGNS = [{ value: "left", label: "Left" }, { value: "center", label: "Centre" }, { value: "right", label: "Right" }];
@@ -56,7 +67,7 @@ const DEFAULT_OVERLAY = { style: "tag", corner: "bl", when: "always", font: "sma
   bg: "#000000", opacity: 0.7, time_format: "24h", fade: true, show_sec: 12, every_min: 3, custom_text: "", headline: "name",
   lines: "auto", separator: "dot", uppercase: false, order: [...ORDERABLE],
   show: { name: true, place: true, time: true, date: false, offset: false, daynight: false, weather: false, sun: false,
-    age: false, live: true, credit: false, custom: false, shield: false },
+    age: false, live: true, credit: false, custom: false, shield: false, conditions: false, feels: false, hilo: false, wind: false, humidity: false },
   shield: { route: "99", kind: "auto", style: "pixel", place: "inside", size: "box" } };
 // the caption's highway shield (display/modules/shields.py draws it; the Custom layout only)
 const SHIELD_PRESETS = [
@@ -92,7 +103,7 @@ const qs = (o) => Object.entries(o).map(([k, v]) => `${k}=${encodeURIComponent(v
 export const camEntry = (id, shape) => ({ panel: SHAPES[shape].panel, cam: id, rules: [], dwell_sec: 60 });
 
 function useStatus() {
-  const status = ref({ feeds: [], zones: { left: [295, 130], right: [152, 130], full: [448, 130], wall: [448, 192] } });
+  const status = ref({ feeds: [], zones: { left: [295, 130], right: [152, 130], full: [448, 130], tall: [448, 175], wall: [448, 192] } });
   let t;
   const load = async () => { try { status.value = await api("/api/webcams/status"); } catch {} };
   onMounted(() => { load(); t = setInterval(load, 3000); });
@@ -158,105 +169,148 @@ const SnapImg = {
   template: `<img v-if="url" :src="url" alt=""><span v-else ref="box" class="wc-snap-wait">{{ state === 'loading' ? 'live frame…' : '' }}</span>`,
 };
 
-// --- traffic cams: DriveBC highway cameras (stills that refresh every few minutes) ---------------------------------
+// --- intersection and traffic cameras: the cities' own intersection cameras and DriveBC's highway ones (stills) ------
+// By city (each split into the city's intersection cameras and DriveBC's highway cameras) or bridge, as a list or on a
+// map. Click one to add it as a webcam; "Select several" picks many at once for the camera grid (or as webcams).
+const BRIDGES = "__bridges";
+const sameSrc = (a, b) => !!a && !!b && a.type === b.type && (a.type === "drivebc" ? a.id === b.id : a.url === b.url);
+const camSrc = (c) => c.source || { type: "drivebc", id: c.id };
+const ownCam = (c) => !!c.credit && c.credit !== "DriveBC";          // a city's (or SFU's) camera, not DriveBC's
 const TrafficCams = {
   components: { CameraMap },
-  props: { cams: Array },                                  // [[id, cam]] of the webcams set up
-  emits: ["add"],
+  props: { cams: Array, grid: Object },                    // [[id, cam]] of the webcams set up; the camera grid
+  emits: ["add", "grid"],
   setup(props, { emit }) {
     const data = ref({ crossings: [], cities: [], count: 0 });
-    const tab = ref(store.trafficTab || "crossings");
-    const city = ref("");
-    const query = ref("");
-    const box = ref(null);
     const loading = ref(true);
-    onMounted(async () => {
+    const city = ref(store.trafficCity || "");
+    const view = ref(store.trafficView || "list");
+    const query = ref("");
+    const picking = ref(!!store.trafficPick);
+    const picked = ref([]);
+    store.trafficPick = false;
+    // the cities' own cameras are crawled by the hub in the background (daily); while a first crawl runs, ask again
+    const crawling = ref(false);
+    let tries = 0, again = null;
+    const load = async () => {
       try {
         data.value = await api("/api/webcams/traffic");
-        city.value = data.value.cities.find((c) => c.city === "Vancouver")?.city || data.value.cities[0]?.city || "";
+        if (!city.value) city.value = data.value.cities[0]?.city || BRIDGES;
+        crawling.value = !!data.value.crawling;
+        if (crawling.value && tries++ < 20) again = setTimeout(load, 10000);
       } catch (e) { fail(e); }
       loading.value = false;
-      if (store.trafficTab) { box.value?.scrollIntoView({ block: "start" }); store.trafficTab = null; }   // from the DriveBC page
-    });
-    // DriveBC cameras by id; City of Vancouver ones (string ids) by their image URL
-    const srcOf = (c) => c.source || { type: "drivebc", id: c.id };
-    const have = (id) => {
-      const c = typeof id === "object" ? id : { id };
-      const want = srcOf(c);
-      return props.cams.find(([, x]) => x.source?.type === want.type && (want.type === "drivebc" ? x.source.id === want.id : x.source.url === want.url))?.[0];
     };
+    onMounted(load);
+    onBeforeUnmount(() => clearTimeout(again));
+    watch(city, (c) => { store.trafficCity = c; });
+    watch(view, (v) => { store.trafficView = v; });
+    const have = (c) => props.cams.find(([, x]) => sameSrc(x.source, camSrc(c)))?.[0];
+    const inGrid = (c) => (props.grid?.cams || []).some((g) => sameSrc(g.source, camSrc(c)));
     const thumb = (c) => c.thumb || `/api/webcams/drivebc/${c.id}.jpg`;
-    const add = (c, label, place) => {
-      if (have(c)) return go(`webcams/${have(c)}`);
-      emit("add", { label, place, credit: c.credit || "DriveBC", tz: "America/Vancouver", source: { ...srcOf(c) }, lat: c.lat, lon: c.lon });
-      toast(`Added ${label}. Save to keep it; open it to crop it or add it to the rotation.`);
-    };
-    const look = (c) => ((c.look || LOOKS[c.orientation]) ? `looking ${c.look || LOOKS[c.orientation]}` : c.name);
-    const why = (c) => [c.caption, c.turns && "This camera can turn: the direction is DriveBC's last known one.",
+    const look = (c) => c.look || LOOKS[c.orientation] || "";
+    const titleOf = (c) => c._label || c.name;
+    const why = (c) => [c.caption, c.credit, c.turns && "This camera can turn: the direction is DriveBC's last known one.",
                         c.corrected && "Direction checked by eye (DriveBC's label was wrong)."].filter(Boolean).join("\n");
-    const match = (c) => !query.value || `${c.name} ${c.caption} ${c.highway} ${c.city}`.toLowerCase().includes(query.value.toLowerCase());
-    const cityCams = computed(() => (data.value.cities.find((c) => c.city === city.value)?.cams || []).filter(match));
-    const found = computed(() => (query.value ? data.value.cities.flatMap((c) => c.cams).filter(match).slice(0, 60) : []));
-    // the map's own camera ids that are webcams already: DriveBC by id, city cameras by their image URL
-    const cityAll = computed(() => data.value.cities.flatMap((c) => c.cams).filter((c) => (c.credit || "").startsWith("City of")));
-    const addedIds = computed(() => {
-      const urls = new Set(props.cams.filter(([, x]) => x.source?.type === "image").map(([, x]) => x.source.url));
-      return [...props.cams.filter(([, x]) => x.source?.type === "drivebc").map(([, x]) => x.source.id),
-              ...cityAll.value.filter((c) => urls.has(c.source.url)).map((c) => c.id)];
+    const match = (c) => `${c.name} ${c.caption} ${c.highway} ${c.city} ${c.credit || ""}`.toLowerCase().includes(query.value.toLowerCase());
+    const allCams = computed(() => data.value.cities.flatMap((c) => c.cams));
+    const tabs = computed(() => [{ key: BRIDGES, label: "Bridges & tunnels", n: data.value.crossings.reduce((n, x) => n + x.cams.length, 0) },
+      ...data.value.cities.map((c) => ({ key: c.city, label: c.city, n: c.cams.length, own: c.cams.filter(ownCam).length }))]);
+    // the sections shown: a search across everything, a bridge each, or a city's own cameras (by who runs them) then DriveBC's
+    const groups = computed(() => {
+      if (query.value) return [{ key: "q", title: "Matching cameras", cams: allCams.value.filter(match).slice(0, 160) }];
+      if (city.value === BRIDGES) {
+        return data.value.crossings.map((x) => ({ key: x.name, title: x.name, note: x.note, icon: "Construction",
+          cams: x.cams.map((c) => ({ ...c, _label: (x.label || x.short) + (look(c) ? " · looking " + look(c) : "") })) }));
+      }
+      const cams = data.value.cities.find((c) => c.city === city.value)?.cams || [];
+      const byCredit = {};
+      for (const c of cams.filter(ownCam)) (byCredit[c.credit] = byCredit[c.credit] || []).push(c);
+      return [...Object.entries(byCredit).map(([credit, cs]) => ({ key: credit, title: `Intersection cameras · ${credit}`, icon: "TrafficCone", cams: cs })),
+        { key: "dbc", title: "Highway cameras · DriveBC", icon: "Cctv", cams: cams.filter((c) => !ownCam(c)) }].filter((g) => g.cams.length);
     });
-    const mapFocus = ref(null);
-    watch(tab, (t) => { if (t !== "map") mapFocus.value = null; });   // the plain Map tab shows the whole area again
-    const onMap = () => {                                    // the chosen city's cameras on the map
-      const pts = (data.value.cities.find((c) => c.city === city.value)?.cams || []).filter((c) => c.lat != null);
-      if (!pts.length) return;
-      const lons = pts.map((c) => +c.lon), lats = pts.map((c) => +c.lat);
-      mapFocus.value = [Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats)];
-      tab.value = "map";
+    const shown = computed(() => groups.value.flatMap((g) => g.cams));
+    const isPicked = (c) => picked.value.some((p) => sameSrc(camSrc(p), camSrc(c)));
+    const toggle = (c) => { const i = picked.value.findIndex((p) => sameSrc(camSrc(p), camSrc(c))); if (i >= 0) picked.value.splice(i, 1); else picked.value.push(c); };
+    const pickAll = (cs) => { for (const c of cs) if (!isPicked(c) && !inGrid(c)) picked.value.push(c); };
+    const asWebcam = (c) => ({ label: titleOf(c), place: c.city || "", credit: c.credit || "DriveBC", tz: "America/Vancouver",
+      source: { ...camSrc(c) }, lat: c.lat, lon: c.lon });
+    const click = (c) => {
+      if (picking.value) return toggle(c);
+      if (have(c)) return go(`webcams/${have(c)}`);
+      emit("add", asWebcam(c));
+      toast(`Added ${titleOf(c)} to your webcams. Save to keep it.`);
     };
-    const fromMap = (c) => add(c, c.name, c.city || "");     // DriveBC and city cameras alike
+    const toGrid = () => {
+      const add = picked.value.filter((c) => !inGrid(c));
+      emit("grid", add.map((c) => ({ name: titleOf(c), source: { ...camSrc(c) }, thumb: thumb(c), ...(c.lat != null ? { lat: c.lat, lon: c.lon } : {}) })));
+      toast(`${add.length} camera${add.length === 1 ? "" : "s"} added to the camera grid. Save to keep them.`);
+      picked.value = [];
+      picking.value = false;
+    };
+    const toWebcams = () => {
+      const add = picked.value.filter((c) => !have(c));
+      for (const c of add) emit("add", asWebcam(c));
+      toast(`${add.length} webcam${add.length === 1 ? "" : "s"} added. Save to keep them.`);
+      picked.value = [];
+      picking.value = false;
+    };
+    // the map: the cities' cameras as a layer (one marker per intersection); DriveBC's are the map's own
+    const cityAll = computed(() => allCams.value.filter(ownCam));
+    const addedIds = computed(() => [...props.cams.filter(([, x]) => x.source?.type === "drivebc").map(([, x]) => x.source.id),
+      ...cityAll.value.filter((c) => have(c) || (picking.value && isPicked(c))).map((c) => c.id)]);
+    const mapFocus = computed(() => {
+      if (city.value === BRIDGES || query.value) return null;
+      const pts = (data.value.cities.find((c) => c.city === city.value)?.cams || []).filter((c) => c.lat != null);
+      if (!pts.length) return null;
+      const lons = pts.map((c) => +c.lon), lats = pts.map((c) => +c.lat);
+      return [Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats)];
+    });
+    const fromMap = (c) => (picking.value ? toggle(c) : click({ ...c, _label: c.name }));
     const openFromMap = (c) => go(`webcams/${have(c)}`);
-    return { data, tab, city, query, box, loading, have, thumb, add, look, why, cityCams, found, addedIds, fromMap, openFromMap, cityList: cityAll, mapFocus, onMap };
+    return { data, loading, crawling, city, view, query, picking, picked, tabs, groups, shown, have, inGrid, thumb, titleOf, why, look, isPicked,
+      toggle, pickAll, click, toGrid, toWebcams, cityAll, addedIds, mapFocus, fromMap, openFromMap, BRIDGES };
   },
-  template: `<div class="card" style="margin-top:16px" ref="box">
-    <div class="card-head"><Icon name="Cctv" :size="16"/><h3>Traffic cams</h3>
-      <span class="faint" style="font-size:12px">DriveBC, City of Vancouver and City of Richmond stills · click to add</span><span class="spacer"></span>
-      <input class="input" v-model="query" placeholder="Search cameras" style="max-width:200px; height:28px" v-if="tab !== 'map'">
-      <Seg v-model="tab" :options="[{value:'crossings', label:'Bridges'}, {value:'cities', label:'By city'}, {value:'map', label:'Map'}]"/></div>
-    <div v-if="loading" class="card-body faint">Loading DriveBC cameras…</div>
-    <template v-else-if="tab === 'crossings' && !query">
-      <div v-for="x in data.crossings" :key="x.name" class="card-body" style="padding-top:6px">
-        <div class="wc-subhead">{{ x.name }}</div>
-        <div class="faint" style="font-size:12px; margin:-2px 0 6px" v-if="x.note">{{ x.note }}</div>
+  template: `<div class="card">
+    <div class="card-head" style="flex-wrap:wrap; row-gap:8px"><Icon name="TrafficCone" :size="16"/><h3 style="white-space:nowrap">Intersection &amp; traffic cameras</h3>
+      <span class="faint" style="font-size:12px; white-space:nowrap">{{ data.count || '…' }} stills</span><span class="spacer"></span>
+      <input class="input" v-model="query" placeholder="Search every camera" style="max-width:210px; height:28px">
+      <Seg v-model="view" :options="[{value:'list', label:'List', icon:'LayoutGrid'}, {value:'map', label:'Map', icon:'Map'}]"/>
+      <button class="btn sm" :class="{primary: picking}" @click="picking = !picking; picked = []"><Icon :name="picking ? 'X' : 'ListChecks'" :size="14"/>{{ picking ? 'Done selecting' : 'Select several' }}</button></div>
+    <div class="card-body" v-if="!query" style="padding-bottom:4px"><div class="row" style="gap:6px; flex-wrap:wrap">
+      <button v-for="t in tabs" :key="t.key" type="button" class="chip" :class="{off: city !== t.key}" style="height:26px; padding:0 10px"
+              @click="city = t.key" :title="t.own ? t.own + ' of the city’s own intersection cameras' : ''">
+        <Icon v-if="t.key === BRIDGES" name="Construction" :size="13"/>{{ t.label }} <span class="faint">{{ t.n }}</span>
+        <span v-if="t.own" class="wc-own" title="Has its own intersection cameras"></span></button></div></div>
+    <div v-if="picking" class="wc-pickbar">
+      <Icon name="ListChecks" :size="15"/><b>{{ picked.length }} selected</b>
+      <button class="btn sm ghost" @click="pickAll(shown)" :disabled="!shown.length" v-if="view === 'list'">Select all {{ shown.length }} shown</button>
+      <button class="btn sm ghost" @click="picked = []" :disabled="!picked.length">Clear</button>
+      <span class="spacer"></span>
+      <button class="btn sm" @click="toWebcams" :disabled="!picked.length"><Icon name="Video" :size="13"/>Add as webcams</button>
+      <button class="btn sm primary" @click="toGrid" :disabled="!picked.length"><Icon name="Grid2x2" :size="13"/>Add to the camera grid</button></div>
+    <div v-if="crawling" class="callout info" style="margin:8px 16px 0; font-size:12.5px"><Icon name="LoaderCircle" :size="14" class="spin"/>
+      The hub is fetching the cities’ own intersection cameras (Vancouver, Richmond, Surrey, Langley, SFU); they appear here as each city arrives.</div>
+    <div v-if="loading" class="card-body faint">Loading cameras…</div>
+    <CameraMap v-else-if="view === 'map'" addable :added="addedIds" :extra="cityAll" :focus="mapFocus" @add="fromMap" @open="openFromMap"/>
+    <template v-else>
+      <div v-for="g in groups" :key="g.key" class="card-body" style="padding-top:6px">
+        <div class="wc-subhead row" style="gap:6px"><Icon :name="g.icon || 'Search'" :size="13"/>{{ g.title }} <span class="faint">{{ g.cams.length }}</span>
+          <span class="spacer"></span><button v-if="picking" class="btn sm ghost" @click="pickAll(g.cams)">Select these</button></div>
+        <div class="faint" style="font-size:12px; margin:-2px 0 6px" v-if="g.note">{{ g.note }}</div>
         <div class="wc-gallery">
-          <button v-for="c in x.cams" :key="c.id" type="button" class="wc-pick" :class="{have: have(c), off: !c.on}"
-                  @click="add(c, (x.label || x.short) + (c.look ? ' · ' + look(c) : ''), x.name)" :title="why(c)">
+          <button v-for="c in g.cams" :key="c.id" type="button" class="wc-pick" :class="{have: have(c), off: !c.on, picked: picking && isPicked(c)}"
+                  @click="click(c)" :title="why(c)">
             <span class="wc-thumb"><img :src="thumb(c)" loading="lazy" alt="">
-              <span class="wc-have" v-if="have(c)"><Icon name="Check" :size="13"/>added</span>
+              <span class="wc-check" v-if="picking"><Icon :name="isPicked(c) ? 'SquareCheck' : 'Square'" :size="16"/></span>
+              <span class="wc-have" v-if="have(c)"><Icon name="Check" :size="13"/>webcam</span>
+              <span class="wc-have grid" v-else-if="inGrid(c)"><Icon name="Grid2x2" :size="12"/>in grid</span>
               <span class="wc-have" v-else-if="!c.on" style="color:var(--bad)">offline</span></span>
-            <b>{{ look(c) }}<span v-if="c.turns" class="faint" title="Can turn"> ↻</span></b><span class="faint wc-note">{{ c.caption }}</span>
+            <b>{{ titleOf(c) }}<span v-if="c.turns" class="faint" title="Can turn"> ↻</span></b>
+            <span class="faint wc-note">{{ query ? c.city + ' · ' : '' }}{{ c.credit || c.caption }}</span>
           </button></div></div>
+      <div class="card-body faint" v-if="!groups.length">{{ query ? 'No camera matches “' + query + '”.' : 'No cameras here.' }}</div>
     </template>
-    <template v-else-if="tab === 'cities' && !query">
-      <div class="card-body"><div class="row" style="gap:6px">
-        <button v-for="c in data.cities" :key="c.city" type="button" class="chip" :class="{off: city !== c.city}" style="height:26px; padding:0 10px"
-                @click="city = c.city">{{ c.city }} <span class="faint">{{ c.cams.length }}</span></button>
-        <button type="button" class="btn sm" style="margin-left:auto" @click="onMap" :disabled="!city"><Icon name="Map" :size="13"/>{{ city }} on the map</button></div></div>
-      <div class="card-body wc-gallery" style="padding-top:0">
-        <button v-for="c in cityCams" :key="c.id" type="button" class="wc-pick" :class="{have: have(c), off: !c.on}" @click="add(c, c.name, city)" :title="why(c)">
-          <span class="wc-thumb"><img :src="thumb(c)" loading="lazy" alt="">
-            <span class="wc-have" v-if="have(c)"><Icon name="Check" :size="13"/>added</span>
-            <span class="wc-have" v-else-if="!c.on" style="color:var(--bad)">offline</span></span>
-          <b>{{ c.name }}</b><span class="faint wc-note">{{ (c.credit || '').startsWith('City of') ? c.credit : c.caption }}</span>
-        </button></div>
-    </template>
-    <div v-else-if="query && tab !== 'map'" class="card-body wc-gallery">
-      <button v-for="c in found" :key="c.id" type="button" class="wc-pick" :class="{have: have(c), off: !c.on}" @click="add(c, c.name, c.city)" :title="why(c)">
-        <span class="wc-thumb"><img :src="thumb(c)" loading="lazy" alt="">
-          <span class="wc-have" v-if="have(c)"><Icon name="Check" :size="13"/>added</span></span>
-        <b>{{ c.name }}</b><span class="faint">{{ c.city }}</span><span class="faint wc-note">{{ c.caption }}</span>
-      </button>
-      <div class="faint" v-if="!found.length">No camera matches “{{ query }}”.</div></div>
-    <CameraMap v-else addable :added="addedIds" :extra="cityList" :focus="mapFocus" @add="fromMap" @open="openFromMap"/>
   </div>`,
 };
 
@@ -374,9 +428,9 @@ const LiveGallery = {
     });
     return { CITIES, city, cat, cats, mode, query, shown, groups, total: GALLERY.length };
   },
-  template: `<div class="card" style="margin-top:16px">
-    <div class="card-head"><Icon name="Video" :size="16"/><h3>Live webcams</h3>
-      <span class="faint" style="font-size:12px">{{ total }} 24/7 YouTube streams · click to add</span><span class="spacer"></span>
+  template: `<div class="card">
+    <div class="card-head"><Icon name="Youtube" :size="16"/><h3>Live YouTube webcams</h3>
+      <span class="faint" style="font-size:12px">{{ total }} 24/7 streams by city · click one to add it</span><span class="spacer"></span>
       <input class="input" v-model="query" placeholder="Search every city" style="max-width:200px; height:28px">
       <Seg v-model="mode" :options="[{value:'grid', label:'Grid', icon:'LayoutGrid'}, {value:'map', label:'Map', icon:'Map'}]"/></div>
     <div class="card-body stack" style="gap:8px; padding-bottom:6px" v-if="!query">
@@ -406,13 +460,205 @@ const LiveGallery = {
   </div>`,
 };
 
-// --- list ---------------------------------------------------------------------------------------------------
-const WebcamList = {
-  components: { SnapImg, TrafficCams, LiveGallery },
+// modules.webcams with its list and grid, in saved and draft alike (opening a page isn't a change); a first list is
+// every webcam, in the order the display already plays them without one
+function seedWebcams() {
+  const wc = seed(["modules", "webcams"], { cams: {} });
+  seed(["modules", "webcams", "playlist"], Object.keys(wc.cams || {}).map((cam) => ({ cam, sec: 60, on: true })));
+  seed(["modules", "webcams", "grid"], { cams: [], interval_ms: 200, hold_sec: 3, labels: true });
+  return wc;
+}
+
+// --- the rotation's webcam entries: the Webcams list (no cam), the camera grid, and older one-webcam entries ------------
+const isListEntry = (e) => e.panel?.startsWith("webcam") && !e.panel.startsWith("webcam_grid") && !e.cam;
+const rotationEntries = (test) => {
+  const lc = store.draft.modules.layout_cycle || {};
+  return ["left", "right"].flatMap((side) => (lc[side] || []).map((e, i) => ({ side, i, e })).filter((x) => test(x.e)));
+};
+const shapeOfPanel = (e, side) => (e.panel.endsWith("_wall") ? "wall" : e.panel.endsWith("_full") ? "full" : e.panel.endsWith("_tall") ? "tall" : side);
+const LIST_SHAPES = { left: "webcam", right: "webcam", full: "webcam_full", tall: "webcam_tall", wall: "webcam_wall" };
+const GRID_SHAPES = { left: "webcam_grid", right: "webcam_grid", full: "webcam_grid_full", tall: "webcam_grid_tall", wall: "webcam_grid_wall" };
+const addEntry = (panel, side) => {
+  store.draft.modules.layout_cycle[side].push({ panel, rules: [], advance: "cycles", cycles: 1, max_sec: 3600 });
+};
+
+// Where something plays in the rotation, with a button to put it there (and a link to the Rotation page)
+const InRotation = {
+  props: { found: Array, what: String, shapes: Object },
+  setup(props) {
+    const shape = ref("full");
+    const add = () => {
+      const s = SHAPES[shape.value];
+      addEntry(props.shapes[shape.value], s.side);
+      toast(`${props.what} added to the ${s.side} rotation (${s.label.toLowerCase()}). Save to keep it.`);
+    };
+    return { shape, add, SHAPES, shapeOfPanel };
+  },
+  template: `<div class="wc-rot">
+    <Icon name="RefreshCw" :size="15"/>
+    <template v-if="found.length"><span>In the rotation:</span>
+      <span v-for="(u, k) in found" :key="k" class="pill accent">{{ u.side }} side · {{ SHAPES[shapeOfPanel(u.e, u.side)].label.toLowerCase() }}{{ u.e.variants?.length ? ' · other sizes at set times' : '' }}{{ u.e.enabled === false ? ' · off' : '' }}</span>
+      <a href="#/rotation" class="btn sm ghost">Rules, sizes and timing<Icon name="ArrowRight" :size="13"/></a></template>
+    <template v-else><span>Not in the rotation yet.</span><span class="spacer"></span>
+      <select class="input" v-model="shape" style="width:auto; height:28px"><option v-for="(s, k) in SHAPES" :key="k" :value="k">{{ s.label }}</option></select>
+      <button class="btn sm primary" @click="add"><Icon name="ListPlus" :size="14"/>Add to the rotation</button></template>
+  </div>`,
+};
+
+// --- Your webcams: the Webcams list (order, on/off, seconds), played by the rotation's one Webcams entry --------------
+const PlaylistTab = {
+  components: { SnapImg, InRotation },
+  emits: ["add", "find"],
   setup() {
-    const wc = seed(["modules", "webcams"], { cams: {} });
-    const cams = computed(() => Object.entries(store.draft.modules.webcams.cams || {}));
+    const wc = store.draft.modules.webcams;
+    const cams = computed(() => wc.cams || {});
+    const list = computed(() => wc.playlist);
     const { feedFor } = useStatus();
+    const found = computed(() => rotationEntries(isListEntry));
+    const single = computed(() => rotationEntries((e) => e.panel?.startsWith("webcam") && !e.panel.startsWith("webcam_grid") && e.cam));
+    // older rotations had one entry per webcam: fold them into the list (their order first), with one Webcams entry
+    const combine = () => {
+      const lc = store.draft.modules.layout_cycle;
+      const first = single.value[0];
+      const order = [...new Set(single.value.map((u) => u.e.cam))];
+      const rest = wc.playlist.filter((x) => !order.includes(x.cam));
+      wc.playlist = [...order.map((cam) => ({ ...(wc.playlist.find((x) => x.cam === cam) || { cam }), on: true,
+        sec: single.value.find((u) => u.e.cam === cam).e.dwell_sec || 60 })), ...rest.map((x) => ({ ...x, on: false }))];
+      for (const side of ["left", "right"]) lc[side] = (lc[side] || []).filter((e) => !(e.panel?.startsWith("webcam") && !e.panel.startsWith("webcam_grid") && e.cam));
+      if (!found.value.length) {
+        const entry = { panel: first.e.panel, rules: first.e.rules || [], advance: "cycles", cycles: 1, max_sec: 3600, ...(first.e.variants ? { variants: first.e.variants } : {}) };
+        lc[first.side].splice(Math.min(first.i, lc[first.side].length), 0, entry);
+      }
+      toast(`${order.length} webcams combined into the list, with one Webcams entry in the rotation. Save to keep it.`);
+    };
+    const on = computed(() => list.value.filter((x) => x.on !== false && cams.value[x.cam]));
+    const total = computed(() => on.value.reduce((n, x) => n + (x.sec || 60), 0));
+    const srcHost = (s) => (s?.type === "drivebc" ? `DriveBC camera ${s.id}` : host(s?.url));
+    const kindOf = (s) => (STILL.includes(s?.type) ? "Still" : "Live");
+    const mins = (s) => (s >= 90 ? `${Math.round(s / 6) / 10} min` : `${s} s`);
+    return { LIST_SHAPES, wc, cams, list, on, total, found, single, combine, feedFor, feedPill, srcHost, kindOf, hasSource, mins, go };
+  },
+  template: `<div class="stack">
+    <div class="card"><div class="card-body stack" style="gap:10px">
+      <InRotation :found="found" what="Webcams" :shapes="LIST_SHAPES"/>
+      <div v-if="single.length" class="callout" style="font-size:12.5px"><Icon name="Combine" :size="14"/>
+        <span>{{ single.length }} webcam{{ single.length === 1 ? ' is a separate rotation entry' : 's are separate rotation entries' }}. Combine them into this list,
+          so the rotation has one Webcams entry and the order lives here.
+          <button class="btn sm primary" style="margin-left:6px" @click="combine">Combine into the list</button></span></div>
+      <div class="row" style="gap:18px; align-items:flex-end">
+        <Field label="Each turn plays" hint="Then the rotation moves on; the next turn carries on down the list">
+          <Stepper :modelValue="wc.per_turn || 1" @update:modelValue="v => wc.per_turn = v" :min="1" :max="50" :unit="(wc.per_turn || 1) === 1 ? ' webcam' : ' webcams'"/></Field>
+        <div class="faint" style="font-size:12.5px; padding-bottom:6px">{{ on.length }} of {{ list.length }} on · the whole list takes {{ mins(total) }}</div>
+      </div>
+    </div></div>
+    <div class="card">
+      <div class="card-head"><Icon name="ListOrdered" :size="16"/><h3 style="white-space:nowrap">The list</h3><span class="faint ellipsis" style="font-size:12px; min-width:0">drag to reorder · switch off to skip</span>
+        <span class="spacer"></span><button class="btn sm" @click="$emit('add')"><Icon name="Plus" :size="14"/>Add by URL</button>
+        <button class="btn sm" @click="$emit('find')"><Icon name="Search" :size="14"/>Find webcams</button></div>
+      <div v-sortable="{ list: list, handle: '.handle' }">
+        <div v-for="(it, i) in list" :key="it.cam" class="list-row wc-list-row" :class="{off: it.on === false}">
+          <span class="handle"><Icon name="GripVertical" :size="16"/></span>
+          <span class="mono faint" style="width:18px; text-align:right">{{ i + 1 }}</span>
+          <span class="wc-row-thumb" style="cursor:pointer" @click="go('webcams/' + it.cam)"><SnapImg v-if="hasSource(cams[it.cam]?.source)" :source="cams[it.cam].source"/></span>
+          <div class="grow" style="min-width:0; cursor:pointer" @click="go('webcams/' + it.cam)"><b>{{ cams[it.cam]?.label || it.cam }}</b>
+            <div class="faint ellipsis" style="font-size:12.5px"><span class="wc-kind" :class="kindOf(cams[it.cam]?.source).toLowerCase()">{{ kindOf(cams[it.cam]?.source) }}</span>
+              {{ [cams[it.cam]?.place, srcHost(cams[it.cam]?.source)].filter(Boolean).join(' · ') }}</div></div>
+          <span class="pill" :class="feedPill(feedFor(cams[it.cam])).cls">{{ feedPill(feedFor(cams[it.cam])).text }}</span>
+          <Stepper :modelValue="it.sec || 60" @update:modelValue="v => it.sec = v" :min="5" :max="3600" :step="5" unit=" s" title="How long it shows"/>
+          <Toggle :modelValue="it.on !== false" @update:modelValue="v => it.on = v" title="In the rotation"/>
+          <button class="btn sm ghost icon-only" title="Crop, colour and caption" @click="go('webcams/' + it.cam)"><Icon name="Pencil" :size="14"/></button>
+        </div>
+      </div>
+      <div class="empty" v-if="!list.length">No webcams yet. <a href="javascript:void 0" @click="$emit('find')">Find some</a> or add one by URL.</div>
+    </div>
+  </div>`,
+};
+
+// --- Camera grid: still cameras bulk-added from the intersection list, shown 2 × 4, one after another -----------------
+const GridTab = {
+  components: { InRotation },
+  emits: ["find"],
+  setup() {
+    const g = store.draft.modules.webcams.grid;
+    const found = computed(() => rotationEntries((e) => e.panel?.startsWith("webcam_grid")));
+    const shape = ref(found.value[0] ? shapeOfPanel(found.value[0].e, found.value[0].side) : "full");
+    const img = ref("");
+    const busy = ref(false);
+    let timer = null, url = "";
+    const render = async () => {
+      timer = null;
+      if (!g.cams.length) { img.value = ""; return; }
+      busy.value = true;
+      try {
+        const r = await fetch("/api/webcams/grid/preview.png", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ grid: clone(g), shape: shape.value, scale: 3 }) });
+        if (!r.ok) throw new Error(await r.text());
+        if (url) URL.revokeObjectURL(url);
+        img.value = url = URL.createObjectURL(await r.blob());
+      } catch (e) { fail(e); } finally { busy.value = false; }
+    };
+    const queue = () => { clearTimeout(timer); timer = setTimeout(render, 400); };
+    watch(() => [g.cams.map((c) => JSON.stringify(c.source) + c.name).join("|"), g.labels, shape.value], queue, { immediate: true });
+    onBeforeUnmount(() => { clearTimeout(timer); if (url) URL.revokeObjectURL(url); });
+    // the hub's own thumbnail for the camera (kept with it when it was added), else a snapshot
+    const thumbOf = (c) => (c.source.type === "drivebc" ? `/api/webcams/drivebc/${c.source.id}.jpg`
+      : /^\/api\/webcams\/city\/[\w-]+\.jpg$/.test(c.thumb || "") ? c.thumb : snap(c.source));
+    const secs = computed(() => (g.cams.length * (g.interval_ms || 200)) / 1000 + (g.hold_sec ?? 3));
+    const play = () => {
+      const s = SHAPES[shape.value];
+      playOnDisplay({ panel: GRID_SHAPES[shape.value], advance: "cycles", cycles: 1, max_sec: 600 }, { side: s.side, hold: false });
+    };
+    return { GRID_SHAPES, g, found, shape, img, busy, thumbOf, secs, play, render, SHAPES, dirty };
+  },
+  template: `<div class="stack">
+    <div class="card"><div class="card-body stack" style="gap:10px">
+      <div class="faint" style="font-size:13px">Two rows of four squares. Each camera lands in the next square in turn (top row left to right, then the bottom row),
+        replacing what was there, until every camera below has appeared; then the rotation moves on.</div>
+      <InRotation :found="found" what="The camera grid" :shapes="GRID_SHAPES"/>
+    </div></div>
+    <div class="two-col">
+      <div class="card"><div class="card-head"><Icon name="Grid2x2" :size="16"/><h3>Cameras</h3><span class="faint" style="font-size:12px">{{ g.cams.length }} · drag to reorder</span>
+          <span class="spacer"></span><ConfirmButton v-if="g.cams.length" small label="Remove all" @confirm="g.cams.splice(0)"/>
+          <button class="btn sm primary" @click="$emit('find')"><Icon name="Plus" :size="14"/>Add cameras</button></div>
+        <div class="card-body">
+          <div class="wc-grid-list" v-sortable="{ list: g.cams, handle: '.wc-grid-cam' }">
+            <div v-for="(c, i) in g.cams" :key="JSON.stringify(c.source)" class="wc-grid-cam" :title="c.name">
+              <img :src="thumbOf(c)" loading="lazy" alt=""><span class="n">{{ i + 1 }}</span>
+              <button class="x" title="Remove" @click.stop="g.cams.splice(i, 1)"><Icon name="X" :size="12"/></button>
+              <span class="name">{{ c.name }}</span></div>
+          </div>
+          <div class="empty" v-if="!g.cams.length">No cameras yet. Use <b>Add cameras</b>, then <b>Select several</b> in the intersection list.</div>
+        </div></div>
+      <div class="stack sticky">
+        <div class="card"><div class="card-head"><span class="live">LIVE</span><h3>On the wall</h3><span class="spacer"></span>
+            <select class="input" v-model="shape" style="width:auto; height:28px"><option v-for="(s, k) in SHAPES" :key="k" :value="k">{{ s.label }}</option></select></div>
+          <div class="card-body stack">
+            <div class="led"><img v-if="img" :src="img" alt="" :style="{opacity: busy ? .6 : 1}"><div v-else class="placeholder">{{ busy ? 'Fetching cameras…' : 'Add cameras to see the grid' }}</div></div>
+            <div class="faint" style="font-size:12px">With every square filled (the last eight cameras). The wall fills it one square at a time.</div>
+            <div class="row"><button class="btn sm" @click="play" :disabled="!g.cams.length || dirty.length" :title="dirty.length ? 'Save first' : ''"><Icon name="Play" :size="14"/>Play once on the wall</button>
+              <span class="faint" style="font-size:12px">Takes about {{ Math.round(secs) }} s</span></div>
+          </div></div>
+        <div class="card"><div class="card-head"><Icon name="SlidersHorizontal" :size="16"/><h3>Timing and labels</h3></div>
+          <div class="card-body fields">
+            <Field label="A new camera every" hint="200 ms is five a second"><Stepper :modelValue="g.interval_ms ?? 200" @update:modelValue="v => g.interval_ms = v" :min="50" :max="5000" :step="50" unit=" ms"/></Field>
+            <Field label="Hold at the end" hint="Once the last camera is in"><Stepper :modelValue="g.hold_sec ?? 3" @update:modelValue="v => g.hold_sec = v" :min="0" :max="30" unit=" s"/></Field>
+            <Field label="Names" hint="Each square's camera, small, along its bottom (squares 40 px and up)"><Toggle :modelValue="g.labels !== false" @update:modelValue="v => g.labels = v"/></Field>
+          </div></div>
+      </div>
+    </div>
+  </div>`,
+};
+
+// --- the page: your webcams, the camera grid, and where to find more -------------------------------------------------
+const TABS = [{ value: "list", label: "Your webcams", icon: "ListOrdered" }, { value: "grid", label: "Camera grid", icon: "Grid2x2" },
+  { value: "live", label: "Live YouTube cams", icon: "Youtube" }, { value: "traffic", label: "Intersection & traffic cams", icon: "TrafficCone" }];
+const WebcamList = {
+  components: { PlaylistTab, GridTab, TrafficCams, LiveGallery },
+  setup() {
+    const wc = seedWebcams();
+    const cams = computed(() => Object.entries(store.draft.modules.webcams.cams || {}));
+    const tab = computed({ get: () => (store.route.params[0] === "~grid" ? "grid" : store.webcamTab || "list"),
+      set: (v) => { store.webcamTab = v; if (store.route.params[0]) go("webcams"); } });
     const add = (from, open = true) => {
       const all = store.draft.modules.webcams.cams || (store.draft.modules.webcams.cams = {});
       const f = from || { label: "New webcam", source: { type: "youtube", url: "" } };
@@ -423,6 +669,7 @@ const WebcamList = {
       const overlay = clone(DEFAULT_OVERLAY);
       if (STILL.includes(f.source?.type)) Object.assign(overlay.show, { age: true, live: false });   // a still isn't LIVE
       all[id] = { fps: 15, ...base, overlay, crops: {} };
+      store.draft.modules.webcams.playlist.push({ cam: id, sec: 60, on: true });
       if (open) go(`webcams/${id}`);
       return id;
     };
@@ -432,34 +679,27 @@ const WebcamList = {
       const have = haveId(c);
       if (have) return go(`webcams/${have}`);
       add(c, false);
-      toast(`Added ${c.label}. Save to keep it; open it to crop it or add it to the rotation.`);
+      toast(`Added ${c.label} to your webcams. Save to keep it.`);
     };
-    const usedText = (id) => {
-      const u = usedIn(id);
-      return u.length ? `in the rotation ×${u.length}` : "not in the rotation";
-    };
-    const srcHost = (s) => (s?.type === "drivebc" ? `DriveBC camera ${s.id}` : host(s?.url));
-    return { wc, cams, feedFor, feedPill, add, host, srcHost, hasSource, usedText, go, haveId, pick };
+    const toGrid = (list) => { store.draft.modules.webcams.grid.cams.push(...list); };
+    const find = () => { tab.value = "traffic"; };
+    const findForGrid = () => { store.trafficPick = true; tab.value = "traffic"; };
+    const counts = computed(() => ({ list: store.draft.modules.webcams.playlist.length, grid: store.draft.modules.webcams.grid.cams.length }));
+    return { wc, cams, tab, add, haveId, pick, toGrid, find, findForGrid, counts, TABS, store };
   },
   template: `<div class="page">
     <div class="page-head"><div class="grow"><h1>Webcams</h1>
-      <p>Live video on the wall. The hub decodes each stream (the Pi only shows finished frames), crops it for the place it plays and
-        adds a caption. Add webcams here, then put them in the rotation like any other screen.</p></div>
-      <button class="btn primary" @click="add()"><Icon name="Plus" :size="15"/>Add webcam</button></div>
-    <div class="card">
-      <div class="list-row" v-for="[id, cam] in cams" :key="id" style="cursor:pointer" @click="go('webcams/' + id)">
-        <span class="wc-row-thumb"><SnapImg v-if="hasSource(cam.source)" :source="cam.source"/></span>
-        <div class="grow" style="min-width:0"><b>{{ cam.label || id }}</b>
-          <div class="faint ellipsis" style="font-size:12.5px">{{ [cam.place, srcHost(cam.source), usedText(id)].filter(Boolean).join(' · ') }}</div></div>
-        <span class="pill" :class="feedPill(feedFor(cam)).cls">{{ feedPill(feedFor(cam)).text }}</span>
-        <button class="btn sm ghost icon-only" title="Edit"><Icon name="Pencil" :size="14"/></button>
-      </div>
-      <div class="empty" v-if="!cams.length">No webcams yet.</div>
-    </div>
-    <LiveGallery :have="haveId" @pick="pick"/>
-    <TrafficCams :cams="cams" @add="add($event, false)"/>
-    <div class="faint" style="font-size:12.5px; margin-top:10px">Or use Add webcam with any YouTube live page, an HLS / MJPEG / RTSP stream URL,
-      a DriveBC camera number, or any still image URL.</div>
+      <p>Live video and traffic cameras on the wall. The rotation has one <b>Webcams</b> entry: it plays the list below, in this order.
+        The <b>camera grid</b> flicks through many intersection cameras at once. The hub fetches and decodes everything; the Pi only shows finished frames.</p></div>
+      <button class="btn primary" @click="add()"><Icon name="Plus" :size="15"/>Add by URL</button></div>
+    <div class="wc-tabs"><button v-for="t in TABS" :key="t.value" type="button" :class="{on: tab === t.value}" @click="tab = t.value">
+      <Icon :name="t.icon" :size="15"/>{{ t.label }}<span v-if="counts[t.value] != null" class="n">{{ counts[t.value] }}</span></button></div>
+    <PlaylistTab v-if="tab === 'list'" @add="add()" @find="tab = 'live'"/>
+    <GridTab v-else-if="tab === 'grid'" @find="findForGrid"/>
+    <LiveGallery v-else-if="tab === 'live'" :have="haveId" @pick="pick"/>
+    <TrafficCams v-else :cams="cams" :grid="wc.grid" @add="add($event, false)" @grid="toGrid"/>
+    <div class="faint" style="font-size:12.5px; margin-top:10px" v-if="tab !== 'grid'">Add by URL takes any YouTube live page, an HLS / MJPEG / RTSP stream,
+      a DriveBC camera number, or any still image that updates.</div>
   </div>`,
 };
 
@@ -534,6 +774,7 @@ const CropEditor = {
     <div class="row">
       <span class="faint">Zoom</span><div style="flex:1; min-width:160px"><Slider v-model="zoom" :min="100" :max="800" :step="5" unit="%"/></div>
       <button class="btn sm" @click="reset" title="The largest centred crop"><Icon name="Scan" :size="14"/>Fit</button>
+      <slot/>
     </div>
     <div class="hint faint" style="font-size:12px">Drag the box to choose what shows; Ctrl + scroll on the picture zooms. Each place on the wall keeps its own crop.
       Source {{ nat[0] }}×{{ nat[1] }} (decoded at 640 px wide).</div>
@@ -666,7 +907,7 @@ const CaptionGrid = {
 const WebcamEditor = {
   components: { CropEditor, WallPreview, CaptionGrid },
   setup() {
-    seed(["modules", "webcams"], { cams: {} });
+    seedWebcams();
     const id = computed(() => store.route.params[0]);
     const cam = computed(() => store.draft.modules.webcams.cams?.[id.value]);
     const shape = ref("full");
@@ -704,10 +945,25 @@ const WebcamEditor = {
     };
     watch(() => cam.value?.source?.url, () => { probe.value = null; });
     const used = computed(() => usedIn(id.value));
-    const addToRotation = () => {
-      const s = SHAPES[shape.value];
-      store.draft.modules.layout_cycle[s.side].push(camEntry(id.value, shape.value));
-      toast(`Added to the ${s.side} rotation (${s.label.toLowerCase()}, 60 s). Save to keep it; Rotation has the rules.`);
+    // its place in the Webcams list (the rotation's Webcams entry plays the list)
+    const inList = computed(() => (store.draft.modules.webcams.playlist || []).find((x) => x.cam === id.value) || null);
+    const listPos = computed(() => (store.draft.modules.webcams.playlist || []).findIndex((x) => x.cam === id.value) + 1);
+    const addToList = () => {
+      const wc = store.draft.modules.webcams;
+      if (!Array.isArray(wc.playlist)) wc.playlist = Object.keys(wc.cams).filter((k) => k !== id.value).map((cam) => ({ cam, sec: 60, on: true }));
+      wc.playlist.push({ cam: id.value, sec: 60, on: true });
+    };
+    const capTab = ref("theme");
+    const copyCrop = () => {
+      const c = cam.value.crops?.[shape.value];
+      if (!c) return;
+      const z = status.value.zones, a = z[shape.value][0] / z[shape.value][1];
+      for (const k of Object.keys(SHAPES)) {
+        if (k === shape.value) continue;
+        const w = Math.min(1, c.w * Math.sqrt(a / (z[k][0] / z[k][1])));        // about the same area of the picture
+        cam.value.crops[k] = { x: +Math.max(0, c.x + (c.w - w) / 2).toFixed(5), y: c.y, w: +w.toFixed(5) };
+      }
+      toast("Every size now centres on this crop (adjust each if needed)");
     };
     const play = async (hold) => {
       if (dirty.value.length) await previewOnDisplay(120, { hook: false });   // so the wall shows this crop and caption
@@ -718,6 +974,8 @@ const WebcamEditor = {
       const lc = store.draft.modules.layout_cycle;
       for (const side of ["left", "right"]) lc[side] = (lc[side] || []).filter((e) => !(e.cam === id.value && e.panel?.startsWith("webcam")));
       delete store.draft.modules.webcams.cams[id.value];
+      const pl = store.draft.modules.webcams.playlist;
+      if (Array.isArray(pl)) store.draft.modules.webcams.playlist = pl.filter((x) => x.cam !== id.value);
       go("webcams");
     };
     const captionToAll = () => {
@@ -734,10 +992,11 @@ const WebcamEditor = {
     watch(() => ov.value?.shield?.style, () => { presetsLoaded.value = 1; });
     const presetShown = (r) => ov.value.shield.style !== "real" || SHIELD_PRESET_ROUTES.indexOf(r) < presetsLoaded.value;
     const presetDone = () => { presetsLoaded.value++; };
-    const hasText = (k) => ({ place: !!cam.value.place, credit: !!cam.value.credit, custom: !!ov.value.custom_text?.trim(),
-      shield: /\d/.test(String(ov.value.shield?.route ?? "")),
-      weather: Number.isFinite(cam.value.lat), sun: Number.isFinite(cam.value.lat) }[k] ?? true);
-    const needsLocation = computed(() => (ov.value.show.weather || ov.value.show.sun) && !(Number.isFinite(cam.value.lat) && Number.isFinite(cam.value.lon)));
+    const hasText = (k) => (WX_KEYS.includes(k) ? Number.isFinite(cam.value.lat) : { place: !!cam.value.place, credit: !!cam.value.credit,
+      custom: !!ov.value.custom_text?.trim(), shield: /\d/.test(String(ov.value.shield?.route ?? "")) }[k] ?? true);
+    const needsLocation = computed(() => WX_KEYS.some((k) => ov.value.show[k]) && !(Number.isFinite(cam.value.lat) && Number.isFinite(cam.value.lon)));
+    const boxMode = computed({ get: () => (ov.value.box_w === "full" ? "full" : Number(ov.value.box_w) > 0 ? "min" : "auto"),
+      set: (v) => { ov.value.box_w = v === "full" ? "full" : v === "min" ? Math.max(60, Number(ov.value.box_w) || 160) : "auto"; } });
     const galleryLoc = computed(() => GALLERY.find((g) => (g.source.url === cam.value.source?.url || g.id === youtubeId(cam.value.source?.url || "")) && g.lat != null) || null);
     const useGalleryLoc = () => { cam.value.lat = galleryLoc.value.lat; cam.value.lon = galleryLoc.value.lon; };
     // "Preview on display" (the save bar) puts this webcam on the wall for the preview, then releases it
@@ -774,7 +1033,7 @@ const WebcamEditor = {
       [o[a], o[b]] = [o[b], o[a]];
     };
     const customCrop = (s) => !!cam.value.crops?.[s];
-    return { id, cam, shape, zone, ov, colour, probe, testing, test, used, addToRotation, play, remove, captionToAll, toggleShow, customCrop,
+    return { id, cam, shape, zone, ov, colour, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
       orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, hasText, customCols, SHIELD_PRESETS, SHIELD_KINDS, SHIELD_PLACES, SHIELD_SIZES, SHIELD_STYLES, shieldSrc, signMissing, presetShown, presetDone,
       CONTAINERS, feedFor, feedPill, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
   },
@@ -819,7 +1078,8 @@ const WebcamEditor = {
           <div class="card-body stack">
             <div class="seg"><button v-for="(s, k) in SHAPES" :key="k" type="button" :class="{on: shape === k}" @click="shape = k">
               <Icon :name="s.icon" :size="14"/>{{ s.label }}<span v-if="customCrop(k)" class="faint" title="Has its own crop">•</span></button></div>
-            <CropEditor :cam="cam" :shape="shape" :zone="zone"/>
+            <CropEditor :cam="cam" :shape="shape" :zone="zone"><button class="btn sm ghost" @click="copyCrop" :disabled="!customCrop(shape)"
+              title="Give every other size a crop centred on this one"><Icon name="Copy" :size="14"/>Use for every size</button></CropEditor>
             <div class="fields">
               <Field label="Brightness"><Slider :modelValue="colour.brightness ?? 1" @update:modelValue="v => colour.brightness = v" :min="0.4" :max="2" :step="0.05" :format="v => Math.round(v * 100) + '%'"/></Field>
               <Field label="Contrast"><Slider :modelValue="colour.contrast ?? 1" @update:modelValue="v => colour.contrast = v" :min="0.5" :max="2" :step="0.05" :format="v => Math.round(v * 100) + '%'"/></Field>
@@ -840,29 +1100,50 @@ const WebcamEditor = {
             <div class="row">
               <button class="btn sm" @click="play(false)"><Icon name="Play" :size="14"/>Play once on the wall</button>
               <button class="btn sm" @click="play(true)"><Icon name="Pause" :size="14"/>Hold on the wall</button>
-              <span class="spacer"></span>
-              <button class="btn sm primary" @click="addToRotation"><Icon name="ListPlus" :size="14"/>Add to the rotation</button></div>
-            <div class="faint" style="font-size:12.5px">
-              <template v-if="used.length">In the rotation: <span v-for="(u, k) in used" :key="k" class="pill" style="margin-right:4px">{{ u.side }} · {{ SHAPES[u.e.panel === 'webcam' ? u.side : u.e.panel === 'webcam_full' ? 'full' : 'wall'].label.toLowerCase() }} · {{ u.e.dwell_sec || 30 }} s{{ u.e.variants?.length ? ' · other sizes at set times' : '' }}</span>
-                <a href="#/rotation">rules and timing</a></template>
-              <template v-else>Not in the rotation yet.</template></div>
+            </div>
+            <div class="wc-rot" v-if="inList">
+              <Icon name="ListOrdered" :size="15"/><span>No. {{ listPos }} in the <a href="#/webcams">Webcams list</a></span><span class="spacer"></span>
+              <span class="faint">shows for</span><Stepper :modelValue="inList.sec || 60" @update:modelValue="v => inList.sec = v" :min="5" :max="3600" :step="5" unit=" s"/>
+              <Toggle :modelValue="inList.on !== false" @update:modelValue="v => inList.on = v" title="In the rotation"/></div>
+            <div class="wc-rot" v-else><Icon name="ListOrdered" :size="15"/><span>Not in the Webcams list.</span><span class="spacer"></span>
+              <button class="btn sm primary" @click="addToList"><Icon name="ListPlus" :size="14"/>Add to the list</button></div>
+            <div class="faint" style="font-size:12px" v-if="used.length">Also its own rotation entry ({{ used.map(u => u.side).join(', ') }}):
+              <a href="#/webcams">combine it into the list</a> on the Webcams page.</div>
           </div></div>
 
         <div class="card"><div class="card-head"><Icon name="Captions" :size="16"/><h3>Caption</h3>
             <span class="spacer"></span><button class="btn sm ghost" @click="captionToAll" title="Copy this caption look to every webcam"><Icon name="Copy" :size="14"/>Use on all webcams</button></div>
           <div class="card-body stack">
-            <div class="wc-layouts"><button v-for="(l, k) in LAYOUTS" :key="k" type="button" class="wc-layout" :class="{on: ov.style === k}" @click="ov.style = k" :title="l.note">
+            <div class="seg wc-captabs"><button v-for="t in [{v:'theme', l:'Theme', i:'Palette'}, {v:'content', l:'What it says', i:'Text'}, {v:'look', l:'Size & look', i:'Ruler'}, {v:'when', l:'When', i:'Clock'}]"
+              :key="t.v" type="button" :class="{on: capTab === t.v}" @click="capTab = t.v" :disabled="t.v !== 'theme' && ov.style === 'none'"><Icon :name="t.i" :size="14"/>{{ t.l }}</button></div>
+            <div v-if="capTab === 'theme'" class="wc-layouts"><button v-for="(l, k) in LAYOUTS" :key="k" type="button" class="wc-layout" :class="{on: ov.style === k}" @click="ov.style = k" :title="l.note">
               <Icon :name="l.icon" :size="15"/><b>{{ l.label }}</b><span class="faint">{{ l.note }}</span></button></div>
-            <template v-if="ov.style !== 'none'">
+            <template v-if="ov.style !== 'none' && capTab === 'look'">
               <div class="row" style="gap:16px; align-items:flex-start">
                 <Field label="Position"><div class="wc-corners wc-six">
                   <button v-for="c in POSITIONS" :key="c" type="button" :class="{on: ov.corner === c}" @click="ov.corner = c" :title="c"></button></div></Field>
-                <Field label="Headline" v-if="!['dot', 'custom'].includes(ov.style)"><Seg v-model="ov.headline" :options="HEADLINES"/></Field>
                 <Field label="Text size" v-if="ov.style !== 'dot'"><Seg v-model="ov.font" :options="FONTS"/></Field>
               </div>
-              <Field label="Sections" hint="Click to turn on or off" v-if="ov.style !== 'dot'"><div class="row" style="gap:6px">
-                <template v-for="(l, k) in SECTIONS" :key="k"><button v-if="k !== 'shield' || ov.style === 'custom'" type="button" class="chip" :class="{off: !ov.show[k]}"
-                  style="height:26px; padding:0 10px" @click="toggleShow(k)">{{ l }}</button></template></div></Field>
+              <div class="row" style="gap:16px; align-items:flex-start" v-if="ov.style !== 'dot'">
+                <Field label="Text alignment" hint="Auto follows the position"><Seg :modelValue="ov.text_align || 'auto'" @update:modelValue="v => ov.text_align = v" :options="TEXT_ALIGNS"/></Field>
+                <Field label="Label width" v-if="['tag', 'outline'].includes(ov.style)" hint="As wide as its text, at least a width, or edge to edge">
+                  <div class="row nowrap" style="gap:8px"><Seg v-model="boxMode" :options="[{value:'auto', label:'Fit text'}, {value:'min', label:'At least'}, {value:'full', label:'Full width'}]"/>
+                    <Stepper v-if="boxMode === 'min'" :modelValue="ov.box_w" @update:modelValue="v => ov.box_w = v" :min="20" :max="448" :step="10" unit=" px"/></div></Field>
+              </div>
+              <div class="row" style="gap:16px; align-items:flex-start" v-if="ov.style !== 'dot'">
+                <Field label="Distance from the edge"><div class="seg mini"><button v-for="m in [-1, 0, 2, 4, 8, 12, 16]" :key="m" type="button" :class="{on: (ov.margin ?? -1) === m}"
+                  @click="ov.margin = m">{{ m < 0 ? 'Layout’s own' : m + ' px' }}</button></div></Field>
+                <Field label="Padding" v-if="['tag', 'outline'].includes(ov.style)"><Stepper :modelValue="ov.pad ?? 2" @update:modelValue="v => ov.pad = v" :min="0" :max="10" unit=" px"/></Field>
+              </div>
+            </template>
+            <template v-if="ov.style !== 'none' && capTab === 'content'">
+              <Field label="Headline" v-if="!['dot', 'custom'].includes(ov.style)"><Seg v-model="ov.headline" :options="HEADLINES"/></Field>
+              <div v-if="ov.style !== 'dot'" class="stack" style="gap:8px">
+                <Field v-for="g in SECTION_GROUPS" :key="g.label" :label="g.label"><div class="row" style="gap:6px">
+                  <template v-for="k in g.keys" :key="k"><button v-if="k !== 'shield' || ov.style === 'custom'" type="button" class="chip" :class="{off: !ov.show[k]}"
+                    style="height:26px; padding:0 10px" @click="toggleShow(k)">{{ SECTIONS[k] }}</button></template></div></Field></div>
+            </template>
+            <template v-if="ov.style !== 'none' && capTab === 'content'">
               <Field label="Highway shield" v-if="ov.style === 'custom' && ov.show.shield" hint="Pick a sign, or type a route; inside, the box grows to fit it">
                 <div class="stack" style="gap:8px">
                   <div v-for="g in SHIELD_PRESETS" :key="g.group" class="row" style="gap:4px; align-items:center">
@@ -897,8 +1178,8 @@ const WebcamEditor = {
                 <Seg :modelValue="ov.taken_format || 'time'" @update:modelValue="v => ov.taken_format = v"
                      :options="[{value:'time', label:'taken 17:05:42'}, {value:'relative', label:'3 min ago'}, {value:'both', label:'Both'}]"/></Field>
               <Field label="Your text" v-if="ov.show.custom"><input class="input" v-model="ov.custom_text" maxlength="40" placeholder="Scramble Crossing, from the Starbucks"></Field>
-              <div class="callout info" v-if="(ov.show.weather || ov.show.sun) && !(Number.isFinite(cam.lat) && Number.isFinite(cam.lon))" style="font-size:12.5px">
-                <Icon name="MapPin" :size="14"/> Weather and sunrise/sunset need this webcam's location (Source → Location).</div>
+              <div class="callout info" v-if="needsLocation" style="font-size:12.5px">
+                <Icon name="MapPin" :size="14"/> The weather sections need this webcam's location (Source → Location).</div>
               <Field label="Order" hint="The details, top to bottom or left to right; the headline goes first" v-if="!['dot', 'custom'].includes(ov.style) && orderOn.length > 1">
                 <div class="wc-order"><div v-for="(k, i) in orderOn" :key="k" class="wc-order-item">
                   <span class="mono faint">{{ i + 1 }}</span>{{ SECTIONS[k] }}<span class="spacer"></span>
@@ -909,6 +1190,8 @@ const WebcamEditor = {
                 <Field label="Separator"><Seg v-model="ov.separator" :options="SEPS"/></Field>
                 <Field label="Clock"><Seg v-model="ov.time_format" :options="[{value:'24h', label:'24 h'}, {value:'12h', label:'12 h'}]"/></Field>
               </div>
+            </template>
+            <template v-if="ov.style !== 'none' && capTab === 'look'">
               <div class="row" style="gap:16px; align-items:flex-start">
                 <Field label="Accent"><ColorPick v-model="ov.accent"/></Field>
                 <Field label="Text" v-if="ov.style !== 'dot'"><ColorPick v-model="ov.text"/></Field>
@@ -916,6 +1199,8 @@ const WebcamEditor = {
                 <Field label="Background strength"><div style="width:150px"><Slider v-model="ov.opacity" :min="0" :max="1" :step="0.05" :format="v => Math.round(v * 100) + '%'"/></div></Field>
               </div>
               <ToggleRow v-if="ov.style !== 'dot'" v-model="ov.uppercase" label="ALL CAPS"/>
+            </template>
+            <template v-if="ov.style !== 'none' && capTab === 'when'">
               <div class="row" style="gap:16px; align-items:flex-start">
                 <Field label="Shows"><Seg v-model="ov.when" :options="[{value:'always', label:'Always'}, {value:'intro', label:'First 10 s'}, {value:'periodic', label:'Every few minutes'}]"/></Field>
                 <template v-if="ov.when === 'periodic'">
@@ -924,8 +1209,8 @@ const WebcamEditor = {
                 <Field label="Fade" v-if="ov.when !== 'always'"><Toggle v-model="ov.fade"/></Field>
               </div>
             </template>
-            <div class="faint" style="font-size:12px">When space runs out, sections drop in this order before anything is cut: credit, your text,
-              sunrise/sunset, time difference, date, weather, place.</div>
+            <div class="faint" style="font-size:12px" v-if="capTab === 'content'">When space runs out, sections drop in this order before anything is cut: credit, your text,
+              humidity, wind, high/low, feels like, conditions, sunrise/sunset, time difference, date, temperature, place.</div>
           </div></div>
       </div>
     </div>
@@ -936,5 +1221,5 @@ const WebcamEditor = {
 export const Webcams = {
   components: { WebcamList, WebcamEditor },
   setup() { return { store }; },
-  template: `<WebcamEditor v-if="store.route.params[0]"/><WebcamList v-else/>`,
+  template: `<WebcamEditor v-if="store.route.params[0] && store.route.params[0] !== '~grid'"/><WebcamList v-else/>`,
 };

@@ -1,8 +1,10 @@
 """Weather and sunrise/sunset at each webcam → data/webcam_weather.json (for the webcam captions).
 
 Only webcams with a ``lat`` and ``lon`` are fetched, all in one Open-Meteo request (free, no key):
-the current temperature, weather code and day/night, and the next two days' sunrise and sunset.
-Output, keyed by webcam id: {"temp", "code", "is_day", "sunrise": [epoch, …], "sunset": [epoch, …], "lat", "lon", "at"}.
+the current temperature, feels-like, humidity, wind, weather code and day/night, today's high and low, and the next
+two days' sunrise and sunset.
+Output, keyed by webcam id: {"temp", "feels", "humidity", "wind", "wind_dir", "gust", "code", "is_day", "high", "low",
+"sunrise": [epoch, …], "sunset": [epoch, …], "lat", "lon", "at"}.
 ``fetch`` is also used by the hub's previews for a location that hasn't been saved (and fetched) yet.
 """
 
@@ -47,8 +49,10 @@ def fetch(points: dict, timeout=30) -> dict:
     keys = list(points)
     params = {"latitude": ",".join(str(points[k][0]) for k in keys),
               "longitude": ",".join(str(points[k][1]) for k in keys),
-              "current": "temperature_2m,weather_code,is_day", "daily": "sunrise,sunset", "forecast_days": 2,
-              "timezone": "GMT", "timeformat": "unixtime"}
+              "current": "temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_direction_10m,"
+                         "wind_gusts_10m,weather_code,is_day",
+              "daily": "sunrise,sunset,temperature_2m_max,temperature_2m_min", "forecast_days": 2,
+              "timezone": "auto", "timeformat": "unixtime"}             # auto: "today" is the webcam's own day
     r = requests.get(URL, params=params, headers=UA, timeout=timeout)
     r.raise_for_status()
     data = r.json()
@@ -56,7 +60,12 @@ def fetch(points: dict, timeout=30) -> dict:
     out = {}
     for key, row in zip(keys, rows):
         cur, daily = row.get("current") or {}, row.get("daily") or {}
+        first = lambda k: (daily.get(k) or [None])[0]
         out[key] = {"temp": cur.get("temperature_2m"), "code": cur.get("weather_code"), "is_day": cur.get("is_day", 1),
+                    "feels": cur.get("apparent_temperature"), "humidity": cur.get("relative_humidity_2m"),
+                    "wind": cur.get("wind_speed_10m"), "wind_dir": cur.get("wind_direction_10m"),
+                    "gust": cur.get("wind_gusts_10m"), "high": first("temperature_2m_max"),
+                    "low": first("temperature_2m_min"),
                     "sunrise": daily.get("sunrise") or [], "sunset": daily.get("sunset") or [],
                     "lat": points[key][0], "lon": points[key][1], "at": time.time()}
     return out

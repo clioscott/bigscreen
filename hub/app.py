@@ -393,6 +393,7 @@ def _city_refresh(cities):
                 continue
             if got and len(got) >= 0.8 * len(old):             # a crawl that lost many pages keeps the old list
                 lists[city], at[city], changed = got, time.time(), True
+                _set_lists(dict(lists))                         # each city shows as soon as it's in
             else:
                 print(f"{city} cameras: only {len(got)} views, keeping {len(old)}", flush=True)
         if changed:
@@ -428,7 +429,7 @@ def _city_lists():
 @app.get("/api/webcams/traffic")
 def webcams_traffic():
     """Traffic cameras for the Webcams page: DriveBC's by bridge or tunnel and by city, with the cities' own
-    intersection cameras (Vancouver, Richmond) in their tabs (hub/traffic.py)."""
+    intersection cameras (Vancouver, Richmond, Surrey, Langley, SFU on Burnaby Mountain) in their tabs (hub/traffic.py)."""
     from hub.jobs import drivebc
     d = traffic.build(_dbc_list(), drivebc.fold)
     extra = 0
@@ -444,11 +445,11 @@ def webcams_traffic():
     rank = {n: i for i, n in enumerate(traffic.HOME)}
     d["cities"].sort(key=lambda c: (rank.get(c["city"], len(traffic.HOME)), c["city"] == "Elsewhere", c["city"]))
     return {**d, "count": d["count"] + extra, "fetched": _webcams["at"],
-            "city_cams": {c: len(v) for c, v in _city["lists"].items()}}
+            "city_cams": {c: len(v) for c, v in _city["lists"].items()}, "crawling": _city_lock.locked()}
 
 
 _dbc_thumbs: dict = {}               # camera id -> (fetched at, jpeg); ~15 kB each, oldest dropped past THUMBS_MAX
-THUMBS_MAX = 1600                    # Vancouver ~860 + Richmond ~600 city cameras, plus DriveBC
+THUMBS_MAX = 2600                    # Vancouver ~860, Richmond ~600, Surrey ~680 city cameras, plus DriveBC
 _dbc_thumb_failed: dict = {}         # camera id -> when its fetch failed (not retried for a minute)
 _dbc_thumb_slots = threading.Semaphore(6)   # DriveBC fetches at once (a city tab asks for ~100 thumbnails)
 
@@ -468,7 +469,7 @@ def webcams_cov_thumb(stem: str):
 
 @app.get("/api/webcams/city/{key}.jpg")
 def webcams_city_thumb(key: str):
-    """A city camera's latest image (Vancouver "cov-…", Richmond "rmd-…"), 320 px wide, cached a minute. Only
+    """A city camera's latest image (Vancouver "cov-…", Richmond "rmd-…", Surrey "sry-…", Langley "tol-…", SFU "sfu-…"), 320 px wide, cached a minute. Only
     cameras on the cities' own lists: never an arbitrary URL."""
     _city_lists()
     url = _city["urls"].get(key)
@@ -515,6 +516,81 @@ def webcams_drivebc_thumb(cid: int):
         _dbc_thumbs.pop(cid, None)
         hit = _dbc_thumbs[cid] = (time.time(), _thumb_jpeg(frame))
     return Response(hit[1], media_type="image/jpeg", headers={"Cache-Control": "max-age=60"})
+
+
+_grid_stills: dict = {}              # (type, url) -> (fetched at, RGB frame): the camera grid's stills, a minute each
+GRID_STILL_SEC = 60.0
+GRID_MAX = 200                       # cameras a grid fetches (the wall's and the panel's preview alike)
+
+
+def _grid_still(src):
+    """A grid camera's latest still (cached a minute), or None when it can't be fetched."""
+    try:
+        kind, url = webcams.check_source(src)
+    except webcams.SourceError:
+        return None
+    if kind not in webcams.STILLS:
+        return None                                        # the grid shows stills only
+    hit = _grid_stills.get((kind, url))
+    if hit and time.time() - hit[0] < GRID_STILL_SEC:
+        return hit[1]
+    try:
+        frame, _ = webcams.fetch_still(kind, url, meta=False)
+    except Exception:
+        frame = hit[1] if hit else None                   # a hiccup: the last picture will do
+    if len(_grid_stills) > 400:
+        _grid_stills.clear()
+    _grid_stills[(kind, url)] = (time.time(), frame)
+    return frame
+
+
+def _grid_tiles(cams, size):
+    """Each grid camera's still as a size×size square (a centred crop), fetched 8 at a time; None where it failed."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    def one(cam):
+        frame = _grid_still((cam or {}).get("source"))
+        if frame is None:
+            return None
+        return webcams.render(frame, size, size, (cam or {}).get("crop"))
+    with ThreadPoolExecutor(8) as ex:
+        return list(ex.map(one, cams))
+
+
+def _grid_cams():
+    g = ((config.load().get("modules") or {}).get("webcams") or {}).get("grid") or {}
+    return [c for c in g.get("cams") or [] if isinstance(c, dict)][:GRID_MAX]
+
+
+@app.get("/api/webcams/grid.bin")
+def webcams_grid_bin(size: int = 64):
+    """The camera grid's tiles for the wall (display/modules/webcam.py CameraGrid), in the grid's order."""
+    from display.modules.webcam import pack_grid
+    size = max(8, min(256, int(size)))
+    return Response(pack_grid(_grid_tiles(_grid_cams(), size), size), media_type="application/octet-stream")
+
+
+@app.post("/api/webcams/grid/preview.png")
+def webcams_grid_preview(payload: dict = Body(default={})):
+    """The camera grid as the wall would show it once every square has filled: {"grid", "shape", "scale"}."""
+    from display.gfx import Canvas
+    from display.modules.webcam import CameraGrid
+    zones = _webcam_zones()
+    shape = payload.get("shape") if payload.get("shape") in zones else "full"
+    g = payload.get("grid") if isinstance(payload.get("grid"), dict) else {}
+    w, h = zones[shape]
+    grid = CameraGrid("http://127.0.0.1:1", {**g, "cams": (g.get("cams") or [])[:GRID_MAX]
+                                              if isinstance(g.get("cams"), list) else []})
+    sz, gx, gy = grid.geometry((0, 0, w, h))
+    tiles = _grid_tiles(grid.cams, sz)
+    c = Canvas(w, h)
+    if tiles:
+        grid.draw_tiles(c, tiles, sz, gx, gy, len(tiles) * grid.interval + 1)
+    scale = max(1, min(6, int(payload.get("scale") or 3)))
+    im = Image.fromarray(c.buf.copy()).resize((w * scale, h * scale), Image.NEAREST)
+    out = io.BytesIO()
+    im.save(out, "PNG")
+    return Response(out.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/bc/roads/cameras")
@@ -890,12 +966,14 @@ def display_headlines_jump(payload: dict = Body(default={})):
 
 # --- webcams (live video; hub/webcams.py decodes, the Pi only blits) ------------
 def _webcam_zones():
-    """Pixel size of each place a webcam can play (display/main.py Screen: ticker 44 px + 1, bottom strip 17)."""
+    """Pixel size of each place a webcam can play (display/main.py Screen: ticker 44 px + 1, bottom strip 17).
+    "tall": full width over the ticker too, down to the clock strip."""
     L = (config.load().get("layout") or {})
     w, h = L.get("width", 448), L.get("height", 192)
     main_h = h - 17 - (L.get("top_bar_height", 44) + 1)
     cal_w = int(w * L.get("calendar_split_ratio", 0.66))
-    return {"left": [cal_w, main_h], "right": [w - cal_w - 1, main_h], "full": [w, main_h], "wall": [w, h]}
+    return {"left": [cal_w, main_h], "right": [w - cal_w - 1, main_h], "full": [w, main_h], "tall": [w, h - 17],
+            "wall": [w, h]}
 
 
 def _webcam_feed(src, fps):

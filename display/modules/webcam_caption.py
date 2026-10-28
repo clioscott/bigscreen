@@ -48,16 +48,22 @@ from display.gfx import Color, graphics
 INTRO_SEC = 10.0
 FADE_SEC = 0.6
 FONTS = {"tiny": "fonts/alert/tom-thumb.bdf", "small": "fonts/alert/5x8.bdf", "medium": "fonts/alert/6x10.bdf",
-         "large": "fonts/alert/7x13B.bdf"}
+         "large": "fonts/alert/7x13B.bdf", "xlarge": "fonts/alert/9x15B.bdf"}
 BIG = {"tiny": "fonts/alert/6x10.bdf", "small": "fonts/alert/7x13B.bdf", "medium": "fonts/alert/7x13B.bdf",
-       "large": "fonts/alert/9x15B.bdf"}     # clocks and the postcard title
+       "large": "fonts/alert/9x15B.bdf", "xlarge": "fonts/alert/10x20.bdf"}     # clocks and the postcard title
+DETAIL = {"tiny": "fonts/alert/tom-thumb.bdf", "xlarge": "fonts/alert/6x10.bdf"}   # the details' font (else 5x8)
 LAYOUTS = ("tag", "bar", "outline", "dot", "lower_third", "split", "postcard", "chips", "clock", "signage", "ticker",
-           "stack", "custom", "none")
+           "stack", "underline", "custom", "none")
 STYLES = LAYOUTS                             # older name
+# weather extras (from data/webcam_weather.json): feels-like, wind, humidity, today's high/low, the conditions in words
+WX_EXTRAS = ("feels", "wind", "humidity", "hilo", "conditions")
 SECTIONS = ("name", "place", "time", "date", "offset", "daynight", "weather", "sun", "age", "live", "credit", "custom",
-            "shield")
-ORDER = ("name", "place", "time", "age", "weather", "date", "offset", "sun", "custom", "credit")    # default order
-DROP = ("credit", "custom", "sun", "offset", "date", "weather", "age", "place", "shield", "name")    # dropped first → last
+            "shield") + WX_EXTRAS
+ORDER = ("name", "place", "time", "age", "weather", "conditions", "feels", "hilo", "wind", "humidity", "date", "offset",
+         "sun", "custom", "credit")    # default order
+DROP = ("credit", "custom", "humidity", "wind", "hilo", "feels", "conditions", "sun", "offset", "date", "weather", "age",
+        "place", "shield", "name")    # dropped first → last
+TEXT_ALIGNS = ("auto", "left", "center", "right")
 SEPARATORS = {"dot": " · ", "slash": " / ", "pipe": " | ", "dash": " - ", "space": "   "}
 DEFAULT_OVERLAY = {"style": "tag", "corner": "bl", "when": "always", "font": "small", "accent": "#e8202a",
                    "text": "#ffffff", "bg": "#000000", "opacity": 0.7, "time_format": "24h", "fade": True,
@@ -65,7 +71,8 @@ DEFAULT_OVERLAY = {"style": "tag", "corner": "bl", "when": "always", "font": "sm
                    "separator": "dot", "uppercase": False, "order": list(ORDER),
                    "show": {"name": True, "place": True, "time": True, "date": False, "offset": False,
                             "daynight": False, "weather": False, "sun": False, "age": False, "live": True,
-                            "credit": False, "custom": False, "shield": False}}
+                            "credit": False, "custom": False, "shield": False,
+                            **{k: False for k in WX_EXTRAS}}}
 WHITE, BLACK = Color(255, 255, 255), Color(0, 0, 0)
 WX_MAX_AGE = 2 * 3600       # weather older than this isn't shown
 FIT_LINES = 3               # "fit" wraps onto up to this many lines before dropping sections
@@ -106,6 +113,22 @@ def weather_icon(code, is_day=True):
     if code >= 95:
         return "storm"
     return "rain"
+
+
+CONDITIONS = [((0,), "Clear"), ((1,), "Mostly clear"), ((2,), "Partly cloudy"), ((3,), "Cloudy"), ((45, 48), "Fog"),
+              ((51, 53, 55, 56, 57), "Drizzle"), ((61, 63, 66), "Rain"), ((65, 67), "Heavy rain"),
+              ((71, 73, 77), "Snow"), ((75,), "Heavy snow"), ((80, 81), "Showers"), ((82,), "Heavy showers"),
+              ((85, 86), "Snow showers"), ((95, 96, 99), "Thunderstorm")]
+COMPASS = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+
+
+def conditions_text(code):
+    """WMO weather code → a word or two ("Partly cloudy")."""
+    try:
+        code = int(code)
+    except (TypeError, ValueError):
+        return ""
+    return next((w for codes, w in CONDITIONS if code in codes), "")
 
 
 def overlay_of(cam: dict) -> dict:
@@ -335,6 +358,7 @@ class Content:
             sec["weather"] = f"{round(wx['temp'])}°C"
             self.icon = weather_icon(wx.get("code"), bool(wx.get("is_day", 1)))
         sec["sun"] = self._sun(wx, t) if sh.get("sun") else ""
+        sec.update(self._extras(wx, sh))
         taken = (extra or {}).get("taken")                  # when a still image was taken (epoch), from the hub
         sec["age"] = taken_text(taken, t.tzinfo, ov.get("taken_format"), twelve) if sh.get("age") and taken else ""
         self.night = None
@@ -352,6 +376,27 @@ class Content:
         self.time = sec["time"]
         self.place = self.sections["place"]
         self.date, self.offset = self.sections["date"], self.sections["offset"]
+
+    @staticmethod
+    def _extras(wx, sh):
+        """The weather extras that are on and have data (empty strings otherwise)."""
+        out = {k: "" for k in WX_EXTRAS}
+        num = lambda k: wx.get(k) if isinstance(wx.get(k), (int, float)) and not isinstance(wx.get(k), bool) else None
+        if sh.get("feels") and num("feels") is not None:
+            out["feels"] = f"feels {round(wx['feels'])}°"
+        if sh.get("wind") and num("wind") is not None:
+            d = num("wind_dir")
+            word = (COMPASS[round(d / 45) % 8] + " ") if d is not None and wx["wind"] >= 1 else ""
+            out["wind"] = f"{word}{round(wx['wind'])} km/h" if wx["wind"] >= 1 else "calm"
+            if wx["wind"] >= 1 and num("gust") is not None and wx["gust"] >= wx["wind"] + 15:
+                out["wind"] += f" gusts {round(wx['gust'])}"
+        if sh.get("humidity") and num("humidity") is not None:
+            out["humidity"] = f"{round(wx['humidity'])}% RH"
+        if sh.get("hilo") and num("high") is not None and num("low") is not None:
+            out["hilo"] = f"H {round(wx['high'])}° L {round(wx['low'])}°"
+        if sh.get("conditions"):
+            out["conditions"] = conditions_text(wx.get("code"))
+        return out
 
     def _sun(self, wx, t):
         events = sorted([("sunrise", s) for s in wx.get("sunrise", [])] + [("sunset", s) for s in wx.get("sunset", [])],
@@ -443,7 +488,7 @@ class Ctx:
         size = ov.get("font") if ov.get("font") in FONTS else "small"
         self.size = size
         self.T = font_for(FONTS.get(size, FONTS["small"]))            # the headline
-        self.S = font_for(FONTS["tiny"] if size == "tiny" else FONTS["small"])   # details
+        self.S = font_for(DETAIL.get(size, FONTS["small"]))           # details
         self.B = font_for(BIG.get(size, BIG["small"]))                # big clock / postcard
         self.accent = Color(*_hex(ov.get("accent"), (232, 32, 42)))
         self.text = Color(*_hex(ov.get("text"), (255, 255, 255)))
@@ -455,13 +500,34 @@ class Ctx:
         self.top = corner[0] == "t"
         self.align = {"l": "left", "c": "center", "r": "right"}[corner[1]]
         self.left = self.align == "left"
+        # the label's size and spacing: margin from the zone's edges, padding inside the box, the box's width
+        # ("auto": as wide as its text; "full": the zone's width; a number: at least that many pixels) and how the
+        # text sits in it ("auto": on the side of the position)
+        self.margin = int(_num(ov.get("margin"), -1, -1, 32))           # -1: each layout's own
+        self.pad = int(_num(ov.get("pad"), 2, 0, 10))
+        bw = ov.get("box_w", "auto")
+        self.box_w = "full" if bw == "full" else int(_num(bw, 0, 0, 448)) if bw not in (None, "", "auto") else 0
+        ta = ov.get("text_align") if ov.get("text_align") in TEXT_ALIGNS else "auto"
+        self.text_align = self.align if ta == "auto" else ta
 
     def place(self, bw, bh, margin=1):
         """Top-left of a bw×bh box in this caption's position."""
+        margin = margin if self.margin < 0 else self.margin
         bx = {"left": self.x + margin, "center": self.x + (self.w - bw) // 2,
               "right": self.x + self.w - bw - margin}[self.align]
         by = self.y + margin if self.top else self.y + self.h - bh - margin
         return bx, by
+
+    def sized(self, content_w):
+        """A box's width for content this wide (plus padding), with the label's width setting and the zone's edges."""
+        room = self.w - 2 * max(0, self.margin)
+        if self.box_w == "full":
+            return room
+        return min(room, max(content_w, self.box_w))
+
+    def line_x(self, x0, inner, w):
+        """Where a line w wide starts in a box whose text area is inner wide, from x0."""
+        return x0 + {"left": 0, "center": max(0, (inner - w) // 2), "right": max(0, inner - w)}[self.text_align]
 
     def badge(self, x, y, text="LIVE", font=None, inverse=False):
         f = font or self.S
@@ -689,15 +755,17 @@ def _headline_and_lines(k, ct, room, T=None):
 
 def _l_tag(k, ct, outline=False):
     """A box: LIVE + headline, details underneath; an accent stripe on the inside edge."""
-    c, T, S, pad = k.c, k.T, k.S, 2
+    c, T, S, pad = k.c, k.T, k.S, k.pad
+    edge = 0 if outline else 1                             # the accent stripe
     bw = _tw(S, "LIVE") + 4 if ct.live else 0
-    room = k.w - 2 * pad - 6
+    room = k.sized(10 ** 4) - 2 * pad - edge - 5
     title, lines = _headline_and_lines(k, ct, room - (bw + 3 if bw else 0))
     if not (title or lines or bw):
         return
-    tw = max([(bw + 3 if bw else 0) + _tw(T, title)] +
-             [_tw(S, ln) + (9 if kd == "weather" and ct.icon else 0) for kd, ln in lines])
-    box_w = min(k.w, pad * 2 + tw + (1 if not outline else 0))
+    head_w = (bw + 3 if bw and title else bw) + (_tw(T, title) if title else 0)
+    line_ws = [_tw(S, ln) + (9 if kd == "weather" and ct.icon else 0) for kd, ln in lines]
+    box_w = k.sized(pad * 2 + max([head_w] + line_ws) + edge)
+    inner = box_w - 2 * pad - edge
     head_h = max(T.height if title else 0, S.height + 1 if bw else 0)
     box_h = pad * 2 + head_h + sum(S.height + 1 for _ in lines)
     bx, by = k.place(box_w, box_h)
@@ -705,16 +773,16 @@ def _l_tag(k, ct, outline=False):
     if not outline:
         _box(c, bx, by, box_w, box_h, k.bg, k.op)
         c.FillRect(bx if k.align != "right" else bx + box_w - 1, by, 1, box_h, k.accent)
-    x0 = bx + pad + (1 if not outline and k.align != "right" else 0)
-    cx, ty = x0, by + pad
+    x0 = bx + pad + (edge if k.align != "right" else 0)
+    cx, ty = k.line_x(x0, inner, head_w), by + pad
     if bw:
-        k.badge(cx, ty)
+        k.badge(cx, ty + max(0, (head_h - S.height - 1) // 2))
         cx += bw + 3
     if title:
         put(c, T, cx, ty + T.baseline, k.text, title)
     ty += head_h + 1
-    for kd, ln in lines:
-        k.text_with_icon(S, x0, ty, ct, kd, ln, put=put)
+    for (kd, ln), lw in zip(lines, line_ws):
+        k.text_with_icon(S, k.line_x(x0, inner, lw), ty, ct, kd, ln, put=put)
         ty += S.height + 1
 
 
@@ -1008,7 +1076,7 @@ def _l_stack(k, ct):
     bx, by = k.place(max(widths, default=10), total, margin=3)
     ty = by
     for (f, t, kd), w_ in zip(lines, widths):
-        x = {"left": bx, "center": k.x + (k.w - w_) // 2, "right": bx + max(widths) - w_}[k.align]
+        x = k.line_x(bx, max(widths), w_)
         if kd == "live":
             k.badge(x, ty)
         else:
@@ -1016,10 +1084,40 @@ def _l_stack(k, ct):
         ty += f.height + 1
 
 
+def _l_underline(k, ct):
+    """A big headline with an accent rule under it and the details below, shadowed over the picture (no box)."""
+    c, B, S = k.c, k.B, k.S
+    room = k.w - 8
+    title = _clip(B, ct.title, room) if ct.title else ""
+    lines = k.details(ct, room)
+    bw = _tw(S, "LIVE") + 4 if ct.live else 0
+    if not (title or lines):
+        return
+    head_w = (bw + 4 if bw else 0) + _tw(B, title)
+    widths = [head_w] + [_tw(S, ln) + (9 if kd == "weather" and ct.icon else 0) for kd, ln in lines]
+    w = max(widths)
+    h = B.height + 3 + sum(S.height + 1 for _ in lines)
+    bx, by = k.place(w, h, margin=4)
+    hx = k.line_x(bx, w, head_w)
+    if bw:
+        k.badge(hx, by + (B.height - S.height) // 2)
+        hx += bw + 4
+    if title:
+        _shadowed(c, B, hx, by + B.baseline, k.text, title)
+    rule_w = max(12, min(w, head_w))
+    c.FillRect(k.line_x(bx, w, rule_w), by + B.height + 1, rule_w, 1, k.accent)
+    ty = by + B.height + 3
+    for (kd, ln), lw in zip(lines, widths[1:]):
+        k.text_with_icon(S, k.line_x(bx, w, lw), ty, ct, kd, ln, put=_shadowed)
+        ty += S.height + 1
+
+
 # --- custom: your own columns and lines ----------------------------------------------------------------------------
-FIELDS = ("shield", "live", "name", "place", "time", "age", "weather", "date", "offset", "sun", "custom", "credit")
+FIELDS = ("shield", "live", "name", "place", "time", "age", "weather", "date", "offset", "sun", "custom", "credit") \
+    + WX_EXTRAS
 DEFAULT_SLOTS = {"shield": [1, 1], "live": [1, 1], "name": [1, 1], "place": [1, 2], "time": [1, 2], "age": [1, 2], "weather": [1, 3], "date": [1, 3],
-                 "offset": [1, 3], "sun": [1, 3], "custom": [1, 3], "credit": [1, 3]}
+                 "offset": [1, 3], "sun": [1, 3], "custom": [1, 3], "credit": [1, 3],
+                 "conditions": [1, 3], "feels": [1, 3], "hilo": [1, 3], "wind": [1, 4], "humidity": [1, 4]}
 LINE_SIZES = ("headline", "detail", "big")
 SHIELD_KINDS = ("auto", "bc", "tch", "yellowhead", "crowsnest", "interstate", "us", "wa")
 SHIELD_MIN, SHIELD_MAX = 12, 64       # the sprite sizes shields.json has (12-64 px tall)
@@ -1388,6 +1486,6 @@ def _draw_line(k, ct, f, x, y_top, kinds, room, color, put, lh=None, sh_kind=Non
         x += put(k.c, f, x, y_top + f.baseline, color, _clip(f, _text(ct, kind), max(0, end - x)))
 
 
-LAYOUT_FUNCS = {"custom": _l_custom, "tag": _l_tag, "outline": _l_outline, "bar": _l_bar, "dot": _l_dot, "lower_third": _l_lower_third,
+LAYOUT_FUNCS = {"custom": _l_custom, "underline": _l_underline, "tag": _l_tag, "outline": _l_outline, "bar": _l_bar, "dot": _l_dot, "lower_third": _l_lower_third,
                 "split": _l_split, "postcard": _l_postcard, "chips": _l_chips, "clock": _l_clock,
                 "signage": _l_signage, "ticker": _l_ticker, "stack": _l_stack}

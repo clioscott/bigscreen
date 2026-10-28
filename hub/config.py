@@ -235,11 +235,16 @@ def _validate_overlay(name, ov):
     choices = {"style": LAYOUTS, "corner": ("tl", "tc", "tr", "bl", "bc", "br"), "font": tuple(FONTS),
                "headline": ("name", "place", "custom", "time"), "lines": ("auto", "wrap", "stacked", "inline"),
                "separator": tuple(SEPARATORS), "when": ("always", "intro", "periodic"), "time_format": ("24h", "12h"),
-               "container": ("box", "strip", "outline", "board"), "taken_format": ("time", "relative", "both")}
+               "container": ("box", "strip", "outline", "board"), "taken_format": ("time", "relative", "both"),
+               "text_align": ("auto", "left", "center", "right")}
     for key, allowed in choices.items():
         if key in ov and ov[key] not in allowed:
             raise ConfigError(f"webcam {name}: caption {key} must be one of {', '.join(allowed)}")
-    for key, lo, hi in (("opacity", 0, 1), ("show_sec", 3, 600), ("every_min", 0.5, 120)):
+    if "box_w" in ov and ov["box_w"] not in ("auto", "full") and not (
+            isinstance(ov["box_w"], (int, float)) and not isinstance(ov["box_w"], bool) and 0 <= ov["box_w"] <= 448):
+        raise ConfigError(f"webcam {name}: caption width must be auto, full or 0-448 px")
+    for key, lo, hi in (("opacity", 0, 1), ("show_sec", 3, 600), ("every_min", 0.5, 120), ("margin", -1, 32),
+                        ("pad", 0, 10)):
         if key in ov:
             try:
                 ok = lo <= float(ov[key]) <= hi
@@ -314,6 +319,40 @@ def _validate_webcams(wc):
     cams = wc.get("cams") or {}
     if not isinstance(cams, dict):
         raise ConfigError("webcams.cams must be an object")
+    # the list the rotation's Webcams entry plays: [{"cam", "sec", "on"}], in order
+    playlist = wc.get("playlist")
+    if playlist is not None:
+        if not isinstance(playlist, list):
+            raise ConfigError("webcams.playlist must be a list")
+        for i, item in enumerate(playlist):
+            if not isinstance(item, dict) or not isinstance(item.get("cam"), str):
+                raise ConfigError(f"webcams.playlist[{i}] needs a webcam")
+            try:
+                ok = 5 <= float(item.get("sec", 60)) <= 3600
+            except (TypeError, ValueError):
+                ok = False
+            if not ok:
+                raise ConfigError(f"webcam {item['cam']} in the list: seconds must be 5-3600")
+    grid = wc.get("grid")
+    if grid is not None:
+        if not isinstance(grid, dict) or not isinstance(grid.get("cams", []), list):
+            raise ConfigError("webcams.grid needs a list of cameras")
+        for i, gc in enumerate(grid.get("cams", [])):
+            if not isinstance(gc, dict):
+                raise ConfigError(f"camera grid #{i + 1} must be an object")
+            try:
+                kind, _ = check_source((gc or {}).get("source"))
+            except SourceError as e:
+                raise ConfigError(f"camera grid #{i + 1}: {e}")
+            if kind not in ("drivebc", "image"):
+                raise ConfigError(f"camera grid #{i + 1}: the grid shows still cameras only")
+        for key, lo, hi in (("interval_ms", 50, 5000), ("hold_sec", 0, 30)):
+            v = grid.get(key)
+            if v is not None and (not isinstance(v, (int, float)) or isinstance(v, bool) or not lo <= v <= hi):
+                raise ConfigError(f"webcams.grid.{key} must be {lo}-{hi}")
+    per = wc.get("per_turn", 1)
+    if not isinstance(per, int) or isinstance(per, bool) or not 1 <= per <= 50:
+        raise ConfigError("webcams.per_turn must be 1-50")
     for cid, cam in cams.items():
         if not re.fullmatch(r"[A-Za-z0-9_-]+", cid):
             raise ConfigError(f"webcam id {cid!r}: letters, digits, _ and - only")
@@ -352,7 +391,7 @@ def _validate_webcams(wc):
         if not isinstance(crops, dict):
             raise ConfigError(f"webcam {name}: crops must be an object")
         for shape, crop in crops.items():
-            if shape not in ("left", "right", "full", "wall"):
+            if shape not in ("left", "right", "full", "tall", "wall"):
                 raise ConfigError(f"webcam {name}: unknown crop {shape!r}")
             try:
                 ok = 0 <= float(crop["x"]) <= 1 and 0 <= float(crop["y"]) <= 1 and 0.02 <= float(crop["w"]) <= 1

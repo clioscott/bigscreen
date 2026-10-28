@@ -163,6 +163,19 @@ once (`hold: false`), so the rotation resumes by itself.
   Retry-After while four background workers grab one (failures not retried for 10 min; `cache/webcam_snaps`), falling back to
   `/api/webcams/thumb/{id}.jpg` (YouTube's thumbnail, fetched by the hub).
 
+## Webcams
+
+- `hub/webcams.py` decodes (one ffmpeg per source) and crops; `display/modules/webcam.py` only blits; captions in
+  `display/modules/webcam_caption.py`. Config: `modules.webcams.{cams, playlist, per_turn, grid}`.
+- The rotation has one Webcams entry: a `webcam*` panel without `cam` plays `playlist` (order, `on`, `sec`; edited on
+  the Webcams page), `per_turn` webcams a turn. An entry with `cam` still plays that one webcam (older rotations).
+- Sizes: `webcam` (side), `_full`, `_tall` (over the ticker, clock strip stays: `Screen.tall_panels`), `_wall`.
+- Camera grid (`webcam_grid*`): stills only, 2×4 squares revealed one per `interval_ms`; the hub sends all tiles at
+  once (`/api/webcams/grid.bin`).
+- City intersection cameras: crawlers in `hub/traffic.py` `CITY_SOURCES` (Vancouver, Richmond, Surrey, Township of
+  Langley, SFU), re-crawled daily by the hub (`hub/app.py` `_city_lists`). Burnaby, Coquitlam, the North Shore, New West
+  and Delta publish no intersection images (checked 2026-10-28); DriveBC covers their highways.
+
 ## BC alert screens
 
 Five full-wall takeovers beside the ECCC weather alert, each with its own job, display module, themes and panel page:

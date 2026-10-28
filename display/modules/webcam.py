@@ -6,6 +6,13 @@ frame; it hangs up a few seconds after the screen stops drawing it, and the hub 
 
 On top goes a caption saying what the feed is and where it comes from, styled per webcam (``overlay``): see
 display/modules/webcam_caption.py for the sections and layouts.
+
+A rotation entry without a ``cam`` is the Webcams list (``modules.webcams.playlist``, set on the Webcams page): each
+turn plays the next ``per_turn`` webcams that are on, each for its own seconds, then ends ("done").
+
+The camera grid (``webcam_grid*`` panels, ``modules.webcams.grid``): 2 rows of 4 squares filled one camera at a time
+(every ``interval_ms``, top row left to right, then the bottom row) until every camera in the grid has appeared. The
+hub fetches the stills and sends them already square (/api/webcams/grid.bin), all at once.
 """
 
 from __future__ import annotations
@@ -29,6 +36,26 @@ IDLE_SEC = 3.0               # hang up when the screen hasn't drawn this webcam 
 WARM_EVERY = 10.0            # while a webcam is next in the rotation, ask the hub to keep its feed going this often
 GIVE_UP_SEC = 25.0           # no picture this long after the play started: skip to the next screen
 MAGIC = b"BSWC"
+GRID_MAGIC = b"BSWG"
+GRID_COLS, GRID_ROWS = 4, 2
+_list_pos = {"i": -1}        # where the Webcams list is (survives config reloads, which rebuild the panel)
+
+
+def playlist_of(s: dict) -> list:
+    """The Webcams list in order, as [(cam id, seconds)] of the webcams that are on and exist."""
+    cams = s.get("cams") or {}
+    raw = s.get("playlist")
+    if not isinstance(raw, list):                     # no list yet: every webcam, as configured
+        raw = [{"cam": k} for k in cams]
+    out = []
+    for it in raw:
+        if isinstance(it, dict) and it.get("on", True) is not False and it.get("cam") in cams:
+            try:
+                sec = max(5.0, min(3600.0, float(it.get("sec") or 60)))
+            except (TypeError, ValueError):
+                sec = 60.0
+            out.append((it["cam"], sec))
+    return out
 
 
 def stream_query(cam: dict, shape: str, w: int, h: int) -> dict:
@@ -147,6 +174,13 @@ class WebcamPanel:
         self.weather, self._wx_mtime, self._wx_checked = {}, None, 0.0
         self.cams = s.get("cams") or {}
         self.hub = s.get("hub_url") or DEFAULT_HUB
+        self.playlist = playlist_of(s)
+        try:
+            self.per_turn = max(1, int(s.get("per_turn") or 1))
+        except (TypeError, ValueError):
+            self.per_turn = 1
+        self._turns: dict = {}                                # zone -> the list's turn there: {play, cam, t0, shown}
+        self.grid = CameraGrid(self.hub, s.get("grid") or {})
         self.streams: dict = {}
         self.started: dict = {}
         self._warmed: dict = {}                               # source -> when the hub was last asked to warm it
@@ -171,7 +205,12 @@ class WebcamPanel:
     def warm(self, entry):
         """The rotation says this webcam is next: have the hub start its feed now (in the background), so its screen
         opens on a picture a second or so behind live instead of "loading"."""
-        cam = self.cams.get((entry or {}).get("cam"))
+        if str((entry or {}).get("panel", "")).startswith("webcam_grid"):
+            return self.grid.warm()
+        cid = (entry or {}).get("cam")
+        if not cid and self.playlist:                         # the Webcams list: the one it plays next
+            cid = self.playlist[(_list_pos["i"] + 1) % len(self.playlist)][0]
+        cam = self.cams.get(cid)
         if not cam:
             return
         q = {k: v for k, v in stream_query(cam, "full", 8, 8).items() if k in ("type", "url", "id", "refresh", "fps")}
@@ -214,9 +253,48 @@ class WebcamPanel:
             return "wall"
         if p == "webcam_full":
             return "full"
+        if p == "webcam_tall":
+            return "tall"
         return "left" if zone[0] == 0 else "right"
 
     def draw(self, c, zone, entry, transition):
+        if entry.get("cam"):
+            return self._draw_cam(c, zone, entry, transition)
+        return self._draw_list(c, zone, entry, transition)
+
+    def _draw_list(self, c, zone, entry, transition):
+        """The Webcams list: the next webcams that are on, each for its seconds; "done" after per_turn of them."""
+        now = time.time()
+        if not self.playlist:
+            self._centre(c, zone, "No webcams in the list", self.dim)
+            return "skip" if now - self.started.setdefault(("list", entry.get("_play")), now) > 4 else None
+        where = tuple(zone)                                   # each half of the wall has its own turn
+        t = self._turns.get(where)
+        if transition or t is None or t["play"] != entry.get("_play"):
+            t = self._turns[where] = {"play": entry.get("_play"), "cam": None, "t0": now, "shown": 0, "failed": 0}
+        n = len(self.playlist)
+        if t["cam"] is None or now - t["t0"] >= self._sec(t["cam"]):
+            if t["cam"] is not None:
+                t["shown"] += 1
+                if t["shown"] >= min(self.per_turn, n):
+                    self._turns.pop(where, None)              # another pass of the same play starts afresh
+                    return "done"
+            _list_pos["i"] = (_list_pos["i"] + 1) % n
+            t["cam"], t["t0"], t["new"] = self.playlist[_list_pos["i"]][0], now, True
+        new, t["new"] = t.get("new", False), False
+        r = self._draw_cam(c, zone, {**entry, "cam": t["cam"]}, new)
+        if r == "skip":                                       # this one won't come up: on to the next
+            t["failed"] += 1
+            t["shown"] -= 1                                   # (it doesn't count as shown)
+            t["t0"] = now - self._sec(t["cam"])
+            if t["failed"] >= n:
+                return "skip"
+        return None
+
+    def _sec(self, cid):
+        return next((sec for k, sec in self.playlist if k == cid), 60.0)
+
+    def _draw_cam(self, c, zone, entry, transition):
         x, y, w, h = zone
         now = time.time()
         key = (entry.get("panel"), entry.get("cam"))
@@ -265,6 +343,168 @@ class WebcamPanel:
         f = self.font("small")
         tw = sum(max(0, f.CharacterWidth(ord(ch))) for ch in text)
         graphics.DrawText(c, f, x + max(2, (w - tw) // 2), y + h // 2, color, text)
+
+
+class CameraGrid:
+    """2 rows x 4 squares of still cameras (modules.webcams.grid: {"cams": [{"name", "source"}], "interval_ms",
+    "labels", "hold_sec"}). One square changes every interval, top row left to right then the bottom row, until every
+    camera has appeared; the screen ends ``hold_sec`` after the last one. The tiles come from the hub in one request,
+    already square and sized (it fetches the stills); a reader thread loads them so drawing never waits."""
+
+    def __init__(self, hub_url, g):
+        self.hub = urlparse(hub_url)
+        cams = g.get("cams") if isinstance(g.get("cams"), list) else []
+        self.cams = [x for x in cams if isinstance(x, dict) and isinstance(x.get("source"), dict)]
+        self.names = [str(x.get("name") or "") for x in self.cams]
+        try:
+            self.interval = max(0.05, min(5.0, float(g.get("interval_ms") or 200) / 1000))
+            self.hold = max(0.0, min(30.0, float(g.get("hold_sec", 3))))
+        except (TypeError, ValueError):
+            self.interval, self.hold = 0.2, 3.0
+        self.labels = bool(g.get("labels", True))
+        self.tiles: dict = {}                       # square size -> {"at", "tiles": [array or None], "busy"}
+        self._plays: dict = {}                      # zone -> {"play", "t0", "ready"}: each half of the wall its own
+        self._font = None
+        self._labels: dict = {}                     # square size -> each name trimmed to fit (once, not per frame)
+
+    def warm(self):
+        """The rotation says the grid is next: refresh the tiles of the sizes it has drawn at (in the background)."""
+        for sz in list(self.tiles):
+            self._load(sz)
+
+    def _load(self, size):
+        got = self.tiles.get(size)
+        if got and (got["busy"] or time.time() - got["at"] < 60):
+            return
+        got = self.tiles.setdefault(size, {"at": 0.0, "tiles": None, "busy": False})
+        got["busy"] = True
+        threading.Thread(target=self._fetch, args=(size, got), name="webcam-grid", daemon=True).start()
+
+    def _fetch(self, size, got):
+        try:
+            conn = http.client.HTTPConnection(self.hub.hostname, self.hub.port or 80, timeout=90)
+            conn.request("GET", f"/api/webcams/grid.bin?size={size}", headers={"User-Agent": "bigscreen-display"})
+            r = conn.getresponse()
+            body = r.read()
+            conn.close()
+            if r.status != 200 or body[:4] != GRID_MAGIC:
+                raise RuntimeError(f"hub {r.status}: {body[:200]!r}")
+            got["tiles"], got["at"] = unpack_grid(body), time.time()
+        except Exception as e:
+            print(f"[webcam grid] {e}")
+            got["at"] = time.time() - 50                    # try again in ~10 s
+        finally:
+            got["busy"] = False
+
+    @staticmethod
+    def geometry(zone):
+        """(square size, left, top) of the 4x2 grid centred in the zone, 1 px apart."""
+        x, y, w, h = zone
+        sz = max(8, min((w - (GRID_COLS - 1)) // GRID_COLS, (h - (GRID_ROWS - 1)) // GRID_ROWS))
+        gw, gh = GRID_COLS * sz + GRID_COLS - 1, GRID_ROWS * sz + GRID_ROWS - 1
+        return sz, x + (w - gw) // 2, y + (h - gh) // 2
+
+    def draw(self, c, zone, entry, transition):
+        now = time.time()
+        where = tuple(zone)
+        p = self._plays.get(where)
+        if transition or p is None or p["play"] != entry.get("_play"):
+            p = self._plays[where] = {"play": entry.get("_play"), "t0": now, "ready": None}
+        if not self.cams:
+            _centre_text(c, zone, "No cameras in the grid", Color(150, 150, 150))
+            return "skip" if now - p["t0"] > 4 else None
+        sz, gx, gy = self.geometry(zone)
+        self._load(sz)
+        tiles = (self.tiles.get(sz) or {}).get("tiles")
+        if tiles is None:
+            _centre_text(c, zone, "Fetching cameras" + "." * (1 + int(now * 2) % 3), Color(150, 150, 150))
+            return "skip" if now - p["t0"] > GIVE_UP_SEC else None
+        if p["ready"] is None:
+            p["ready"] = now                                   # the reveal starts once the tiles are here
+        r = self.draw_tiles(c, tiles, sz, gx, gy, now - p["ready"])
+        if r == "done":
+            p["ready"] = None                                  # another pass reveals them all again
+        return r
+
+    def draw_tiles(self, c, tiles, sz, gx, gy, elapsed):
+        """The grid ``elapsed`` seconds into the reveal; "done" once every camera has appeared and the hold is over."""
+        cells = GRID_COLS * GRID_ROWS
+        shown = min(len(tiles), int(elapsed / self.interval) + 1)
+        for k in range(min(cells, shown)):
+            i = k + ((shown - 1 - k) // cells) * cells       # the newest camera in square k (k, k+8, k+16, ...)
+            tile = tiles[i]
+            tx, ty = gx + (k % GRID_COLS) * (sz + 1), gy + (k // GRID_COLS) * (sz + 1)
+            if tile is not None and tile.shape[0] == sz:
+                c.Blit(tile, tx, ty)
+            else:
+                c.FillRect(tx, ty, sz, sz, Color(25, 25, 30))
+            if self.labels and sz >= 40:
+                name = self._names_for(sz)[i] if i < len(self.names) else ""
+                if name:
+                    self._label(c, tx, ty, sz, name)
+        if shown >= len(tiles) and elapsed >= len(tiles) * self.interval + self.hold:
+            return "done"
+        return None
+
+    def _names_for(self, sz):
+        """Each camera's name cut to fit a square this size (worked out once per size)."""
+        got = self._labels.get(sz)
+        if got is None:
+            from display.modules.webcam_caption import _tw
+            f, got = self._label_font(), []
+            for text in self.names:
+                while text and _tw(f, text) > sz - 2:
+                    text = text[:-1]
+                got.append(text)
+            self._labels[sz] = got
+        return got
+
+    def _label_font(self):
+        if self._font is None:
+            self._font = graphics.Font()
+            self._font.LoadFont(FONTS["tiny"])
+        return self._font
+
+    def _label(self, c, x, y, sz, text):
+        from display.modules.webcam_caption import _shade
+        f = self._label_font()
+        _shade(c, x, y + sz - f.height - 1, sz, f.height + 1, 0.55)
+        graphics.DrawText(c, f, x + 1, y + sz - 2, Color(235, 235, 235), text)
+
+
+def pack_grid(tiles, size) -> bytes:
+    """The hub's reply: GRID_MAGIC, count u16, size u16, then per camera a flag byte (1: a picture follows)."""
+    out = [GRID_MAGIC, len(tiles).to_bytes(2, "big"), int(size).to_bytes(2, "big")]
+    for t in tiles:
+        out += [b"\x01", np.ascontiguousarray(t, np.uint8).tobytes()] if t is not None else [b"\x00"]
+    return b"".join(out)
+
+
+def unpack_grid(body) -> list:
+    n, sz = int.from_bytes(body[4:6], "big"), int.from_bytes(body[6:8], "big")
+    per, off, tiles = sz * sz * 3, 8, []
+    for _ in range(n):
+        ok, off = body[off], off + 1
+        if ok:
+            tiles.append(np.frombuffer(body[off:off + per], np.uint8).reshape(sz, sz, 3))
+            off += per
+        else:
+            tiles.append(None)
+    return tiles
+
+
+_centre_font = []
+
+
+def _centre_text(c, zone, text, color):
+    if not _centre_font:
+        f = graphics.Font()
+        f.LoadFont(FONTS["small"])
+        _centre_font.append(f)
+    f = _centre_font[0]
+    x, y, w, h = zone
+    tw = sum(max(0, f.CharacterWidth(ord(ch))) for ch in text)
+    graphics.DrawText(c, f, x + max(2, (w - tw) // 2), y + h // 2, color, text)
 
 
 _preview_fonts: dict = {}
