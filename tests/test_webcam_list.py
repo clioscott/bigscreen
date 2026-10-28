@@ -44,26 +44,37 @@ def test_each_turn_plays_the_next_webcams_then_ends(monkeypatch):
     assert drawn[-1] == "c"
 
 
-def test_grid_reveals_one_square_at_a_time_in_reading_order():
-    g = wm.CameraGrid("http://hub:1", {"cams": [{"name": str(i), "source": {}} for i in range(10)],
+def test_grid_fills_the_frame_edge_to_edge():
+    g = wm.CameraGrid("http://hub:1", {"cams": []})
+    for zone, cols in (((0, 0, 448, 130), 6), ((0, 0, 448, 175), 5), ((0, 0, 448, 192), 4), ((296, 45, 152, 130), 2)):
+        tw, th, xs, ys = g.geometry(zone)
+        x, y, w, h = zone
+        assert len(xs) == cols and len(ys) == 2
+        assert xs[0] == x and xs[-1] + tw == x + w and ys[0] == y and ys[-1] + th == y + h      # flush with every edge
+        assert all(1 <= b - (a + tw) <= 2 for a, b in zip(xs, xs[1:]))                       # 1-2 px gaps
+    tw, th, xs, ys = wm.CameraGrid("http://hub:1", {"rows": 3, "cols": 5}).geometry((0, 0, 448, 130))
+    assert (len(xs), len(ys)) == (5, 3) and xs[-1] + tw == 448 and ys[-1] + th == 130
+
+
+def test_grid_reveals_one_tile_at_a_time_in_reading_order():
+    g = wm.CameraGrid("http://hub:1", {"cams": [{"name": str(i), "source": {}} for i in range(10)], "cols": 4,
                                         "interval_ms": 200, "hold_sec": 1, "labels": False})
-    sz, gx, gy = g.geometry((0, 0, 448, 130))
-    assert sz == 64 and gy == 0
-    tiles = [np.full((sz, sz, 3), i * 20 + 10, np.uint8) for i in range(10)]
-    px = lambda c, k: int(c.buf[gy + (k // 4) * (sz + 1) + 5, gx + (k % 4) * (sz + 1) + 5, 0])
+    geo = tw, th, xs, ys = g.geometry((0, 0, 448, 130))
+    tiles = [np.full((th, tw, 3), i * 20 + 10, np.uint8) for i in range(10)]
+    px = lambda c, k: int(c.buf[ys[k // 4] + 5, xs[k % 4] + 5, 0])
     c = Canvas(448, 130)
-    assert g.draw_tiles(c, tiles, sz, gx, gy, 0.5) is None              # three in: top row, left to right
+    assert g.draw_tiles(c, tiles, geo, 0.5) is None                      # three in: top row, left to right
     assert [px(c, k) for k in range(4)] == [10, 30, 50, 0]
     c = Canvas(448, 130)
-    g.draw_tiles(c, tiles, sz, gx, gy, 1.85)                             # ten in: 9 and 10 replaced the first two
+    g.draw_tiles(c, tiles, geo, 1.85)                                     # ten in: 9 and 10 replaced the first two
     assert [px(c, k) for k in range(8)] == [170, 190, 50, 70, 90, 110, 130, 150]
-    assert g.draw_tiles(Canvas(448, 130), tiles, sz, gx, gy, 2.9) is None    # holding
-    assert g.draw_tiles(Canvas(448, 130), tiles, sz, gx, gy, 3.1) == "done"
+    assert g.draw_tiles(Canvas(448, 130), tiles, geo, 2.9) is None       # holding
+    assert g.draw_tiles(Canvas(448, 130), tiles, geo, 3.1) == "done"
 
 
 def test_grid_tiles_survive_the_wire():
-    a = np.arange(8 * 8 * 3, dtype=np.uint8).reshape(8, 8, 3)
-    back = wm.unpack_grid(wm.pack_grid([a, None, a], 8))
+    a = np.arange(6 * 8 * 3, dtype=np.uint8).reshape(6, 8, 3)
+    back = wm.unpack_grid(wm.pack_grid([a, None, a], 8, 6))
     assert back[1] is None and np.array_equal(back[0], a) and np.array_equal(back[2], a)
 
 
@@ -84,7 +95,7 @@ def test_list_grid_and_new_caption_settings_validate():
                           "grid": grid}))
     for bad in ({"playlist": [{"cam": "a", "sec": 1}]}, {"per_turn": 0},
                 {"grid": {"cams": [{"source": {"type": "youtube", "url": "https://youtube.com/x"}}]}},
-                {"grid": {**grid, "interval_ms": 10}}):
+                {"grid": {**grid, "interval_ms": 10}}, {"grid": {**grid, "rows": 5}}, {"grid": {**grid, "cols": 0}}):
         with pytest.raises(config.ConfigError):
             config.validate(_cfg({"cams": {"a": cam}, **bad}))
     with pytest.raises(config.ConfigError):
@@ -105,7 +116,7 @@ def test_weather_extras_in_the_caption():
     assert Content({"label": "A"}, ov, wx={**wx, "wind": 0.4}).sections["wind"] == "calm"
 
 
-def test_hub_grid_tiles_are_square_and_in_order(monkeypatch):
+def test_hub_grid_tiles_are_cropped_to_size_and_in_order(monkeypatch):
     from hub import app as hub_app
     cams = [{"name": str(i), "source": {"type": "image", "url": f"https://x.example/{i}.jpg"}} for i in range(3)]
     monkeypatch.setattr(hub_app, "_grid_cams", lambda: cams)
@@ -114,9 +125,9 @@ def test_hub_grid_tiles_are_square_and_in_order(monkeypatch):
     def still(src):
         return frames.get(src["url"])
     monkeypatch.setattr(hub_app, "_grid_still", still)
-    tiles = wm.unpack_grid(hub_app.webcams_grid_bin(size=32).body)
+    tiles = wm.unpack_grid(hub_app.webcams_grid_bin(w=40, h=32).body)
     assert [t is None for t in tiles] == [False, True, False]
-    assert tiles[0].shape == (32, 32, 3) and int(tiles[2][5, 5, 0]) == 100
+    assert tiles[0].shape == (32, 40, 3) and int(tiles[2][5, 5, 0]) == 100
 
 
 def test_both_halves_can_play_the_list_and_the_grid_at_once(monkeypatch):
@@ -130,9 +141,8 @@ def test_both_halves_can_play_the_list_and_the_grid_at_once(monkeypatch):
         p.draw(c, right, {"panel": "webcam", "_play": 1}, False)
     assert drawn == ["a", "b"] * 3
     g = wm.CameraGrid("http://hub:1", {"cams": [{"name": "x", "source": {}}] * 2, "interval_ms": 200, "hold_sec": 0})
-    sz = g.geometry(left)[0]
-    g.tiles[sz] = {"at": clock[0], "tiles": [None, None], "busy": False}
-    g.tiles[g.geometry(right)[0]] = {"at": clock[0], "tiles": [None, None], "busy": False}
+    for z in (left, right):
+        g.tiles[g.geometry(z)[:2]] = {"at": clock[0], "tiles": [None, None], "busy": False}
     assert g.draw(c, left, {"_play": 1}, True) is None and g.draw(c, right, {"_play": 1}, True) is None
     clock[0] += 0.5
     assert g.draw(c, left, {"_play": 1}, False) == "done" and g.draw(c, right, {"_play": 1}, False) == "done"
@@ -148,7 +158,7 @@ def test_another_pass_replays(monkeypatch):
     assert p.draw(c, z, e, False) == "done"
     assert p.draw(c, z, e, False) is None and drawn[-1] == "b"       # the same play, a second pass: the next webcam
     g = wm.CameraGrid("http://hub:1", {"cams": [{"name": "x", "source": {}}] * 2, "interval_ms": 200, "hold_sec": 0})
-    g.tiles[g.geometry(z)[0]] = {"at": clock[0], "tiles": [None, None], "busy": False}
+    g.tiles[g.geometry(z)[:2]] = {"at": clock[0], "tiles": [None, None], "busy": False}
     g.draw(c, z, e, True)
     clock[0] += 0.5
     assert g.draw(c, z, e, False) == "done"

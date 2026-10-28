@@ -346,7 +346,9 @@ def _validate_webcams(wc):
                 raise ConfigError(f"camera grid #{i + 1}: {e}")
             if kind not in ("drivebc", "image"):
                 raise ConfigError(f"camera grid #{i + 1}: the grid shows still cameras only")
-        for key, lo, hi in (("interval_ms", 50, 5000), ("hold_sec", 0, 30)):
+        if grid.get("cols") not in (None, "auto") and not (isinstance(grid["cols"], int) and 1 <= grid["cols"] <= 10):
+            raise ConfigError("webcams.grid.cols must be auto or 1-10")
+        for key, lo, hi in (("interval_ms", 50, 5000), ("hold_sec", 0, 30), ("rows", 1, 4)):
             v = grid.get(key)
             if v is not None and (not isinstance(v, (int, float)) or isinstance(v, bool) or not lo <= v <= hi):
                 raise ConfigError(f"webcams.grid.{key} must be {lo}-{hi}")

@@ -204,7 +204,7 @@ export const PANEL_TYPES = {
   webcam_full: { label: "Webcams (full width)", icon: "Video", sub: "cam", full: true, passes: false },
   webcam_tall: { label: "Webcams (above the clock)", icon: "Video", sub: "cam", full: true, passes: false, note: "Covers the ticker; the clock and date stay" },
   webcam_wall: { label: "Webcams (whole wall)", icon: "Video", sub: "cam", full: true, passes: false, note: "Covers the ticker and clock too" },
-  webcam_grid: { label: "Camera grid", icon: "Grid2x2", passes: true, passWord: "pass through every camera", note: "2 rows of 4 squares, one camera after another" },
+  webcam_grid: { label: "Camera grid", icon: "Grid2x2", passes: true, passWord: "pass through every camera", note: "Tiles filling the frame, one camera after another" },
   webcam_grid_full: { label: "Camera grid (full width)", icon: "Grid2x2", full: true, passes: true, passWord: "pass through every camera" },
   webcam_grid_tall: { label: "Camera grid (above the clock)", icon: "Grid2x2", full: true, passes: true, passWord: "pass through every camera", note: "Covers the ticker; the clock and date stay" },
   webcam_grid_wall: { label: "Camera grid (whole wall)", icon: "Grid2x2", full: true, passes: true, passWord: "pass through every camera", note: "Covers the ticker and clock too" },

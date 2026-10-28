@@ -544,15 +544,15 @@ def _grid_still(src):
     return frame
 
 
-def _grid_tiles(cams, size):
-    """Each grid camera's still as a size×size square (a centred crop), fetched 8 at a time; None where it failed."""
+def _grid_tiles(cams, w, h):
+    """Each grid camera's still as a w×h tile (a centred crop), fetched 8 at a time; None where it failed."""
     from concurrent.futures import ThreadPoolExecutor
 
     def one(cam):
         frame = _grid_still((cam or {}).get("source"))
         if frame is None:
             return None
-        return webcams.render(frame, size, size, (cam or {}).get("crop"))
+        return webcams.render(frame, w, h, (cam or {}).get("crop"))
     with ThreadPoolExecutor(8) as ex:
         return list(ex.map(one, cams))
 
@@ -563,16 +563,16 @@ def _grid_cams():
 
 
 @app.get("/api/webcams/grid.bin")
-def webcams_grid_bin(size: int = 64):
+def webcams_grid_bin(w: int = 64, h: int = 64):
     """The camera grid's tiles for the wall (display/modules/webcam.py CameraGrid), in the grid's order."""
     from display.modules.webcam import pack_grid
-    size = max(8, min(256, int(size)))
-    return Response(pack_grid(_grid_tiles(_grid_cams(), size), size), media_type="application/octet-stream")
+    w, h = max(8, min(448, int(w))), max(8, min(192, int(h)))
+    return Response(pack_grid(_grid_tiles(_grid_cams(), w, h), w, h), media_type="application/octet-stream")
 
 
 @app.post("/api/webcams/grid/preview.png")
 def webcams_grid_preview(payload: dict = Body(default={})):
-    """The camera grid as the wall would show it once every square has filled: {"grid", "shape", "scale"}."""
+    """The camera grid as the wall would show it once every tile has filled: {"grid", "shape", "scale"}."""
     from display.gfx import Canvas
     from display.modules.webcam import CameraGrid
     zones = _webcam_zones()
@@ -581,11 +581,11 @@ def webcams_grid_preview(payload: dict = Body(default={})):
     w, h = zones[shape]
     grid = CameraGrid("http://127.0.0.1:1", {**g, "cams": (g.get("cams") or [])[:GRID_MAX]
                                               if isinstance(g.get("cams"), list) else []})
-    sz, gx, gy = grid.geometry((0, 0, w, h))
-    tiles = _grid_tiles(grid.cams, sz)
+    geo = grid.geometry((0, 0, w, h))
+    tiles = _grid_tiles(grid.cams, geo[0], geo[1])
     c = Canvas(w, h)
     if tiles:
-        grid.draw_tiles(c, tiles, sz, gx, gy, len(tiles) * grid.interval + 1)
+        grid.draw_tiles(c, tiles, geo, len(tiles) * grid.interval + 1)
     scale = max(1, min(6, int(payload.get("scale") or 3)))
     im = Image.fromarray(c.buf.copy()).resize((w * scale, h * scale), Image.NEAREST)
     out = io.BytesIO()
