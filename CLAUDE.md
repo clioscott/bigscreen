@@ -171,7 +171,8 @@ once (`hold: false`), so the rotation resumes by itself.
   the Webcams page), `per_turn` webcams a turn. An entry with `cam` still plays that one webcam (older rotations).
 - Sizes: `webcam` (side), `_full`, `_tall` (over the ticker, clock strip stays: `Screen.tall_panels`), `_wall`.
 - Camera grid (`webcam_grid*`): stills only, tiles filling the frame (`rows`, `cols` or auto) revealed one per
-  `interval_ms`, each labelled; the hub sends all tiles at
+  `interval_ms`, each labelled (`display/modules/cam_names.py` splits names into streets and direction; `grid.label`:
+  lines, dir tag/line/off, at, wording, size); the hub sends all tiles at
   once (`/api/webcams/grid.bin`).
 - City intersection cameras: crawlers in `hub/traffic.py` `CITY_SOURCES` (Vancouver, Richmond, Surrey, Township of
   Langley, SFU), re-crawled daily by the hub (`hub/app.py` `_city_lists`). Burnaby, Coquitlam, the North Shore, New West

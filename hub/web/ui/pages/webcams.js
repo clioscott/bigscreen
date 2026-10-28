@@ -466,6 +466,7 @@ function seedWebcams() {
   const wc = seed(["modules", "webcams"], { cams: {} });
   seed(["modules", "webcams", "playlist"], Object.keys(wc.cams || {}).map((cam) => ({ cam, sec: 60, on: true })));
   seed(["modules", "webcams", "grid"], { cams: [], interval_ms: 200, hold_sec: 3, labels: true });
+  seed(["modules", "webcams", "grid", "label"], { lines: [["street1"], ["street2"]], dir: "tag", at: "bottom" });
   return wc;
 }
 
@@ -598,7 +599,18 @@ const GridTab = {
       } catch (e) { fail(e); } finally { busy.value = false; }
     };
     const queue = () => { clearTimeout(timer); timer = setTimeout(render, 400); };
-    watch(() => [g.cams.map((c) => JSON.stringify(c.source) + c.name).join("|"), g.labels, g.rows, g.cols, shape.value], queue, { immediate: true });
+    // the tiles' labels (display/modules/cam_names.py): which parts go on which line, the direction's place, the wording
+    const lab = computed(() => g.label);                    // seeded by seedWebcams
+    const PARTS = [{ value: "street1", label: "Street 1" }, { value: "street2", label: "Street 2" }, { value: "dir", label: "Direction" },
+      { value: "view", label: "Camera no." }, { value: "name", label: "Whole name" }];
+    const partsShown = computed(() => PARTS.filter((p) => p.value !== "dir" || lab.value.dir === "line"));
+    const ORDER = PARTS.map((p) => p.value);
+    const togglePart = (ln, p) => {
+      const i = ln.indexOf(p);
+      if (i >= 0) ln.splice(i, 1); else { ln.push(p); ln.sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b)); }
+    };
+    watch(() => [g.cams.map((c) => JSON.stringify(c.source) + c.name).join("|"), g.labels, g.rows, g.cols, JSON.stringify(g.label), shape.value],
+      queue, { immediate: true });
     onBeforeUnmount(() => { clearTimeout(timer); if (url) URL.revokeObjectURL(url); });
     // the hub's own thumbnail for the camera (kept with it when it was added), else a snapshot
     const thumbOf = (c) => (c.source.type === "drivebc" ? `/api/webcams/drivebc/${c.source.id}.jpg`
@@ -608,7 +620,7 @@ const GridTab = {
       const s = SHAPES[shape.value];
       playOnDisplay({ panel: GRID_SHAPES[shape.value], advance: "cycles", cycles: 1, max_sec: 600 }, { side: s.side, hold: false });
     };
-    return { GRID_SHAPES, g, found, shape, img, busy, thumbOf, secs, play, render, SHAPES, dirty };
+    return { GRID_SHAPES, g, lab, partsShown, togglePart, found, shape, img, busy, thumbOf, secs, play, render, SHAPES, dirty };
   },
   template: `<div class="stack">
     <div class="card"><div class="card-body stack" style="gap:10px">
@@ -647,7 +659,35 @@ const GridTab = {
               <div class="row nowrap" style="gap:8px"><Seg :modelValue="g.cols == null || g.cols === 'auto' ? 'auto' : 'set'"
                 @update:modelValue="v => g.cols = v === 'auto' ? 'auto' : 6" :options="[{value:'auto', label:'Auto'}, {value:'set', label:'Set'}]"/>
                 <Stepper v-if="g.cols != null && g.cols !== 'auto'" :modelValue="g.cols" @update:modelValue="v => g.cols = v" :min="1" :max="10"/></div></Field>
-            <Field label="Names" hint="Each tile's camera, small, along its bottom"><Toggle :modelValue="g.labels !== false" @update:modelValue="v => g.labels = v"/></Field>
+          </div></div>
+        <div class="card"><div class="card-head"><Icon name="Tag" :size="16"/><h3>Labels</h3><span class="spacer"></span>
+            <Toggle :modelValue="g.labels !== false" @update:modelValue="v => g.labels = v" title="Labels on the tiles"/></div>
+          <div class="card-body stack" v-if="g.labels !== false">
+            <div class="faint" style="font-size:12px">Each camera's name is split into its two streets and its direction
+              (e.g. <i>No. 4 Road at Westminster Highway - Eastbound</i> → <b>No. 4 Rd</b> / <b>Westminster Hwy</b> / <b>EB</b>).</div>
+            <Field label="Lines" hint="What each line shows, top to bottom; click to add or remove a part">
+              <div class="stack" style="gap:6px">
+                <div v-for="(ln, i) in lab.lines" :key="i" class="row nowrap" style="gap:6px">
+                  <span class="mono faint" style="width:14px">{{ i + 1 }}</span>
+                  <div class="row" style="gap:4px"><button v-for="p in partsShown" :key="p.value" type="button" class="chip" :class="{off: !ln.includes(p.value)}"
+                    style="height:24px; padding:0 9px; font-size:12px" @click="togglePart(ln, p.value)">{{ p.label }}</button></div>
+                  <span class="spacer"></span>
+                  <button class="btn sm ghost icon-only" title="Remove this line" @click="lab.lines.splice(i, 1)" :disabled="lab.lines.length < 2"><Icon name="X" :size="13"/></button></div>
+                <button class="btn sm ghost" style="align-self:flex-start" @click="lab.lines.push([])" v-if="lab.lines.length < 3"><Icon name="Plus" :size="13"/>Add a line</button>
+              </div></Field>
+            <div class="row" style="gap:16px; align-items:flex-start">
+              <Field label="Direction"><Seg :modelValue="lab.dir || 'tag'" @update:modelValue="v => lab.dir = v"
+                :options="[{value:'tag', label:'Corner tag'}, {value:'line', label:'In a line'}, {value:'off', label:'Off'}]"/></Field>
+              <Field label="Names at"><Seg :modelValue="lab.at || 'bottom'" @update:modelValue="v => lab.at = v"
+                :options="[{value:'bottom', label:'Bottom'}, {value:'top', label:'Top'}]"/></Field>
+            </div>
+            <div class="faint" style="font-size:12px; margin-top:-6px" v-if="(lab.dir || 'tag') === 'tag'">The tag sits in the opposite corner ({{ (lab.at || 'bottom') === 'bottom' ? 'top right' : 'bottom right' }}).</div>
+            <div class="row" style="gap:16px; align-items:flex-start">
+              <Field label="Wording"><Seg :modelValue="lab.short === false ? 'full' : 'short'" @update:modelValue="v => { lab.short = v === 'short'; lab.dir_style = v; }"
+                :options="[{value:'short', label:'Short (Rd, EB)'}, {value:'full', label:'Full (Road, Eastbound)'}]"/></Field>
+              <Field label="Text size"><Seg :modelValue="lab.size || 'tiny'" @update:modelValue="v => lab.size = v"
+                :options="[{value:'tiny', label:'Tiny'}, {value:'small', label:'Small'}]"/></Field>
+            </div>
           </div></div>
       </div>
     </div>
