@@ -173,7 +173,8 @@ once (`hold: false`), so the rotation resumes by itself.
 - Camera grid (`webcam_grid*`): stills only, tiles filling the frame (`rows`, `cols` or auto) revealed one per
   `interval_ms`, each labelled (`display/modules/cam_names.py` splits names into streets and direction; `grid.label`:
   lines, dir tag/line/off, at, wording, size); `grid.near` adds every camera within a radius of a point, worked out by
-  the hub each time; down cameras are skipped. The wall posts its grid to the hub, which sends all tiles and names at
+  the hub each time; cameras that are down, black, blank, frozen (2 h) or slower than 10 s are left out. The
+  wall fetches the tiles 2 min before the grid's turn and the hub keeps the last tiles ready (5 min). The wall posts its grid to the hub, which sends all tiles and names at
   once (`/api/webcams/grid.bin`).
 - City intersection cameras: crawlers in `hub/traffic.py` `CITY_SOURCES` (Vancouver, Richmond, Surrey, Township of
   Langley, SFU), re-crawled daily by the hub (`hub/app.py` `_city_lists`). Burnaby, Coquitlam, the North Shore, New West

@@ -29,6 +29,7 @@ from display.gfx import Canvas, Color, graphics
 
 DATA_DIR = os.environ.get("BIGSCREEN_DATA_DIR", "/dev/shm/bigscreen")
 BOTTOM_STRIP_PX = 17
+GRID_WARM_AHEAD = 120.0      # the camera grid's tiles are fetched this far ahead of its turn (s)
 TILE_W, TILE_H = 64, 16      # dirty-tile granularity for pushing frames to the panels
 BLACK = Color(0, 0, 0)
 
@@ -268,7 +269,10 @@ class Screen:
             if not visible.get(side):
                 continue
             try:
-                nxt = self.engines[side].upcoming(now)
+                eng = self.engines[side]
+                nxt = eng.upcoming(now, ahead=GRID_WARM_AHEAD)     # the camera grid: every tile, well ahead
+                if not (nxt and str(nxt.get("panel", "")).startswith("webcam_grid")):
+                    nxt = eng.upcoming(now)
                 if nxt and str(nxt.get("panel", "")).startswith("webcam"):
                     warm(nxt, self._zone_of(nxt.get("panel"), side))
             except Exception as e:                   # never cost a frame: the webcam just loads as before

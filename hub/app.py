@@ -546,8 +546,24 @@ GRID_STILL_SEC = 60.0
 GRID_MAX = 200                       # cameras a grid fetches (the wall's and the panel's preview alike)
 
 
+GRID_FROZEN_SEC = 2 * 3600          # a still that hasn't changed for this long is a broken camera
+GRID_DARK, GRID_FLAT = 12.0, 4.0     # mean level below this: black; spread below this: one flat colour (a placeholder)
+
+
+def grid_usable(frame, taken=None, now=None):
+    """Is this still worth a tile? Not when it's black, one flat colour (an "offline" card), or frozen for hours.
+    Night pictures are dark but not black: street lights and headlights keep them well above GRID_DARK."""
+    import numpy as np
+    if frame is None:
+        return False
+    if taken is not None and (now or time.time()) - taken > GRID_FROZEN_SEC:
+        return False
+    sample = frame[::6, ::6].astype(np.float32)
+    return float(sample.mean()) >= GRID_DARK and float(sample.std()) >= GRID_FLAT
+
+
 def _grid_still(src):
-    """A grid camera's latest still (cached a minute), or None when it can't be fetched."""
+    """A grid camera's latest still (cached a minute), or None when it's down, black, blank or frozen."""
     try:
         kind, url = webcams.check_source(src)
     except webcams.SourceError:
@@ -558,7 +574,8 @@ def _grid_still(src):
     if hit and time.time() - hit[0] < GRID_STILL_SEC:
         return hit[1]
     try:
-        frame, _ = webcams.fetch_still(kind, url, meta=False)
+        frame, taken = webcams.fetch_still(kind, url, meta=False)
+        frame = frame if grid_usable(frame, taken) else None
     except Exception:
         frame = hit[1] if hit else None                   # a hiccup: the last picture will do
     if len(_grid_stills) > 400:
@@ -567,17 +584,25 @@ def _grid_still(src):
     return frame
 
 
-def _grid_tiles(cams, w, h):
-    """Each grid camera's still as a w×h tile (a centred crop), fetched 8 at a time; None where it failed."""
-    from concurrent.futures import ThreadPoolExecutor
+GRID_FETCH_SEC = 10.0                # cameras that haven't answered by then are left out of this build (their stills
+                                     # keep loading into the cache, so the next build has them)
+
+
+def _grid_tiles(cams, w, h, budget=GRID_FETCH_SEC):
+    """Each grid camera's still as a w×h tile (a centred crop), fetched 12 at a time; None where it's down, unusable
+    or hasn't answered within ``budget`` seconds."""
+    from concurrent.futures import ThreadPoolExecutor, wait
 
     def one(cam):
         frame = _grid_still((cam or {}).get("source"))
         if frame is None:
             return None
         return webcams.render(frame, w, h, (cam or {}).get("crop"))
-    with ThreadPoolExecutor(8) as ex:
-        return list(ex.map(one, cams))
+    ex = ThreadPoolExecutor(12)
+    futs = [ex.submit(one, c) for c in cams]
+    wait(futs, timeout=budget)
+    ex.shutdown(wait=False)                                 # stragglers finish into the still cache
+    return [f.result() if f.done() and not f.exception() else None for f in futs]
 
 
 def _still_ok(cam):
@@ -635,12 +660,51 @@ def _grid_list(g):
     return cams[:GRID_MAX]
 
 
-def _grid_reply(g, w, h):
+_grid_ready: dict = {}               # (w, h, the cameras) -> [built at, reply bytes, refreshing]: the last tiles, kept ready
+GRID_READY_SEC = 50.0                # older than this: served at once, and rebuilt in the background for next time
+GRID_READY_MAX = 300.0               # older than this: too old to show, built afresh before answering
+_grid_ready_lock = threading.Lock()
+
+
+def _grid_build(cams, w, h):
+    """The reply bytes: only the cameras with a usable picture (down, black, blank and frozen ones are left out)."""
     from display.modules.webcam import pack_grid
+    pairs = [(t, str(c.get("name") or "")) for t, c in zip(_grid_tiles(cams, w, h), cams) if t is not None]
+    return pack_grid([t for t, _ in pairs], w, h, [n for _, n in pairs])
+
+
+def _grid_reply(g, w, h):
+    """Every tile at once. The first time a grid is asked for, it's built now; after that the last build is
+    answered at once (the wall never waits on the cameras) and rebuilt in the background when it's getting old;
+    one more than a few minutes old is rebuilt before answering."""
     w, h = max(8, min(448, int(w or 64))), max(8, min(192, int(h or 64)))
     cams = _grid_list(g)
-    return Response(pack_grid(_grid_tiles(cams, w, h), w, h, [str(c.get("name") or "") for c in cams]),
-                    media_type="application/octet-stream")
+    key = (w, h, tuple(_src_key(c.get("source")) + (str(c.get("name") or ""),) for c in cams))
+    with _grid_ready_lock:
+        hit = _grid_ready.get(key)
+        if hit is not None and time.time() - hit[0] > GRID_READY_MAX and not hit[2]:
+            hit = None
+        stale = hit is not None and time.time() - hit[0] > GRID_READY_SEC and not hit[2]
+        if stale:
+            hit[2] = True
+    if hit is None:
+        body = _grid_build(cams, w, h)
+        with _grid_ready_lock:
+            if len(_grid_ready) > 16:
+                _grid_ready.clear()
+            _grid_ready[key] = [time.time(), body, False]
+        return Response(body, media_type="application/octet-stream")
+    if stale:
+        def rebuild():
+            try:
+                body = _grid_build(cams, w, h)
+                with _grid_ready_lock:
+                    _grid_ready[key] = [time.time(), body, False]
+            except Exception as e:
+                print(f"camera grid: {e}", flush=True)
+                hit[2] = False
+        threading.Thread(target=rebuild, name="grid-tiles", daemon=True).start()
+    return Response(hit[1], media_type="application/octet-stream")
 
 
 @app.get("/api/webcams/grid.bin")

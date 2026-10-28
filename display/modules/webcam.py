@@ -451,7 +451,7 @@ class CameraGrid:
         self._load((tw, th))
         got = self.tiles.get((tw, th)) or {}
         tiles = got.get("tiles")
-        if tiles is None:
+        if tiles is None:                  # only when played before its tiles came (the rotation fetches them well ahead)
             _centre_text(c, zone, "Fetching cameras" + "." * (1 + int(now * 2) % 3), Color(150, 150, 150))
             return "skip" if now - p["t0"] > GIVE_UP_SEC else None
         if p["ready"] is None:
