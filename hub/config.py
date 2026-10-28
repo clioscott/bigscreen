@@ -338,6 +338,8 @@ def _validate_webcams(wc):
         if not isinstance(grid, dict) or not isinstance(grid.get("cams", []), list):
             raise ConfigError("webcams.grid needs a list of cameras")
         for i, gc in enumerate(grid.get("cams", [])):
+            if not isinstance(gc, dict):
+                raise ConfigError(f"camera grid #{i + 1} must be an object")
             try:
                 kind, _ = check_source((gc or {}).get("source"))
             except SourceError as e:

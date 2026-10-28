@@ -117,3 +117,39 @@ def test_hub_grid_tiles_are_square_and_in_order(monkeypatch):
     tiles = wm.unpack_grid(hub_app.webcams_grid_bin(size=32).body)
     assert [t is None for t in tiles] == [False, True, False]
     assert tiles[0].shape == (32, 32, 3) and int(tiles[2][5, 5, 0]) == 100
+
+
+def test_both_halves_can_play_the_list_and_the_grid_at_once(monkeypatch):
+    clock = [1000.0]
+    p, drawn = _panel({"cams": {k: {} for k in "abcd"}, "playlist": [{"cam": k, "sec": 10} for k in "abcd"]},
+                      monkeypatch, clock)
+    c = Canvas(448, 192)
+    left, right = (0, 45, 295, 130), (296, 45, 152, 130)
+    for _ in range(3):                                     # both sides drawn every frame: neither resets the other
+        p.draw(c, left, {"panel": "webcam", "_play": 1}, False)
+        p.draw(c, right, {"panel": "webcam", "_play": 1}, False)
+    assert drawn == ["a", "b"] * 3
+    g = wm.CameraGrid("http://hub:1", {"cams": [{"name": "x", "source": {}}] * 2, "interval_ms": 200, "hold_sec": 0})
+    sz = g.geometry(left)[0]
+    g.tiles[sz] = {"at": clock[0], "tiles": [None, None], "busy": False}
+    g.tiles[g.geometry(right)[0]] = {"at": clock[0], "tiles": [None, None], "busy": False}
+    assert g.draw(c, left, {"_play": 1}, True) is None and g.draw(c, right, {"_play": 1}, True) is None
+    clock[0] += 0.5
+    assert g.draw(c, left, {"_play": 1}, False) == "done" and g.draw(c, right, {"_play": 1}, False) == "done"
+
+
+def test_another_pass_replays(monkeypatch):
+    clock = [1000.0]
+    p, drawn = _panel({"cams": {"a": {}, "b": {}}, "playlist": [{"cam": "a", "sec": 10}, {"cam": "b", "sec": 10}]},
+                      monkeypatch, clock)
+    c, z, e = Canvas(448, 130), (0, 0, 448, 130), {"panel": "webcam_full", "_play": 1}
+    p.draw(c, z, e, True)
+    clock[0] += 10
+    assert p.draw(c, z, e, False) == "done"
+    assert p.draw(c, z, e, False) is None and drawn[-1] == "b"       # the same play, a second pass: the next webcam
+    g = wm.CameraGrid("http://hub:1", {"cams": [{"name": "x", "source": {}}] * 2, "interval_ms": 200, "hold_sec": 0})
+    g.tiles[g.geometry(z)[0]] = {"at": clock[0], "tiles": [None, None], "busy": False}
+    g.draw(c, z, e, True)
+    clock[0] += 0.5
+    assert g.draw(c, z, e, False) == "done"
+    assert g.draw(c, z, e, False) is None                            # the reveal starts over

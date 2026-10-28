@@ -520,6 +520,7 @@ def webcams_drivebc_thumb(cid: int):
 
 _grid_stills: dict = {}              # (type, url) -> (fetched at, RGB frame): the camera grid's stills, a minute each
 GRID_STILL_SEC = 60.0
+GRID_MAX = 200                       # cameras a grid fetches (the wall's and the panel's preview alike)
 
 
 def _grid_still(src):
@@ -558,7 +559,7 @@ def _grid_tiles(cams, size):
 
 def _grid_cams():
     g = ((config.load().get("modules") or {}).get("webcams") or {}).get("grid") or {}
-    return [c for c in g.get("cams") or [] if isinstance(c, dict)][:200]
+    return [c for c in g.get("cams") or [] if isinstance(c, dict)][:GRID_MAX]
 
 
 @app.get("/api/webcams/grid.bin")
@@ -578,7 +579,8 @@ def webcams_grid_preview(payload: dict = Body(default={})):
     shape = payload.get("shape") if payload.get("shape") in zones else "full"
     g = payload.get("grid") if isinstance(payload.get("grid"), dict) else {}
     w, h = zones[shape]
-    grid = CameraGrid("http://127.0.0.1:1", g)
+    grid = CameraGrid("http://127.0.0.1:1", {**g, "cams": (g.get("cams") or [])[:GRID_MAX]
+                                              if isinstance(g.get("cams"), list) else []})
     sz, gx, gy = grid.geometry((0, 0, w, h))
     tiles = _grid_tiles(grid.cams, sz)
     c = Canvas(w, h)

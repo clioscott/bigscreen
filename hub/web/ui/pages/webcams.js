@@ -103,7 +103,7 @@ const qs = (o) => Object.entries(o).map(([k, v]) => `${k}=${encodeURIComponent(v
 export const camEntry = (id, shape) => ({ panel: SHAPES[shape].panel, cam: id, rules: [], dwell_sec: 60 });
 
 function useStatus() {
-  const status = ref({ feeds: [], zones: { left: [295, 130], right: [152, 130], full: [448, 130], wall: [448, 192] } });
+  const status = ref({ feeds: [], zones: { left: [295, 130], right: [152, 130], full: [448, 130], tall: [448, 175], wall: [448, 192] } });
   let t;
   const load = async () => { try { status.value = await api("/api/webcams/status"); } catch {} };
   onMounted(() => { load(); t = setInterval(load, 3000); });

@@ -179,7 +179,7 @@ class WebcamPanel:
             self.per_turn = max(1, int(s.get("per_turn") or 1))
         except (TypeError, ValueError):
             self.per_turn = 1
-        self._turn = None                                     # the list's turn on screen: {play, cam, t0, shown}
+        self._turns: dict = {}                                # zone -> the list's turn there: {play, cam, t0, shown}
         self.grid = CameraGrid(self.hub, s.get("grid") or {})
         self.streams: dict = {}
         self.started: dict = {}
@@ -268,15 +268,16 @@ class WebcamPanel:
         if not self.playlist:
             self._centre(c, zone, "No webcams in the list", self.dim)
             return "skip" if now - self.started.setdefault(("list", entry.get("_play")), now) > 4 else None
-        t = self._turn
+        where = tuple(zone)                                   # each half of the wall has its own turn
+        t = self._turns.get(where)
         if transition or t is None or t["play"] != entry.get("_play"):
-            t = self._turn = {"play": entry.get("_play"), "cam": None, "t0": now, "shown": 0, "failed": 0}
+            t = self._turns[where] = {"play": entry.get("_play"), "cam": None, "t0": now, "shown": 0, "failed": 0}
         n = len(self.playlist)
         if t["cam"] is None or now - t["t0"] >= self._sec(t["cam"]):
             if t["cam"] is not None:
                 t["shown"] += 1
                 if t["shown"] >= min(self.per_turn, n):
-                    t["cam"] = None
+                    self._turns.pop(where, None)              # another pass of the same play starts afresh
                     return "done"
             _list_pos["i"] = (_list_pos["i"] + 1) % n
             t["cam"], t["t0"], t["new"] = self.playlist[_list_pos["i"]][0], now, True
@@ -362,10 +363,9 @@ class CameraGrid:
             self.interval, self.hold = 0.2, 3.0
         self.labels = bool(g.get("labels", True))
         self.tiles: dict = {}                       # square size -> {"at", "tiles": [array or None], "busy"}
-        self._play = None
-        self._t0 = 0.0
-        self._ready = None
+        self._plays: dict = {}                      # zone -> {"play", "t0", "ready"}: each half of the wall its own
         self._font = None
+        self._labels: dict = {}                     # square size -> each name trimmed to fit (once, not per frame)
 
     def warm(self):
         """The rotation says the grid is next: refresh the tiles of the sizes it has drawn at (in the background)."""
@@ -406,20 +406,25 @@ class CameraGrid:
 
     def draw(self, c, zone, entry, transition):
         now = time.time()
-        if transition or self._play != entry.get("_play"):
-            self._play, self._t0, self._ready = entry.get("_play"), now, None
+        where = tuple(zone)
+        p = self._plays.get(where)
+        if transition or p is None or p["play"] != entry.get("_play"):
+            p = self._plays[where] = {"play": entry.get("_play"), "t0": now, "ready": None}
         if not self.cams:
             _centre_text(c, zone, "No cameras in the grid", Color(150, 150, 150))
-            return "skip" if now - self._t0 > 4 else None
+            return "skip" if now - p["t0"] > 4 else None
         sz, gx, gy = self.geometry(zone)
         self._load(sz)
         tiles = (self.tiles.get(sz) or {}).get("tiles")
         if tiles is None:
             _centre_text(c, zone, "Fetching cameras" + "." * (1 + int(now * 2) % 3), Color(150, 150, 150))
-            return "skip" if now - self._t0 > GIVE_UP_SEC else None
-        if self._ready is None:
-            self._ready = now                                  # the reveal starts once the tiles are here
-        return self.draw_tiles(c, tiles, sz, gx, gy, now - self._ready)
+            return "skip" if now - p["t0"] > GIVE_UP_SEC else None
+        if p["ready"] is None:
+            p["ready"] = now                                   # the reveal starts once the tiles are here
+        r = self.draw_tiles(c, tiles, sz, gx, gy, now - p["ready"])
+        if r == "done":
+            p["ready"] = None                                  # another pass reveals them all again
+        return r
 
     def draw_tiles(self, c, tiles, sz, gx, gy, elapsed):
         """The grid ``elapsed`` seconds into the reveal; "done" once every camera has appeared and the hold is over."""
@@ -433,21 +438,36 @@ class CameraGrid:
                 c.Blit(tile, tx, ty)
             else:
                 c.FillRect(tx, ty, sz, sz, Color(25, 25, 30))
-            name = self.names[i] if i < len(self.names) else ""
-            if self.labels and sz >= 40 and name:
-                self._label(c, tx, ty, sz, name)
+            if self.labels and sz >= 40:
+                name = self._names_for(sz)[i] if i < len(self.names) else ""
+                if name:
+                    self._label(c, tx, ty, sz, name)
         if shown >= len(tiles) and elapsed >= len(tiles) * self.interval + self.hold:
             return "done"
         return None
 
-    def _label(self, c, x, y, sz, text):
-        from display.modules.webcam_caption import _shade, _tw
+    def _names_for(self, sz):
+        """Each camera's name cut to fit a square this size (worked out once per size)."""
+        got = self._labels.get(sz)
+        if got is None:
+            from display.modules.webcam_caption import _tw
+            f, got = self._label_font(), []
+            for text in self.names:
+                while text and _tw(f, text) > sz - 2:
+                    text = text[:-1]
+                got.append(text)
+            self._labels[sz] = got
+        return got
+
+    def _label_font(self):
         if self._font is None:
             self._font = graphics.Font()
             self._font.LoadFont(FONTS["tiny"])
-        f = self._font
-        while text and _tw(f, text) > sz - 2:
-            text = text[:-1]
+        return self._font
+
+    def _label(self, c, x, y, sz, text):
+        from display.modules.webcam_caption import _shade
+        f = self._label_font()
         _shade(c, x, y + sz - f.height - 1, sz, f.height + 1, 0.55)
         graphics.DrawText(c, f, x + 1, y + sz - 2, Color(235, 235, 235), text)
 

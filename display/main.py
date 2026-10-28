@@ -328,7 +328,8 @@ class Screen:
                 if entry is None:
                     break
                 name = entry.get("panel", "blank")
-                if name in self.panels or name in self.full_panels or name in self.takeover_panels                         or name in self.tall_panels:
+                if name in self.panels or name in self.full_panels or name in self.takeover_panels \
+                        or name in self.tall_panels:
                     break
                 eng.skip_unavailable()
                 entry = None
