@@ -145,7 +145,7 @@ def test_both_halves_can_play_the_list_and_the_grid_at_once(monkeypatch):
     g = wm.CameraGrid("http://hub:1", {"cams": [{"name": "x", "source": {}}] * 2, "interval_ms": 200, "hold_sec": 0})
     for z in (left, right):
         tw, th = g.geometry(z)[:2]
-        g.tiles[(tw, th)] = {"at": clock[0], "tiles": [np.ones((th, tw, 3), np.uint8)] * 2, "busy": False}
+        g.tiles[(tw, th)] = {"at": clock[0], "batch": ([np.ones((th, tw, 3), np.uint8)] * 2, None), "busy": False}
     assert g.draw(c, left, {"_play": 1}, True) is None and g.draw(c, right, {"_play": 1}, True) is None
     clock[0] += 0.5
     assert g.draw(c, left, {"_play": 1}, False) == "done" and g.draw(c, right, {"_play": 1}, False) == "done"
@@ -162,7 +162,7 @@ def test_another_pass_replays(monkeypatch):
     assert p.draw(c, z, e, False) is None and drawn[-1] == "b"       # the same play, a second pass: the next webcam
     g = wm.CameraGrid("http://hub:1", {"cams": [{"name": "x", "source": {}}] * 2, "interval_ms": 200, "hold_sec": 0})
     tw, th = g.geometry(z)[:2]
-    g.tiles[(tw, th)] = {"at": clock[0], "tiles": [np.ones((th, tw, 3), np.uint8)] * 2, "busy": False}
+    g.tiles[(tw, th)] = {"at": clock[0], "batch": ([np.ones((th, tw, 3), np.uint8)] * 2, None), "busy": False}
     g.draw(c, z, e, True)
     clock[0] += 0.5
     assert g.draw(c, z, e, False) == "done"
@@ -335,11 +335,58 @@ def test_a_refresh_mid_reveal_does_not_cut_the_grid_short(monkeypatch):
     monkeypatch.setattr(g, "_load", lambda size: None)
     c, z = Canvas(448, 130), (0, 0, 448, 130)
     tw, th = g.geometry(z)[:2]
-    g.tiles[(tw, th)] = {"at": clock[0], "tiles": [np.ones((th, tw, 3), np.uint8)] * 10, "busy": False}
+    g.tiles[(tw, th)] = {"at": clock[0], "batch": ([np.ones((th, tw, 3), np.uint8)] * 10, None), "busy": False}
     assert g.draw(c, z, {"_play": 1}, True) is None
     clock[0] += 0.5
-    g.tiles[(tw, th)] = {"at": clock[0], "tiles": [np.ones((th, tw, 3), np.uint8)] * 2, "busy": False}  # 8 went down
+    g.tiles[(tw, th)] = {"at": clock[0], "batch": ([np.ones((th, tw, 3), np.uint8)] * 2, None), "busy": False}  # 8 went down
     clock[0] += 0.5
     assert g.draw(c, z, {"_play": 1}, False) is None                  # still the first batch: 10 cameras, 2 s
     clock[0] += 1.1
     assert g.draw(c, z, {"_play": 1}, False) == "done"
+
+
+def test_a_camera_late_for_a_build_shows_its_recent_tile_and_is_not_fetched_twice(monkeypatch):
+    import threading as _th
+    import time as _t
+
+    from hub import app as hub_app
+    monkeypatch.setattr(hub_app, "_grid_cache", {})
+    monkeypatch.setattr(hub_app, "_grid_fetching", set())
+    ok, gate, calls = np.full((90, 160, 3), 60, np.uint8), _th.Event(), []
+
+    def still(src):
+        calls.append(src["url"])
+        if src["url"].endswith("slow.jpg"):
+            gate.wait(2)
+        return ok
+    monkeypatch.setattr(hub_app, "_grid_still", still)
+    cams = [{"source": {"type": "image", "url": f"https://x.example/{n}.jpg"}} for n in ("a", "slow")]
+    slow = cams[1]
+    hub_app._grid_cache[hub_app._grid_key(slow, 40, 30)] = (_t.time() - 120, np.full((30, 40, 3), 9, np.uint8))
+    tiles = hub_app._grid_tiles(cams, 40, 30, budget=0.2)
+    assert int(tiles[1][0, 0, 0]) == 9                                # late: its tile from two minutes ago
+    assert hub_app._grid_tile(slow, 40, 30)[0, 0, 0] == 9 and calls.count("https://x.example/slow.jpg") == 1
+    gate.set()                                                        # (a second build waits on the first fetch)
+
+
+def test_ready_replies_are_kept_within_a_size_budget(monkeypatch):
+    from hub import app as hub_app
+    monkeypatch.setattr(hub_app, "_grid_ready", {})
+    monkeypatch.setattr(hub_app, "GRID_READY_BYTES", 25)
+    clock = [1000.0]
+    monkeypatch.setattr(hub_app.time, "time", lambda: clock[0])
+    for k in "abc":
+        clock[0] += 1
+        hub_app._grid_keep(k, b"x" * 10)
+    assert sorted(hub_app._grid_ready) == ["b", "c"]                  # the oldest went
+    hub_app._grid_keep("big", b"x" * 100)
+    assert list(hub_app._grid_ready) == ["big"]                       # the newest always stays
+
+
+def test_grid_labels_follow_a_new_list_even_at_a_reused_address():
+    g = wm.CameraGrid("http://hub:1", {"cams": []})
+    a = ["Main St & 1 Ave"]
+    first = g._labels_for(73, a)
+    key = next(iter(g._labels))
+    g._labels[key] = (["something else"], first)                      # as if a's id now belonged to another list
+    assert g._labels_for(73, a) == first and g._labels[key][0] is a   # worked out again for the real list

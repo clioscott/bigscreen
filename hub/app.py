@@ -576,44 +576,69 @@ def _grid_still(src):
     return frame if grid_usable(frame, taken) else None
 
 
+_grid_fetching: set = set()          # tile keys being fetched now (a build never fetches one a straggler already is)
+_grid_cache_lock = threading.Lock()
+GRID_KEEP_SEC = 300.0                # a camera that hasn't answered in time shows its tile from up to this long ago
+
+
+def _grid_key(cam, w, h):
+    crop = (cam or {}).get("crop")
+    return (_src_key((cam or {}).get("source")), w, h, tuple(sorted(crop.items())) if isinstance(crop, dict) else None)
+
+
 def _grid_tile(cam, w, h):
     """A grid camera's still as a w×h tile (cached a minute), or None when it's down or unusable. Only the tiles are
-    cached: a full-size still is ~0.7 MB, and a grid can have hundreds of cameras."""
+    cached: a full-size still is ~0.7 MB, and a grid can have hundreds of cameras. When another build is already
+    fetching this camera, its last tile is answered instead."""
     cam = cam or {}
-    crop = cam.get("crop")
-    key = (_src_key(cam.get("source")), w, h, tuple(sorted(crop.items())) if isinstance(crop, dict) else None)
-    hit = _grid_cache.get(key)
-    if hit and time.time() - hit[0] < GRID_STILL_SEC:
-        return hit[1]
+    key = _grid_key(cam, w, h)
+    with _grid_cache_lock:
+        hit = _grid_cache.get(key)
+        if hit and time.time() - hit[0] < GRID_STILL_SEC:
+            return hit[1]
+        if key in _grid_fetching:
+            return hit[1] if hit else None
+        _grid_fetching.add(key)
     try:
         frame = _grid_still(cam.get("source"))
         tile = None if frame is None else webcams.render(frame, w, h, cam.get("crop"))
     except Exception:
         tile = hit[1] if hit else None                     # a hiccup: the last picture will do
-    if len(_grid_cache) >= GRID_CACHE_MAX:
-        old = time.time() - GRID_STILL_SEC
-        for k in [k for k, v in list(_grid_cache.items()) if v[0] < old]:
-            _grid_cache.pop(k, None)
+    with _grid_cache_lock:
+        _grid_fetching.discard(key)
         if len(_grid_cache) >= GRID_CACHE_MAX:
-            _grid_cache.clear()
-    _grid_cache[key] = (time.time(), tile)
+            old = time.time() - GRID_KEEP_SEC
+            for k in [k for k, v in _grid_cache.items() if v[0] < old]:
+                del _grid_cache[k]
+            if len(_grid_cache) >= GRID_CACHE_MAX:
+                _grid_cache.clear()
+        _grid_cache[key] = (time.time(), tile)
     return tile
 
 
-GRID_FETCH_SEC = 10.0                # cameras that haven't answered by then are left out of this build (their stills
-                                     # keep loading into the cache, so the next build has them)
+def _grid_recent(cam, w, h):
+    """The camera's last tile if it's under GRID_KEEP_SEC old, else None."""
+    with _grid_cache_lock:
+        hit = _grid_cache.get(_grid_key(cam, w, h))
+    return hit[1] if hit and time.time() - hit[0] < GRID_KEEP_SEC else None
+
+
+GRID_FETCH_SEC = 10.0                # cameras that haven't answered by then show their last tile in this build (their
+                                     # stills keep loading into the cache, so the next build has them fresh)
 
 
 def _grid_tiles(cams, w, h, budget=GRID_FETCH_SEC):
-    """Each grid camera's still as a w×h tile (a centred crop), fetched 12 at a time; None where it's down, unusable
-    or hasn't answered within ``budget`` seconds."""
+    """Each grid camera's still as a w×h tile (a centred crop), fetched 12 at a time; None where it's down or
+    unusable. One that hasn't answered within ``budget`` seconds gets its tile from the last few minutes, if any:
+    every build refetches in the same order, so without that the end of a long list would always miss out."""
     from concurrent.futures import ThreadPoolExecutor, wait
 
     ex = ThreadPoolExecutor(12)
     futs = [ex.submit(_grid_tile, c, w, h) for c in cams]
     wait(futs, timeout=budget)
     ex.shutdown(wait=False)                                 # stragglers finish into the tile cache
-    return [f.result() if f.done() and not f.exception() else None for f in futs]
+    return [(f.result() if not f.exception() else None) if f.done() else _grid_recent(c, w, h)
+            for f, c in zip(futs, cams)]
 
 
 def _still_ok(cam):
@@ -684,6 +709,18 @@ def _grid_build(cams, w, h):
     return pack_grid([t for t, _ in pairs], w, h, [n for _, n in pairs])
 
 
+GRID_READY_BYTES = 96 * 1024 * 1024   # replies kept ready, all told (a 1000-camera full-width one is ~30 MB; every
+                                     # unsaved preview edit is another grid)
+
+
+def _grid_keep(key, body):
+    """Keep a built reply ready, dropping the oldest others while they all add up to more than GRID_READY_BYTES."""
+    with _grid_ready_lock:
+        _grid_ready[key] = [time.time(), body, False]
+        while len(_grid_ready) > 1 and sum(len(v[1]) for v in _grid_ready.values()) > GRID_READY_BYTES:
+            del _grid_ready[min((k for k in _grid_ready if k != key), key=lambda k: _grid_ready[k][0])]
+
+
 def _grid_reply(g, w, h):
     """Every tile at once. The first time a grid is asked for, it's built now; after that the last build is
     answered at once (the wall never waits on the cameras) and rebuilt in the background when it's getting old;
@@ -700,17 +737,12 @@ def _grid_reply(g, w, h):
             hit[2] = True
     if hit is None:
         body = _grid_build(cams, w, h)
-        with _grid_ready_lock:
-            if len(_grid_ready) > 16:
-                _grid_ready.clear()
-            _grid_ready[key] = [time.time(), body, False]
+        _grid_keep(key, body)
         return Response(body, media_type="application/octet-stream")
     if stale:
         def rebuild():
             try:
-                body = _grid_build(cams, w, h)
-                with _grid_ready_lock:
-                    _grid_ready[key] = [time.time(), body, False]
+                _grid_keep(key, _grid_build(cams, w, h))
             except Exception as e:
                 print(f"camera grid: {e}", flush=True)
                 hit[2] = False
