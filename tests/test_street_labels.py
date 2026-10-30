@@ -60,6 +60,21 @@ def test_a_diagonal_road_gets_a_label_in_its_angle():
     assert (box & ndimage.binary_dilation(road, np.ones((5, 5), bool))).any()         # but right beside it
 
 
+def test_a_diagonal_label_keeps_clear_of_a_parallel_road():
+    from scipy import ndimage
+    for shift in range(3, 8):                                     # at 2 the lines touch: one 2 px road
+        other = [(x + shift, y) for x, y in zip(range(20, 181), range(20, 181))]
+        out = _labels([("Kingsway", [(20, 20), (180, 180)])], extra=other)
+        if not out:
+            continue
+        b = out[0]["cands"][0]
+        box = np.zeros((192, 448), bool)
+        box[b["y"]:b["y"] + b["h"], b["x"]:b["x"] + b["w"]] = True
+        road = np.zeros_like(box)
+        road[[y for _, y in other], [x for x, _ in other]] = True
+        assert not (box & ndimage.binary_dilation(road, np.ones((7, 7), bool))).any(), shift   # 3 px clear
+
+
 def test_a_diagonal_road_crowded_by_others_gets_no_label():
     near = [(x, y) for x in range(0, 448, 6) for y in range(0, 192)]          # a street every 6 px
     assert _labels([("Kingsway", [(20, 20), (200, 180)])], extra=near) == []

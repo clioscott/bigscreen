@@ -240,26 +240,29 @@ def street_labels(w, h, named, roads, shore, anchors):
                 cx, cy = box["x"] + box["w"] / 2, box["y"] + box["h"] / 2
                 rank = (vertical, score[0], ((cx - w / 2) / w) ** 2 + ((cy - h / 2) / h) ** 2)
                 cands.append((rank, box))
-        if not cands:                                                   # no straight stretch: try the diagonals
+        def hits(b, g=3):
+            return any(b["x"] - g < x1 and x0 < b["x"] + b["w"] + g and b["y"] - g < y1 and y0 < b["y"] + b["h"] + g
+                       for x0, y0, x1, y1 in placed)
+
+        def pick(cands):                                                # up to 3 spots, apart, clear of labels so far
+            spread = []
+            for _, b in sorted(cands, key=lambda rb: rb[0]):
+                if not hits(b) and all(abs(b["x"] - o["x"]) + abs(b["y"] - o["y"]) > 40 for o in spread):
+                    spread.append(b)
+                    if len(spread) >= 3:
+                        break
+            return spread
+
+        spread = pick(cands)
+        if not spread:                                                  # no straight stretch free: the diagonals
             own = roads & ndimage.binary_dilation(line, k3)             # this road as drawn (2 px roads too)
             near = ndimage.binary_dilation(own, k3)
-            other = ndimage.binary_dilation((roads & ~ndimage.binary_dilation(own, k3, iterations=2)) | shore, k3)
+            other = ndimage.binary_dilation((roads & ~own) | shore, k3)
             for score, top, x in _diagonal_spots(line, sat_of(near), sat_of(other | shield_px), (th, tl)):
                 box = {"x": int(x), "y": int(top), "w": tl, "h": th, "v": 0}
                 cx, cy = x + tl / 2, top + th / 2
                 cands.append(((2, 0, ((cx - w / 2) / w) ** 2 + ((cy - h / 2) / h) ** 2), box))
-        cands.sort(key=lambda rb: rb[0])
-        spread = []                                                     # a few alternatives, apart from each other
-        for _, b in cands:
-            if all(abs(b["x"] - o["x"]) + abs(b["y"] - o["y"]) > 40 for o in spread):
-                spread.append(b)
-            if len(spread) >= 3:
-                break
-
-        def hits(b, g=3):
-            return any(b["x"] - g < x1 and x0 < b["x"] + b["w"] + g and b["y"] - g < y1 and y0 < b["y"] + b["h"] + g
-                       for x0, y0, x1, y1 in placed)
-        spread = [b for b in spread if not hits(b)]
+            spread = pick(cands)
         if not spread:
             continue
         b = spread[0]
@@ -318,7 +321,9 @@ def render(name, area, w, h, force=False):
             d.line([tuple(p) for p in px], fill=ROAD[cls], width=wd)
             od.line([tuple(p) for p in px], fill=255, width=wd)
             if cls in LABEL_CLS and nm:
-                named.setdefault(nm, [ORDER.index(cls), []])[1].append(px)
+                ent = named.setdefault(nm, [0, []])
+                ent[0] = max(ent[0], ORDER.index(cls))                  # ranked by its biggest class
+                ent[1].append(px)
             r = route_of(ref, cls)
             if r and cls in ("motorway", "trunk", "primary"):
                 pts_by_route.setdefault(r, []).extend((float(x), float(y), ORDER.index(cls)) for x, y in px)
