@@ -41,7 +41,8 @@ MAGIC = b"BSWC"
 GRID_MAGIC = b"BSG2"
 GRID_ROWS = 2                # the camera grid's rows by default; its columns fit the frame
 GRID_MAX_ROWS, GRID_MAX_COLS = 4, 10
-GRID_ASPECT = 1.1            # auto columns keep each tile about this much wider than tall (6 across full width)
+GRID_VIEW_MS = 1000          # an intersection's tile shows each of its views this long, round and round
+GRID_ASPECT = 1.1           # auto columns keep each tile about this much wider than tall (6 across full width)
 _list_pos = {"i": -1}        # where the Webcams list is (survives config reloads, which rebuild the panel)
 
 
@@ -352,11 +353,12 @@ class WebcamPanel:
 
 class CameraGrid:
     """A grid of still cameras filling the whole frame (modules.webcams.grid: {"cams": [{"name", "source"}], "rows",
-    "cols", "interval_ms", "labels", "hold_sec"}): ``rows`` rows (2) of ``cols`` tiles (or "auto": as many as keep the
-    tiles a little wider than square, 6 across full width). One tile changes every interval, top row left to right then
-    the next, until every camera has appeared; the screen ends ``hold_sec`` after the last one. Each tile carries its
-    camera's name. The tiles come from the hub in one request, already cropped and sized (it fetches the stills); a
-    reader thread loads them so drawing never waits."""
+    "cols", "interval_ms", "labels", "hold_sec", "group_views", "view_ms"}): ``rows`` rows (2) of ``cols`` tiles (or
+    "auto": as many as keep the tiles a little wider than square, 6 across full width). One tile changes every interval,
+    top row left to right then the next, until every camera has appeared; the screen ends ``hold_sec`` after the last
+    one. With ``group_views`` (on) an intersection's views (NB, SB, EB, WB…) share one tile, which loops through them
+    every ``view_ms``. Each tile carries its camera's name. The tiles come from the hub in one request, already cropped
+    and sized (it fetches the stills); a reader thread loads them so drawing never waits."""
 
     def __init__(self, hub_url, g):
         self.hub = urlparse(hub_url)
@@ -370,6 +372,8 @@ class CameraGrid:
             self.hold = max(0.0, min(30.0, float(g.get("hold_sec", 3))))
         except (TypeError, ValueError):
             self.interval, self.hold = 0.2, 3.0
+        self.group_views = g.get("group_views", True) is not False
+        self.view_sec = _int_in(g.get("view_ms"), GRID_VIEW_MS, 200, 10000) / 1000
         self.rows = _int_in(g.get("rows"), GRID_ROWS, 1, GRID_MAX_ROWS)
         self.cols = None if g.get("cols") in (None, "", "auto") else _int_in(g.get("cols"), 6, 1, GRID_MAX_COLS)
         # each tile's label (display/modules/cam_names.py): the name split into its streets, the chosen parts on each
@@ -386,7 +390,7 @@ class CameraGrid:
         self._plays: dict = {}                      # zone -> {"play", "t0", "ready"}: each half of the wall its own
         self._font = None
         self._labels: dict = {}                     # tile width -> each label worked out (once, not per frame)
-        self._up: dict = {}                         # (id(tiles), w, h) -> (tiles, indexes of the cameras that sent one)
+        self._up: dict = {}                         # (id(tiles), w, h) -> (tiles, places: [[camera indexes]] of those up)
 
     def warm(self, zone=None):
         """The rotation says the grid is next: fetch its tiles for that area now (in the background), or refresh the
@@ -466,31 +470,55 @@ class CameraGrid:
         return r
 
     def draw_tiles(self, c, tiles, geo, elapsed, names=None):
-        """The grid ``elapsed`` seconds into the reveal; "done" once every camera has appeared and the hold is over.
+        """The grid ``elapsed`` seconds into the reveal; "done" once every place has appeared, the hold is over and
+        each tile on the last screen has shown all its views. A tile is taken over after cells × interval, so a place
+        with more views than fit in that at view_ms shows each one for a share of it instead: every view appears.
         Cameras that are down (no picture from the hub) are skipped, not shown as empty tiles; none up: "skip"."""
         tw, th, xs, ys = geo
         names = self.names if names is None else names
-        hit = self._up.get((id(tiles), tw, th))
-        if hit is not None and hit[0] is tiles:               # (the list is kept, so its id can't be reused meanwhile)
-            up = hit[1]
-        else:                                                 # once per batch and size, not per frame
-            up = [i for i, t in enumerate(tiles) if t is not None and t.shape[:2] == (th, tw)]
-            if len(self._up) > 4:
-                self._up.clear()
-            self._up[(id(tiles), tw, th)] = (tiles, up)
-        if not up:
+        places = self._places(tiles, names, tw, th)
+        if not places:
             return "skip"
         cells = len(xs) * len(ys)
-        shown = min(len(up), int(elapsed / self.interval) + 1)
+        per_view = lambda views: min(self.view_sec, cells * self.interval / len(views))
+        shown = min(len(places), int(elapsed / self.interval) + 1)
         for k in range(min(cells, shown)):
-            i = up[k + ((shown - 1 - k) // cells) * cells]   # the newest camera in tile k (k, k + cells, ...)
+            n = k + ((shown - 1 - k) // cells) * cells       # the newest place in tile k (k, k + cells, ...)
+            views = places[n]
+            i = views[int(max(0.0, elapsed - n * self.interval) / per_view(views)) % len(views)]   # from its first view
             tx, ty = xs[k % len(xs)], ys[k // len(xs)]
             c.Blit(tiles[i], tx, ty)
             if self.labels and tw >= 24 and th >= 16 and i < len(names):
                 self._label(c, tx, ty, tw, th, self._labels_for(tw, names)[i])
-        if shown >= len(up) and elapsed >= len(up) * self.interval + self.hold:
+        if shown < len(places):
+            return None
+        loops = max((n * self.interval + len(places[n]) * per_view(places[n])
+                     for n in range(max(0, len(places) - cells), len(places)) if len(places[n]) > 1), default=0.0)
+        if elapsed >= max(len(places) * self.interval + self.hold, loops):
             return "done"
         return None
+
+    def _places(self, tiles, names, tw, th):
+        """The cameras that sent a picture, as places in order of first appearance: [[camera index, ...]], an
+        intersection's views together when group_views is on. Once per batch and size, not per frame (the lists are
+        kept with the result, so a reused id() can't match)."""
+        key = (id(tiles), id(names), tw, th)
+        hit = self._up.get(key)
+        if hit is not None and hit[0] is tiles and hit[1] is names:
+            return hit[2]
+        up = [i for i, t in enumerate(tiles) if t is not None and t.shape[:2] == (th, tw)]
+        if self.group_views:
+            from display.modules.cam_names import place_key
+            by: dict = {}
+            for i in up:
+                by.setdefault(place_key(names[i]) if i < len(names) and names[i] else ("#", i), []).append(i)
+            places = list(by.values())
+        else:
+            places = [[i] for i in up]
+        if len(self._up) > 4:
+            self._up.clear()
+        self._up[key] = (tiles, names, places)
+        return places
 
     def _labels_for(self, tw, names=None):
         """Each camera's label for tiles this wide, worked out once per width and list: ([lines cut to fit], tag)."""

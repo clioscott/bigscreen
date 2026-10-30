@@ -14,7 +14,7 @@ import re
 
 PARTS = ("street1", "street2", "dir", "view", "name")
 DEFAULT_LINES = [["street1"], ["street2"]]          # the direction goes in a corner tag by default
-_JOINERS = re.compile(r"\s+(?:and|&|at|/)\s+", re.I)
+_JOINERS = re.compile(r"(?:\s+|(?<=\.))(?:and|&|at|/)\s+", re.I)     # (Vancouver has one "Granville St.and W 41st Av")
 _COMPASS = {"north": "N", "northeast": "NE", "east": "E", "southeast": "SE", "south": "S", "southwest": "SW",
             "west": "W", "northwest": "NW"}
 _DIR = re.compile(r"^(looking\s+)?(north|south|east|west)(east|west)?(bound)?(\s+\w+)?$", re.I)
@@ -56,6 +56,26 @@ def split(name: str) -> dict:
         v = _VIEW.match(tail)
         out["view"] = (f"Camera {v.group(1)}" if v.group(1) else "Panorama") if v else tail
     return out
+
+
+# for matching places only: any case, and the spellings one city mixes ("Block"/"blk", "Holland Commons"/"Cmns")
+_SAME = {**{a.lower(): b.lower() for a, b in _SHORT}, "commons": "cmns"}
+_SAME_RE = re.compile(r"\b(" + "|".join(re.escape(a) for a in _SAME) + r")\b")
+
+
+def _same(street: str) -> str:
+    s = _SAME_RE.sub(lambda m: _SAME[m.group(1)], street.lower().replace(".", " "))
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def place_key(name: str):
+    """The place a view belongs to, the same for every view of it: an intersection ("A St at B Rd - Northbound" and
+    "B Road & A Street - Camera 2"), or for a name with one street, the name before its view ("Cambie Bridge - North",
+    "Massey Tunnel · looking south")."""
+    p = split(name)
+    if not p["street2"]:
+        return _same(p["street1"])
+    return tuple(sorted(_same(s) for s in (p["street1"], p["street2"])))
 
 
 def dir_text(p: dict, style: str = "short") -> str:

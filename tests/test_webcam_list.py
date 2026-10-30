@@ -142,7 +142,7 @@ def test_both_halves_can_play_the_list_and_the_grid_at_once(monkeypatch):
         p.draw(c, left, {"panel": "webcam", "_play": 1}, False)
         p.draw(c, right, {"panel": "webcam", "_play": 1}, False)
     assert drawn == ["a", "b"] * 3
-    g = wm.CameraGrid("http://hub:1", {"cams": [{"name": "x", "source": {}}] * 2, "interval_ms": 200, "hold_sec": 0})
+    g = wm.CameraGrid("http://hub:1", {"cams": [{"name": str(i), "source": {}} for i in range(2)], "interval_ms": 200, "hold_sec": 0})
     for z in (left, right):
         tw, th = g.geometry(z)[:2]
         g.tiles[(tw, th)] = {"at": clock[0], "batch": ([np.ones((th, tw, 3), np.uint8)] * 2, None), "busy": False}
@@ -160,7 +160,7 @@ def test_another_pass_replays(monkeypatch):
     clock[0] += 10
     assert p.draw(c, z, e, False) == "done"
     assert p.draw(c, z, e, False) is None and drawn[-1] == "b"       # the same play, a second pass: the next webcam
-    g = wm.CameraGrid("http://hub:1", {"cams": [{"name": "x", "source": {}}] * 2, "interval_ms": 200, "hold_sec": 0})
+    g = wm.CameraGrid("http://hub:1", {"cams": [{"name": str(i), "source": {}} for i in range(2)], "interval_ms": 200, "hold_sec": 0})
     tw, th = g.geometry(z)[:2]
     g.tiles[(tw, th)] = {"at": clock[0], "batch": ([np.ones((th, tw, 3), np.uint8)] * 2, None), "busy": False}
     g.draw(c, z, e, True)
@@ -331,7 +331,7 @@ def test_the_grid_has_room_for_hundreds_of_cameras():
 def test_a_refresh_mid_reveal_does_not_cut_the_grid_short(monkeypatch):
     clock = [1000.0]
     monkeypatch.setattr(wm.time, "time", lambda: clock[0])
-    g = wm.CameraGrid("http://hub:1", {"cams": [{"name": "x", "source": {}}] * 10, "interval_ms": 200, "hold_sec": 0})
+    g = wm.CameraGrid("http://hub:1", {"cams": [{"name": str(i), "source": {}} for i in range(10)], "interval_ms": 200, "hold_sec": 0})
     monkeypatch.setattr(g, "_load", lambda size: None)
     c, z = Canvas(448, 130), (0, 0, 448, 130)
     tw, th = g.geometry(z)[:2]
@@ -390,3 +390,54 @@ def test_grid_labels_follow_a_new_list_even_at_a_reused_address():
     key = next(iter(g._labels))
     g._labels[key] = (["something else"], first)                      # as if a's id now belonged to another list
     assert g._labels_for(73, a) == first and g._labels[key][0] is a   # worked out again for the real list
+
+
+def test_an_intersections_views_share_one_place():
+    from display.modules.cam_names import place_key
+    k = place_key("Alderbridge Way at Lansdowne Road - Eastbound")
+    assert k == place_key("Alderbridge Way at Lansdowne Road - SB2") == place_key("Lansdowne Rd & Alderbridge Way - Camera 2")
+    assert k != place_key("Alderbridge Way at Westminster Highway - Eastbound")
+    assert place_key("Massey Tunnel · looking south") == place_key("Massey Tunnel · looking north")   # one street
+    assert place_key("Cambie Bridge - North") != place_key("Burrard St Bridge - North")
+    assert place_key("Granville St.and W 41st Av - North") == place_key("Granville St and W 41st Av - South")
+    assert place_key("8100 Block at Cook Road - Eastbound") == place_key("8100 blk at Cook Rd - SB2")
+    assert place_key("Holland Commons & King George Blvd - Camera 1") == place_key("Holland Cmns & King George Blvd - Panorama")
+
+
+def test_a_grouped_tile_loops_through_its_views():
+    names = ["A St at B Rd - Northbound", "C St at D Rd - Eastbound", "A St at B Rd - Southbound",
+             "E St at F Rd - Westbound", "E St at F Rd - Eastbound"]
+    g = wm.CameraGrid("http://hub:1", {"cams": [{"name": n, "source": {}} for n in names], "cols": 5, "rows": 2,
+                                        "interval_ms": 200, "view_ms": 1000, "hold_sec": 0, "labels": False})
+    geo = tw, th, xs, ys = g.geometry((0, 0, 300, 100))           # 10 tiles: each lives 2 s, time for 2 views of 1 s
+    tiles = [np.full((th, tw, 3), 10 * (i + 1), np.uint8) for i in range(5)]
+    at = lambda t: (lambda c: (g.draw_tiles(c, tiles, geo, t), [int(c.buf[5, x + 5, 0]) for x in xs[:3]])[1])(Canvas(300, 100))
+    assert at(0.5) == [10, 20, 40]                       # three places, each on its first view
+    assert at(1.1) == [30, 20, 40]                       # A's tile has moved to its next view (C has only one)
+    assert at(1.3) == [30, 20, 40] and at(1.5) == [30, 20, 50]   # E landed at 0.4 s: its second view from 1.4 s
+    assert at(2.1) == [10, 20, 50]                       # A back to its first view
+    assert g.draw_tiles(Canvas(300, 100), tiles, geo, 2.3) is None      # E hasn't shown both views yet (till 2.4 s)
+    assert g.draw_tiles(Canvas(300, 100), tiles, geo, 2.5) == "done"
+    flat = wm.CameraGrid("http://hub:1", {"cams": g.cams, "group_views": False, "cols": 3, "rows": 1, "hold_sec": 0})
+    assert len(flat._places(tiles, flat.names, tw, th)) == 5
+
+
+def test_every_view_shows_before_its_tile_is_taken_over_and_the_last_screen_finishes_its_loops():
+    names = ["A St at B Rd - Northbound", "A St at B Rd - Southbound", "A St at B Rd - Eastbound", "A St at B Rd - Westbound",
+             "C St at D Rd - North", "E St at F Rd - North", "G St at H Rd - North"]
+    g = wm.CameraGrid("http://hub:1", {"cams": [{"name": n, "source": {}} for n in names], "cols": 2, "rows": 1,
+                                        "interval_ms": 200, "view_ms": 1000, "hold_sec": 0, "labels": False})
+    geo = tw, th, xs, ys = g.geometry((0, 0, 200, 100))
+    tiles = [np.full((th, tw, 3), 10 * (i + 1), np.uint8) for i in range(7)]
+    seen = set()
+    for f in range(0, 80):                               # A's tile lives 2 × 200 ms: its 4 views get 100 ms each
+        c = Canvas(200, 100)
+        g.draw_tiles(c, tiles, geo, f / 200)
+        seen.add(int(c.buf[5, xs[0] + 5, 0])) if f / 200 < 0.4 else None
+    assert {10, 20, 30, 40} <= seen
+    late = wm.CameraGrid("http://hub:1", {"cams": [{"name": n, "source": {}} for n in names[:5]], "cols": 4, "rows": 1,
+                                           "interval_ms": 200, "view_ms": 1000, "hold_sec": 0, "labels": False})
+    geo = late.geometry((0, 0, 400, 100))                # A (4 views, 200 ms each in a tile that lives 800 ms), then C
+    t4 = [np.full((geo[1], geo[0], 3), 9, np.uint8)] * 5
+    assert late.draw_tiles(Canvas(400, 100), t4, geo, 0.7) is None      # both in at 0.4 s, A still looping (till 0.8 s)
+    assert late.draw_tiles(Canvas(400, 100), t4, geo, 0.85) == "done"
