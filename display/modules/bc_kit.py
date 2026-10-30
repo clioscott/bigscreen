@@ -61,6 +61,7 @@ FONTS = {
     "s8": _A + "5x8.bdf", "s8b": _C + "clean-clR5x8.bdf", "s7": _A + "5x7.bdf",
     "crt12": _A + "cozette.bdf", "pro15": _A + "profont15.bdf", "pro17": _A + "profont17.bdf", "pro22": _A + "profont22.bdf",
     "envy15": _C + "envypn7x15.bdf", "knxt20": _C + "knxt.bdf",
+    "tiny": _A + "tom-thumb.bdf",                                   # map labels (street names)
 }
 _FONT_OBJS = {}
 
@@ -70,6 +71,16 @@ def font(role):
     if f is None:
         f = _FONT_OBJS[role] = FI(FONTS.get(role, role), 1)
     return f
+
+
+def label_mask(s, vertical=False):
+    """A map label in the tiny font as a bool mask (trailing spacing trimmed); turned 90° to read upwards when
+    ``vertical``. The hub places labels with this same mask, so its boxes match what is drawn."""
+    m = font("tiny").f.text_mask(s)[0]
+    cols = np.nonzero(m.any(0))[0]
+    if len(cols):
+        m = m[:, :cols[-1] + 1]
+    return np.rot90(m) if vertical else m
 
 
 def preload(roles):

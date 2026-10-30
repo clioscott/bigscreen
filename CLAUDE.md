@@ -191,6 +191,9 @@ tsunami (`tsunami.py`, NTWC + DFO gauges), wildfire (`wildfire.py`, BCWS/EMCR, S
 - No clashes: NAAD drops ECCC messages and routes quake/tsunami/fire/road ones to those screens (cache
   `naad_routed.json`); the weather alert job leaves tsunami alerts to the tsunami screen.
 - Maps: `hub/bc/maps.py` renders each screen's basemap into `data/bcmaps/` (bump `RENDER_VERSION` after changes).
+  DriveBC's maps come from `hub/bc/trafficmap.py` instead (bump its `VERSION`): roads drawn at LED scale (tertiary
+  only at ≤ 0.05 km/px), shield anchors and up to 9 street-name labels (tiny font, beside straight E–W/N–S stretches,
+  else in the angle of a diagonal road; the display drops any that would touch the highlighted road or its UI).
 - Reference place: every zoomed or cropped alert map keeps home in view, or, when fitting home would shrink the
   alert area too far (> 3× zoom-out, or below 30 px for tiny areas), the biggest nearby BC city; failing that it
   points to the nearest place from the map's edge. City list and rules: `common/places.py`; crops:
