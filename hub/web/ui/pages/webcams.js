@@ -646,7 +646,7 @@ const GridTab = {
       : /^\/api\/webcams\/city\/[\w-]+\.jpg$/.test(c.thumb || "") ? c.thumb : snap(c.source));
     // what the wall plays: the hub fetches at most GRID_MAX cameras (it tells us with the nearby matches)
     const playing = computed(() => [...g.cams, ...(g.near?.on && matches.value ? matches.value.cams.filter((c) => !inList(c)) : [])]
-      .slice(0, matches.value?.max || 1000));
+      .slice(0, matches.value?.max || 5000));
     const total = computed(() => playing.value.length);
     // squares: an intersection's views share one when grouped (display/modules/cam_names.py place_key, for the count)
     const SAME = { avenue: "ave", av: "ave", road: "rd", street: "st", boulevard: "blvd", highway: "hwy", drive: "dr", place: "pl",

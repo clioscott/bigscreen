@@ -322,10 +322,26 @@ def test_the_hub_keeps_tiles_not_stills_and_a_hiccup_keeps_the_last_one(monkeypa
     assert hub_app._grid_tile(cam, 40, 30) is not None and len(fetched) == 2          # failed: the last picture
 
 
-def test_the_grid_has_room_for_hundreds_of_cameras():
+def test_the_grid_has_room_for_every_city_camera_and_waits_long_enough_for_them():
     from hub import app as hub_app
-    cams = [{"name": str(i), "source": {"type": "image", "url": f"https://x.example/{i}.jpg"}} for i in range(700)]
-    assert len(hub_app._grid_list({"cams": cams})) == 700
+    cams = [{"name": str(i), "source": {"type": "image", "url": f"https://x.example/{i}.jpg"}} for i in range(2500)]
+    assert len(hub_app._grid_list({"cams": cams})) == 2500
+    assert hub_app._grid_budget(100) == 10 and hub_app._grid_budget(2300) == 46 and hub_app._grid_budget(9000) == 60
+
+
+def test_a_full_tile_cache_drops_its_oldest_not_everything(monkeypatch):
+    from hub import app as hub_app
+    monkeypatch.setattr(hub_app, "_grid_cache", {})
+    monkeypatch.setattr(hub_app, "GRID_CACHE_MAX", 8)
+    clock = [1000.0]
+    monkeypatch.setattr(hub_app.time, "time", lambda: clock[0])
+    monkeypatch.setattr(hub_app, "_grid_still", lambda src: np.full((90, 160, 3), 60, np.uint8))
+    cam = lambda i: {"source": {"type": "image", "url": f"https://x.example/{i}.jpg"}}
+    for i in range(9):
+        clock[0] += 1
+        hub_app._grid_tile(cam(i), 40, 30)
+    assert len(hub_app._grid_cache) == 7                              # 8 full: the 2 oldest went, the 9th came in
+    assert hub_app._grid_key(cam(0), 40, 30) not in hub_app._grid_cache and hub_app._grid_key(cam(8), 40, 30) in hub_app._grid_cache
 
 
 def test_a_refresh_mid_reveal_does_not_cut_the_grid_short(monkeypatch):

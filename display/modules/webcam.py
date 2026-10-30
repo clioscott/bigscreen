@@ -424,8 +424,9 @@ class CameraGrid:
             if r.status != 200 or body[:4] != GRID_MAGIC:
                 raise RuntimeError(f"hub {r.status}: {body[:200]!r}")
             tiles, names = unpack_grid(body)                    # the names include the nearby cameras
+            self._places(tiles, names, size[0], size[1])        # worked out here, not in a frame
             if self.labels:
-                self._labels_for(size[0], names)                # worked out here, not in a frame
+                self._labels_for(size[0], names)
             got["batch"] = (tiles, names)                       # one swap: a play never pairs new tiles with old names
             got["at"] = time.time()
         except Exception as e:
