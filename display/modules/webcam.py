@@ -471,25 +471,30 @@ class CameraGrid:
 
     def draw_tiles(self, c, tiles, geo, elapsed, names=None):
         """The grid ``elapsed`` seconds into the reveal; "done" once every place has appeared, the hold is over and
-        the last tile has shown each of its views. Cameras that are down (no picture from the hub) are skipped, not
-        shown as empty tiles; none up: "skip"."""
+        each tile on the last screen has shown all its views. A tile is taken over after cells × interval, so a place
+        with more views than fit in that at view_ms shows each one for a share of it instead: every view appears.
+        Cameras that are down (no picture from the hub) are skipped, not shown as empty tiles; none up: "skip"."""
         tw, th, xs, ys = geo
         names = self.names if names is None else names
         places = self._places(tiles, names, tw, th)
         if not places:
             return "skip"
         cells = len(xs) * len(ys)
+        per_view = lambda views: min(self.view_sec, cells * self.interval / len(views))
         shown = min(len(places), int(elapsed / self.interval) + 1)
         for k in range(min(cells, shown)):
             n = k + ((shown - 1 - k) // cells) * cells       # the newest place in tile k (k, k + cells, ...)
             views = places[n]
-            i = views[int(max(0.0, elapsed - n * self.interval) / self.view_sec) % len(views)]   # from its first view
+            i = views[int(max(0.0, elapsed - n * self.interval) / per_view(views)) % len(views)]   # from its first view
             tx, ty = xs[k % len(xs)], ys[k // len(xs)]
             c.Blit(tiles[i], tx, ty)
             if self.labels and tw >= 24 and th >= 16 and i < len(names):
                 self._label(c, tx, ty, tw, th, self._labels_for(tw, names)[i])
-        last = (len(places) - 1) * self.interval + len(places[-1]) * self.view_sec if len(places[-1]) > 1 else 0.0
-        if shown >= len(places) and elapsed >= max(len(places) * self.interval + self.hold, last):
+        if shown < len(places):
+            return None
+        loops = max((n * self.interval + len(places[n]) * per_view(places[n])
+                     for n in range(max(0, len(places) - cells), len(places)) if len(places[n]) > 1), default=0.0)
+        if elapsed >= max(len(places) * self.interval + self.hold, loops):
             return "done"
         return None
 

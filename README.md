@@ -137,7 +137,7 @@ highway cameras, by city or bridge, as a list or on a map. Any of them can be a 
 streets on their own lines and its direction (EB, N…) as a tag in the opposite corner, all configurable, that
 fill one camera at a time (every 200 ms by default, top row first) until every camera in the grid has appeared, then
 the rotation moves on. An intersection's views (NB, SB, EB, WB…) share one tile, which loops through them (every
-second by default; it can be turned off). Cameras can be picked by hand or added by place: every camera within a radius of a point
+second by default, faster when more views than that fit before the tile is replaced; it can be turned off). Cameras can be picked by hand or added by place: every camera within a radius of a point
 (nearby cameras join by themselves). Cameras that are down are skipped; they stay listed and on the map for a week.
 
 ## Gallery

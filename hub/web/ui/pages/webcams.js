@@ -648,12 +648,15 @@ const GridTab = {
     const playing = computed(() => [...g.cams, ...(g.near?.on && matches.value ? matches.value.cams.filter((c) => !inList(c)) : [])]
       .slice(0, matches.value?.max || 1000));
     const total = computed(() => playing.value.length);
-    // squares: an intersection's views share one when grouped (roughly display/modules/cam_names.py place_key)
+    // squares: an intersection's views share one when grouped (display/modules/cam_names.py place_key, for the count)
+    const SAME = { avenue: "ave", av: "ave", road: "rd", street: "st", boulevard: "blvd", highway: "hwy", drive: "dr", place: "pl",
+      crescent: "cres", parkway: "pkwy", court: "ct", lane: "ln", gate: "gt", block: "blk", connector: "conn", commons: "cmns" };
+    const same = (s) => s.toLowerCase().replace(/\./g, " ").replace(/\b[a-z]+\b/g, (w) => SAME[w] || w).replace(/\s+/g, " ").trim();
     const placeOf = (name) => {
       const n = String(name || "").replace(/\s+/g, " ").trim(), sep = n.includes(" - ") ? " - " : n.includes(" · ") ? " · " : "";
       const main = sep ? n.slice(0, n.lastIndexOf(sep)) : n;
-      const st = main.split(/\s+(?:and|&|at|\/)\s+/i);
-      return st.length >= 2 ? [st[0], st.slice(1).join(" ")].map((s) => s.toLowerCase()).sort().join("|") : n.toLowerCase();
+      const m = main.match(/^(.+?)(?:\s+|(?<=\.))(?:and|&|at|\/)\s+(.+)$/i);
+      return m && m[1].trim() && m[2].trim() ? [same(m[1]), same(m[2])].sort().join("|") : same(main);
     };
     const squares = computed(() => (g.group_views === false ? total.value : new Set(playing.value.map((c) => placeOf(c.name))).size));
     const secs = computed(() => (squares.value * (g.interval_ms || 200)) / 1000 + (g.hold_sec ?? 3));
@@ -729,7 +732,7 @@ const GridTab = {
             <Field label="A new camera every" hint="200 ms is five a second"><Stepper :modelValue="g.interval_ms ?? 200" @update:modelValue="v => g.interval_ms = v" :min="50" :max="5000" :step="50" unit=" ms"/></Field>
             <Field label="One square per intersection" hint="Its views (NB, SB, EB, WB…) take turns in the same square">
               <Toggle :modelValue="g.group_views !== false" @update:modelValue="v => g.group_views = v"/></Field>
-            <Field v-if="g.group_views !== false" label="Next view every" hint="Each square loops through its intersection's views">
+            <Field v-if="g.group_views !== false" label="Next view every" hint="Faster when a square has more views than fit before it's replaced, so every view shows">
               <Stepper :modelValue="g.view_ms ?? 1000" @update:modelValue="v => g.view_ms = v" :min="200" :max="10000" :step="100" unit=" ms"/></Field>
             <Field label="Hold at the end" hint="Once the last camera is in"><Stepper :modelValue="g.hold_sec ?? 3" @update:modelValue="v => g.hold_sec = v" :min="0" :max="30" unit=" s"/></Field>
             <Field label="Rows"><Stepper :modelValue="g.rows ?? 2" @update:modelValue="v => g.rows = v" :min="1" :max="4"/></Field>
