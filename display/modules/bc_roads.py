@@ -453,6 +453,50 @@ def highlight(c, mp, item, now, ox=0, oy=0, width=3, animate=True, clip=(0, 0, W
     c.buf[cy[~on], cx[~on]] = alt
 
 
+LABEL_COL = (125, 128, 142)
+BADGE_ZONE = (W - 50, H - 16, W, H)          # bottom-right corner: the SAMPLE badge (k.sample_badge) goes there
+_LBL = {}
+
+
+def street_labels(c, mp, items=(), ox=0, oy=0, clip=(0, 0, W, H), block=(), width=3):
+    """The map's street names in the tiny font (placed by the hub beside its road, clear of other roads and the
+    shields), each at its first spot inside ``clip`` with 3 px to spare, off the ``block`` rects and the SAMPLE
+    badge's corner, clear of the highlighted roads (widened by ``width``) and of the labels already drawn. A label
+    with no such spot is left out."""
+    labels = mp.meta.get("labels") or []
+    if not labels:
+        return
+    name = mp.meta.get("name")
+    key = (name, mp.meta.get("sig"), tuple((it.get("id"), len((it.get("hl") or {}).get(name) or [])) for it in items),
+           ox, oy, tuple(clip), tuple(tuple(b) for b in block), width)
+    out = _LBL.get(key)
+    if out is None:
+        hl = np.zeros((mp.h, mp.w), bool)
+        for it in items:
+            hl |= _hl_mask(mp, it)
+        if hl.any():
+            hl = _grow(hl, width // 2 + 2)                       # the highlight, its dark edge and a pixel's gap
+        out, drawn = [], [BADGE_ZONE]
+        for lb in labels:
+            for b in lb.get("cands") or []:
+                x, y, bw, bh = b["x"] + ox, b["y"] + oy, b["w"], b["h"]
+                if not (clip[0] + 3 <= x and x + bw <= clip[2] - 3 and clip[1] + 3 <= y and y + bh <= clip[3] - 3):
+                    continue
+                if any(x0 - 2 < x + bw and x < x1 + 2 and y0 - 2 < y + bh and y < y1 + 2 for x0, y0, x1, y1 in list(block) + drawn):
+                    continue
+                if hl[max(0, b["y"]):b["y"] + bh, max(0, b["x"]):b["x"] + bw].any():
+                    continue
+                out.append((k.label_mask(lb["t"], bool(b.get("v"))), x, y))
+                drawn.append((x - 1, y - 1, x + bw + 1, y + bh + 1))
+                break
+        if len(_LBL) > 24:
+            _LBL.clear()
+        _LBL[key] = out
+    col = k.C(LABEL_COL)
+    for m, x, y in out:
+        c.BlitMask(m, int(x), int(y), col)
+
+
 def area_of(item):
     """The city or area an event is in (DriveBC's closest landmark, else "In Surrey" from its location text);
     none for bridges, which span two."""
@@ -509,6 +553,8 @@ def _map(s, c, item, now, el):
         if mp:
             mp.blit(c, mx, 0, sx, 0, mw, H)
             rect = _minimap_rect(s, mp, item, sx, mx, mw)
+            street_labels(c, mp, [item], ox=mx - sx, clip=(mx, 0, mx + mw, H), block=[rect] if rect else [],
+                          width=4 if mp.km_per_px() < 0.06 else 3)
             _route_shields(c, mp, avoid=_hl_avoid(mp, item, mx - sx), h=22, ox=mx - sx, clip=(mx, 0, mx + mw, H),
                            block=[rect] if rect else [])
             _minimap(s, c, mp, item, sx, mx, mw)
@@ -586,6 +632,7 @@ def _hero(s, c, item, now, el):
         k.text(c, k.font("s8"), 10, H - 10, (120, 125, 140), f"DriveBC · {_updated(item)}")
         if mp:
             mp.blit(c, lw, 0, sx, 0, mw, H)
+            street_labels(c, mp, [item], ox=lw - sx, clip=(lw + 1, 0, W, H), width=4 if mp.km_per_px() < 0.06 else 3)
             _route_shields(c, mp, avoid=_hl_avoid(mp, item, lw - sx), h=14, ox=lw - sx, clip=(lw, 0, W, H))
         k.box(c, lw, 0, 1, H, col)
 
@@ -638,6 +685,7 @@ def _overview(s, c, item, now, el):
     def static():
         if mp:
             mp.blit(c, 0, 0, 0, 0, W - lw, H)
+            street_labels(c, mp, items, clip=(0, 0, W - lw, H), width=2)
             _route_shields(c, mp, avoid=[p for it in items for p in _hl_avoid(mp, it)], h=12, clip=(0, 0, W - lw, H))
             for it in items:
                 if it is not item:
@@ -679,6 +727,7 @@ def _camera(s, c, item, now, el):
             cam_label(c, item, cam, 0, H - 28, iw)
         elif mp:
             mp.blit(c, 0, 0, sx, 0, iw, H)
+            street_labels(c, mp, [item], ox=-sx, clip=(0, 0, iw, H), width=4 if mp.km_per_px() < 0.06 else 3)
             _route_shields(c, mp, avoid=_hl_avoid(mp, item, -sx), h=14, ox=-sx, clip=(0, 0, iw, H))
         _panel(c, item, iw, pw, 40 if pw < 130 else 48, big=False)
 
@@ -797,6 +846,7 @@ class Screen(k.BCScreen):
                 return
             cx, cy = _hl_centre(mp, item)
             sx, sy = k.map_crop(c, mp, x, y, w, h, cx, cy)
+            street_labels(c, mp, [item], ox=x - sx, oy=y - sy, clip=(x, y, x + w, y + h))
             _route_shields(c, mp, avoid=_hl_avoid(mp, item, x - sx, y - sy), h=20, ox=x - sx, oy=y - sy, clip=(x, y, x + w, y + h))
             highlight(c, mp, item, now, ox=x - sx, oy=y - sy, width=3, clip=(x, y, x + w, y + h))
 
@@ -912,6 +962,7 @@ def _half_overview(s, item, spec, col):
             cx, cy = _centre(pts)
             sx, sy = k.map_crop(c, mp, x - 4, y - 2, w + 8, mh, cx, cy)
             clip = (x - 4, y - 2, x + w + 4, y - 2 + mh)
+            street_labels(c, mp, items, ox=x - 4 - sx, oy=y - 2 - sy, clip=clip, width=2)
             _route_shields(c, mp, avoid=[p for it in items for p in _hl_avoid(mp, it, x - 4 - sx, y - 2 - sy)], h=18,
                            ox=x - 4 - sx, oy=y - 2 - sy, clip=clip)
             for it in items:
