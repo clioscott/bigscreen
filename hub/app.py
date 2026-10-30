@@ -803,7 +803,7 @@ def webcams_grid_preview(payload: dict = Body(default={})):
     cams = _grid_list(g)
     grid = CameraGrid("http://127.0.0.1:1", {**g, "cams": cams})
     geo = grid.geometry((0, 0, w, h))
-    tiles = _grid_tiles(cams, geo[0], geo[1])
+    tiles = _grid_tiles(cams, geo[0], geo[1], budget=GRID_FETCH_SEC)    # the panel waits: late ones show a recent tile
     c = Canvas(w, h)
     if tiles:
         grid.draw_tiles(c, tiles, geo, len(tiles) * grid.interval + 1)
