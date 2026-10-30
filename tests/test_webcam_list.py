@@ -121,6 +121,7 @@ def test_hub_grid_tiles_are_cropped_to_size_and_in_order(monkeypatch):
     cams = [{"name": str(i), "source": {"type": "image", "url": f"https://x.example/{i}.jpg"}} for i in range(3)]
     monkeypatch.setattr(hub_app.config, "load", lambda: {"modules": {"webcams": {"grid": {"cams": cams}}}})
     monkeypatch.setattr(hub_app, "_grid_ready", {})
+    monkeypatch.setattr(hub_app, "_grid_cache", {})
     frames = {f"https://x.example/{i}.jpg": np.full((360, 640, 3), 40 * i + 20, np.uint8) for i in (0, 2)}
 
     def still(src):
@@ -144,7 +145,7 @@ def test_both_halves_can_play_the_list_and_the_grid_at_once(monkeypatch):
     g = wm.CameraGrid("http://hub:1", {"cams": [{"name": "x", "source": {}}] * 2, "interval_ms": 200, "hold_sec": 0})
     for z in (left, right):
         tw, th = g.geometry(z)[:2]
-        g.tiles[(tw, th)] = {"at": clock[0], "tiles": [np.ones((th, tw, 3), np.uint8)] * 2, "busy": False}
+        g.tiles[(tw, th)] = {"at": clock[0], "batch": ([np.ones((th, tw, 3), np.uint8)] * 2, None), "busy": False}
     assert g.draw(c, left, {"_play": 1}, True) is None and g.draw(c, right, {"_play": 1}, True) is None
     clock[0] += 0.5
     assert g.draw(c, left, {"_play": 1}, False) == "done" and g.draw(c, right, {"_play": 1}, False) == "done"
@@ -161,7 +162,7 @@ def test_another_pass_replays(monkeypatch):
     assert p.draw(c, z, e, False) is None and drawn[-1] == "b"       # the same play, a second pass: the next webcam
     g = wm.CameraGrid("http://hub:1", {"cams": [{"name": "x", "source": {}}] * 2, "interval_ms": 200, "hold_sec": 0})
     tw, th = g.geometry(z)[:2]
-    g.tiles[(tw, th)] = {"at": clock[0], "tiles": [np.ones((th, tw, 3), np.uint8)] * 2, "busy": False}
+    g.tiles[(tw, th)] = {"at": clock[0], "batch": ([np.ones((th, tw, 3), np.uint8)] * 2, None), "busy": False}
     g.draw(c, z, e, True)
     clock[0] += 0.5
     assert g.draw(c, z, e, False) == "done"
@@ -205,6 +206,7 @@ def test_hub_crops_the_cameras_the_wall_sends(monkeypatch):
     from hub import app as hub_app
     monkeypatch.setattr(hub_app, "_grid_still", lambda src: np.full((90, 160, 3), 50, np.uint8))
     monkeypatch.setattr(hub_app, "_grid_ready", {})
+    monkeypatch.setattr(hub_app, "_grid_cache", {})
     cams = [{"name": "A", "source": {"type": "image", "url": "https://x.example/a.jpg"}},
             {"name": "Y", "source": {"type": "youtube", "url": "https://www.youtube.com/watch?v=x"}},   # not a still: left out
             {"name": "B", "source": {"type": "image", "url": "https://x.example/b.jpg"}}]
@@ -291,8 +293,100 @@ def test_cameras_that_do_not_answer_in_time_are_left_out(monkeypatch):
 
     from hub import app as hub_app
     ok = np.full((90, 160, 3), 60, np.uint8)
+    monkeypatch.setattr(hub_app, "_grid_cache", {})
     monkeypatch.setattr(hub_app, "_grid_still", lambda src: (_t.sleep(1.0), ok)[1] if src["url"].endswith("slow.jpg") else ok)
     cams = [{"source": {"type": "image", "url": f"https://x.example/{n}.jpg"}} for n in ("a", "slow", "b")]
     t0 = _t.time()
     tiles = hub_app._grid_tiles(cams, 40, 30, budget=0.3)
     assert [t is None for t in tiles] == [False, True, False] and _t.time() - t0 < 0.9
+
+
+def test_the_hub_keeps_tiles_not_stills_and_a_hiccup_keeps_the_last_one(monkeypatch):
+    from hub import app as hub_app
+    monkeypatch.setattr(hub_app, "_grid_cache", {})
+    clock, fetched, fail = [1000.0], [], [False]
+    monkeypatch.setattr(hub_app.time, "time", lambda: clock[0])
+
+    def still(src):
+        fetched.append(src["url"])
+        if fail[0]:
+            raise OSError("timed out")
+        return np.full((360, 640, 3), 70, np.uint8)
+    monkeypatch.setattr(hub_app, "_grid_still", still)
+    cam = {"source": {"type": "image", "url": "https://x.example/a.jpg"}}
+    assert hub_app._grid_tile(cam, 40, 30).shape == (30, 40, 3)
+    assert hub_app._grid_tile(cam, 40, 30) is not None and len(fetched) == 1          # cached: not fetched again
+    assert all(v[1] is None or v[1].shape == (30, 40, 3) for v in hub_app._grid_cache.values())
+    clock[0] += 61
+    fail[0] = True
+    assert hub_app._grid_tile(cam, 40, 30) is not None and len(fetched) == 2          # failed: the last picture
+
+
+def test_the_grid_has_room_for_hundreds_of_cameras():
+    from hub import app as hub_app
+    cams = [{"name": str(i), "source": {"type": "image", "url": f"https://x.example/{i}.jpg"}} for i in range(700)]
+    assert len(hub_app._grid_list({"cams": cams})) == 700
+
+
+def test_a_refresh_mid_reveal_does_not_cut_the_grid_short(monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(wm.time, "time", lambda: clock[0])
+    g = wm.CameraGrid("http://hub:1", {"cams": [{"name": "x", "source": {}}] * 10, "interval_ms": 200, "hold_sec": 0})
+    monkeypatch.setattr(g, "_load", lambda size: None)
+    c, z = Canvas(448, 130), (0, 0, 448, 130)
+    tw, th = g.geometry(z)[:2]
+    g.tiles[(tw, th)] = {"at": clock[0], "batch": ([np.ones((th, tw, 3), np.uint8)] * 10, None), "busy": False}
+    assert g.draw(c, z, {"_play": 1}, True) is None
+    clock[0] += 0.5
+    g.tiles[(tw, th)] = {"at": clock[0], "batch": ([np.ones((th, tw, 3), np.uint8)] * 2, None), "busy": False}  # 8 went down
+    clock[0] += 0.5
+    assert g.draw(c, z, {"_play": 1}, False) is None                  # still the first batch: 10 cameras, 2 s
+    clock[0] += 1.1
+    assert g.draw(c, z, {"_play": 1}, False) == "done"
+
+
+def test_a_camera_late_for_a_build_shows_its_recent_tile_and_is_not_fetched_twice(monkeypatch):
+    import threading as _th
+    import time as _t
+
+    from hub import app as hub_app
+    monkeypatch.setattr(hub_app, "_grid_cache", {})
+    monkeypatch.setattr(hub_app, "_grid_fetching", set())
+    ok, gate, calls = np.full((90, 160, 3), 60, np.uint8), _th.Event(), []
+
+    def still(src):
+        calls.append(src["url"])
+        if src["url"].endswith("slow.jpg"):
+            gate.wait(2)
+        return ok
+    monkeypatch.setattr(hub_app, "_grid_still", still)
+    cams = [{"source": {"type": "image", "url": f"https://x.example/{n}.jpg"}} for n in ("a", "slow")]
+    slow = cams[1]
+    hub_app._grid_cache[hub_app._grid_key(slow, 40, 30)] = (_t.time() - 120, np.full((30, 40, 3), 9, np.uint8))
+    tiles = hub_app._grid_tiles(cams, 40, 30, budget=0.2)
+    assert int(tiles[1][0, 0, 0]) == 9                                # late: its tile from two minutes ago
+    assert hub_app._grid_tile(slow, 40, 30)[0, 0, 0] == 9 and calls.count("https://x.example/slow.jpg") == 1
+    gate.set()                                                        # (a second build waits on the first fetch)
+
+
+def test_ready_replies_are_kept_within_a_size_budget(monkeypatch):
+    from hub import app as hub_app
+    monkeypatch.setattr(hub_app, "_grid_ready", {})
+    monkeypatch.setattr(hub_app, "GRID_READY_BYTES", 25)
+    clock = [1000.0]
+    monkeypatch.setattr(hub_app.time, "time", lambda: clock[0])
+    for k in "abc":
+        clock[0] += 1
+        hub_app._grid_keep(k, b"x" * 10)
+    assert sorted(hub_app._grid_ready) == ["b", "c"]                  # the oldest went
+    hub_app._grid_keep("big", b"x" * 100)
+    assert list(hub_app._grid_ready) == ["big"]                       # the newest always stays
+
+
+def test_grid_labels_follow_a_new_list_even_at_a_reused_address():
+    g = wm.CameraGrid("http://hub:1", {"cams": []})
+    a = ["Main St & 1 Ave"]
+    first = g._labels_for(73, a)
+    key = next(iter(g._labels))
+    g._labels[key] = (["something else"], first)                      # as if a's id now belonged to another list
+    assert g._labels_for(73, a) == first and g._labels[key][0] is a   # worked out again for the real list

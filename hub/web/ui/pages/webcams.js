@@ -644,13 +644,16 @@ const GridTab = {
     // the hub's own thumbnail for the camera (kept with it when it was added), else a snapshot
     const thumbOf = (c) => (c.source.type === "drivebc" ? `/api/webcams/drivebc/${c.source.id}.jpg`
       : /^\/api\/webcams\/city\/[\w-]+\.jpg$/.test(c.thumb || "") ? c.thumb : snap(c.source));
-    const total = computed(() => g.cams.length + (g.near?.on && matches.value ? matches.value.cams.filter((c) => !inList(c)).length : 0));
+    // what the wall plays: the hub fetches at most GRID_MAX cameras (it tells us with the nearby matches)
+    const total = computed(() => Math.min(matches.value?.max || 1000,
+      g.cams.length + (g.near?.on && matches.value ? matches.value.cams.filter((c) => !inList(c)).length : 0)));
     const secs = computed(() => (total.value * (g.interval_ms || 200)) / 1000 + (g.hold_sec ?? 3));
     // unsaved changes go to the wall as a preview first (long enough for the whole reveal), so it plays this grid
     const play = async () => {
       const s = SHAPES[shape.value];
       if (dirty.value.length) await previewOnDisplay(Math.max(120, Math.ceil(secs.value) + 90), { hook: false });
-      playOnDisplay({ panel: GRID_SHAPES[shape.value], advance: "cycles", cycles: 1, max_sec: 600 }, { side: s.side, hold: false });
+      playOnDisplay({ panel: GRID_SHAPES[shape.value], advance: "cycles", cycles: 1, max_sec: Math.max(600, Math.ceil(secs.value) + 60) },
+        { side: s.side, hold: false });
     };
     return { GRID_SHAPES, g, lab, near, matches, useHome, setNearCoord, inList, nearThumb, partsShown, togglePart, found, shape, img, busy, thumbOf, secs, play, render, SHAPES, dirty };
   },
@@ -692,7 +695,7 @@ const GridTab = {
           <div class="faint" style="font-size:12.5px" v-if="!Number.isFinite(near.lat) || !Number.isFinite(near.lon)">Set a point (or use Home) to find the cameras around it.</div>
           <template v-else-if="matches">
             <div style="font-size:12.5px"><b>{{ matches.count }}</b> camera{{ matches.count === 1 ? '' : 's' }} within {{ near.radius ?? 1 }} {{ near.unit || 'km' }},
-              nearest first<span class="faint" v-if="matches.capped"> (the grid takes the nearest 200)</span>.
+              nearest first<span class="faint" v-if="matches.capped"> (the grid takes the nearest {{ matches.max }})</span>.
               <span class="faint">They play after the ones added by hand; new cameras in the area join by themselves.</span></div>
             <div class="wc-grid-list">
               <div v-for="c in matches.cams.slice(0, 24)" :key="JSON.stringify(c.source)" class="wc-grid-cam" :title="c.name + ' · ' + c.credit"

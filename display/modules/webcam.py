@@ -382,11 +382,11 @@ class CameraGrid:
         self.dir_place = lab.get("dir") if lab.get("dir") in ("tag", "line", "off") else "tag"
         self.dir_style = "full" if lab.get("dir_style") == "full" else "short"
         self.label_size = "small" if lab.get("size") == "small" else "tiny"
-        self.tiles: dict = {}                       # (tile w, tile h) -> {"at", "tiles": [array or None], "busy"}
+        self.tiles: dict = {}                       # (tile w, tile h) -> {"at", "batch": ([array or None], names), "busy"}
         self._plays: dict = {}                      # zone -> {"play", "t0", "ready"}: each half of the wall its own
         self._font = None
         self._labels: dict = {}                     # tile width -> each label worked out (once, not per frame)
-        self._up: dict = {}                         # id(tiles) -> the indexes of the cameras that sent a picture
+        self._up: dict = {}                         # (id(tiles), w, h) -> (tiles, indexes of the cameras that sent one)
 
     def warm(self, zone=None):
         """The rotation says the grid is next: fetch its tiles for that area now (in the background), or refresh the
@@ -419,7 +419,10 @@ class CameraGrid:
             conn.close()
             if r.status != 200 or body[:4] != GRID_MAGIC:
                 raise RuntimeError(f"hub {r.status}: {body[:200]!r}")
-            got["tiles"], got["names"] = unpack_grid(body)          # the names include the nearby cameras
+            tiles, names = unpack_grid(body)                    # the names include the nearby cameras
+            if self.labels:
+                self._labels_for(size[0], names)                # worked out here, not in a frame
+            got["batch"] = (tiles, names)                       # one swap: a play never pairs new tiles with old names
             got["at"] = time.time()
         except Exception as e:
             print(f"[webcam grid] {e}")
@@ -449,14 +452,15 @@ class CameraGrid:
             return "skip" if now - p["t0"] > 4 else None
         tw, th, xs, ys = self.geometry(zone)
         self._load((tw, th))
-        got = self.tiles.get((tw, th)) or {}
-        tiles = got.get("tiles")
-        if tiles is None:                  # only when played before its tiles came (the rotation fetches them well ahead)
+        batch = (self.tiles.get((tw, th)) or {}).get("batch")
+        if batch is None:                  # only when played before its tiles came (the rotation fetches them well ahead)
             _centre_text(c, zone, "Fetching cameras" + "." * (1 + int(now * 2) % 3), Color(150, 150, 150))
             return "skip" if now - p["t0"] > GIVE_UP_SEC else None
         if p["ready"] is None:
-            p["ready"] = now                                   # the reveal starts once the tiles are here
-        r = self.draw_tiles(c, tiles, (tw, th, xs, ys), now - p["ready"], got.get("names"))
+            # the reveal starts once the tiles are here, and plays this batch to its end: the tiles refreshed
+            # meanwhile (every minute) are for the next pass, so a newer batch with fewer cameras up can't cut it short
+            p["ready"], p["batch"] = now, batch
+        r = self.draw_tiles(c, p["batch"][0], (tw, th, xs, ys), now - p["ready"], p["batch"][1])
         if r == "done":
             p["ready"] = None                                  # another pass reveals them all again
         return r
@@ -466,10 +470,14 @@ class CameraGrid:
         Cameras that are down (no picture from the hub) are skipped, not shown as empty tiles; none up: "skip"."""
         tw, th, xs, ys = geo
         names = self.names if names is None else names
-        up = self._up.get(id(tiles))
-        if up is None:                                        # once per fetch, not per frame
+        hit = self._up.get((id(tiles), tw, th))
+        if hit is not None and hit[0] is tiles:               # (the list is kept, so its id can't be reused meanwhile)
+            up = hit[1]
+        else:                                                 # once per batch and size, not per frame
             up = [i for i, t in enumerate(tiles) if t is not None and t.shape[:2] == (th, tw)]
-            self._up = {id(tiles): up}
+            if len(self._up) > 4:
+                self._up.clear()
+            self._up[(id(tiles), tw, th)] = (tiles, up)
         if not up:
             return "skip"
         cells = len(xs) * len(ys)
@@ -488,7 +496,8 @@ class CameraGrid:
         """Each camera's label for tiles this wide, worked out once per width and list: ([lines cut to fit], tag)."""
         names = self.names if names is None else names
         key = (tw, id(names))
-        got = self._labels.get(key)
+        hit = self._labels.get(key)
+        got = hit[1] if hit is not None and hit[0] is names else None   # the list is kept with them: no id reuse
         if got is None:
             from display.modules import cam_names
             from display.modules.webcam_caption import _tw
@@ -507,7 +516,7 @@ class CameraGrid:
                 got.append((out, tag))
             if len(self._labels) > 8:
                 self._labels.clear()
-            self._labels[key] = got
+            self._labels[key] = (names, got)
         return got
 
     def _label_font(self):
