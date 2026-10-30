@@ -171,7 +171,8 @@ once (`hold: false`), so the rotation resumes by itself.
   the Webcams page), `per_turn` webcams a turn. An entry with `cam` still plays that one webcam (older rotations).
 - Sizes: `webcam` (side), `_full`, `_tall` (over the ticker, clock strip stays: `Screen.tall_panels`), `_wall`.
 - Camera grid (`webcam_grid*`): stills only, tiles filling the frame (`rows`, `cols` or auto) revealed one per
-  `interval_ms`, each labelled (`display/modules/cam_names.py` splits names into streets and direction; `grid.label`:
+  `interval_ms`, an intersection's views sharing one tile that loops through them every `view_ms` (`group_views`, on;
+  `cam_names.place_key`), each labelled (`display/modules/cam_names.py` splits names into streets and direction; `grid.label`:
   lines, dir tag/line/off, at, wording, size); `grid.near` adds every camera within a radius of a point, worked out by
   the hub each time; cameras that are down, black, blank, frozen (2 h) or slower than 10 s are left out. The
   wall fetches the tiles 2 min before the grid's turn and the hub keeps the last tiles ready (5 min). The wall posts its grid to the hub, which sends all tiles and names at

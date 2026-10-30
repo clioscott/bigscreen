@@ -637,7 +637,7 @@ const GridTab = {
       const i = ln.indexOf(p);
       if (i >= 0) ln.splice(i, 1); else { ln.push(p); ln.sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b)); }
     };
-    watch(() => [g.cams.map((c) => JSON.stringify(c.source) + c.name).join("|"), g.labels, g.rows, g.cols, JSON.stringify(g.label),
+    watch(() => [g.cams.map((c) => JSON.stringify(c.source) + c.name).join("|"), g.labels, g.rows, g.cols, g.group_views, JSON.stringify(g.label),
       JSON.stringify(g.near), shape.value],
       queue, { immediate: true });
     onBeforeUnmount(() => { clearTimeout(timer); if (url) URL.revokeObjectURL(url); });
@@ -645,9 +645,18 @@ const GridTab = {
     const thumbOf = (c) => (c.source.type === "drivebc" ? `/api/webcams/drivebc/${c.source.id}.jpg`
       : /^\/api\/webcams\/city\/[\w-]+\.jpg$/.test(c.thumb || "") ? c.thumb : snap(c.source));
     // what the wall plays: the hub fetches at most GRID_MAX cameras (it tells us with the nearby matches)
-    const total = computed(() => Math.min(matches.value?.max || 1000,
-      g.cams.length + (g.near?.on && matches.value ? matches.value.cams.filter((c) => !inList(c)).length : 0)));
-    const secs = computed(() => (total.value * (g.interval_ms || 200)) / 1000 + (g.hold_sec ?? 3));
+    const playing = computed(() => [...g.cams, ...(g.near?.on && matches.value ? matches.value.cams.filter((c) => !inList(c)) : [])]
+      .slice(0, matches.value?.max || 1000));
+    const total = computed(() => playing.value.length);
+    // squares: an intersection's views share one when grouped (roughly display/modules/cam_names.py place_key)
+    const placeOf = (name) => {
+      const n = String(name || "").replace(/\s+/g, " ").trim(), sep = n.includes(" - ") ? " - " : n.includes(" · ") ? " · " : "";
+      const main = sep ? n.slice(0, n.lastIndexOf(sep)) : n;
+      const st = main.split(/\s+(?:and|&|at|\/)\s+/i);
+      return st.length >= 2 ? [st[0], st.slice(1).join(" ")].map((s) => s.toLowerCase()).sort().join("|") : n.toLowerCase();
+    };
+    const squares = computed(() => (g.group_views === false ? total.value : new Set(playing.value.map((c) => placeOf(c.name))).size));
+    const secs = computed(() => (squares.value * (g.interval_ms || 200)) / 1000 + (g.hold_sec ?? 3));
     // unsaved changes go to the wall as a preview first (long enough for the whole reveal), so it plays this grid
     const play = async () => {
       const s = SHAPES[shape.value];
@@ -655,7 +664,7 @@ const GridTab = {
       playOnDisplay({ panel: GRID_SHAPES[shape.value], advance: "cycles", cycles: 1, max_sec: Math.max(600, Math.ceil(secs.value) + 60) },
         { side: s.side, hold: false });
     };
-    return { GRID_SHAPES, g, lab, near, matches, useHome, setNearCoord, inList, nearThumb, partsShown, togglePart, found, shape, img, busy, thumbOf, secs, play, render, SHAPES, dirty };
+    return { GRID_SHAPES, g, lab, near, matches, useHome, setNearCoord, inList, nearThumb, partsShown, togglePart, found, shape, img, busy, thumbOf, secs, total, squares, play, render, SHAPES, dirty };
   },
   template: `<div class="stack">
     <div class="card"><div class="card-body stack" style="gap:10px">
@@ -711,12 +720,17 @@ const GridTab = {
             <div class="led"><img v-if="img" :src="img" alt="" :style="{opacity: busy ? .6 : 1}"><div v-else class="placeholder">{{ busy ? 'Fetching cameras…' : 'Add cameras to see the grid' }}</div></div>
             <div class="faint" style="font-size:12px">With every tile filled (the last cameras in the grid). The wall fills it one tile at a time.</div>
             <div class="row"><button class="btn sm" @click="play" :disabled="!g.cams.length && !near.on"><Icon name="Play" :size="14"/>Play once on the wall</button>
-              <span class="faint" style="font-size:12px">Takes about {{ Math.round(secs) }} s{{ dirty.length ? ' · shows your unsaved changes' : '' }}.
+              <span class="faint" style="font-size:12px">{{ total }} cameras<template v-if="squares !== total"> at {{ squares }} intersections</template>
+                · takes about {{ Math.round(secs) }} s{{ dirty.length ? ' · shows your unsaved changes' : '' }}.
                 The wall fetches every camera first, then flicks through them.</span></div>
           </div></div>
         <div class="card"><div class="card-head"><Icon name="SlidersHorizontal" :size="16"/><h3>Timing and labels</h3></div>
           <div class="card-body fields">
             <Field label="A new camera every" hint="200 ms is five a second"><Stepper :modelValue="g.interval_ms ?? 200" @update:modelValue="v => g.interval_ms = v" :min="50" :max="5000" :step="50" unit=" ms"/></Field>
+            <Field label="One square per intersection" hint="Its views (NB, SB, EB, WB…) take turns in the same square">
+              <Toggle :modelValue="g.group_views !== false" @update:modelValue="v => g.group_views = v"/></Field>
+            <Field v-if="g.group_views !== false" label="Next view every" hint="Each square loops through its intersection's views">
+              <Stepper :modelValue="g.view_ms ?? 1000" @update:modelValue="v => g.view_ms = v" :min="200" :max="10000" :step="100" unit=" ms"/></Field>
             <Field label="Hold at the end" hint="Once the last camera is in"><Stepper :modelValue="g.hold_sec ?? 3" @update:modelValue="v => g.hold_sec = v" :min="0" :max="30" unit=" s"/></Field>
             <Field label="Rows"><Stepper :modelValue="g.rows ?? 2" @update:modelValue="v => g.rows = v" :min="1" :max="4"/></Field>
             <Field label="Columns" hint="Auto fits the frame: 6 across full width with 2 rows">

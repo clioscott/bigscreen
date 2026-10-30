@@ -58,6 +58,15 @@ def split(name: str) -> dict:
     return out
 
 
+def place_key(name: str):
+    """The intersection a view belongs to, the same for every view of it ("A St at B Rd - Northbound" and
+    "B Road & A Street - Camera 2"); a name without a second street is its own place."""
+    p = split(name)
+    if not p["street2"]:
+        return p["name"].lower()
+    return tuple(sorted(short_street(s).lower() for s in (p["street1"], p["street2"])))
+
+
 def dir_text(p: dict, style: str = "short") -> str:
     """The direction as words: short "EB" (an approach) or "N"; full "Eastbound", "Looking north" or "North"."""
     d = p.get("dir") or ""
