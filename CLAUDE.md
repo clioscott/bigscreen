@@ -175,7 +175,8 @@ once (`hold: false`), so the rotation resumes by itself.
   before the tile is replaced (`group_views`, on;
   `cam_names.place_key`), each labelled (`display/modules/cam_names.py` splits names into streets and direction; `grid.label`:
   lines, dir tag/line/off, at, wording, size); `grid.near` adds every camera within a radius of a point, worked out by
-  the hub each time; cameras that are down, black, blank, frozen (2 h) or slower than 10 s are left out. The
+  the hub each time; up to `GRID_MAX` (5000) cameras; cameras that are down, black, blank or frozen (2 h) are left
+  out, and ones that miss a build's budget (10–60 s by list size, `_grid_budget`) show their tile from the last 5 min. The
   wall fetches the tiles 2 min before the grid's turn and the hub keeps the last tiles ready (5 min). The wall posts its grid to the hub, which sends all tiles and names at
   once (`/api/webcams/grid.bin`).
 - City intersection cameras: crawlers in `hub/traffic.py` `CITY_SOURCES` (Vancouver, Richmond, Surrey, Township of

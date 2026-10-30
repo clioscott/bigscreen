@@ -543,8 +543,10 @@ def webcams_drivebc_thumb(cid: int):
 
 _grid_cache: dict = {}               # (source, w, h, crop) -> (fetched at, tile or None): the finished tiles, a minute each
 GRID_STILL_SEC = 60.0
-GRID_CACHE_MAX = 4000                # tiles kept (~15 KB each at full width; the stills themselves are never kept)
-GRID_MAX = 1000                      # cameras a grid fetches (the wall's and the panel's preview alike)
+GRID_CACHE_MAX = 12000               # tiles kept (~15 KB each at full width; the stills themselves are never kept):
+                                     # every camera at the wall's size and the panel preview's, with room to spare
+GRID_MAX = 5000                      # cameras a grid fetches (the wall's and the panel's preview alike): in effect all
+                                     # of them (every city list together is ~2,500)
 
 
 GRID_FROZEN_SEC = 2 * 3600          # a still that hasn't changed for this long is a broken camera
@@ -610,8 +612,9 @@ def _grid_tile(cam, w, h):
             old = time.time() - GRID_KEEP_SEC
             for k in [k for k, v in _grid_cache.items() if v[0] < old]:
                 del _grid_cache[k]
-            if len(_grid_cache) >= GRID_CACHE_MAX:
-                _grid_cache.clear()
+            if len(_grid_cache) >= GRID_CACHE_MAX:              # still full: the oldest quarter goes
+                for k in sorted(_grid_cache, key=lambda k: _grid_cache[k][0])[:GRID_CACHE_MAX // 4]:
+                    del _grid_cache[k]
         _grid_cache[key] = (time.time(), tile)
     return tile
 
@@ -624,15 +627,23 @@ def _grid_recent(cam, w, h):
 
 
 GRID_FETCH_SEC = 10.0                # cameras that haven't answered by then show their last tile in this build (their
-                                     # stills keep loading into the cache, so the next build has them fresh)
+GRID_FETCH_MAX_SEC = 60.0            # stills keep loading into the cache, so the next build has them fresh); a long
+GRID_FETCH_PER_SEC = 50              # list gets a second per this many cameras, up to the max (the wall waits 90 s)
 
 
-def _grid_tiles(cams, w, h, budget=GRID_FETCH_SEC):
+def _grid_budget(n):
+    """Seconds a build waits for its n cameras: ~100 answer a second, 12 at a time, so 2,300 need about 25 s."""
+    return max(GRID_FETCH_SEC, min(GRID_FETCH_MAX_SEC, n / GRID_FETCH_PER_SEC))
+
+
+def _grid_tiles(cams, w, h, budget=None):
     """Each grid camera's still as a w×h tile (a centred crop), fetched 12 at a time; None where it's down or
-    unusable. One that hasn't answered within ``budget`` seconds gets its tile from the last few minutes, if any:
-    every build refetches in the same order, so without that the end of a long list would always miss out."""
+    unusable. One that hasn't answered within ``budget`` seconds (by default: _grid_budget) gets its tile from the
+    last few minutes, if any: every build refetches in the same order, so without that the end of a long list would
+    always miss out."""
     from concurrent.futures import ThreadPoolExecutor, wait
 
+    budget = _grid_budget(len(cams)) if budget is None else budget
     ex = ThreadPoolExecutor(12)
     futs = [ex.submit(_grid_tile, c, w, h) for c in cams]
     wait(futs, timeout=budget)
