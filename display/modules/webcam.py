@@ -455,8 +455,10 @@ class CameraGrid:
             _centre_text(c, zone, "Fetching cameras" + "." * (1 + int(now * 2) % 3), Color(150, 150, 150))
             return "skip" if now - p["t0"] > GIVE_UP_SEC else None
         if p["ready"] is None:
-            p["ready"] = now                                   # the reveal starts once the tiles are here
-        r = self.draw_tiles(c, tiles, (tw, th, xs, ys), now - p["ready"], got.get("names"))
+            # the reveal starts once the tiles are here, and plays this batch to its end: the tiles refreshed
+            # meanwhile (every minute) are for the next pass, so a newer batch with fewer cameras up can't cut it short
+            p["ready"], p["batch"] = now, (tiles, got.get("names"))
+        r = self.draw_tiles(c, p["batch"][0], (tw, th, xs, ys), now - p["ready"], p["batch"][1])
         if r == "done":
             p["ready"] = None                                  # another pass reveals them all again
         return r

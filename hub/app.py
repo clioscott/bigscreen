@@ -541,9 +541,10 @@ def webcams_drivebc_thumb(cid: int):
     return Response(hit[1], media_type="image/jpeg", headers={"Cache-Control": "max-age=60"})
 
 
-_grid_stills: dict = {}              # (type, url) -> (fetched at, RGB frame): the camera grid's stills, a minute each
+_grid_cache: dict = {}               # (source, w, h, crop) -> (fetched at, tile or None): the finished tiles, a minute each
 GRID_STILL_SEC = 60.0
-GRID_MAX = 200                       # cameras a grid fetches (the wall's and the panel's preview alike)
+GRID_CACHE_MAX = 4000                # tiles kept (~15 KB each at full width; the stills themselves are never kept)
+GRID_MAX = 1000                      # cameras a grid fetches (the wall's and the panel's preview alike)
 
 
 GRID_FROZEN_SEC = 2 * 3600          # a still that hasn't changed for this long is a broken camera
@@ -563,25 +564,40 @@ def grid_usable(frame, taken=None, now=None):
 
 
 def _grid_still(src):
-    """A grid camera's latest still (cached a minute), or None when it's down, black, blank or frozen."""
+    """A grid camera's latest still, or None when it isn't a still or is black, blank or frozen (raises when the
+    fetch fails)."""
     try:
         kind, url = webcams.check_source(src)
     except webcams.SourceError:
         return None
     if kind not in webcams.STILLS:
         return None                                        # the grid shows stills only
-    hit = _grid_stills.get((kind, url))
+    frame, taken = webcams.fetch_still(kind, url, meta=False)
+    return frame if grid_usable(frame, taken) else None
+
+
+def _grid_tile(cam, w, h):
+    """A grid camera's still as a w×h tile (cached a minute), or None when it's down or unusable. Only the tiles are
+    cached: a full-size still is ~0.7 MB, and a grid can have hundreds of cameras."""
+    cam = cam or {}
+    crop = cam.get("crop")
+    key = (_src_key(cam.get("source")), w, h, tuple(sorted(crop.items())) if isinstance(crop, dict) else None)
+    hit = _grid_cache.get(key)
     if hit and time.time() - hit[0] < GRID_STILL_SEC:
         return hit[1]
     try:
-        frame, taken = webcams.fetch_still(kind, url, meta=False)
-        frame = frame if grid_usable(frame, taken) else None
+        frame = _grid_still(cam.get("source"))
+        tile = None if frame is None else webcams.render(frame, w, h, cam.get("crop"))
     except Exception:
-        frame = hit[1] if hit else None                   # a hiccup: the last picture will do
-    if len(_grid_stills) > 400:
-        _grid_stills.clear()
-    _grid_stills[(kind, url)] = (time.time(), frame)
-    return frame
+        tile = hit[1] if hit else None                     # a hiccup: the last picture will do
+    if len(_grid_cache) >= GRID_CACHE_MAX:
+        old = time.time() - GRID_STILL_SEC
+        for k in [k for k, v in list(_grid_cache.items()) if v[0] < old]:
+            _grid_cache.pop(k, None)
+        if len(_grid_cache) >= GRID_CACHE_MAX:
+            _grid_cache.clear()
+    _grid_cache[key] = (time.time(), tile)
+    return tile
 
 
 GRID_FETCH_SEC = 10.0                # cameras that haven't answered by then are left out of this build (their stills
@@ -593,15 +609,10 @@ def _grid_tiles(cams, w, h, budget=GRID_FETCH_SEC):
     or hasn't answered within ``budget`` seconds."""
     from concurrent.futures import ThreadPoolExecutor, wait
 
-    def one(cam):
-        frame = _grid_still((cam or {}).get("source"))
-        if frame is None:
-            return None
-        return webcams.render(frame, w, h, (cam or {}).get("crop"))
     ex = ThreadPoolExecutor(12)
-    futs = [ex.submit(one, c) for c in cams]
+    futs = [ex.submit(_grid_tile, c, w, h) for c in cams]
     wait(futs, timeout=budget)
-    ex.shutdown(wait=False)                                 # stragglers finish into the still cache
+    ex.shutdown(wait=False)                                 # stragglers finish into the tile cache
     return [f.result() if f.done() and not f.exception() else None for f in futs]
 
 
@@ -734,7 +745,7 @@ def webcams_near(lat: float, lon: float, radius: float = 1.0, unit: str = "km", 
     """The cameras a grid's "near" setting would add, nearest first (the panel lists them)."""
     radius = max(0.05, min(50.0, radius))
     got = _near_matches({"lat": lat, "lon": lon, "radius": radius, "unit": unit, "kinds": kinds})
-    return {"count": len(got), "cams": got[:GRID_MAX], "capped": len(got) > GRID_MAX}
+    return {"count": len(got), "cams": got[:GRID_MAX], "capped": len(got) > GRID_MAX, "max": GRID_MAX}
 
 
 @app.post("/api/webcams/grid/preview.png")
