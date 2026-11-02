@@ -14,5 +14,11 @@ def test_off_area_regions_are_dropped():
     assert not on_wall([])
 
 
+def test_unseen_wordings_stay():
+    assert on_wall(["Coastline of Metro Vancouver including Vancouver and Musqueam FN"])
+    assert on_wall(["Metro Vancouver – southwest including Richmond and Delta"])
+    assert on_wall(["Boundary Bay"])
+
+
 def test_mixed_alert_stays():
     assert on_wall(["Duncan", "Metro Vancouver - central including the City of Vancouver"])

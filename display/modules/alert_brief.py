@@ -393,7 +393,15 @@ def on_wall(regions):
     """True when at least one ECCC region is one of the wall's own (REGIONS / Metro Vancouver); alerts only for
     places off the wall (Vancouver Island, the Gulf Islands, Whatcom…) are False."""
     ours = {n for n, _ in REGIONS} | {METRO[0]}
-    return any(n in ours for n, _ in region_labels(regions))
+    if any(n in ours for n, _ in region_labels(regions)):
+        return True
+    # unseen wordings of our zones (coastal-flood names, en dashes) still count as ours
+    lows = [" ".join(r.lower().replace("–", "-").replace("—", "-").split()) for r in regions or []]
+    return any(low.startswith(_ON_WALL_PREFIXES) for low in lows) or any(n in ours for n, _ in region_labels(lows))
+
+
+_ON_WALL_PREFIXES = ("metro vancouver", "coastline of metro vancouver", "boundary bay", "mud and semiahmoo bay",
+                     "fraser valley", "central fraser valley", "eastern fraser valley")
 
 
 def area_levels(regions):              # noqa: F811 — the region names replace the city-by-city levels
