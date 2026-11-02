@@ -389,6 +389,13 @@ def region_labels(regions, home="Richmond"):
     return out + ordered + [(o, o.upper()) for o in other]
 
 
+def on_wall(regions):
+    """True when at least one ECCC region is one of the wall's own (REGIONS / Metro Vancouver); alerts only for
+    places off the wall (Vancouver Island, the Gulf Islands, Whatcom…) are False."""
+    ours = {n for n, _ in REGIONS} | {METRO[0]}
+    return any(n in ours for n, _ in region_labels(regions))
+
+
 def area_levels(regions):              # noqa: F811 — the region names replace the city-by-city levels
     """[names, names, names, short codes] — e.g. ["Richmond", "Vancouver"] / ["RICHMOND", "VAN"]."""
     labels = region_labels(regions)

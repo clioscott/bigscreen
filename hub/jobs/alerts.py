@@ -91,7 +91,11 @@ def run(cfg):
     types = acfg.get("types") or DEFAULT_TYPES
     alerts = fetch(bbox, types, acfg.get("language", "en"))
     home = (acfg.get("home_city") or "Richmond").strip()
-    from display.modules.alert_brief import HAZARD_INFO, hazard_of, mentions
+    from display.modules.alert_brief import HAZARD_INFO, hazard_of, mentions, on_wall
+    # the bbox reaches across the Strait: drop alerts that cover none of the wall's regions (e.g. Duncan)
+    for a in [a for a in alerts if not on_wall(a["regions"]) and not mentions(a, home)]:
+        print(f"skipped (off the wall's regions): {a['name']} — {', '.join(a['regions'])[:120]}", flush=True)
+    alerts = [a for a in alerts if on_wall(a["regions"]) or mentions(a, home)]
     allowed = set(acfg.get("hazards") or [h for h, _, _ in HAZARD_INFO])
     for a in alerts:
         a["hazard"] = hazard_of(a)
