@@ -192,7 +192,8 @@ class WeatherAlerts:
                 k.text(c, f, x + 3, y + h - f.h - 3, pal["text"], cap)
 
         def summary(c, x, y, w, h, now, el):
-            """Facts first: the hazard (its level is in the title and the header chip), then where, until when, how much and when it was issued."""
+            """Facts first: the hazard (its level is in the title and the header chip), then where, until when, how
+            much and when it was issued, as labelled rows in one size."""
             hero_(c, x, y + 1, 24, 24)
             t = title.upper() if lk["upper"] else title
             used = k.fit_text(c, t, x + 30, y, w - 30, 34, lk["title_fonts"], pal["strong"])
@@ -207,10 +208,11 @@ class WeatherAlerts:
             rows = [(lb, v.upper() if lk["upper"] else v, col) for lb, v, col in rows if v]
             lw = max((k.tw(small, r[0]) for r in rows), default=0) + 6
             vw = w - lw
-            bold, reg, _ = lk["line_fonts"]                         # one size for every fact: the largest that
-            f = next((k.font(r) for r in (reg, lk["line_fonts"][2])  # keeps each on a line (the area may wrap)
-                      if all(k.tw(k.font(r), v) <= vw for lb, v, _ in rows if lb != "WHERE")), k.font(lk["line_fonts"][2]))
-            fb = k.font(bold) if k.font(bold).h == f.h and k.tw(k.font(bold), dict((r[0], r[1]) for r in rows).get("EXPECT", "")) <= vw else f
+            bold, reg, smallest = lk["line_fonts"]                  # one size for every fact: the largest that
+            f = next((k.font(r) for r in (reg, smallest)            # keeps each on a line (the area may wrap)
+                      if all(k.tw(k.font(r), v) <= vw for lb, v, _ in rows if lb != "WHERE")), k.font(smallest))
+            amount = next((v for lb, v, _ in rows if lb == "EXPECT"), "")
+            fb = k.font(bold) if k.font(bold).h == f.h and k.tw(k.font(bold), amount) <= vw else f   # the amount bold
             for label, val, col in rows:
                 ff = fb if label == "EXPECT" else f
                 if ty + ff.h > y + h:
