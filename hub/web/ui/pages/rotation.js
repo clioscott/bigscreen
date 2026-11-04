@@ -1,5 +1,5 @@
 import { ref, computed } from "vue";
-import { store, toast, seed, PANEL_TYPES, WEATHER_SCREENS, RULES, ALERT_LEVELS, HAZARDS, DAYS, ruleText, areaLabel, entryTitle,
+import { store, toast, seed, PANEL_TYPES, WEATHER_SCREENS, ELECTION_VIEWS, RULES, ALERT_LEVELS, HAZARDS, DAYS, ruleText, areaLabel, entryTitle,
   playOnDisplay, rotationGoto, PHASES, ALERT_RULES } from "../core.js";
 import { NowPlaying } from "../nowplaying.js";
 
@@ -125,6 +125,8 @@ const SlotEditor = {
       if (pt.sub === "weather_screen" && !e.weather_screen) e.weather_screen = "current";
       if (pt.sub !== "track") delete e.track;
       if (pt.sub !== "weather_screen") delete e.weather_screen;
+      if (pt.sub === "election_view" && !e.election_view) { e.election_view = "cycle"; e.cycle_sec = e.cycle_sec ?? 20; }
+      if (pt.sub !== "election_view") { delete e.election_view; delete e.cycle_sec; }
       if (pt.sub !== "cam") delete e.cam;
       if (pt.sub === "cam" && !e.cam) asList(e);
       else if (!pt.passes) { delete e.advance; delete e.cycles; delete e.max_sec; e.dwell_sec = e.dwell_sec ?? 30; }
@@ -168,7 +170,7 @@ const SlotEditor = {
     };
     const removeVariant = (i) => { props.e.variants.splice(i, 1); if (!props.e.variants.length) delete props.e.variants; };
     const addVariantRule = (v) => (v.rules = v.rules || []).push({ if: "hours", ...RULES.hours.make() });
-    return { t, tracks, cams, camChoice, isList, listCount, setPanel, mode, passes, defaultLoops, rules, addRule, priority, enabled, PANEL_TYPES, WEATHER_SCREENS,
+    return { t, tracks, cams, camChoice, isList, listCount, setPanel, mode, passes, defaultLoops, rules, addRule, priority, enabled, PANEL_TYPES, WEATHER_SCREENS, ELECTION_VIEWS,
       shapes, variants, addVariant, removeVariant, addVariantRule, shapeName };
   },
   template: `<div class="slot-editor">
@@ -180,6 +182,9 @@ const SlotEditor = {
         <option v-for="[id, tr] in tracks" :key="id" :value="id">{{ tr.label }}</option></select></Field>
       <Field v-if="t.sub === 'weather_screen'" label="Screen"><select class="input" v-model="e.weather_screen">
         <option v-for="(l, id) in WEATHER_SCREENS" :key="id" :value="id">{{ l }}</option></select></Field>
+      <Field v-if="t.sub === 'election_view'" label="Shows"><select class="input" v-model="e.election_view">
+        <option v-for="(l, id) in ELECTION_VIEWS" :key="id" :value="id">{{ l }}</option></select></Field>
+      <Field v-if="t.sub === 'election_view'" label="Seconds per view"><Stepper v-model="e.cycle_sec" :min="5" :max="300" :step="5" unit=" s"/></Field>
       <Field v-if="t.sub === 'cam'" label="Plays"><div class="row nowrap"><select class="input" v-model="camChoice">
         <option value="">The Webcams list ({{ listCount() }} webcams)</option>
         <optgroup label="Just one webcam"><option v-for="(c, id) in cams" :key="id" :value="id">{{ c.label || id }}</option></optgroup></select>

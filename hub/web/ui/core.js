@@ -208,6 +208,8 @@ export const PANEL_TYPES = {
   webcam_grid_full: { label: "Camera grid (full width)", icon: "Grid2x2", full: true, passes: true, passWord: "pass through every camera" },
   webcam_grid_tall: { label: "Camera grid (above the clock)", icon: "Grid2x2", full: true, passes: true, passWord: "pass through every camera", note: "Covers the ticker; the clock and date stay" },
   webcam_grid_wall: { label: "Camera grid (whole wall)", icon: "Grid2x2", full: true, passes: true, passWord: "pass through every camera", note: "Covers the ticker and clock too" },
+  us_election_tall: { label: "US election results", icon: "Vote", sub: "election_view", full: true, passes: true, passWord: "pass (one cycle, or one view)",
+    note: "Above the clock: state map, seat counts and key races (AP via NBC News)" },
   bridges: { label: "Bridges now", icon: "Construction", passes: true, passWord: "pass through every bridge", note: "2×2, paging through the bridges" },
   bridges_full: { label: "Bridges now (full width)", icon: "Construction", full: true, passes: true, passWord: "pass through every bridge" },
   bridges_wall: { label: "Bridges now (whole wall)", icon: "Construction", full: true, passes: true, passWord: "pass through every bridge", note: "Covers the ticker and clock too" },
@@ -219,6 +221,7 @@ export const PANEL_TYPES = {
 // the stage of an alert's life on the wall (display/modules/alert_life.py) a rule can ask for
 export const PHASES = { full: "new or still full-wall", half: "past its full-wall showings" };
 export const ALERT_RULES = ["alert", "naad", "roads", "quakes", "tsunami", "wildfire"];
+export const ELECTION_VIEWS = { cycle: "Cycle: Senate → House → governors", senate: "Senate only", house: "House only", governor: "Governors only" };
 export const WEATHER_SCREENS = { current: "Current conditions", hourly: "Hourly forecast", forecast: "7-day forecast", warning: "Warnings" };
 
 // ---- rotation rules (display/rules.py evaluates them) ------------------------------
@@ -314,6 +317,7 @@ export function entryTitle(e) {
     return tr ? tr.label : `Map: ${e.track || "?"}`;
   }
   if (e.panel === "weather" || e.panel === "weather_full") return WEATHER_SCREENS[e.weather_screen || "current"] || t?.label;
+  if (e.panel === "us_election_tall") return `US election: ${(ELECTION_VIEWS[e.election_view || "cycle"] || "").split(":")[0].replace(" only", "")}`;
   if (e.panel?.startsWith("webcam_grid")) return "Camera grid";
   if (e.panel?.startsWith("webcam")) return !e.cam ? "Webcams" : store.draft?.modules?.webcams?.cams?.[e.cam]?.label || `Webcam: ${e.cam}`;
   if (e.panel === "quake") return "Earthquake warning";
