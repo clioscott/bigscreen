@@ -166,3 +166,25 @@ def test_live_changes_flash_call_and_ticker():
         t += 60.0                                                         # each line scrolls through in under a minute
         shown += 1
     assert shown == 4 and not scr.ticker_active()
+
+
+def test_house_state_changes_are_not_calls():
+    import copy
+    a = sample()
+    b = copy.deepcopy(a)
+    b["updated_utc"] = a["updated_utc"] + 20
+    b["house"]["states"]["OH"].update(won={"D": 3}, lead={"R": 5}, pin=40)
+    b["house"]["races"]["OH-9"].update(ph="called", w="R", c=[["D", 46, "Kaptur", False], ["R", 54, "Merrin", True]])
+    state = {"d": a}
+
+    class L3:
+        def get_data(self, name):
+            return state["d"]
+    scr = ElectionScreen({}, L3())
+    c = Canvas(448, 192)
+    scr.draw(c, (0, 0, 448, 175), {"election_view": "house"}, True, now=0.0)
+    state["d"] = b
+    scr.draw(c, (0, 0, 448, 175), {"election_view": "house"}, False, now=1.0)
+    assert scr._flash["house"]["OH"][0] == "update"                      # seats moving, not a call
+    calls = [line for line in scr._news if line[1][0] == "CALLED"]
+    assert len(calls) == 1 and "OH-9 House" in "".join(t for t, _ in calls[0])

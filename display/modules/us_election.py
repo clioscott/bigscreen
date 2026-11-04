@@ -158,8 +158,9 @@ def signatures(data, view):
     out = {}
     for k, r in (office.get("states") or {}).items():
         if view == "house":
-            out[k] = (r.get("ph"), r.get("pin"), tuple(sorted((r.get("won") or {}).items())),
-                      tuple(sorted((r.get("lead") or {}).items())), None)
+            # a state's House seats have no single winner: the 4th slot stays None (calls come from the districts)
+            out[k] = (r.get("ph"), r.get("pin"), (tuple(sorted((r.get("won") or {}).items())),
+                                                  tuple(sorted((r.get("lead") or {}).items()))), None)
         else:
             out[k] = (r.get("ph"), r.get("pin"), tuple(round(c[1]) for c in r.get("c") or []), r.get("w"))
     for k, r in (office.get("races") or {}).items():
