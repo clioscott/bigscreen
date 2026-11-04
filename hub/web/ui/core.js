@@ -52,6 +52,7 @@ export const SECTIONS = [
   ["Webcams", ["modules", "webcams"]],
   ["Bridges now", ["modules", "bridges"]],
   ["Time zone map", ["modules", "timezones"]],
+  ["US election", ["modules", "us_election"]],
   ["Weather data", ["modules", "weather"]],
   ["Weather alerts", ["modules", "weather_alerts"]],
   ["Japan EEW", ["modules", "japan_eew"]],

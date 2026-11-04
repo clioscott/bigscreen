@@ -1541,6 +1541,35 @@ def bridges_preview(shape: str = "full", page: int = 0, scale: int = 3):
     return Response(out.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
+# --- US election results (hub/jobs/election.py, display/modules/us_election.py) --------------------------------------
+@app.get("/api/election/state")
+def election_state():
+    """Settings with their defaults, the sources to pick from, and a summary of the last fetch."""
+    from hub.bc import common
+    from hub.jobs import election as job
+    d = read_json(paths.DATA_DIR / "election.json", {}) or {}
+    return {"defaults": job.DEFAULTS, "settings": common.settings(config.load(), "us_election", job.DEFAULTS),
+            "sources": job.SOURCES,
+            "data": {k: d.get(k) for k in ("source", "as_of", "updated_utc", "map_utc", "errors", "bop", "election_date", "disabled")}}
+
+
+@app.get("/api/election/preview.png")
+def election_preview(view: str = "senate", scale: int = 3):
+    """What the wall shows for one view of the US election screen, from the last fetch."""
+    from display.gfx import Canvas
+    from display.modules import us_election as mod
+    if view not in mod.VIEWS:
+        raise HTTPException(400, "view must be senate, house or governor")
+    data = read_json(paths.DATA_DIR / "election.json", None)
+    cv = Canvas(mod.W, mod.H)
+    mod.ElectionScreen({}, None).render(cv, data, view, False)
+    im = Image.fromarray(cv.buf)
+    s = max(1, min(6, scale))
+    out = io.BytesIO()
+    im.resize((im.width * s, im.height * s), Image.NEAREST).save(out, "PNG")
+    return Response(out.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
 # --- time zone map (hub/jobs/timezones.py, display/modules/tzmap.py) ------------------------------------------------
 @app.get("/api/timezones/state")
 def timezones_state():
