@@ -77,7 +77,7 @@ def put_config(payload: dict = Body(...)):
     for job, section in (("finance", "finance"), ("news", "headlines"), ("calendar", "calendar"),
                          ("weather", "weather"), ("naad", "naad_alerts"), ("drivebc", "road_alerts"),
                          ("quakes", "bc_quakes"), ("tsunami", "tsunami"), ("wildfire", "wildfire"),
-                         ("webcam_weather", "webcams"), ("shield_signs", "webcams")):
+                         ("election", "us_election"), ("webcam_weather", "webcams"), ("shield_signs", "webcams")):
         if before["modules"].get(section) != saved["modules"].get(section):
             _sched().run_now(job)
     sync.push_data()          # config.json rides along; the v2 display hot-reloads it
