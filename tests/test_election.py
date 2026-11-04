@@ -109,3 +109,24 @@ def test_screen_without_data():
     c = Canvas(448, 192)
     ElectionScreen({}, Loader(None)).draw(c, (0, 0, 448, 175), {}, True, now=0.0)
     assert c.buf.any()
+
+
+def test_civic_seats_and_fallback(tmp_path, monkeypatch):
+    doc = {"candidates": [{"party": "Democratic", "seats": 41}, {"party": "Republican", "seats": 31},
+                          {"party": "Independent", "seats": 1}, {"party": "Libertarian", "seats": 0}]}
+    assert election.civic_seats(doc) == {"d": 41, "r": 31, "i": 1}
+
+    class R:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return doc
+    written = {}
+    monkeypatch.setattr(election.common.session, "get", lambda url, timeout=0: R())
+    monkeypatch.setattr(election.common, "write", lambda name, payload: written.update(payload))
+    prev = {"source": "AP via NBC", "map_utc": 1.0, "senate": {"states": {"GA": {}}}, "bop": {"senate": {"d": 1, "r": 1, "total": 100, "need": 51}}}
+    res = election.civic_fallback(election.DEFAULTS, prev, ["senate: down"])
+    assert res["ok"] and written["source"] == "civicAPI seats"
+    assert written["bop"]["senate"] == {"d": 41, "r": 31, "i": 1, "total": 100, "need": 51}
+    assert written["senate"] == prev["senate"]                  # the map keeps NBC's last numbers
