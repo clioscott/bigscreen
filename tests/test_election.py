@@ -130,3 +130,38 @@ def test_civic_seats_and_fallback(tmp_path, monkeypatch):
     assert res["ok"] and written["source"] == "civicAPI seats"
     assert written["bop"]["senate"] == {"d": 41, "r": 31, "i": 1, "total": 100, "need": 51}
     assert written["senate"] == prev["senate"]                  # the map keeps NBC's last numbers
+
+
+def test_live_changes_flash_call_and_ticker():
+    import copy
+    a = sample()
+    b = copy.deepcopy(a)
+    b["updated_utc"] = a["updated_utc"] + 20
+    b["senate"]["states"]["NC"].update(ph="called", w="R", c=[["D", 48, "Cooper", False], ["R", 52, "Whatley", True]])
+    b["senate"]["states"]["TX"].update(ph="waiting")                     # polls closed
+    b["bop"]["senate"]["r"] += 1
+    state = {"d": a}
+
+    class L2:
+        def get_data(self, name):
+            return state["d"]
+    scr = ElectionScreen({}, L2())
+    c = Canvas(448, 192)
+    entry = {"election_view": "senate", "cycle_sec": 60}
+    scr.draw(c, (0, 0, 448, 175), entry, True, now=0.0)
+    assert not scr.ticker_active()                                       # the first data is no news
+    state["d"] = b
+    scr.draw(c, (0, 0, 448, 175), entry, False, now=1.0)
+    assert scr._flash["senate"]["NC"][0] == "call" and scr._flash["senate"]["TX"][0] == "close"
+    heads = [line[0][0] for line in scr._news]                           # the governor sample shares these states
+    assert scr.ticker_active() and heads.count("CALLED") == 2 and "POLLS CLOSED" in heads and "SENATE" in heads
+    assert "Whatley" in "".join(t for t, _ in scr._news[0])
+    before = c.buf[175:].copy()
+    assert scr.draw_ticker(c, 90, 178, 280, 14, now=3.0)
+    assert (c.buf[175:] != before).any()
+    # once everything has scrolled through, the status text comes back
+    t, shown = 3.0, 0
+    while scr.draw_ticker(c, 90, 178, 280, 14, now=t) and shown < 50:
+        t += 60.0                                                         # each line scrolls through in under a minute
+        shown += 1
+    assert shown == 4 and not scr.ticker_active()

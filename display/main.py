@@ -407,9 +407,13 @@ class Screen:
         self.clock.render(c, clock_x, self.h - 14, status_x - clock_x, 14)
         self.date.render_weekday_beside_clock(c, clock_x + clock_text_w + 3, self.h - 3)
         cal = self.calendar
-        self.status.render(c, status_x, self.h - 14, self.w - status_x - date_w, 14,
-                           getattr(cal, "alert_active", False), getattr(cal, "alert_toggle", False),
-                           getattr(cal, "alert_message", ""), getattr(cal, "status_overrides", []))
+        # the US election screen's news (calls, polls closing, seat counts) scrolls through the status strip
+        news = tall and chosen[tall].get("panel") == "us_election_tall" and self.election.ticker_active() \
+            and self.election.draw_ticker(c, status_x, self.h - 14, self.w - status_x - date_w, 14)
+        if not news:
+            self.status.render(c, status_x, self.h - 14, self.w - status_x - date_w, 14,
+                               getattr(cal, "alert_active", False), getattr(cal, "alert_toggle", False),
+                               getattr(cal, "alert_message", ""), getattr(cal, "status_overrides", []))
         self.date.render(c, self.w - date_w, self.h - 14, date_w, 14)
         graphics.DrawLine(c, 0, self.status_top, self.w, self.status_top, self.border)
 

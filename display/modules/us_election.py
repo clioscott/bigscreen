@@ -10,12 +10,25 @@ Everything above the clock strip (448 x 175, a "tall" panel): the ticker gives w
 Rotation entry fields: ``election_view`` = "cycle" (Senate → House → governors, ``cycle_sec`` each; one pass is
 the full cycle) or "senate" | "house" | "governor" (one pass = ``cycle_sec``). Data: data/election.json from
 hub/jobs/election.py. The frame is drawn once per data update / view change and copied after that.
+
+Live feedback, drawn over that frame each tick (small regions only, so it costs next to nothing on the Pi):
+  * LIVE dot pulsing by the title (white for a moment when data arrives; STALE in yellow when it's old) and
+    "12s ago" after the source; a scan line sweeps down the map whenever a fetch lands
+  * a tile, key-race row or seat count whose numbers changed flashes a white outline / highlight that fades
+    (yellow when a state's polls close); changes in an office not on screen flash when it comes up
+  * a race called: its tile strobes in the party colour, and a CALLED banner names it in the header
+  * news in the status strip (between the clock and the date, while this screen is up): calls with the winner,
+    shares and % in; polls closing; seat counts moving. Each line scrolls through once (``ticker`` / ``draw_ticker``)
 """
 
 from __future__ import annotations
 
+import math
 import time
+from collections import deque
 from datetime import datetime
+
+import numpy as np
 
 from display.modules.bc_kit import font, text, text_r, tw
 
@@ -26,17 +39,17 @@ SHORT = {"senate": "SEN", "house": "HOUSE", "governor": "GOV"}
 DEFAULT_CYCLE_SEC = 20.0
 
 GRID = {
-    "AK": (0, 0), "ME": (0, 10),
-    "VT": (1, 9), "NH": (1, 10),
+    "ME": (0, 10),
+    "AK": (1, 0), "VT": (1, 9), "NH": (1, 10),
     "WA": (2, 0), "ID": (2, 1), "MT": (2, 2), "ND": (2, 3), "MN": (2, 4), "IL": (2, 5), "WI": (2, 6),
     "MI": (2, 7), "NY": (2, 8), "RI": (2, 9), "MA": (2, 10),
     "OR": (3, 0), "NV": (3, 1), "WY": (3, 2), "SD": (3, 3), "IA": (3, 4), "IN": (3, 5), "OH": (3, 6),
     "PA": (3, 7), "NJ": (3, 8), "CT": (3, 9),
     "CA": (4, 0), "UT": (4, 1), "CO": (4, 2), "NE": (4, 3), "MO": (4, 4), "KY": (4, 5), "WV": (4, 6),
     "VA": (4, 7), "MD": (4, 8), "DE": (4, 9),
-    "AZ": (5, 1), "NM": (5, 2), "KS": (5, 3), "AR": (5, 4), "TN": (5, 5), "NC": (5, 6), "SC": (5, 7), "DC": (5, 8),
+    "HI": (5, 0), "AZ": (5, 1), "NM": (5, 2), "KS": (5, 3), "AR": (5, 4), "TN": (5, 5), "NC": (5, 6), "SC": (5, 7), "DC": (5, 8),
     "OK": (6, 3), "LA": (6, 4), "MS": (6, 5), "AL": (6, 6), "GA": (6, 7),
-    "HI": (7, 0), "TX": (7, 3), "FL": (7, 8),
+    "TX": (7, 3), "FL": (7, 8),
 }
 TW, TH, OX, OY = 26, 22, 1, 0          # tile pitch (25 x 21 tiles, 1-px gaps)
 SX = 292                                # sidebar x
@@ -79,8 +92,101 @@ def clock(ts):
     return f"{d.hour % 12 or 12}:{d.minute:02d}"
 
 
+FLASH_SEC = {"update": 2.5, "close": 3.0, "call": 6.0}
+STROBE_SEC = 2.4                    # a call strobes this long, then fades like an update
+SWEEP_SEC = 0.8
+BANNER_SEC = 4.0
+
+
+def blend(c, x, y, w, h, col, k, only_dark=False):
+    """Mix ``col`` into a rectangle by ``k`` (0..1); ``only_dark`` = just the black background (behind text)."""
+    if k <= 0 or w <= 0 or h <= 0:
+        return
+    y0, x0 = max(0, y), max(0, x)
+    sub = c.buf[y0:y + h, x0:x + w]
+    if not sub.size:
+        return
+    mixed = (sub * (1 - k) + np.array(col, dtype=np.float32) * k).astype(np.uint8)
+    if only_dark:
+        m = sub.max(axis=2) < 24
+        sub[m] = mixed[m]
+    else:
+        sub[:] = mixed
+
+
+def blend_outline(c, x, y, w, h, col, k):
+    blend(c, x, y, w, 1, col, k)
+    blend(c, x, y + h - 1, w, 1, col, k)
+    blend(c, x, y + 1, 1, h - 2, col, k)
+    blend(c, x + w - 1, y + 1, 1, h - 2, col, k)
+
+
+def signatures(data, view):
+    """What a change looks like, per tile / key race: id -> (phase, % in, shares, winner)."""
+    office = (data or {}).get(view) or {}
+    out = {}
+    for k, r in (office.get("states") or {}).items():
+        if view == "house":
+            out[k] = (r.get("ph"), r.get("pin"), tuple(sorted((r.get("won") or {}).items())),
+                      tuple(sorted((r.get("lead") or {}).items())), None)
+        else:
+            out[k] = (r.get("ph"), r.get("pin"), tuple(round(c[1]) for c in r.get("c") or []), r.get("w"))
+    for k, r in (office.get("races") or {}).items():
+        out[k] = (r.get("ph"), r.get("pin"), tuple(round(c[1]) for c in r.get("c") or []), r.get("w"))
+    return out
+
+
+STATE_NAMES = {
+    "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas", "CA": "California", "CO": "Colorado",
+    "CT": "Connecticut", "DE": "Delaware", "DC": "D.C.", "FL": "Florida", "GA": "Georgia", "HI": "Hawaii",
+    "ID": "Idaho", "IL": "Illinois", "IN": "Indiana", "IA": "Iowa", "KS": "Kansas", "KY": "Kentucky",
+    "LA": "Louisiana", "ME": "Maine", "MD": "Maryland", "MA": "Massachusetts", "MI": "Michigan", "MN": "Minnesota",
+    "MS": "Mississippi", "MO": "Missouri", "MT": "Montana", "NE": "Nebraska", "NV": "Nevada", "NH": "New Hampshire",
+    "NJ": "New Jersey", "NM": "New Mexico", "NY": "New York", "NC": "North Carolina", "ND": "North Dakota",
+    "OH": "Ohio", "OK": "Oklahoma", "OR": "Oregon", "PA": "Pennsylvania", "RI": "Rhode Island",
+    "SC": "South Carolina", "SD": "South Dakota", "TN": "Tennessee", "TX": "Texas", "UT": "Utah", "VT": "Vermont",
+    "VA": "Virginia", "WA": "Washington", "WV": "West Virginia", "WI": "Wisconsin", "WY": "Wyoming",
+}
+OFFICE_NAMES = {"senate": "Senate", "house": "House", "governor": "Governor"}
+TICKER_PX_PER_SEC = 45.0
+TICKER_BG = (0, 0, 40)
+
+
+def race_of(data, view, k):
+    office = (data or {}).get(view) or {}
+    return (office.get("races") or {}).get(k) or (office.get("states") or {}).get(k)
+
+
+def call_news(data, view, k):
+    """[(text, colour), ...] for a race just called."""
+    r = race_of(data, view, k) or {}
+    w = r.get("w")
+    st = k.split("-")[0]
+    where = f"{STATE_NAMES.get(st, st)} {OFFICE_NAMES[view]}" if "-" not in k else f"{k} House"
+    win = next((c for c in r.get("c") or [] if c[3]), None)
+    segs = [("CALLED", YEL), ("  " + where + "  ", WHITE)]
+    if win:
+        segs.append((f"{win[2]} ({win[0]})", PARTY.get(w, IND)))
+    elif w:
+        segs.append(({"D": "Democrat", "R": "Republican"}.get(w, "Independent"), PARTY.get(w, IND)))
+    d, rr = share(r, "D"), share(r, "R")
+    if (r.get("pin") or 0) >= 1 and d is not None and rr is not None:
+        segs.append((f"  {round(d)}-{round(rr)} with {round(r['pin'])}% in", GREY))
+    elif (r.get("pin") or 0) < 1:
+        segs.append(("  projected at poll close", GREY))
+    return segs
+
+
 def share(race, party):
     return next((c[1] for c in race.get("c") or [] if c[0] == party), None)
+
+
+def _zone(buf):
+    """The screen's zone of the wall's canvas as a canvas of its own (a numpy view), for overlays."""
+    from display.gfx import Canvas
+    z = Canvas.__new__(Canvas)
+    z.buf, z.height, z.width = buf, buf.shape[0], buf.shape[1]
+    return z
 
 
 class ElectionScreen:
@@ -91,6 +197,20 @@ class ElectionScreen:
         self.view_t = None
         self._cache_key = None
         self._frame = None
+        # live feedback
+        self._seen = None                      # updated_utc of the data last compared
+        self._sigs = {}                        # view -> {id: signature}
+        self._flash = {v: {} for v in VIEWS}   # view -> {id: [kind, t0 | None (starts when the view shows)]}
+        self._seat_flash = {}                  # office -> t0
+        self._bop = {}
+        self._banners = deque(maxlen=8)        # new calls: (what, who, party colour)
+        self._banner = None                    # the one on screen: (what, who, colour, t0)
+        self._data_t = None                    # when the last fetch landed
+        self._row_pos, self._seat_pos = {}, {}
+        self._src_end, self._src_y, self._live_x = 0, 0, 0
+        self._news = deque(maxlen=24)          # status-strip lines waiting: [(text, colour), ...]
+        self._tick = None                      # the line scrolling: (strip pixels, t0)
+        self._data = None
         self.f_ab = font("alert/5x7.bdf")
         self.f_t = font("alert/tom-thumb.bdf")
         self.f_title = font("h13")
@@ -125,7 +245,178 @@ class ElectionScreen:
             self._frame, self._cache_key = cv.buf, key
         hh, ww = min(h, H), min(w, W)
         c.buf[y:y + hh, x:x + ww] = self._frame[:hh, :ww]
+        if data and not data.get("disabled") and data.get(view):
+            self.track(data, now)
+            self.overlay(_zone(c.buf[y:y + hh, x:x + ww]), view, now, stale)
         return result
+
+    # -- live feedback ----------------------------------------------------------------------------------------------
+    def track(self, data, now):
+        """Compare a new fetch with the last one: what changed flashes, new calls go to the banner."""
+        stamp = data.get("updated_utc")
+        if stamp == self._seen:
+            return
+        first = self._seen is None
+        self._seen, self._data_t, self._data = stamp, now, data
+        closed = []
+        for v in VIEWS:
+            new = signatures(data, v)
+            old = self._sigs.get(v)
+            self._sigs[v] = new
+            if first or old is None:
+                continue
+            for k, sig in new.items():
+                was = old.get(k)
+                if was is None or was == sig:
+                    continue
+                if sig[3] and sig[3] != was[3]:
+                    kind = "call"
+                    who = {"D": "DEM", "R": "REP"}.get(sig[3], "IND")
+                    self._banners.append((f"{k} {SHORT[v]}", who, PARTY.get(sig[3], IND)))
+                    self._news.append(call_news(data, v, k))
+                elif was[0] == "open" and sig[0] != "open":
+                    kind = "close"
+                    if "-" not in k and k not in closed:
+                        closed.append(k)
+                else:
+                    kind = "update"
+                cur = self._flash[v].get(k)
+                if not (cur and cur[0] == "call" and kind != "call"):     # a call isn't cut short by an update
+                    self._flash[v][k] = [kind, None]
+        if closed:
+            self._news.append([("POLLS CLOSED", YEL), ("  " + ", ".join(STATE_NAMES.get(k, k) for k in sorted(closed)), WHITE)])
+        for office, b in (data.get("bop") or {}).items():
+            sig = (b.get("d"), b.get("r"), b.get("i"))
+            if not first and self._bop.get(office) not in (None, sig):
+                self._seat_flash[office] = now
+                label = {"senate": "SENATE", "house": "HOUSE", "governor": "GOVERNORS"}[office] if office in OFFICE_NAMES else office
+                segs = [(label, YEL), (f"  D {b.get('d')}", DEM), (f"  R {b.get('r')}", REP)]
+                if b.get("i"):
+                    segs.append((f"  I {b['i']}", IND))
+                need = b.get("need")
+                if need and not b.get("called_only"):
+                    for p, n in (("D", b.get("d") or 0), ("R", b.get("r") or 0)):
+                        if n >= need:
+                            segs.append((f"  {'Democrats' if p == 'D' else 'Republicans'} win control", PARTY[p]))
+                    segs.append((f"  ({need} for majority)", GREY))
+                elif b.get("called_only"):
+                    segs.append((f"  of {b.get('total')} called", GREY))
+                self._news.append(segs)
+            self._bop[office] = sig
+
+    # -- the status strip ----------------------------------------------------------------------------------------
+    def ticker_active(self):
+        return self._tick is not None or bool(self._news)
+
+    def draw_ticker(self, c, x, y, w, h, now=None):
+        """Scroll the waiting news lines through the status strip, one after another; False when none is left."""
+        now = time.time() if now is None else now
+        if self._tick is None:
+            if not self._news:
+                return False
+            self._tick = (self._strip(self._news.popleft(), h), now)
+        strip, t0 = self._tick
+        off = int((now - t0) * TICKER_PX_PER_SEC)
+        sw = strip.shape[1]
+        if off > sw + w:                       # scrolled right through: next line, or back to the status text
+            self._tick = None
+            return self.draw_ticker(c, x, y, w, h, now) if self._news else False
+        c.buf[y:y + h, x:x + w] = TICKER_BG
+        # the strip enters at the right edge and leaves at the left
+        sx = x + w - off
+        a0, a1 = max(0, x - sx), min(sw, x + w - sx)
+        if a1 > a0:
+            c.buf[y:y + h, sx + a0:sx + a1] = strip[:h, a0:a1]
+        return True
+
+    def _strip(self, segs, h):
+        from display.gfx import Canvas
+        f = font("m13b")
+        width = sum(tw(f, t) for t, _ in segs) + 12
+        cv = Canvas(width, h)
+        cv.buf[:] = TICKER_BG
+        xx = 6
+        for t, col in segs:
+            xx += text(cv, f, xx, max(0, (h - f.h) // 2), col, t)
+        return cv.buf
+
+    def overlay(self, c, view, now, stale):
+        # changed tiles and key-race rows of the office on screen
+        flashes = self._flash[view]
+        rows = self._row_pos.get(view) or {}
+        for k in list(flashes):
+            kind, t0 = flashes[k]
+            if t0 is None:
+                t0 = flashes[k][1] = now
+            age = now - t0
+            dur = FLASH_SEC[kind]
+            if age > dur:
+                del flashes[k]
+                continue
+            fade = 1 - age / dur
+            col = YEL if kind == "close" else WHITE
+            if k in GRID:
+                row, colm = GRID[k]
+                tx, ty = OX + colm * TW, OY + row * TH
+                if kind == "call" and age < STROBE_SEC:
+                    on = int(age / 0.2) % 2 == 0
+                    win = (self._sigs.get(view) or {}).get(k, (None,) * 4)[3]
+                    if on:
+                        blend(c, tx, ty, TW - 1, TH - 1, PARTY.get(win, IND), 0.85)
+                    blend_outline(c, tx - 1, ty - 1, TW + 1, TH + 1, WHITE, 1.0 if on else 0.5)
+                else:
+                    blend_outline(c, tx, ty, TW - 1, TH - 1, col, fade)
+                    blend_outline(c, tx + 1, ty + 1, TW - 3, TH - 3, col, fade * 0.5)
+            if k in rows:
+                ry = rows[k]
+                blend(c, SX - 2, ry - 1, W - SX + 1, 9, col, 0.16 * fade, only_dark=True)
+                blend(c, SX - 4, ry - 1, 2, 9, col, fade)
+        # seat counts that moved
+        for office, t0 in list(self._seat_flash.items()):
+            age = now - t0
+            if age > FLASH_SEC["update"]:
+                del self._seat_flash[office]
+                continue
+            pos = self._seat_pos.get(office)
+            if pos:
+                k = 1 - age / FLASH_SEC["update"]
+                blend(c, SX - 2, pos[0] - 1, W - SX + 1, pos[1] - pos[0] + 1, WHITE, 0.12 * k, only_dark=True)
+                blend(c, SX - 4, pos[0] - 1, 2, pos[1] - pos[0] + 1, WHITE, k)
+        # a scan line down the map each time a fetch lands
+        if self._data_t is not None and now - self._data_t < SWEEP_SEC:
+            sy = int(H * (now - self._data_t) / SWEEP_SEC)
+            for i, k in enumerate((0.55, 0.3, 0.15)):
+                blend(c, 0, sy - i, SX - 5, 1, (180, 220, 255), k)
+        # LIVE dot and "12s ago"
+        lx, ly = self._live_x, OY + 3
+        if stale:
+            text(c, self.f_t, lx, ly, YEL, "STALE")
+        else:
+            fresh = self._data_t is not None and now - self._data_t < 1.0
+            k = 1.0 if fresh else 0.45 + 0.55 * (0.5 + 0.5 * math.sin(now * 2 * math.pi / 1.6))
+            fill(c, lx, ly, 5, 5, WHITE if fresh else dim((255, 40, 40), k))
+            text(c, self.f_t, lx + 8, ly, (255, 80, 80), "LIVE")
+        if self._data_t is not None:
+            ago = int(now - self._data_t)
+            text(c, self.f_t, self._src_end + 4, self._src_y, (120, 120, 120),
+                 "now" if ago < 2 else f"{ago}s ago" if ago < 120 else f"{ago // 60}m ago")
+        # CALLED banner, one call at a time
+        if self._banner and now - self._banner[3] > BANNER_SEC:
+            self._banner = None
+        if self._banner is None and self._banners:
+            self._banner = (*self._banners.popleft(), now)
+        if self._banner:
+            what, who, col, t0 = self._banner
+            age = now - t0
+            bx, by = OX + TW + 3, OY + 34
+            if age > 1.0 or int(age / 0.15) % 2 == 0:
+                fill(c, bx - 1, by - 1, tw(self.f_t, "CALLED") + 4, 8, YEL)
+                text(c, self.f_t, bx + 1, by, (0, 0, 0), "CALLED")
+                x2 = bx + tw(self.f_t, "CALLED") + 7
+                x2 += text(c, self.f_ab, x2, by - 1, WHITE, what) + 6
+                text(c, self.f_ab, x2, by - 1, col, who)
+            if self._banners:
+                text_r(c, self.f_t, SX - 10, by, GREY, f"+{len(self._banners)}")
 
     # -- frame ----------------------------------------------------------------------------------------------------
     def render(self, c, data, view, cycling, stale=False):
@@ -155,7 +446,9 @@ class ElectionScreen:
         if (data.get("source") or "").startswith("civicAPI"):    # NBC down: the map is from its last update
             src = f"map {clock(as_of)}, seats civicAPI"
             stale = True
-        text(c, self.f_t, tx, OY + 25 if cycling else OY + 17, YEL if stale else (90, 90, 90), src)
+        self._src_y = OY + 25 if cycling else OY + 17
+        self._src_end = tx + text(c, self.f_t, tx, self._src_y, YEL if stale else (90, 90, 90), src)
+        self._live_x = tx + tw(self.f_title, TITLES[view]) + 8
         self.legend(c)
         self.sidebar(c, data, view)
 
@@ -274,7 +567,9 @@ class ElectionScreen:
                 continue
             right = f"{b['total']} races" if b.get("called_only") else f"{b.get('need')} for majority"
             hl = v == view
+            y0 = y
             y = self.seat_bar(c, y, ("> " if hl else "") + label, b, right) + 1
+            self._seat_pos[v] = (y0, y - 2)
         fill(c, SX, y, W - SX - 3, 1, RULE)
         y += 3
         office = data.get(view) or {}
@@ -295,9 +590,11 @@ class ElectionScreen:
                             if k not in seen and r.get("ph") == "counting"),
                            key=lambda kr: abs((share(kr[1], "D") or 0) - (share(kr[1], "R") or 0)))
             rows += close
+        pos = self._row_pos[view] = {}
         for k, r in rows:
             if y > H - 8:
                 break
+            pos[k] = y
             self.key_row(c, y, k, r)
             y += 9
 
