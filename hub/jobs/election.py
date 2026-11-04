@@ -6,26 +6,38 @@ API, so the job is defensive: a field that goes missing leaves that race blank r
 
 Poll closing times are not in the feed; ``CLOSE_ET`` holds each state's last closing (Eastern time).
 
-Settings (``modules.us_election``): ``enabled``, ``refresh_interval_sec`` (60), ``season`` ("2026"),
-``active_until`` (ISO date; after it the job stops fetching, so it never polls between elections).
+An office whose fetch fails keeps its last results. With ``source`` = "auto", the seat counts come from civicAPI
+(civicapi.org, free, no key) when NBC can't be read. civicAPI has no per-state lookup that works on election night
+(its race search was down on 2026-11-03), so only the Senate and House seat totals fall back; the map keeps
+NBC's last numbers and the screen says which source it is showing.
+
+Settings (``modules.us_election``): ``enabled``, ``source`` ("nbc" | "auto"), ``refresh_interval_sec`` (60),
+``season`` ("2026"), ``active_until`` (ISO date; after it the job stops fetching, so it never polls between
+elections), ``civicapi_races`` (civicAPI's national summary race ids).
 """
 
 from __future__ import annotations
 
+import time
 from datetime import date, datetime, timedelta, timezone
 
+from hub import paths
 from hub.bc import common
 from hub.jobs import _harness
+from hub.util import read_json
 
 URL = "https://www.nbcnews.com/firecracker/api/v2/national-results/{season}-elections/{office}-results"
+CIVIC = "https://civicapi.org/api/v2/race/{id}"
 OFFICES = {"senate": "senate", "house": "house", "governor": "governor"}
-DEFAULTS = {"enabled": True, "refresh_interval_sec": 60, "season": "2026", "active_until": "2026-11-12"}
+SOURCES = {"nbc": "NBC News (AP data)", "auto": "NBC News, civicAPI seat counts if NBC fails"}
+DEFAULTS = {"enabled": True, "source": "auto", "refresh_interval_sec": 60, "season": "2026", "active_until": "2026-11-12",
+            "civicapi_races": {"senate": 87528, "house": 87524}}
 PARTY = {"Dem": "D", "Rep": "R"}
 
 # Each state's last polls closing, Eastern time (hours after midnight on election day; 25 = 1 am next day).
 CLOSE_ET = {19: "GA IN KY SC VT VA", 19.5: "NC OH WV",
             20: "AL CT DE DC FL IL ME MD MA MS MO NH NJ OK PA RI TN", 20.5: "AR",
-            21: "AZ CO KS LA MI MN NE NM NY ND SD TX WI WY", 22: "IA MT NV UT", 23: "CA ID OR WA",
+            21: "AZ CO IA KS LA MI MN NE NM NY ND SD TX WI WY", 22: "MT NV UT", 23: "CA ID OR WA",
             24: "HI", 25: "AK"}
 CLOSE_HOUR = {st: h for h, sts in CLOSE_ET.items() for st in sts.split()}
 
@@ -154,15 +166,23 @@ def run(cfg):
             docs[name] = r.json()
         except Exception as e:
             errors.append(f"{name}: {e}")
+    prev = read_json(paths.DATA_DIR / "election.json", {}) or {}
     if not docs:
+        if st.get("source") == "auto" and prev.get("senate"):
+            return civic_fallback(st, prev, errors)
         raise RuntimeError("; ".join(errors))
     any_doc = next(iter(docs.values()))
     try:
         day = date.fromisoformat(any_doc.get("electionDate") or "")
     except ValueError:
         day = date.today()
-    out = {"source": "AP via NBC News", "as_of": any_doc.get("currentTime"), "election_date": day.isoformat(),
+    out = {"source": "AP via NBC", "as_of": any_doc.get("currentTime"), "election_date": day.isoformat(),
            "errors": errors, "bop": {}}
+    for name in OFFICES:                       # an office that failed this time keeps its last results
+        if name not in docs and prev.get(name):
+            out[name] = prev[name]
+            if (prev.get("bop") or {}).get(name):
+                out["bop"][name] = prev["bop"][name]
     if "senate" in docs:
         states, key = statewide(docs["senate"], day)
         out["senate"] = {"states": states, "key": key}
@@ -177,9 +197,44 @@ def run(cfg):
         won = [r["w"] for r in states.values() if r["w"]]
         out["bop"]["governor"] = {"d": won.count("D"), "r": won.count("R"), "i": len(won) - won.count("D") - won.count("R"),
                                   "total": len(states), "need": len(states) // 2 + 1, "called_only": True}
+    out["map_utc"] = time.time()
     common.write("election", out)
     n = sum(len((out.get(o) or {}).get("states") or {}) for o in OFFICES)
     return {"ok": True, "message": f"{n} state races" + (f"; failed: {'; '.join(errors)}" if errors else ""),
+            "files": ["election.json"]}
+
+
+def civic_seats(doc):
+    """civicAPI national summary race → {"d", "r", "i"} seats (its candidates are the parties, with ``seats``)."""
+    out = {"d": 0, "r": 0, "i": 0}
+    for c in doc.get("candidates") or []:
+        p = (c.get("party") or "").lower()
+        k = "d" if p.startswith("democrat") else "r" if p.startswith("republican") else "i"
+        out[k] += int(c.get("seats") or 0)
+    return out
+
+
+def civic_fallback(st, prev, errors):
+    """NBC is down: keep the last map, refresh the Senate and House seat counts from civicAPI."""
+    out = dict(prev)
+    out["bop"] = dict(prev.get("bop") or {})
+    got = []
+    for office, rid in (st.get("civicapi_races") or {}).items():
+        try:
+            r = common.session.get(CIVIC.format(id=int(rid)), timeout=20)
+            r.raise_for_status()
+            seats = civic_seats(r.json())
+        except Exception as e:
+            errors.append(f"civicAPI {office}: {e}")
+            continue
+        out["bop"][office] = {**(out["bop"].get(office) or {}), **seats}
+        got.append(office)
+    if not got:
+        raise RuntimeError("; ".join(errors))
+    out.update(source="civicAPI seats", errors=errors, as_of=None)
+    common.write("election", out)
+    return {"ok": True, "message": f"NBC unavailable: seat counts from civicAPI ({', '.join(got)}); map from "
+                                   f"{time.strftime('%H:%M', time.localtime(prev.get('map_utc') or 0))}",
             "files": ["election.json"]}
 
 
