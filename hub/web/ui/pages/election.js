@@ -99,7 +99,7 @@ export const Election = {
               <b>civicAPI</b> (civicapi.org) is a free results API, used here only as a backup for the Senate and House seat counts: its
               per-state lookup was down on election night 2026. If NBC can't be read, the map keeps NBC's last numbers and the wall says so.</div>
             <div class="fields">
-              <Field label="Fetch every"><Stepper v-model="s.refresh_interval_sec" :min="30" :max="600" :step="30" unit=" s"/></Field>
+              <Field label="Fetch every"><Stepper v-model="s.refresh_interval_sec" :min="15" :max="600" :step="5" unit=" s"/></Field>
               <Field label="Stop fetching after"><input class="input" type="date" v-model="s.active_until"></Field>
             </div>
           </div></div>

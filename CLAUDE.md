@@ -185,7 +185,7 @@ once (`hold: false`), so the rotation resumes by itself.
 
 ## US election screen
 
-- Job `hub/jobs/election.py` (every 60 s) reads the JSON behind NBC News's results pages (AP data, undocumented,
+- Job `hub/jobs/election.py` (every 20 s) reads the JSON behind NBC News's results pages (AP data, undocumented,
   no key) for Senate, House and governors → `data/election.json`. Poll closing times come from its `CLOSE_ET`
   table. It stops fetching after `modules.us_election.active_until`; bump that (and `season`) for the next election.
   `source` "auto" falls back to civicAPI's national Senate/House seat counts when NBC fails (the map keeps NBC's last

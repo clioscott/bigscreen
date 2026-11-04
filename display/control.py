@@ -39,6 +39,11 @@ def start_control_server(app, port):
     return srv
 
 
+def _known(screen, panel):
+    """A panel the display can draw: either side, full width, above the clock or the whole wall."""
+    return any(panel in t for t in (screen.panels, screen.full_panels, screen.tall_panels, screen.takeover_panels))
+
+
 def _make_handler(app):
     png_cache = {"seq": -1, "scale": 0, "data": b""}
 
@@ -74,7 +79,8 @@ def _make_handler(app):
                 return self._json(logring.ring.since(int((q.get("after") or ["0"])[0] or 0)))
             if u.path == "/panels":
                 s = app.screen
-                return self._json({"zone": sorted(s.panels), "full": sorted(s.full_panels), "takeover": sorted(s.takeover_panels)})
+                return self._json({"zone": sorted(s.panels), "full": sorted(s.full_panels), "tall": sorted(s.tall_panels),
+                                   "takeover": sorted(s.takeover_panels)})
             if u.path == "/frame.png":
                 q = parse_qs(u.query)
                 scale = max(1, min(8, int((q.get("scale") or ["1"])[0])))
@@ -107,7 +113,7 @@ def _make_handler(app):
                 if not eng or not body.get("panel"):
                     return self._json({"error": "need side (left|right) and panel"}, 400)
                 s = app.screen
-                if body["panel"] not in s.panels and body["panel"] not in s.full_panels and body["panel"] not in s.takeover_panels:
+                if not _known(s, body["panel"]):
                     return self._json({"error": f"panel {body['panel']!r} isn't available on this display"}, 400)
                 extra = {k: v for k, v in body.items() if k not in ("side", "panel", "duration_sec")}
                 if body["panel"] == "font_specimen":           # parse the fonts here, not in the render loop
@@ -132,7 +138,7 @@ def _make_handler(app):
                 s = app.screen
                 if not eng or not isinstance(entry, dict) or not entry.get("panel"):
                     return self._json({"error": "need side (left|right) and entry.panel"}, 400)
-                if entry["panel"] not in s.panels and entry["panel"] not in s.full_panels and entry["panel"] not in s.takeover_panels:
+                if not _known(s, entry["panel"]):
                     return self._json({"error": f"panel {entry['panel']!r} isn't available on this display"}, 400)
                 ttl = body.get("ttl_sec")
                 eng.play(entry, hold=bool(body.get("hold")), ttl_sec=ttl if ttl else (3600 if body.get("hold") else None))
