@@ -153,7 +153,8 @@ def test_live_changes_flash_call_and_ticker():
     state["d"] = b
     scr.draw(c, (0, 0, 448, 175), entry, False, now=1.0)
     assert scr._flash["senate"]["NC"][0] == "call" and scr._flash["senate"]["TX"][0] == "close"
-    heads = [line[0][0] for line in scr._news]                           # the governor sample shares these states
+    assert all(line[0][0].strip().count(":") == 1 for line in scr._news)       # each line led by the time seen
+    heads = [line[1][0] for line in scr._news]                           # the governor sample shares these states
     assert scr.ticker_active() and heads.count("CALLED") == 2 and "POLLS CLOSED" in heads and "SENATE" in heads
     assert "Whatley" in "".join(t for t, _ in scr._news[0])
     before = c.buf[175:].copy()

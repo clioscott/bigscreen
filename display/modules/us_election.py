@@ -19,7 +19,7 @@ Live feedback, drawn over that frame each tick (small regions only, so it costs 
     office not on screen show when it comes up
   * a race called: its tile strobes in the party colour, and a CALLED banner names it in the header
   * news in the status strip (between the clock and the date, while this screen is up): calls with the winner,
-    shares and % in; polls closing; seat counts moving. Each line scrolls through once (``ticker`` / ``draw_ticker``)
+    shares and % in; polls closing; seat counts moving, each led by the time it was seen. Each line scrolls through once (``ticker`` / ``draw_ticker``)
 """
 
 from __future__ import annotations
@@ -304,7 +304,7 @@ class ElectionScreen:
                     kind = "call"
                     who = {"D": "DEM", "R": "REP"}.get(sig[3], "IND")
                     self._banners.append((f"{k} {SHORT[v]}", who, PARTY.get(sig[3], IND)))
-                    self._news.append(call_news(data, v, k))
+                    self._news.append(self._stamped(call_news(data, v, k), now))
                 elif was[0] == "open" and sig[0] != "open":
                     kind = "close"
                     if "-" not in k and k not in closed:
@@ -315,7 +315,7 @@ class ElectionScreen:
                 if not (cur and cur[0] == "call" and kind != "call"):     # a call isn't cut short by an update
                     self._flash[v][k] = [kind, None]
         if closed:
-            self._news.append([("POLLS CLOSED", YEL), ("  " + ", ".join(STATE_NAMES.get(k, k) for k in sorted(closed)), WHITE)])
+            self._news.append(self._stamped([("POLLS CLOSED", YEL), ("  " + ", ".join(STATE_NAMES.get(k, k) for k in sorted(closed)), WHITE)], now))
         for office, b in (data.get("bop") or {}).items():
             sig = (b.get("d"), b.get("r"), b.get("i"))
             if not first and self._bop.get(office) not in (None, sig):
@@ -332,10 +332,15 @@ class ElectionScreen:
                     segs.append((f"  ({need} for majority)", GREY))
                 elif b.get("called_only"):
                     segs.append((f"  of {b.get('total')} called", GREY))
-                self._news.append(segs)
+                self._news.append(self._stamped(segs, now))
             self._bop[office] = sig
 
     # -- the status strip ----------------------------------------------------------------------------------------
+    @staticmethod
+    def _stamped(segs, now):
+        """A news line led by the local time it was seen (7:31)."""
+        return [(clock(now) + "  ", (150, 150, 150))] + segs
+
     def ticker_active(self):
         return self._tick is not None or bool(self._news)
 
