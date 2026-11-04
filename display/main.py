@@ -243,6 +243,10 @@ class Screen:
         self.panels["webcam_grid"] = self.webcam.grid.draw
         self.full_panels["webcam_grid_full"] = self.webcam.grid.draw
         self.tall_panels["webcam_grid_tall"] = self.webcam.grid.draw
+        from display.modules.us_election import ElectionScreen
+        self.election = keep("election", ("us_election",),
+                             lambda: ElectionScreen(cfg.modules.get("us_election") or {}, loader))
+        self.tall_panels["us_election_tall"] = self.election.draw            # US Election results map
         self.takeover_panels["webcam_grid_wall"] = self.webcam.grid.draw
         if maps is not None:
             from display.modules.weather_maps import MapPanel
