@@ -14,8 +14,9 @@ hub/jobs/election.py. The frame is drawn once per data update / view change and 
 Live feedback, drawn over that frame each tick (small regions only, so it costs next to nothing on the Pi):
   * LIVE dot pulsing by the title (white for a moment when data arrives; STALE in yellow when it's old) and
     "12s ago" after the source
-  * a tile, key-race row or seat count whose numbers changed flashes a white outline / highlight that fades
-    (yellow when a state's polls close); changes in an office not on screen flash when it comes up
+  * a tile whose numbers changed pulses brighter twice while a light runs round its border (yellow when the
+    state's polls close); a key-race row or seat count that changed gets a fading edge marker; changes in an
+    office not on screen show when it comes up
   * a race called: its tile strobes in the party colour, and a CALLED banner names it in the header
   * news in the status strip (between the clock and the date, while this screen is up): calls with the winner,
     shares and % in; polls closing; seat counts moving. Each line scrolls through once (``ticker`` / ``draw_ticker``)
@@ -92,7 +93,10 @@ def clock(ts):
     return f"{d.hour % 12 or 12}:{d.minute:02d}"
 
 
-FLASH_SEC = {"update": 2.5, "close": 3.0, "call": 6.0}
+FLASH_SEC = {"update": 3.0, "close": 3.0, "call": 6.0}
+PULSE_SEC = 1.2                     # a changed tile's fill pulses brighter twice in this time
+CHASE_LAPS = 2                      # ... while a light runs round its border this many times
+CHASE_LEN = 10                      # pixels in the running light
 STROBE_SEC = 2.4                    # a call strobes this long, then fades like an update
 BANNER_SEC = 4.0
 
@@ -111,6 +115,34 @@ def blend(c, x, y, w, h, col, k, only_dark=False):
         sub[m] = mixed[m]
     else:
         sub[:] = mixed
+
+
+_PERIMETERS = {}
+
+
+def perimeter(w, h):
+    """The border pixels of a w x h box, clockwise from the top-left, as (dx, dy)."""
+    key = (w, h)
+    if key not in _PERIMETERS:
+        pts = [(i, 0) for i in range(w)] + [(w - 1, j) for j in range(1, h)]
+        pts += [(i, h - 1) for i in range(w - 2, -1, -1)] + [(0, j) for j in range(h - 2, 0, -1)]
+        _PERIMETERS[key] = pts
+    return _PERIMETERS[key]
+
+
+def chase(c, x, y, w, h, col, t, k):
+    """A light of CHASE_LEN pixels running clockwise round a box; ``t`` 0..1 = progress over all laps."""
+    pts = perimeter(w, h)
+    n = len(pts)
+    head = int(t * CHASE_LAPS * n)
+    hh, ww = c.buf.shape[:2]
+    colf = np.array(col, dtype=np.float32)
+    for i in range(CHASE_LEN):
+        dx, dy = pts[(head - i) % n]
+        px, py = x + dx, y + dy
+        if 0 <= px < ww and 0 <= py < hh:
+            a = k * (1 - i / CHASE_LEN)
+            c.buf[py, px] = (c.buf[py, px] * (1 - a) + colf * a).astype(np.uint8)
 
 
 def blend_outline(c, x, y, w, h, col, k):
@@ -364,8 +396,12 @@ class ElectionScreen:
                         blend(c, tx, ty, TW - 1, TH - 1, PARTY.get(win, IND), 0.85)
                     blend_outline(c, tx - 1, ty - 1, TW + 1, TH + 1, WHITE, 1.0 if on else 0.5)
                 else:
-                    blend_outline(c, tx, ty, TW - 1, TH - 1, col, fade)
-                    blend_outline(c, tx + 1, ty + 1, TW - 3, TH - 3, col, fade * 0.5)
+                    # the fill pulses brighter twice, a light runs round the border, the outline fades
+                    if age < PULSE_SEC:
+                        blend(c, tx, ty, TW - 1, TH - 1, col, 0.28 * abs(math.sin(age / PULSE_SEC * 2 * math.pi)),
+                              only_dark=False)
+                    blend_outline(c, tx, ty, TW - 1, TH - 1, col, 0.45 * fade)
+                    chase(c, tx - 1, ty - 1, TW + 1, TH + 1, col, age / dur, min(1.0, 3 * fade))
             if k in rows:
                 ry = rows[k]
                 blend(c, SX - 2, ry - 1, W - SX + 1, 9, col, 0.16 * fade, only_dark=True)
