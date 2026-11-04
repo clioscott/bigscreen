@@ -47,7 +47,7 @@ PANEL_DATA = {"calendar": "calendar", "client_calls_upcoming": "calendar", "clie
               "naad_alert": "naad", "road_alert": "drivebc", "quake_alert": "quakes", "tsunami_alert": "tsunami",
               "fire_alert": "wildfire", "weather_alert_half": "alerts", "naad_alert_half": "naad",
               "road_alert_half": "drivebc", "quake_alert_half": "quakes", "tsunami_alert_half": "tsunami",
-              "fire_alert_half": "wildfire"}
+              "fire_alert_half": "wildfire", "us_election_tall": "election"}
 BC_RULES = ("naad", "roads", "quakes", "tsunami", "wildfire")
 
 _PRECIP_WORDS = ("rain", "drizzle", "shower", "snow", "flurr", "sleet", "hail", "pellet", "thunder")
