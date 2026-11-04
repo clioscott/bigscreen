@@ -183,6 +183,14 @@ once (`hold: false`), so the rotation resumes by itself.
   Langley, SFU), re-crawled daily by the hub (`hub/app.py` `_city_lists`). Burnaby, Coquitlam, the North Shore, New West
   and Delta publish no intersection images (checked 2026-10-28); DriveBC covers their highways.
 
+## US election screen
+
+- Job `hub/jobs/election.py` (every 60 s) reads the JSON behind NBC News's results pages (AP data, undocumented,
+  no key) for Senate, House and governors → `data/election.json`. Poll closing times come from its `CLOSE_ET`
+  table. It stops fetching after `modules.us_election.active_until`; bump that (and `season`) for the next election.
+- Display: `display/modules/us_election.py`, tall panel `us_election_tall` (above the clock). Entry fields
+  `election_view` = `cycle` | `senate` | `house` | `governor` and `cycle_sec`.
+
 ## BC alert screens
 
 Five full-wall takeovers beside the ECCC weather alert, each with its own job, display module, themes and panel page:
