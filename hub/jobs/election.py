@@ -11,7 +11,7 @@ An office whose fetch fails keeps its last results. With ``source`` = "auto", th
 (its race search was down on 2026-11-03), so only the Senate and House seat totals fall back; the map keeps
 NBC's last numbers and the screen says which source it is showing.
 
-Settings (``modules.us_election``): ``enabled``, ``source`` ("nbc" | "auto"), ``refresh_interval_sec`` (60),
+Settings (``modules.us_election``): ``enabled``, ``source`` ("nbc" | "auto"), ``refresh_interval_sec`` (20; NBC refreshes every 15 s),
 ``season`` ("2026"), ``active_until`` (ISO date; after it the job stops fetching, so it never polls between
 elections), ``civicapi_races`` (civicAPI's national summary race ids).
 """
@@ -30,7 +30,7 @@ URL = "https://www.nbcnews.com/firecracker/api/v2/national-results/{season}-elec
 CIVIC = "https://civicapi.org/api/v2/race/{id}"
 OFFICES = {"senate": "senate", "house": "house", "governor": "governor"}
 SOURCES = {"nbc": "NBC News (AP data)", "auto": "NBC News, civicAPI seat counts if NBC fails"}
-DEFAULTS = {"enabled": True, "source": "auto", "refresh_interval_sec": 60, "season": "2026", "active_until": "2026-11-12",
+DEFAULTS = {"enabled": True, "source": "auto", "refresh_interval_sec": 20, "season": "2026", "active_until": "2026-11-12",
             "civicapi_races": {"senate": 87528, "house": 87524}}
 PARTY = {"Dem": "D", "Rep": "R"}
 
