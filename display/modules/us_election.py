@@ -13,7 +13,7 @@ hub/jobs/election.py. The frame is drawn once per data update / view change and 
 
 Live feedback, drawn over that frame each tick (small regions only, so it costs next to nothing on the Pi):
   * LIVE dot pulsing by the title (white for a moment when data arrives; STALE in yellow when it's old) and
-    "12s ago" after the source; a scan line sweeps down the map whenever a fetch lands
+    "12s ago" after the source
   * a tile, key-race row or seat count whose numbers changed flashes a white outline / highlight that fades
     (yellow when a state's polls close); changes in an office not on screen flash when it comes up
   * a race called: its tile strobes in the party colour, and a CALLED banner names it in the header
@@ -94,7 +94,6 @@ def clock(ts):
 
 FLASH_SEC = {"update": 2.5, "close": 3.0, "call": 6.0}
 STROBE_SEC = 2.4                    # a call strobes this long, then fades like an update
-SWEEP_SEC = 0.8
 BANNER_SEC = 4.0
 
 
@@ -382,11 +381,6 @@ class ElectionScreen:
                 k = 1 - age / FLASH_SEC["update"]
                 blend(c, SX - 2, pos[0] - 1, W - SX + 1, pos[1] - pos[0] + 1, WHITE, 0.12 * k, only_dark=True)
                 blend(c, SX - 4, pos[0] - 1, 2, pos[1] - pos[0] + 1, WHITE, k)
-        # a scan line down the map each time a fetch lands
-        if self._data_t is not None and now - self._data_t < SWEEP_SEC:
-            sy = int(H * (now - self._data_t) / SWEEP_SEC)
-            for i, k in enumerate((0.55, 0.3, 0.15)):
-                blend(c, 0, sy - i, SX - 5, 1, (180, 220, 255), k)
         # LIVE dot and "12s ago"
         lx, ly = self._live_x, OY + 3
         if stale:
