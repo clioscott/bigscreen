@@ -35,7 +35,7 @@ JOBS = {
     "quakes":   ("modules.bc_quakes.refresh_interval_sec", 60, 120, "Earthquakes"),
     "tsunami":  ("modules.tsunami.refresh_interval_sec", 120, 120, "Tsunami"),
     "wildfire": ("modules.wildfire.refresh_interval_sec", 600, 300, "Wildfire"),
-    "election": ("modules.us_election.refresh_interval_sec", 60, 90, "US election results"),
+    "election": ("modules.us_election.refresh_interval_sec", 60, 150, "US election results"),
 }
 # A job is "stale" when its last success is older than this many intervals.
 STALE_INTERVALS = 3

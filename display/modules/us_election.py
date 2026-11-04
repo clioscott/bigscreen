@@ -115,7 +115,8 @@ class ElectionScreen:
         view = VIEWS[self.view_i] if mode == "cycle" else (mode if mode in VIEWS else "senate")
         data = self.loader.get_data("election") if self.loader else None
         x, y, w, h = zone
-        stale = bool(data) and now - float(data.get("updated_utc") or now) > 600
+        fresh = (data or {}).get("map_utc") or (data or {}).get("updated_utc") or now
+        stale = bool(data) and now - float(fresh) > 600
         key = (id(data), (data or {}).get("updated_utc"), view, mode == "cycle", stale, int(now // 60))
         if key != self._cache_key or self._frame is None:
             from display.gfx import Canvas
@@ -149,8 +150,11 @@ class ElectionScreen:
             for v in VIEWS:
                 text(c, self.f_t, vx, OY + 17, WHITE if v == view else (70, 70, 70), SHORT[v])
                 vx += tw(self.f_t, SHORT[v]) + 6
-        as_of = data.get("updated_utc")
+        as_of = data.get("map_utc") or data.get("updated_utc")
         src = f"{data.get('source') or 'AP'} {clock(as_of)}"
+        if (data.get("source") or "").startswith("civicAPI"):    # NBC down: the map is from its last update
+            src = f"map {clock(as_of)}, seats civicAPI"
+            stale = True
         text(c, self.f_t, tx, OY + 25 if cycling else OY + 17, YEL if stale else (90, 90, 90), src)
         self.legend(c)
         self.sidebar(c, data, view)
@@ -190,7 +194,8 @@ class ElectionScreen:
             other = next((k for k in r.get("c") or [] if k[0] not in ("D", "R")), None)
             if d is None and other:
                 d = other[1]
-        dcol, rcol = (WHITE, WHITE) if called else (LIGHT_D, LIGHT_R)
+        ind = share(r, "D") is None and d is not None      # the left number is an independent's (Nebraska)
+        dcol, rcol = (WHITE, WHITE) if called else ((220, 160, 255) if ind else LIGHT_D, LIGHT_R)
         text(c, f_t, x + 2, y + 9, dcol, "--" if d is None else f"{round(d)}")
         text_r(c, f_t, x + w - 2, y + 9, rcol, "--" if rr is None else f"{round(rr)}")
         text(c, f_t, x + 2, y + 15, WHITE if called else GREY, f"{round(r.get('pin') or 0)}%")
@@ -267,7 +272,7 @@ class ElectionScreen:
             b = bop.get(v)
             if not b:
                 continue
-            right = f"{b['total']} races" if b.get("called_only") else f"{b.get('need')} to win"
+            right = f"{b['total']} races" if b.get("called_only") else f"{b.get('need')} for majority"
             hl = v == view
             y = self.seat_bar(c, y, ("> " if hl else "") + label, b, right) + 1
         fill(c, SX, y, W - SX - 3, 1, RULE)
@@ -310,9 +315,11 @@ class ElectionScreen:
             text(c, f_t, bx, y + 1, GREY, "no votes yet")
             return
         d, rr = share(r, "D"), share(r, "R")
+        left = DEM
         if d is None:
             other = next((k for k in r.get("c") or [] if k[0] not in ("D", "R")), None)
             d = other[1] if other else None
+            left = IND
         if ph == "called" and (r.get("pin") or 0) < 1:
             w = r.get("w")
             text(c, f_t, bx, y + 1, PARTY.get(w, IND), {"D": "DEM", "R": "REP"}.get(w, "IND") + " projected")
@@ -323,12 +330,12 @@ class ElectionScreen:
         d0, r0 = d or 0, rr or 0
         tot = max(1e-6, d0 + r0)
         dw = round(bw * d0 / tot)
-        fill(c, bx, y + 1, dw, 5, DEM)
+        fill(c, bx, y + 1, dw, 5, left)
         fill(c, bx + dw, y + 1, bw - dw, 5, REP)
         fill(c, bx + bw // 2, y, 1, 7, WHITE)
         nx = bx + bw + 5
         w = r.get("w")
-        text(c, f_t, nx, y + 1, DEM, "--" if d is None else f"{d:.1f}")
+        text(c, f_t, nx, y + 1, left, "--" if d is None else f"{d:.1f}")
         text(c, f_t, nx + 24, y + 1, REP, "--" if rr is None else f"{rr:.1f}")
         if w:
             check(c, x1 - 7, y + 1, PARTY.get(w, IND))
