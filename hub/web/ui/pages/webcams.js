@@ -592,7 +592,7 @@ const PlaylistTab = {
       <div class="card-head"><Icon name="ListOrdered" :size="16"/><h3 style="white-space:nowrap">The list</h3><span class="faint ellipsis" style="font-size:12px; min-width:0">drag to reorder · switch off to skip</span>
         <span class="spacer"></span>
         <button class="btn sm" :disabled="fetching" @click="fetchAll" title="Look up every webcam now, one at a time, so each starts without waiting">
-          <Icon :name="fetching ? 'LoaderCircle' : 'RefreshCw'" :size="14" :class="{spin: fetching}"/>{{ fetching ? `Fetching ${fetchState.done} of ${fetchState.total}…` : 'Fetch all feeds' }}</button>
+          <Icon :name="fetching ? 'LoaderCircle' : 'RefreshCw'" :size="14" :class="{spin: fetching}"/>{{ fetching ? 'Fetching ' + fetchState.done + ' of ' + fetchState.total + '…' : 'Fetch all feeds' }}</button>
         <button class="btn sm" @click="$emit('add')"><Icon name="Plus" :size="14"/>Add by URL</button>
         <button class="btn sm" @click="$emit('find')"><Icon name="Search" :size="14"/>Find webcams</button></div>
       <div v-sortable="{ list: list, handle: '.handle' }">
