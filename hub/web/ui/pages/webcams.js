@@ -65,7 +65,7 @@ const customCols = (ov, hasText) => [...new Set(Object.keys(DEFAULT_SLOTS)
   .map((k) => (ov.slots?.[k] || DEFAULT_SLOTS[k])[0]))].sort();
 const DEFAULT_OVERLAY = { style: "tag", corner: "bl", when: "always", font: "small", accent: "#e8202a", text: "#ffffff",
   bg: "#000000", opacity: 0.7, time_format: "24h", fade: true, show_sec: 12, every_min: 3, custom_text: "", headline: "name",
-  lines: "auto", separator: "space", uppercase: false, order: [...ORDERABLE], jp_font: "auto", jp_face: "auto", wx_beside: false, temp_icon: false,
+  lines: "auto", separator: "space", uppercase: false, order: [...ORDERABLE], jp_font: "auto", jp_face: "auto", wx_beside: false, wx_beside_box: false, temp_icon: false,
   show: { name: true, place: true, time: true, date: false, offset: false, daynight: false, weather: true, sun: false,
     age: false, live: true, credit: false, custom: false, shield: false, conditions: false, feels: false, hilo: false, wind: false, humidity: false },
   shield: { route: "99", kind: "auto", style: "pixel", place: "inside", size: "box" } };
@@ -1388,6 +1388,8 @@ const WebcamEditor = {
               <ToggleRow v-if="ov.style !== 'dot'" v-model="ov.uppercase" label="ALL CAPS"/>
               <ToggleRow v-if="!['dot', 'ticker'].includes(ov.style)" :modelValue="!!ov.wx_beside" @update:modelValue="v => ov.wx_beside = v"
                 label="Weather icon beside the caption" :hint="Number.isFinite(cam.lat) ? 'A bigger icon just outside the box, outlined in black' : 'Needs a location for the webcam (Source → Location)'"/>
+              <ToggleRow v-if="ov.wx_beside && ov.style === 'tag'" :modelValue="!!ov.wx_beside_box" @update:modelValue="v => ov.wx_beside_box = v"
+                label="Inside the caption box" hint="The box grows sideways to take in the icon"/>
             </template>
             <template v-if="ov.style !== 'none' && capTab === 'when'">
               <div class="row" style="gap:16px; align-items:flex-start">

@@ -70,7 +70,7 @@ DEFAULT_OVERLAY = {"style": "tag", "corner": "bl", "when": "always", "font": "sm
                    "text": "#ffffff", "bg": "#000000", "opacity": 0.7, "time_format": "24h", "fade": True,
                    "show_sec": 12, "every_min": 3, "custom_text": "", "headline": "name", "lines": "auto",
                    "separator": "space", "uppercase": False, "order": list(ORDER), "jp_font": "auto",
-                   "jp_face": "auto", "wx_beside": False, "temp_icon": False,
+                   "jp_face": "auto", "wx_beside": False, "wx_beside_box": False, "temp_icon": False,
                    "show": {"name": True, "place": True, "time": True, "date": False, "offset": False,
                             "daynight": False, "weather": True, "sun": False, "age": False, "live": True,
                             "credit": False, "custom": False, "shield": False,
@@ -833,12 +833,23 @@ def _layer(style, ov, ct, w, h, font_for):
 
 
 def _icon_beside(zc, box, w, h, ov, name):
-    """The weather icon just outside the caption box (1 px gap, then its outline): to its right, or to its left when
-    the caption sits on the right; centred on the box's height. Left out when there's no room."""
+    """The weather icon beside the caption box: to its right, or to its left when the caption sits on the right;
+    centred on the box's height. Outside the box (1 px gap, then its outline), or with ``wx_beside_box`` (the Tag
+    layout) inside it: the box grows sideways by the icon and the padding, in the box's own colour and strength.
+    Left out when there's no room."""
     x0, y0, x1, y1 = box
     right_side = str(ov.get("corner") or "bl")[1:] != "r"
-    x = x1 + 2 if right_side else x0 - 17
     y = min(max(1, (y0 + y1) // 2 - 7), h - 16)
+    if ov.get("wx_beside_box") and ov.get("style", "tag") == "tag":
+        pad = int(_num(ov.get("pad"), 2, 0, 10))
+        grow = 17 + pad                                    # outline, icon, outline, then the box's padding
+        px = x1 if right_side else x0 - grow
+        if px < 0 or px + grow > w:
+            return
+        _box(zc, px, y0, grow, y1 - y0, _hex(ov.get("bg"), (0, 0, 0)), _num(ov.get("opacity"), 0.7, 0.0, 1.0))
+        x = px + 1 if right_side else px + pad + 1
+    else:
+        x = x1 + 2 if right_side else x0 - 17
     if x - 1 >= 0 and x + 16 <= w and y >= 1:
         draw_icon_beside(zc, x, y, name)
 
