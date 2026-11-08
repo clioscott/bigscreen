@@ -1368,6 +1368,19 @@ def webcams_local(lat: float, lon: float):
             "is_day": wx.get("is_day"), "conditions": _webcam_caption.conditions_text(wx.get("code"))}
 
 
+@app.post("/api/webcams/fetch_all")
+def webcams_fetch_all():
+    """The panel's "Fetch all feeds": every webcam's feed fetched now, one at a time (hub/webcams.py start_fetch_all);
+    follow it with GET."""
+    cams = (((config.load().get("modules") or {}).get("webcams") or {}).get("cams") or {})
+    return webcams.start_fetch_all(cams)
+
+
+@app.get("/api/webcams/fetch_all")
+def webcams_fetch_all_status():
+    return webcams.fetch_all_status()
+
+
 @app.post("/api/webcams/probe")
 def webcams_probe(payload: dict = Body(...)):
     """{"source": {...}} → {"ok", "title", "error"}: can the hub open this source? (YouTube: is it live?)"""

@@ -530,6 +530,27 @@ const PlaylistTab = {
     const cams = computed(() => wc.cams || {});
     const list = computed(() => wc.playlist);
     const { feedFor, healthFor } = useStatus();
+    // "Fetch all feeds": the hub looks every webcam up, one at a time (POST starts it, GET follows it)
+    const fetchState = ref({ running: false, done: 0, total: 0, results: {} });
+    const fetching = computed(() => fetchState.value.running);
+    let fetchTimer = null;
+    const followFetch = async () => {
+      try { fetchState.value = await api("/api/webcams/fetch_all"); } catch {}
+      if (fetchState.value.running) { fetchTimer = setTimeout(followFetch, 1500); return; }
+      const r = Object.values(fetchState.value.results || {});
+      if (!r.length) return;
+      const bad = r.filter((x) => !x.ok).length;
+      if (fetchState.value.stopped) toast(`Stopped: ${fetchState.value.stopped}`, "bad");
+      else toast(bad ? `${r.length - bad} of ${r.length} feeds ready; ${bad} didn't come up` : `All ${r.length} feeds ready`, bad ? "bad" : "ok");
+    };
+    const fetchAll = async () => {
+      if (dirty.value.length) toast("Fetching the saved webcams (save first to include new ones)");
+      try { fetchState.value = await api("/api/webcams/fetch_all", { method: "POST" }); } catch (e) { return fail(e); }
+      clearTimeout(fetchTimer);
+      fetchTimer = setTimeout(followFetch, 1000);
+    };
+    onBeforeUnmount(() => clearTimeout(fetchTimer));
+    const fetchResult = (cid) => fetchState.value.results?.[cid] || null;
     const found = computed(() => rotationEntries(isListEntry));
     const single = computed(() => rotationEntries((e) => e.panel?.startsWith("webcam") && !e.panel.startsWith("webcam_grid") && e.cam));
     // older rotations had one entry per webcam: fold them into the list (their order first), with one Webcams entry
@@ -552,7 +573,7 @@ const PlaylistTab = {
     const srcHost = (s) => (s?.type === "drivebc" ? `DriveBC camera ${s.id}` : host(s?.url));
     const kindOf = (s) => (STILL.includes(s?.type) ? "Still" : "Live");
     const mins = (s) => (s >= 90 ? `${Math.round(s / 6) / 10} min` : `${s} s`);
-    return { LIST_SHAPES, wc, cams, list, on, total, found, single, combine, feedFor, feedPill, healthFor, downPill, srcHost, kindOf, hasSource, mins, go };
+    return { LIST_SHAPES, wc, cams, list, on, total, found, single, combine, feedFor, feedPill, healthFor, downPill, fetchAll, fetching, fetchState, fetchResult, srcHost, kindOf, hasSource, mins, go };
   },
   template: `<div class="stack">
     <div class="card"><div class="card-body stack" style="gap:10px">
@@ -569,7 +590,10 @@ const PlaylistTab = {
     </div></div>
     <div class="card">
       <div class="card-head"><Icon name="ListOrdered" :size="16"/><h3 style="white-space:nowrap">The list</h3><span class="faint ellipsis" style="font-size:12px; min-width:0">drag to reorder · switch off to skip</span>
-        <span class="spacer"></span><button class="btn sm" @click="$emit('add')"><Icon name="Plus" :size="14"/>Add by URL</button>
+        <span class="spacer"></span>
+        <button class="btn sm" :disabled="fetching" @click="fetchAll" title="Look up every webcam now, one at a time, so each starts without waiting">
+          <Icon :name="fetching ? 'LoaderCircle' : 'RefreshCw'" :size="14" :class="{spin: fetching}"/>{{ fetching ? `Fetching ${fetchState.done} of ${fetchState.total}…` : 'Fetch all feeds' }}</button>
+        <button class="btn sm" @click="$emit('add')"><Icon name="Plus" :size="14"/>Add by URL</button>
         <button class="btn sm" @click="$emit('find')"><Icon name="Search" :size="14"/>Find webcams</button></div>
       <div v-sortable="{ list: list, handle: '.handle' }">
         <div v-for="(it, i) in list" :key="it.cam" class="list-row wc-list-row" :class="{off: it.on === false}">
@@ -579,6 +603,7 @@ const PlaylistTab = {
           <div class="grow" style="min-width:0; cursor:pointer" @click="go('webcams/' + it.cam)"><b>{{ cams[it.cam]?.label || it.cam }}</b>
             <div class="faint ellipsis" style="font-size:12.5px"><span class="wc-kind" :class="kindOf(cams[it.cam]?.source).toLowerCase()">{{ kindOf(cams[it.cam]?.source) }}</span>
               {{ [cams[it.cam]?.place, srcHost(cams[it.cam]?.source)].filter(Boolean).join(' · ') }}</div></div>
+          <span v-if="fetchResult(it.cam)" class="pill" :class="fetchResult(it.cam).ok ? 'ok' : 'bad'" :title="fetchResult(it.cam).msg">{{ fetchResult(it.cam).ok ? 'fetched' : 'fetch failed' }}</span>
           <span v-if="downPill(healthFor(it.cam))" class="pill bad" :title="downPill(healthFor(it.cam)).title">{{ downPill(healthFor(it.cam)).text }}</span>
           <span v-else class="pill" :class="feedPill(feedFor(cams[it.cam])).cls">{{ feedPill(feedFor(cams[it.cam])).text }}</span>
           <Stepper :modelValue="it.sec || 60" @update:modelValue="v => it.sec = v" :min="5" :max="3600" :step="5" unit=" s" title="How long it shows"/>

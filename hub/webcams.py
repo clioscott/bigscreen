@@ -790,6 +790,71 @@ def _write_health(kind, url, up, why):
         print(f"[webcams] health not written: {e}", flush=True)
 
 
+# --- fetch every feed (the panel's "Fetch all feeds") ----------------------------------------------------------
+FETCH_GAP = 2.5              # seconds between webcams: one at a time, never a burst (YouTube bot checks)
+_fetch_all = {"running": False, "done": 0, "total": 0, "results": {}, "stopped": "", "started": 0.0, "finished": 0.0}
+_fetch_lock = threading.Lock()
+
+
+def fetch_all_status() -> dict:
+    with _fetch_lock:
+        return {**_fetch_all, "results": dict(_fetch_all["results"])}
+
+
+def start_fetch_all(cams: dict) -> dict:
+    """Fetch every webcam's feed now, one after another: a YouTube lookup (kept RESOLVE_TTL, so the wall then starts
+    it with no lookup) and a fresh thumbnail. Stops at a YouTube bot check rather than pushing on. In the background;
+    fetch_all_status() follows it."""
+    with _fetch_lock:
+        if _fetch_all["running"]:
+            return {**_fetch_all, "results": dict(_fetch_all["results"])}
+        todo = [(cid, cam.get("source")) for cid, cam in cams.items() if isinstance(cam, dict)]
+        _fetch_all.update(running=True, done=0, total=len(todo), results={}, stopped="", started=time.time(),
+                          finished=0.0)
+    threading.Thread(target=_fetch_all_run, args=(todo,), name="webcam-fetch-all", daemon=True).start()
+    return fetch_all_status()
+
+
+def _fetch_all_run(todo):
+    try:
+        for i, (cid, src) in enumerate(todo):
+            wait = _yt_block["until"] - time.time()
+            res = {"ok": False, "msg": ""}
+            try:
+                kind, url = check_source(src)
+                if kind == "youtube" and wait > 0:
+                    raise BotCheck(f"YouTube is limiting the hub (bot check); try again in {int(wait // 60) + 1} min")
+                if kind == "youtube":
+                    _, title = resolve(kind, url)
+                    res = {"ok": True, "msg": "ready" + (f": {title}"[:120] if "not live" in title else "")}
+                elif kind in STILLS:
+                    _, at = fetch_still(kind, url)
+                    res = {"ok": True, "msg": f"still from {int(max(0, time.time() - at) // 60)} min ago"}
+                else:
+                    res = {"ok": True, "msg": "ready"}
+                try:
+                    _grab(kind, url)                    # the list's thumbnail (YouTube: from i.ytimg.com)
+                except Exception:
+                    pass
+            except BotCheck as e:
+                with _fetch_lock:
+                    _fetch_all["results"][cid] = {"ok": False, "msg": str(e)[:200]}
+                    _fetch_all["done"] = i + 1
+                    _fetch_all["stopped"] = str(e)[:200]
+                return
+            except Exception as e:
+                res = {"ok": False, "msg": (str(e) or type(e).__name__)[:200]}
+            with _fetch_lock:
+                _fetch_all["results"][cid] = res
+                _fetch_all["done"] = i + 1
+            if i + 1 < len(todo):
+                time.sleep(FETCH_GAP)
+    finally:
+        with _fetch_lock:
+            _fetch_all["running"] = False
+            _fetch_all["finished"] = time.time()
+
+
 def _grab(kind, url):
     import tempfile
     if kind in STILLS:
