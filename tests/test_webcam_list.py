@@ -41,7 +41,7 @@ def test_playlist_keeps_order_and_skips_off_and_missing():
 
 def test_each_turn_plays_the_next_webcams_then_ends(monkeypatch):
     clock = [1000.0]
-    p, drawn = _panel({"cams": {"a": {}, "b": {}, "c": {}}, "per_turn": 2,
+    p, drawn = _panel({"cams": {"a": {}, "b": {}, "c": {}}, "per_turn": 2, "from_top": False,
                        "playlist": [{"cam": "a", "sec": 10}, {"cam": "b", "sec": 10}, {"cam": "c", "sec": 10}]},
                       monkeypatch, clock)
     c = Canvas(448, 130)
@@ -165,8 +165,8 @@ def test_both_halves_can_play_the_list_and_the_grid_at_once(monkeypatch):
 
 def test_another_pass_replays(monkeypatch):
     clock = [1000.0]
-    p, drawn = _panel({"cams": {"a": {}, "b": {}}, "playlist": [{"cam": "a", "sec": 10}, {"cam": "b", "sec": 10}]},
-                      monkeypatch, clock)
+    p, drawn = _panel({"cams": {"a": {}, "b": {}}, "from_top": False,
+                       "playlist": [{"cam": "a", "sec": 10}, {"cam": "b", "sec": 10}]}, monkeypatch, clock)
     c, z, e = Canvas(448, 130), (0, 0, 448, 130), {"panel": "webcam_full", "_play": 1}
     p.draw(c, z, e, True)
     clock[0] += 10
@@ -1118,3 +1118,30 @@ def test_the_starting_still_never_plays_as_a_video_frame(monkeypatch):
         _t.sleep(0.01)
     st.close()
     assert [int(f[0, 0, 0]) for f in st._q] == [1, 2, 3, 4, 5, 6]       # the placeholder (99) isn't in the video
+
+
+def test_each_turn_plays_the_whole_list_from_the_top(monkeypatch):
+    clock = [1000.0]
+    p, drawn = _panel({"cams": {k: {} for k in "abcd"}, "per_turn": "all",
+                       "playlist": [{"cam": k, "sec": 10} for k in "abcd"]}, monkeypatch, clock)
+    p.health = {"c": {"up": False, "why": "black", "since": 1, "checked": clock[0]}}
+    p._health = lambda now: p.health
+    c, z = Canvas(448, 130), (0, 0, 448, 130)
+    for play in (1, 2):                                                  # two turns of the list
+        entry = {"panel": "webcam_full", "_play": play}
+        results = [p.draw(c, z, entry, True)]
+        while results[-1] != "done":
+            clock[0] += 10
+            results.append(p.draw(c, z, entry, False))
+    assert drawn == ["a", "b", "d", "a", "b", "d"]                       # each turn: the top, every one that's up, once
+
+
+def test_whole_list_and_from_top_validate():
+    import pytest
+
+    from hub import config
+    base = {"system": {}, "layout": {}, "modules": {"webcams": {"cams": {}, "per_turn": "all", "from_top": True}}}
+    config.validate(base)
+    for bad in ({"per_turn": "some"}, {"per_turn": 0}, {"from_top": "yes"}):
+        with pytest.raises(config.ConfigError):
+            config.validate({**base, "modules": {"webcams": {"cams": {}, **bad}}})

@@ -8,7 +8,9 @@ On top goes a caption saying what the feed is and where it comes from, styled pe
 display/modules/webcam_caption.py for the sections and layouts.
 
 A rotation entry without a ``cam`` is the Webcams list (``modules.webcams.playlist``, set on the Webcams page): each
-turn plays the next ``per_turn`` webcams that are on, each for its own seconds, then ends ("done").
+turn plays ``per_turn`` webcams that are on, each for its own seconds, then ends ("done"). ``per_turn: "all"``: every
+webcam that's on and up, once. ``from_top`` (on): each turn starts at the top of the list; off: it carries on from
+where the last turn stopped.
 
 No "loading" between webcams: the hub starts the next one's feed PREROLL_SEC before it's due (the list's next webcam,
 or the rotation's next screen through warm) and the Pi opens its stream STREAM_AHEAD_SEC before, so its frames are
@@ -314,10 +316,14 @@ class WebcamPanel:
         self.cams = s.get("cams") or {}
         self.hub = s.get("hub_url") or DEFAULT_HUB
         self.playlist = playlist_of(s)
-        try:
-            self.per_turn = max(1, int(s.get("per_turn") or 1))
-        except (TypeError, ValueError):
-            self.per_turn = 1
+        if s.get("per_turn") == "all":
+            self.per_turn = None                              # the whole list
+        else:
+            try:
+                self.per_turn = max(1, int(s.get("per_turn") or 1))
+            except (TypeError, ValueError):
+                self.per_turn = 1
+        self.from_top = s.get("from_top", True) is not False
         self._turns: dict = {}                                # zone -> the list's turn there: {play, cam, t0, shown}
         self.grid = CameraGrid(self.hub, s.get("grid") or {})
         self.streams: dict = {}
@@ -362,8 +368,9 @@ class WebcamPanel:
         if not cid and self.playlist:                         # the Webcams list: the first few it will play
             first, taken = [], self._taken()
             n = len(self.playlist)
+            pos = -1 if self.from_top and not self._other_turns(None) else _list_pos["i"]
             for step in range(1, n + 1):
-                k = self.playlist[(_list_pos["i"] + step) % n][0]
+                k = self.playlist[(pos + step) % n][0]
                 if k not in taken and not self.is_down(k) and k not in first:
                     first.append(k)
                 if len(first) >= LOOKAHEAD:
@@ -433,6 +440,10 @@ class WebcamPanel:
         up = [cid for cid in order if not self.is_down(cid)]
         return next((cid for cid in up if cid not in avoid), up[0] if up else (order[0] if n else None))
 
+    def _other_turns(self, t):
+        """The other half of the wall's list turns that are playing."""
+        return [o for o in self._turns.values() if o is not t and o.get("cam")]
+
     def _taken(self, t=None):
         """The webcams the other turns (the other half of the wall) are showing or have lined up next."""
         return {x for other in self._turns.values() if other is not t for x in (other.get("cam"), other.get("next")) if x}
@@ -495,6 +506,10 @@ class WebcamPanel:
         if transition or t is None or t["play"] != entry.get("_play"):
             t = self._turns[where] = {"play": entry.get("_play"), "cam": None, "t0": now, "shown": 0, "failed": 0,
                                       "next": None}
+            if self.from_top and not self._other_turns(t):    # a new turn starts at the top (unless the other half
+                _list_pos["i"] = -1                           # of the wall is part-way through the list)
+            up = sum(1 for cid, _ in self.playlist if not self.is_down(cid, now))
+            t["limit"] = max(1, up) if self.per_turn is None else self.per_turn
         n = len(self.playlist)
         if t["cam"] is None:                                  # the turn's first webcam (prerolled by warm)
             if all(self.is_down(cid, now) for cid, _ in self.playlist):
@@ -502,7 +517,7 @@ class WebcamPanel:
                 return "skip" if now - t["t0"] > 4 else None
             self._switch(t, self._next_up(_list_pos["i"], self._taken(t)), now)
         due = t["t0"] + self._sec(t["cam"])
-        last = t["shown"] + 1 >= min(self.per_turn, n)        # nothing after this one in this turn
+        last = t["shown"] + 1 >= min(t.get("limit") or 1, n)  # nothing after this one in this turn
         if last and now >= due:
             self._turns.pop(where, None)                      # another pass of the same play starts afresh
             return "done"

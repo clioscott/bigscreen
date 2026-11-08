@@ -390,8 +390,10 @@ def _validate_webcams(wc):
             if v is not None and (not isinstance(v, (int, float)) or isinstance(v, bool) or not lo <= v <= hi):
                 raise ConfigError(f"webcams.grid.{key} must be {lo}-{hi}")
     per = wc.get("per_turn", 1)
-    if not isinstance(per, int) or isinstance(per, bool) or not 1 <= per <= 50:
-        raise ConfigError("webcams.per_turn must be 1-50")
+    if per != "all" and (not isinstance(per, int) or isinstance(per, bool) or not 1 <= per <= 50):
+        raise ConfigError('webcams.per_turn must be 1-50 or "all"')
+    if not isinstance(wc.get("from_top", True), bool):
+        raise ConfigError("webcams.from_top must be true or false")
     for cid, cam in cams.items():
         if not re.fullmatch(r"[A-Za-z0-9_-]+", cid):
             raise ConfigError(f"webcam id {cid!r}: letters, digits, _ and - only")
