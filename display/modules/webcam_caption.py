@@ -70,7 +70,7 @@ DEFAULT_OVERLAY = {"style": "tag", "corner": "bl", "when": "always", "font": "sm
                    "text": "#ffffff", "bg": "#000000", "opacity": 0.7, "time_format": "24h", "fade": True,
                    "show_sec": 12, "every_min": 3, "custom_text": "", "headline": "name", "lines": "auto",
                    "separator": "space", "uppercase": False, "order": list(ORDER), "jp_font": "auto",
-                   "jp_face": "auto", "wx_beside": False, "wx_beside_box": False, "temp_icon": False,
+                   "jp_face": "auto", "place_beside": False, "wx_beside": False, "wx_beside_box": False, "temp_icon": False,
                    "jp_caption": {"on": False, "text": "", "face": "k8x12", "size": 12, "corner": "auto"},
                    "show": {"name": True, "place": True, "time": True, "date": False, "offset": False,
                             "daynight": False, "weather": True, "sun": False, "age": False, "live": True,
@@ -1045,7 +1045,7 @@ def has_cjk(ct) -> bool:
 
 
 # --- layouts ------------------------------------------------------------------------------------------------------
-def _headline_and_lines(k, ct, room, T=None):
+def _headline_and_lines(k, ct, room, T=None, with_place=True):
     """(headline text, [(kind, text)] detail lines), honouring lines=inline (details on the headline row)."""
     T = T or k.T
     if k.lines == "inline":                                # whole sections drop before anything is cut
@@ -1058,7 +1058,7 @@ def _headline_and_lines(k, ct, room, T=None):
             return (title + sp + rest) if rest else title, []
         _note_dropped(bits, set())
         return title, []
-    return _clip(T, ct.title, room), k.details(ct, room)
+    return _clip(T, ct.title, room), k.details(ct, room, with_place=with_place)
 
 
 def _l_tag(k, ct, outline=False):
@@ -1068,11 +1068,18 @@ def _l_tag(k, ct, outline=False):
     bw = _tw(S, "LIVE") + 4 if ct.live else 0
     room = k.sized(10 ** 4) - 2 * pad - edge - 5
     k.title_multi = k.lines != "inline"                    # the name's further lines: headline lines here
-    title, lines = _headline_and_lines(k, ct, room - (bw + 3 if bw else 0))
+    # the place beside the headline (place_beside): in the details font on the headline's baseline, when it fits whole
+    beside = ""
+    if k.ov.get("place_beside") and k.lines != "inline" and ct.place and ct.headline_kind != "place" and ct.title:
+        sp = _sep(S, k.sep)
+        need = (bw + 3 if bw else 0) + _tw(T, ct.title) + _tw(S, sp + ct.place)
+        if need <= room:
+            beside = sp + ct.place
+    title, lines = _headline_and_lines(k, ct, room - (bw + 3 if bw else 0), with_place=not beside)
     more = [_clip(T, s, room) for s in ct.name_more] if title and k.title_multi else []
     if not (title or lines or bw):
         return
-    head_w = (bw + 3 if bw and title else bw) + (_tw(T, title) if title else 0)
+    head_w = (bw + 3 if bw and title else bw) + (_tw(T, title) if title else 0) + (_tw(S, beside) if beside else 0)
     more_ws = [_tw(T, s) for s in more]
     line_ws = [_tw(S, ln) + _icon_w(ct, kd, ln) for kd, ln in lines]
     box_w = k.sized(pad * 2 + max([head_w] + more_ws + line_ws) + edge)
@@ -1091,6 +1098,8 @@ def _l_tag(k, ct, outline=False):
         cx += bw + 3
     if title:
         put(c, T, cx, ty + T.baseline, k.text, title)
+        if beside:                                          # its own (details) font, on the headline's baseline
+            put(c, S, cx + _tw(T, title), ty + T.baseline, k.text, beside)
     ty += head_h + 1
     for s, mw in zip(more, more_ws):
         put(c, T, k.line_x(x0, inner, mw), ty + T.baseline, k.text, s)
