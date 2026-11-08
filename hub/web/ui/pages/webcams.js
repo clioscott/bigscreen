@@ -1232,7 +1232,8 @@ const WebcamEditor = {
             <div v-if="probe" class="callout" :class="probe.ok ? 'ok' : 'bad'" style="font-size:12.5px">
               <Icon :name="probe.ok ? 'CircleCheck' : 'CircleX'" :size="14"/> {{ probe.ok ? (probe.title ? 'Found: ' + probe.title : 'The hub can open it') : probe.error }}</div>
             <div class="fields">
-              <Field label="Name"><input class="input" v-model="cam.label"></Field>
+              <Field label="Name" hint="Each line shows on its own line in the caption"><textarea class="input" rows="2" v-model="cam.label"
+                style="resize:vertical; min-height:58px; padding-top:6px; line-height:1.35"></textarea></Field>
               <Field label="Place" hint="Shown under the name"><input class="input" v-model="cam.place" placeholder="Tokyo, Japan"></Field>
               <Field label="Credit" hint="Who runs the camera"><input class="input" v-model="cam.credit" placeholder="FNN"></Field>
               <Field label="Time zone" hint="For the caption's local time"><input class="input" v-model.trim="cam.tz" list="wc-tz" placeholder="Asia/Tokyo">

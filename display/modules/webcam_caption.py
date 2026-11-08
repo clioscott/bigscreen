@@ -397,7 +397,10 @@ class Content:
         self.tz = t.tzinfo
         twelve = ov.get("time_format") == "12h"
         sec = {}
-        sec["name"] = (cam.get("label") or "") if sh.get("name") else ""
+        # the name may have several lines (the panel's Name box): the first is the headline, the rest go under it
+        name_lines = [s.strip() for s in str(cam.get("label") or "").splitlines() if s.strip()] if sh.get("name") else []
+        sec["name"] = name_lines[0] if name_lines else ""
+        self.name_more = name_lines[1:]
         sec["place"] = (cam.get("place") or "") if sh.get("place") else ""
         sec["credit"] = (cam.get("credit") or "") if sh.get("credit") else ""
         sec["custom"] = (ov.get("custom_text") or "").strip() if sh.get("custom") else ""
@@ -437,6 +440,10 @@ class Content:
         head = ov.get("headline", "name")
         if head not in ("name", "place", "custom", "time") or not sec.get(head):
             head = "name" if sec["name"] else ("place" if sec["place"] else "name")
+        if head != "name" or ov.get("style") == "custom":   # the name as one detail (or one custom slot): one line
+            sec["name"] = " ".join(name_lines)
+            self.name_more = []
+        self.name_more = [up(s) for s in self.name_more]
         self.headline_kind = head
         self.title = up(sec[head] + (" " + self.ampm if head == "time" and self.ampm else ""))
         order = [k for k in (ov.get("order") or []) if k in ORDER] + [k for k in ORDER if k not in (ov.get("order") or [])]
@@ -481,8 +488,8 @@ class Content:
         return self.time + (" " + self.ampm if self.ampm else "")
 
     def bits(self, with_time=True, with_place=True):
-        """The detail sections, in the chosen order (not the headline)."""
-        out = []
+        """The detail sections, in the chosen order (not the headline); the name's further lines first ("name2")."""
+        out = [("name2", s) for s in self.name_more]
         for k in self.order:
             if (k == "time" and not with_time) or (k == "place" and not with_place):
                 continue
@@ -614,8 +621,11 @@ class Ctx:
     def details(self, ct, width, with_time=True, with_place=True, max_lines=None):
         """[(first kind, text)] detail lines for this caption's line mode (stacked: up to 4, fit: up to FIT_LINES)."""
         n = max_lines or (4 if self.lines == "stacked" else FIT_LINES)
-        return detail_lines(self.S, ct.bits(with_time, with_place), width, self.lines, self.sep, max_lines=n,
-                            icon_kind="weather" if ct.icon else None)
+        bits = ct.bits(with_time, with_place)
+        more = [] if getattr(self, "title_multi", False) else [(kd, _clip(self.S, v, width)) for kd, v in bits if kd == "name2"]
+        rest = [b for b in bits if b[0] != "name2"]
+        return more + detail_lines(self.S, rest, width, self.lines, self.sep, max_lines=max(1, n - len(more)),
+                                   icon_kind="weather" if ct.icon else None)
 
     def text_with_icon(self, f, x, y_top, ct, kind, text, color=None, put=None):
         """Draw a detail line; the weather icon goes in front of the weather, wherever it is in the line."""
@@ -953,7 +963,7 @@ def jp_sized(f, height, face="auto"):
 
 def has_cjk(ct) -> bool:
     """Whether the caption has any Japanese (or other CJK) text in it."""
-    return any(ord(ch) >= 0x2E80 for s in (ct.title, *ct.sections.values()) for ch in (s or ""))
+    return any(ord(ch) >= 0x2E80 for s in (ct.title, *ct.sections.values(), *ct.name_more) for ch in (s or ""))
 
 
 # --- layouts ------------------------------------------------------------------------------------------------------
@@ -979,15 +989,18 @@ def _l_tag(k, ct, outline=False):
     edge = 0 if outline else 1                             # the accent stripe
     bw = _tw(S, "LIVE") + 4 if ct.live else 0
     room = k.sized(10 ** 4) - 2 * pad - edge - 5
+    k.title_multi = k.lines != "inline"                    # the name's further lines: headline lines here
     title, lines = _headline_and_lines(k, ct, room - (bw + 3 if bw else 0))
+    more = [_clip(T, s, room) for s in ct.name_more] if title and k.title_multi else []
     if not (title or lines or bw):
         return
     head_w = (bw + 3 if bw and title else bw) + (_tw(T, title) if title else 0)
+    more_ws = [_tw(T, s) for s in more]
     line_ws = [_tw(S, ln) + _icon_w(ct, kd, ln) for kd, ln in lines]
-    box_w = k.sized(pad * 2 + max([head_w] + line_ws) + edge)
+    box_w = k.sized(pad * 2 + max([head_w] + more_ws + line_ws) + edge)
     inner = box_w - 2 * pad - edge
     head_h = max(T.height if title else 0, S.height + 1 if bw else 0)
-    box_h = pad * 2 + head_h + sum(S.height + 1 for _ in lines)
+    box_h = pad * 2 + head_h + sum(T.height + 1 for _ in more) + sum(S.height + 1 for _ in lines)
     bx, by = k.place(box_w, box_h)
     put = _outlined if outline else graphics.DrawText
     if not outline:
@@ -1001,6 +1014,9 @@ def _l_tag(k, ct, outline=False):
     if title:
         put(c, T, cx, ty + T.baseline, k.text, title)
     ty += head_h + 1
+    for s, mw in zip(more, more_ws):
+        put(c, T, k.line_x(x0, inner, mw), ty + T.baseline, k.text, s)
+        ty += T.height + 1
     for (kd, ln), lw in zip(lines, line_ws):
         k.text_with_icon(S, k.line_x(x0, inner, lw), ty, ct, kd, ln, put=put)
         ty += S.height + 1

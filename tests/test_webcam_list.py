@@ -742,3 +742,20 @@ def test_a_chosen_japanese_font_and_its_sizes():
     cap._memo.clear(), cap._layers.clear()
     b = wm.render_preview({**cam, "overlay": {"jp_face": "shnm_maru"}}, frame, (448, 130), elapsed=3)   # (Fusion 8 is Misaki)
     assert not (a == b).all()
+
+
+def test_a_name_on_several_lines():
+    from display.modules import webcam_caption as cap
+    cam = {"label": "Kabukicho Ichibangai\n 歌舞伎町一番街 \n\n", "place": "Tokyo"}
+    ct = cap.Content(cam, cap.overlay_of({}))
+    assert ct.title == "Kabukicho Ichibangai" and ct.name_more == ["歌舞伎町一番街"] and cap.has_cjk(ct)
+    assert ct.bits()[0] == ("name2", "歌舞伎町一番街")
+    one = cap.Content(cam, cap.overlay_of({"overlay": {"headline": "place"}}))          # the name as a detail
+    assert one.name_more == [] and one.sections["name"] == "Kabukicho Ichibangai 歌舞伎町一番街"
+    frame = np.zeros((130, 448, 3), np.uint8)
+    rows = lambda img: np.flatnonzero(img.max(axis=(1, 2)) > 0)
+    cap._memo.clear(), cap._layers.clear()
+    two = wm.render_preview(cam, frame, (448, 130), elapsed=3)
+    cap._memo.clear(), cap._layers.clear()
+    single = wm.render_preview({**cam, "label": "Kabukicho Ichibangai"}, frame, (448, 130), elapsed=3)
+    assert len(rows(two)) > len(rows(single))                            # the box grew by the second line

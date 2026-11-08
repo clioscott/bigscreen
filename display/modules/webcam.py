@@ -470,7 +470,7 @@ class WebcamPanel:
             c.Blit(st.frame, x, y)
         else:
             c.FillRect(x, y, w, h, Color(0, 0, 0))
-            label = cam.get("label") or entry.get("cam")
+            label = " ".join(str(cam.get("label") or entry.get("cam")).split())      # (a name may have lines)
             self._centre(c, zone, f"Tuning in to {label}" + "." * (1 + int(now * 2) % 3), self.dim)
             if st.error:
                 self._centre(c, (x, y + 12, w, h), st.error[: max(8, w // 5)], Color(120, 60, 60))
