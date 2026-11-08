@@ -1065,7 +1065,12 @@ const WebcamEditor = {
           const r = await localOf(c.lat, c.lon);
           if (cam.value !== c) return;
           local.value = r;
-          if (!c.tz && r.tz) c.tz = r.tz;
+          if (!c.tz && r.tz) {
+            c.tz = r.tz;
+            // only opened, not edited (same location as saved): fill the saved copy too, so it isn't an unsaved change
+            const sc = store.saved?.modules?.webcams?.cams?.[id.value];
+            if (sc && !sc.tz && sc.lat === c.lat && sc.lon === c.lon) sc.tz = r.tz;
+          }
         } catch {}
       }, 600);
     }, { immediate: true });

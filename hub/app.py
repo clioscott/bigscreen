@@ -77,10 +77,12 @@ def put_config(payload: dict = Body(...)):
     for job, section in (("finance", "finance"), ("news", "headlines"), ("calendar", "calendar"),
                          ("weather", "weather"), ("naad", "naad_alerts"), ("drivebc", "road_alerts"),
                          ("quakes", "bc_quakes"), ("tsunami", "tsunami"), ("wildfire", "wildfire"),
-                         ("election", "us_election"), ("webcam_weather", "webcams"), ("webcam_health", "webcams"),
-                         ("shield_signs", "webcams")):
+                         ("election", "us_election"), ("webcam_weather", "webcams"), ("shield_signs", "webcams")):
         if before["modules"].get(section) != saved["modules"].get(section):
             _sched().run_now(job)
+    sources = lambda c: {k: (v or {}).get("source") for k, v in (((c["modules"].get("webcams") or {}).get("cams")) or {}).items()}
+    if sources(before) != sources(saved):           # a webcam added, removed or pointed elsewhere: check them now
+        _sched().run_now("webcam_health")
     sync.push_data()          # config.json rides along; the v2 display hot-reloads it
     return {"config": saved, "display_in_sync": pi.display_in_sync(saved)[0]}
 

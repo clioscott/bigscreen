@@ -16,7 +16,7 @@ def _panel(webcams, monkeypatch, clock):
     monkeypatch.setitem(wm._list_pos, "i", -1)
     p = wm.WebcamPanel(_Cfg(webcams))
     drawn = []
-    p._draw_cam = lambda c, zone, entry, transition: drawn.append(entry["cam"])
+    p._draw_cam = lambda c, zone, entry, transition, **kw: drawn.append(entry["cam"])
     p._preroll = lambda cid, shape, zone: _Ready()                     # the next webcam's stream: has a picture
     p._warm_hub = lambda cid: None
     return p, drawn
@@ -472,7 +472,8 @@ def test_every_view_shows_before_its_tile_is_taken_over_and_the_last_screen_fini
 
 
 class _Slow(_Ready):
-    """A prerolled stream whose picture hasn't come yet."""
+    """A prerolled stream that isn't ready yet (frames, but late)."""
+    frame = np.zeros((1, 1, 3), np.uint8)
 
     def __init__(self):
         self.has = False
@@ -508,7 +509,10 @@ def test_the_next_webcam_comes_up_after_a_while_even_without_a_picture(monkeypat
     p._preroll = lambda cid, shape, zone: _Slow()
     c, z, entry = Canvas(448, 130), (0, 0, 448, 130), {"panel": "webcam_full", "_play": 1}
     p.draw(c, z, entry, True)
-    clock[0] += 20 + wm.HOLD_MAX_SEC
+    clock[0] += 20
+    p.draw(c, z, entry, False)                                          # due: b has frames but isn't ready
+    assert drawn[-1] == "a"
+    clock[0] += wm.HOLD_MAX_SEC
     p.draw(c, z, entry, False)
     assert drawn[-1] == "b"
 
@@ -567,7 +571,7 @@ def test_health_job_remembers_since_when_a_webcam_is_down(monkeypatch):
     assert back["b"] == {"up": True, "why": "", "since": 700.0, "checked": 700.0}
 
     from hub import webcams
-    monkeypatch.setattr(webcams, "grab_frame", lambda kind, url: np.zeros((20, 20, 3), np.uint8))
+    monkeypatch.setattr(webcams, "grab_frame", lambda kind, url, timeout=None: np.zeros((20, 20, 3), np.uint8))
     assert job.check({"source": {"type": "youtube", "url": "https://youtu.be/x"}}) == (False, "black")
     assert job.check({"source": {"type": "nope"}})[0] is False
 
@@ -579,3 +583,64 @@ def test_caption_time_follows_the_location_when_the_webcam_has_no_zone():
     ct = Content({"label": "A"}, DEFAULT_OVERLAY, wx={"temp": 3, "code": 0, "tz": "Asia/Tokyo", "at": time.time()})
     assert str(ct.tz) == "Asia/Tokyo" and ct.sections["weather"] == "3°C" and ct.icon == "sun"
     assert DEFAULT_OVERLAY["corner"] == "bl" and DEFAULT_OVERLAY["separator"] == "space"
+
+
+def test_a_turn_still_ends_when_only_the_webcam_on_screen_is_up(monkeypatch):
+    clock = [1000.0]
+    p, drawn = _panel({"cams": {k: {} for k in "abc"}, "per_turn": 3,
+                       "playlist": [{"cam": k, "sec": 10} for k in "abc"]}, monkeypatch, clock)
+    p.health = {"b": {"up": False}, "c": {"up": False}}
+    p._health = lambda now: p.health
+    c, z, entry = Canvas(448, 130), (0, 0, 448, 130), {"panel": "webcam_full", "_play": 1}
+    results = [p.draw(c, z, entry, True)]
+    for _ in range(4):
+        clock[0] += 10
+        results.append(p.draw(c, z, entry, False))
+    assert "done" in results and set(drawn) == {"a"}                    # a's three slots, then the rotation moves on
+
+
+def test_the_two_halves_never_line_up_the_same_webcam(monkeypatch):
+    clock = [1000.0]
+    p, drawn = _panel({"cams": {k: {} for k in "abcd"}, "per_turn": 4,
+                       "playlist": [{"cam": k, "sec": 10} for k in "abcd"]}, monkeypatch, clock)
+    left, right = (0, 45, 295, 130), (296, 45, 152, 130)
+    c, entry = Canvas(448, 192), {"panel": "webcam", "_play": 1}
+    p.draw(c, left, entry, True)
+    p.draw(c, right, entry, True)
+    for _ in range(4):
+        (l, r) = p._turns[left], p._turns[right]
+        assert l["cam"] != r["cam"]                                     # never both on one webcam
+        assert l["next"] is None or l["next"] != r["cam"]               # nor lining up what the other shows
+        assert r["next"] is None or r["next"] not in (l["cam"], l["next"])
+        clock[0] += 10
+        p.draw(c, left, entry, False)
+        p.draw(c, right, entry, False)
+
+
+def test_a_next_webcam_that_never_sends_a_picture_is_passed_over(monkeypatch):
+    clock = [1000.0]
+    p, drawn = _panel({"cams": {k: {} for k in "abc"}, "per_turn": 3,
+                       "playlist": [{"cam": k, "sec": 10} for k in "abc"]}, monkeypatch, clock)
+
+    class Dead(_Slow):
+        frame = None
+    p._preroll = lambda cid, shape, zone: Dead() if cid == "b" else _Ready()
+    c, z, entry = Canvas(448, 130), (0, 0, 448, 130), {"panel": "webcam_full", "_play": 1}
+    p.draw(c, z, entry, True)
+    clock[0] += 10
+    p.draw(c, z, entry, False)                                          # b is due but has nothing: a stays
+    clock[0] += wm.HOLD_MAX_SEC
+    p.draw(c, z, entry, False)                                          # b passed over, still on a
+    p.draw(c, z, entry, False)                                          # c has a picture: on to it
+    assert drawn[-1] == "c" and "b" not in drawn and p.is_down("b")
+
+
+def test_health_job_writes_what_it_checked_in_time(monkeypatch):
+    import time as _t
+
+    from hub.jobs import webcam_health as job
+    monkeypatch.setattr(job, "check", lambda cam: (_t.sleep(cam["s"]), (True, ""))[1])
+    got = job.check_all({"fast": {"s": 0}, "slow": {"s": 5}}, budget=0.5)
+    assert got == {"fast": (True, "")}
+    kept = job.update({"slow": {"up": False, "since": 1}, "gone": {"up": True}}, got, 10.0, keep={"fast", "slow"})
+    assert kept["slow"] == {"up": False, "since": 1} and "gone" not in kept and kept["fast"]["up"]

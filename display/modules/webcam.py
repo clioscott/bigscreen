@@ -59,9 +59,10 @@ _list_pos = {"i": -1}        # where the Webcams list is (survives config reload
 
 
 def is_black(frame) -> bool:
-    """An all-black (or nearly) picture: a feed that's down but still sending. As hub/webcams.py is_black."""
+    """A black picture: a feed that's down but still sending. As hub/webcams.py is_black (strict: a dark night scene,
+    even a cropped one of sky or water, has some pixels above the level)."""
     sub = frame[::4, ::4]
-    return float((sub.max(axis=-1) > 40).mean()) < 0.004
+    return float((sub.max(axis=-1) > 24).mean()) < 0.001
 
 
 def playlist_of(s: dict) -> list:
@@ -265,7 +266,7 @@ class WebcamPanel:
             return self.grid.warm(zone)
         cid = (entry or {}).get("cam")
         if not cid and self.playlist:                         # the Webcams list: the one it plays next
-            cid = self._next_up(_list_pos["i"])
+            cid = self._next_up(_list_pos["i"], self._taken())
         if soon and zone is not None and cid in self.cams:
             self._preroll(cid, self.shape_for(entry, zone), zone)
         else:
@@ -309,14 +310,18 @@ class WebcamPanel:
         self._bad[cid] = time.time() + BAD_SEC
         print(f"[webcam] {cid} is down{': ' + why if why else ''}; skipping it for {int(BAD_SEC // 60)} min")
 
-    def _next_up(self, after):
-        """The list's next webcam after position ``after`` that isn't down (the next one at all when every one is)."""
+    def _next_up(self, after, avoid=()):
+        """The list's next webcam after position ``after`` that isn't down and isn't in ``avoid`` (what the other half of
+        the wall is showing or about to); the next one that isn't down when every other is taken; the next one at all
+        when every one is down."""
         n = len(self.playlist)
-        for step in range(1, n + 1):
-            cid = self.playlist[(after + step) % n][0]
-            if not self.is_down(cid):
-                return cid
-        return self.playlist[(after + 1) % n][0] if n else None
+        order = [self.playlist[(after + step) % n][0] for step in range(1, n + 1)]
+        up = [cid for cid in order if not self.is_down(cid)]
+        return next((cid for cid in up if cid not in avoid), up[0] if up else (order[0] if n else None))
+
+    def _taken(self, t=None):
+        """The webcams the other turns (the other half of the wall) are showing or have lined up next."""
+        return {x for other in self._turns.values() if other is not t for x in (other.get("cam"), other.get("next")) if x}
 
     def _health(self, now):
         """data/webcam_health.json (hub/jobs/webcam_health.py), re-read when it changes (checked every 5 s)."""
@@ -381,7 +386,7 @@ class WebcamPanel:
             if all(self.is_down(cid, now) for cid, _ in self.playlist):
                 self._centre(c, zone, "Every webcam is down", self.dim)
                 return "skip" if now - t["t0"] > 4 else None
-            self._switch(t, self._next_up(_list_pos["i"]), now)
+            self._switch(t, self._next_up(_list_pos["i"], self._taken(t)), now)
         due = t["t0"] + self._sec(t["cam"])
         last = t["shown"] + 1 >= min(self.per_turn, n)        # nothing after this one in this turn
         if last and now >= due:
@@ -389,21 +394,32 @@ class WebcamPanel:
             return "done"
         if not last and now >= due - PREROLL_SEC:
             nxt = self._lookahead(t, shape, zone, now, due)
-            if nxt is None and now >= due:                    # nothing else is up: this one carries on
-                t["t0"] = now
+            if nxt is None and now >= due:                    # nothing else is up: this one carries on (a slot all
+                t["shown"] += 1                               # the same, so the turn still ends)
+                t["t0"], t["wait0"] = now, None
             elif nxt is not None and now >= due:
                 st = self._preroll(nxt, shape, zone)
-                if st is not None and (st.ready() or now - due >= HOLD_MAX_SEC):
+                if not t.get("wait0"):
+                    t["wait0"] = now                          # when this one became due to come up
+                wait0 = t["wait0"]
+                if st is not None and st.ready():
                     t["shown"] += 1
                     self._switch(t, nxt, now)
+                elif now - wait0 >= HOLD_MAX_SEC:
+                    if st is not None and st.frame is not None:   # a picture, just late: cut to it
+                        t["shown"] += 1
+                        self._switch(t, nxt, now)
+                    else:                                     # no picture at all: pass it over, the current one stays
+                        self._mark_bad(nxt, (st.error if st is not None else "") or "no picture")
+                        t["next"], t["wait0"] = None, now
         new, t["new"] = t.get("new", False), False
-        r = self._draw_cam(c, zone, {**entry, "cam": t["cam"]}, new)
+        r = self._draw_cam(c, zone, {**entry, "cam": t["cam"]}, new, black_skips=True)
         if r == "skip":                                       # this one won't come up: on to the next, uncounted
             t["failed"] += 1
             if t["failed"] >= n:
                 self._turns.pop(where, None)
                 return "skip"
-            self._switch(t, self._next_up(_list_pos["i"]), now)
+            self._switch(t, self._next_up(_list_pos["i"], self._taken(t)), now)
         return None
 
     def _lookahead(self, t, shape, zone, now, due):
@@ -411,8 +427,8 @@ class WebcamPanel:
         here open from STREAM_AHEAD_SEC. One found down by then is passed over for the one after it, never shown."""
         for _ in range(len(self.playlist)):
             cid = t.get("next")
-            if cid is None or self.is_down(cid, now):
-                cid = t["next"] = self._next_up(_list_pos["i"])
+            if cid is None or self.is_down(cid, now) or cid in self._taken(t):   # (the other half may have taken it)
+                cid = t["next"] = self._next_up(_list_pos["i"], self._taken(t) | {t["cam"]})
             if cid is None or cid == t["cam"]:
                 return None                                   # the only one up is on screen now
             if now < due - STREAM_AHEAD_SEC:
@@ -429,12 +445,13 @@ class WebcamPanel:
         """Put ``cid`` on screen in this turn (the list carries on after it next time)."""
         _list_pos["i"] = next((i for i, (k, _) in enumerate(self.playlist) if k == cid), _list_pos["i"] + 1) \
             % len(self.playlist)
-        t["cam"], t["t0"], t["new"], t["next"] = cid, now, True, None
+        t["cam"], t["t0"], t["new"], t["next"], t["wait0"] = cid, now, True, None, None
 
     def _sec(self, cid):
         return next((sec for k, sec in self.playlist if k == cid), 60.0)
 
-    def _draw_cam(self, c, zone, entry, transition):
+    def _draw_cam(self, c, zone, entry, transition, black_skips=False):
+        """One webcam. black_skips (the list): a picture gone black ends it; a webcam played on its own stays."""
         x, y, w, h = zone
         now = time.time()
         key = (entry.get("panel"), entry.get("cam"))
@@ -446,7 +463,7 @@ class WebcamPanel:
             self._centre(c, zone, f"No webcam '{entry.get('cam')}'", self.dim)
             return "skip" if now - started > 4 else None
         st = self._stream(cam, self.shape_for(entry, zone), w, h)
-        if st.black_since is not None and now - st.black_since >= BLACK_SEC:
+        if black_skips and st.black_since is not None and now - st.black_since >= BLACK_SEC:
             self._mark_bad(entry.get("cam"), "black")         # down but still sending: on to the next screen
             return "skip"
         if st.frame is not None and now - st.frame_t < 10:
