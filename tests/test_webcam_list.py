@@ -931,3 +931,52 @@ def test_the_hub_sends_every_frame_in_order(monkeypatch):
     assert got == [20]                                                  # it starts at the newest
     f2 = asyncio.run(read(1))
     assert f.after(15) == (16, 16) and f.after(20) is None and f.after(-500) == (1, 1)
+
+
+def test_a_burst_after_a_stall_is_played_not_skipped():
+    import collections
+    st = wm.Stream.__new__(wm.Stream)
+    st.fps, st.video, st.frame = 30, True, None
+    st._q = collections.deque(maxlen=int(30 * wm.PLAY_MAX_SEC) + 4)
+    st._play_t0, st._play_k, st._play_pos, st._play_last, st._shown = None, 0, 0.0, 0.0, None
+    frames = [np.full((1, 1, 3), i % 256, np.uint8) for i in range(30 * 60)]
+    fed, shown, last, t = 0, 0, None, 0.0
+    while t < 50.0:
+        # real time, except a 4 s stall at 20 s, then everything that was held comes at once
+        upto = int(t * 30) if not 20.0 <= t < 24.0 else 20 * 30
+        while fed < min(upto, len(frames)):
+            st._q.append(frames[fed]); fed += 1
+        fr = st.current(t)
+        if fr is not None and fr is not last:
+            shown += 1
+            last = fr
+        t += 0.02
+    assert fed - shown - len(st._q) == 0                                # nothing thrown away
+    assert st._play_t0 is not None                                      # and it never ran dry (6 s of buffer)
+
+
+def test_the_walls_stream_gets_frames_as_they_are_decoded():
+    import asyncio
+    import collections
+    import threading
+
+    from hub import app as hub_app
+    from hub import webcams
+    f = webcams.Feed.__new__(webcams.Feed)
+    f.kind, f.url, f.fps, f.seq, f.state, f.frame = "youtube", "u", 30, 0, "live", "paced"
+    f._lock = threading.Lock()
+    f._cond = threading.Condition(f._lock)
+    f._waiters = set()
+    f.decoded = collections.deque(maxlen=200)
+    f.viewers, f.last_view = 0, 0.0
+    f.dseq = 0
+    for i in range(1, 11):                                              # 10 decoded, none paced out yet
+        f.dseq = i
+        f.decoded.append((i, i))
+
+    async def read(n):
+        gen = hub_app._webcam_frames(f, lambda frame, feed: frame, fps=30, direct=True)
+        out = [await gen.__anext__() for _ in range(n)]
+        await gen.aclose()
+        return out
+    assert asyncio.run(read(10)) == list(range(1, 11))                  # all of them, in order, from the oldest kept

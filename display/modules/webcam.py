@@ -43,8 +43,10 @@ from display.modules.webcam_caption import (DEFAULT_OVERLAY, FONTS, INTRO_SEC, L
 
 DEFAULT_HUB = "http://192.168.1.111:8800"
 IDLE_SEC = 3.0               # hang up when the screen hasn't drawn this webcam for this long
-PLAY_BUFFER_SEC = 1.0        # video is held this long here, then played at its own rate by this clock: the hub's
-                             # and the network's unevenness never shows (a few seconds behind live: nobody minds)
+PLAY_START_SEC = 1.0         # video starts playing once this much is buffered here …
+PLAY_BUFFER_SEC = 6.0        # … and settles at this depth, played at its own rate by this clock: the hub's (a busy
+                             # server's) and the network's unevenness never shows (seconds behind live: nobody minds)
+PLAY_MAX_SEC = 15.0          # kept at most (only a far worse stall than seen drops anything)
 WARM_EVERY = 10.0            # while a webcam is next in the rotation, ask the hub to keep its feed going this often
 GIVE_UP_SEC = 25.0           # no picture this long after the play started: skip to the next screen
 PREROLL_SEC = 15.0           # the hub starts the next webcam's feed this long before it's due (~5-10 s from cold)
@@ -124,7 +126,7 @@ class Stream:
         self.started = time.time()
         self.fps = max(1, int(query.get("fps") or 15))
         self.video = query.get("type") not in ("drivebc", "image")   # stills: just the newest
-        self._q = collections.deque(maxlen=int(self.fps * PLAY_BUFFER_SEC * 4) + 4)   # frames waiting to be shown
+        self._q = collections.deque(maxlen=int(self.fps * PLAY_MAX_SEC) + 4)   # frames waiting to be shown
         self._play_t0 = None                   # playback clock: when frame _play_k was due (None: buffering)
         self._play_k, self._play_pos, self._play_last = 0, 0.0, 0.0
         self._shown = None
@@ -141,25 +143,26 @@ class Stream:
         self.last_use = max(self.last_use, time.time() + hold)
 
     def current(self, now=None):
-        """The frame to show now. Video plays from the buffer by this clock: it starts once PLAY_BUFFER_SEC of
-        frames are in (until then the first one shows), at the feed's rate nudged by how full the buffer is (a
-        little slower when it runs low, a little faster when it's over: it settles instead of running dry when the
-        hub falls behind); if it does run dry, the picture holds while it fills again. Stills: the newest."""
+        """The frame to show now. Video plays from the buffer by this clock, never skipping: it starts once
+        PLAY_START_SEC of frames are in (until then the first one shows) and settles at PLAY_BUFFER_SEC by playing up
+        to 10 % slower while it's under that and up to 10 % faster while it's over (a burst after a stall drains
+        smoothly, it isn't thrown away). If it runs dry, the picture holds while it fills again. Stills: the newest."""
         if not self.video:
             return self.frame
         now = time.time() if now is None else now
-        q, need = self._q, max(1, int(self.fps * PLAY_BUFFER_SEC))
+        q = self._q
+        start, target = max(1, int(self.fps * PLAY_START_SEC)), max(1, int(self.fps * PLAY_BUFFER_SEC))
         if self._shown is None and q:
             self._shown = q[0]                                 # a picture at once (the hub's still, or the first)
         if self._play_t0 is None:
-            if len(q) < need:
+            if len(q) < start:
                 return self._shown if self._shown is not None else self.frame
-            while len(q) > need:                               # start a buffer's length behind the newest
+            while len(q) > target:                             # a prerolled backlog: start at the buffer's depth
                 q.popleft()
             self._play_t0, self._play_k, self._play_pos, self._play_last = now, 0, 0.0, now
         dt = min(0.25, max(0.0, now - self._play_last))
         self._play_last = now
-        rate = min(1.05, max(0.8, len(q) / need))              # the buffer's fill steers the speed, gently
+        rate = min(1.1, max(0.9, 1.0 + 0.5 * (len(q) / target - 1.0)))   # steer towards the target depth, gently
         self._play_pos += dt * self.fps * rate
         due = int(self._play_pos)
         while self._play_k < due and q:
@@ -167,9 +170,6 @@ class Stream:
             self._play_k += 1
         if self._play_k < due:                                 # ran dry: hold the picture, fill up again
             self._play_t0 = None
-        elif len(q) > 3 * need:                                # piled up: back to a buffer's length
-            while len(q) > need:
-                q.popleft()
         return self._shown
 
     def ready(self):
