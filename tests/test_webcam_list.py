@@ -783,3 +783,37 @@ def test_the_box_can_grow_round_the_weather_icon():
     cap._memo.clear(), cap._layers.clear()
     seg = render()[-6][touched(out)[0]:touched(out).max() + 1]
     assert (seg == 120).all(axis=-1).any()                              # (outside: the frame shows before the icon)
+
+
+def test_a_separate_japanese_caption():
+    import pytest
+
+    from display.modules import webcam_caption as cap
+    from hub import config
+    frame = np.full((130, 448, 3), 120, np.uint8)
+    cam = {"label": "Kabukicho", "place": "Tokyo", "tz": "Asia/Tokyo"}
+
+    def render(**ov):
+        cap._memo.clear(), cap._layers.clear()
+        return wm.render_preview({**cam, "overlay": {"opacity": 1.0, **ov}}, frame, (448, 130), elapsed=3)
+    rows = lambda img: np.flatnonzero((img != frame).any(axis=(1, 2)))
+    plain = render()
+    jp = {"on": True, "text": "歌舞伎町\n東京", "face": "k8x12", "size": 12}
+    stacked = render(jp_caption=jp)
+    assert rows(stacked)[0] < rows(plain)[0] - 2 * 13                 # two 12 px lines above the caption
+    assert (render(jp_caption={**jp, "on": False}) == plain).all()     # off: nothing
+    assert (render(jp_caption={**jp, "text": " \n "}) == plain).all()  # no text: nothing
+    corner = render(jp_caption={**jp, "corner": "tr"})
+    assert rows(corner)[0] <= 3 and np.flatnonzero((corner[:30] != frame[:30]).any(axis=(0, 2)))[0] > 300
+    alone = render(style="none", jp_caption=jp)
+    assert rows(alone).size and not (alone[-20:] != frame[-20:]).all()   # only the Japanese box, at the caption's corner
+    big = render(jp_caption={**jp, "face": "jiskan", "size": 24})
+    assert rows(big)[0] < rows(stacked)[0]                             # its own size
+    base = {"system": {}, "layout": {}, "modules": {"webcams": {"cams": {"a": {
+        "label": "A", "source": {"type": "image", "url": "https://x.example/a.jpg"}, "overlay": {"jp_caption": jp}}}}}}
+    config.validate(base)
+    for bad in ({"face": "comic"}, {"corner": "middle"}, {"size": 0}, {"text": "x" * 401}):
+        cfg = {**base, "modules": {"webcams": {"cams": {"a": {**base["modules"]["webcams"]["cams"]["a"],
+                                                            "overlay": {"jp_caption": {**jp, **bad}}}}}}}
+        with pytest.raises(config.ConfigError):
+            config.validate(cfg)

@@ -71,6 +71,7 @@ DEFAULT_OVERLAY = {"style": "tag", "corner": "bl", "when": "always", "font": "sm
                    "show_sec": 12, "every_min": 3, "custom_text": "", "headline": "name", "lines": "auto",
                    "separator": "space", "uppercase": False, "order": list(ORDER), "jp_font": "auto",
                    "jp_face": "auto", "wx_beside": False, "wx_beside_box": False, "temp_icon": False,
+                   "jp_caption": {"on": False, "text": "", "face": "k8x12", "size": 12, "corner": "auto"},
                    "show": {"name": True, "place": True, "time": True, "date": False, "offset": False,
                             "daynight": False, "weather": True, "sun": False, "age": False, "live": True,
                             "credit": False, "custom": False, "shield": False,
@@ -804,8 +805,10 @@ def _layer(style, ov, ct, w, h, font_for):
         cv.buf[:] = bgv
         zc = _Zone(cv, (0, 0, w, h))
         LAYOUT_FUNCS[style](Ctx(zc, (0, 0, w, h), ov, fl, has_cjk(ct)), ct)
-        if ct.side_icon and zc.bbox:
-            _icon_beside(zc, zc.bbox, w, h, ov, ct.side_icon)
+        main = zc.bbox                                     # the caption's own box (before the icon and the Japanese)
+        if ct.side_icon and main:
+            _icon_beside(zc, main, w, h, ov, ct.side_icon)
+        _jp_caption(zc, main, w, h, ov, fl)
         planes.append(cv.buf.astype(np.int32))
         if zc.bbox:
             bbox = zc.bbox if bbox is None else (min(bbox[0], zc.bbox[0]), min(bbox[1], zc.bbox[1]),
@@ -830,6 +833,70 @@ def _layer(style, ov, ct, w, h, font_for):
         _layers.clear()
     _layers[key] = out
     return out
+
+
+JP_CAPTION = DEFAULT_OVERLAY["jp_caption"]
+JP_CAPTION_TEXT_MAX = 400
+
+
+def jp_caption_of(ov) -> dict:
+    """The separate Japanese caption's settings (overlay "jp_caption"), defaults filled in."""
+    got = ov.get("jp_caption") if isinstance(ov.get("jp_caption"), dict) else {}
+    return {**JP_CAPTION, **got}
+
+
+def _jp_caption(zc, main, w, h, ov, font_for):
+    """The separate Japanese caption: its own lines of text in its own Japanese font and size (JP_FACES), on the
+    caption's background (colour, strength, padding) and in its text colour. "auto": stacked against the main caption
+    (above it in a bottom corner, below it in a top one, lined up with its outer edge); else its own corner."""
+    jc = jp_caption_of(ov)
+    lines = [s.rstrip() for s in str(jc.get("text") or "")[:JP_CAPTION_TEXT_MAX].splitlines()]
+    while lines and not lines[-1]:
+        lines.pop()
+    while lines and not lines[0]:
+        lines.pop(0)
+    if not jc.get("on") or not lines:
+        return
+    face = jc.get("face") if jc.get("face") in JP_FACES else JP_CAPTION["face"]
+    sizes = JP_FACES[face][1]
+    size = int(_num(jc.get("size"), sizes[0][0], 1, 64))
+    path = min(sizes, key=lambda s: abs(s[0] - size))[1]
+    f = _jp_fonts.get(path)
+    if f is None:
+        f = graphics.Font()
+        try:
+            f.LoadFont(path)
+        except Exception:
+            return
+        _jp_fonts[path] = f
+    if 0x41 not in f.glyphs:                              # a font without Latin: the caption's own for those
+        f.fallback = f.fallback or with_japanese(font_for(FONTS["small"]))
+    pad = int(_num(ov.get("pad"), 2, 0, 10))
+    lh = f.height + 1
+    room = w - 2 * pad - 2
+    lines = [_clip(f, s, room) if s else "" for s in lines]
+    bw = 2 * pad + max(_tw(f, s) for s in lines)
+    bh = 2 * pad + lh * len(lines) - 1
+    corner = jc.get("corner")
+    if corner not in ("tl", "tc", "tr", "bl", "bc", "br"):
+        corner = None
+    own = str(ov.get("corner") or "bl")
+    if corner is None and main:                           # next to the caption
+        x0, y0, x1, y1 = main
+        side = own[1:] if own[1:] in ("l", "c", "r") else "l"
+        bx = x0 if side == "l" else x1 - bw if side == "r" else (x0 + x1 - bw) // 2
+        by = y0 - 1 - bh if own[:1] != "t" else y1 + 1
+    else:                                                 # its own corner (or the caption's, with no caption shown)
+        k = Ctx(zc, (0, 0, w, h), {**ov, "corner": corner or own}, font_for)
+        bx, by = k.place(bw, bh, 2)
+    bx, by = max(0, min(bx, w - bw)), max(0, min(by, h - bh))
+    _box(zc, bx, by, bw, bh, _hex(ov.get("bg"), (0, 0, 0)), _num(ov.get("opacity"), 0.7, 0.0, 1.0))
+    color = Color(*_hex(ov.get("text"), (255, 255, 255)))
+    right = (corner or own)[1:] == "r"
+    for i, s in enumerate(lines):
+        if s:
+            x = bx + bw - pad - _tw(f, s) if right else bx + pad
+            graphics.DrawText(zc, f, x, by + pad + i * lh + f.baseline, color, s)
 
 
 def _icon_beside(zc, box, w, h, ov, name):
@@ -1735,4 +1802,5 @@ def _draw_line(k, ct, f, x, y_top, kinds, room, color, put, lh=None, sh_kind=Non
 
 LAYOUT_FUNCS = {"custom": _l_custom, "underline": _l_underline, "tag": _l_tag, "outline": _l_outline, "bar": _l_bar, "dot": _l_dot, "lower_third": _l_lower_third,
                 "split": _l_split, "postcard": _l_postcard, "chips": _l_chips, "clock": _l_clock,
-                "signage": _l_signage, "ticker": _l_ticker, "stack": _l_stack}
+                "signage": _l_signage, "ticker": _l_ticker, "stack": _l_stack,
+                "none": lambda k, ct: None}                # no caption (the Japanese one can still show)
