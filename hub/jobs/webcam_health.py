@@ -1,7 +1,9 @@
 """Which webcams are down → data/webcam_health.json (the display skips them; the control panel says for how long).
 
-Every webcam in ``modules.webcams.cams`` gets one current picture (hub/webcams.py grab_frame): a source that gives
-none, or a black one (is_black), is down. A webcam stays "down" from the first failed check until one succeeds, so the
+Every webcam in ``modules.webcams.cams`` except YouTube ones gets one current picture (hub/webcams.py grab_frame): a
+source that gives none, or a black one (is_black), is down. YouTube webcams are never looked up here: a lookup sweep
+every few minutes got the hub's address bot-checked by YouTube. The hub notes their health from what their feeds do
+while playing (hub/webcams.py note_health), and this job keeps that. A webcam stays "down" from the first failed check until one succeeds, so the
 panel can say "down for 1:25".
 Output, keyed by webcam id: {"up": bool, "why": "" | "black" | <error>, "since": epoch (when it went down, or came
 up), "checked": epoch}.
@@ -22,11 +24,13 @@ BUDGET_SEC = 170             # the whole run: what's checked by then is written 
                              # a webcam not checked in time keeps its last state
 
 
-def check(cam) -> tuple[bool, str]:
-    """(up, why) for one webcam."""
+def check(cam) -> tuple[bool, str] | None:
+    """(up, why) for one webcam; None for one not checked here (YouTube)."""
     from hub import webcams
     try:
         kind, url = webcams.check_source((cam or {}).get("source"))
+        if kind == "youtube":
+            return None
         frame = webcams.grab_frame(kind, url, timeout=STEP_SEC)
     except Exception as e:
         return False, (str(e) or type(e).__name__)[:200]
@@ -55,7 +59,7 @@ def check_all(cams: dict, budget: float) -> dict:
         try:
             got = check(cam)
             with lock:
-                results[cid] = got
+                results[cid] = got                         # None: not checked here (counted as done)
         finally:
             slots.release()
     end = time.time() + budget
@@ -69,7 +73,7 @@ def check_all(cams: dict, budget: float) -> dict:
                 break
         time.sleep(0.2)
     with lock:
-        return dict(results)
+        return {k: v for k, v in results.items() if v is not None}
 
 
 def run(cfg):

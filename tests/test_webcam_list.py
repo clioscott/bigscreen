@@ -572,7 +572,8 @@ def test_health_job_remembers_since_when_a_webcam_is_down(monkeypatch):
 
     from hub import webcams
     monkeypatch.setattr(webcams, "grab_frame", lambda kind, url, timeout=None: np.zeros((20, 20, 3), np.uint8))
-    assert job.check({"source": {"type": "youtube", "url": "https://youtu.be/x"}}) == (False, "black")
+    assert job.check({"source": {"type": "stream", "url": "https://x.example/live.m3u8"}}) == (False, "black")
+    assert job.check({"source": {"type": "youtube", "url": "https://youtu.be/x"}}) is None   # never looked up here
     assert job.check({"source": {"type": "nope"}})[0] is False
 
 
