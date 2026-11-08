@@ -89,6 +89,34 @@ def playlist_of(s: dict) -> list:
     return out
 
 
+FULL_ASPECT = 448 / 134            # the full-width zone (the shape a tall crop borrows from when it has none)
+SOURCE_ASPECT = 16 / 9             # webcams are nearly all 16:9 (the hub clamps a crop to the real frame anyway)
+
+
+def crop_for(cam: dict, shape: str, w: int, h: int):
+    """The webcam's crop for this shape. "tall" (above the clock) with none of its own borrows the full-width one:
+    the same width and centre, just taller, so the framing chosen for full width carries over."""
+    crops = cam.get("crops") or {}
+    crop = crops.get(shape)
+    if isinstance(crop, dict) and crop.get("w"):
+        return crop
+    full = crops.get("full")
+    if shape != "tall" or not (isinstance(full, dict) and full.get("w")):
+        return None
+    try:
+        cw, x, y = float(full["w"]), float(full.get("x", 0)), float(full.get("y", 0))
+    except (TypeError, ValueError):
+        return None
+    h_full = cw * SOURCE_ASPECT / FULL_ASPECT                # the crops' heights as fractions of the frame
+    h_tall = cw * SOURCE_ASPECT / (w / max(1, h))
+    if h_tall > 1.0:                                       # taller than the frame: narrow it to fit, same centre
+        cw *= 1.0 / h_tall
+        x += (float(full["w"]) - cw) / 2
+        h_tall = 1.0
+    y = min(max(0.0, y + h_full / 2 - h_tall / 2), 1.0 - h_tall)
+    return {"x": round(max(0.0, x), 5), "y": round(y, 5), "w": round(cw, 5)}
+
+
 def stream_query(cam: dict, shape: str, w: int, h: int) -> dict:
     """What the hub needs to make this zone's frames (hub/app.py /api/webcams/frames)."""
     src = cam.get("source") or {}
@@ -101,7 +129,7 @@ def stream_query(cam: dict, shape: str, w: int, h: int) -> dict:
             q["refresh"] = int(float(src["refresh_sec"]))
     except (TypeError, ValueError):
         pass
-    crop = (cam.get("crops") or {}).get(shape)
+    crop = crop_for(cam, shape, w, h)
     if isinstance(crop, dict) and crop.get("w"):
         q.update(x=round(float(crop.get("x", 0)), 5), y=round(float(crop.get("y", 0)), 5),
                  cw=round(float(crop["w"]), 5))

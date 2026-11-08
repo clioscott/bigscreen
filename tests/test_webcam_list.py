@@ -1031,3 +1031,18 @@ def test_a_webcam_played_by_hand_says_it_is_loading(monkeypatch):
     clock[0] += wm.GIVE_UP_SEC + 1                                      # it never fills
     st.frame_t = clock[0]
     assert p.draw(c, (0, 0, 448, 130), {"panel": "webcam_full", "cam": "a"}, False) == "skip"
+
+
+def test_tall_borrows_the_full_width_crop():
+    cam = {"crops": {"full": {"x": 0.2, "y": 0.3, "w": 0.5}}}
+    t = wm.crop_for(cam, "tall", 448, 175)
+    assert t["w"] == 0.5 and t["x"] == 0.2                              # same width and left edge…
+    h_full, h_tall = 0.5 * (16 / 9) / (448 / 134), 0.5 * (16 / 9) / (448 / 175)
+    assert abs((t["y"] + h_tall / 2) - (0.3 + h_full / 2)) < 1e-4       # …same centre, taller
+    whole = wm.crop_for({"crops": {"full": {"x": 0, "y": 0.9, "w": 1.0}}}, "tall", 448, 175)
+    assert 0 <= whole["y"] <= 1 - 1.0 * (16 / 9) / (448 / 175) + 1e-4   # kept inside the frame
+    own = {"x": 0.1, "y": 0.1, "w": 0.4}
+    assert wm.crop_for({"crops": {"full": cam["crops"]["full"], "tall": own}}, "tall", 448, 175) is own
+    assert wm.crop_for(cam, "left", 224, 134) is None                   # only tall borrows
+    q = wm.stream_query({**cam, "source": {"type": "youtube", "url": "https://youtu.be/x"}}, "tall", 448, 175)
+    assert q["cw"] == 0.5 and q["x"] == 0.2
