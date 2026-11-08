@@ -759,3 +759,27 @@ def test_a_name_on_several_lines():
     cap._memo.clear(), cap._layers.clear()
     single = wm.render_preview({**cam, "label": "Kabukicho Ichibangai"}, frame, (448, 130), elapsed=3)
     assert len(rows(two)) > len(rows(single))                            # the box grew by the second line
+
+
+def test_the_box_can_grow_round_the_weather_icon():
+    import time
+
+    from display.modules import webcam_caption as cap
+    wx = {"temp": 9, "code": 61, "is_day": 1, "at": time.time()}
+    frame = np.full((130, 448, 3), 120, np.uint8)
+    cam = {"label": "Kabukicho", "place": "Tokyo, Japan", "tz": "Asia/Tokyo"}
+
+    def render(**ov):
+        cap._memo.clear(), cap._layers.clear()
+        return wm.render_preview({**cam, "overlay": {"wx_beside": True, "opacity": 1.0, **ov}}, frame, (448, 130),
+                                 elapsed=3, wx=wx)
+    out, inside = render(), render(wx_beside_box=True)
+    touched = lambda img: np.flatnonzero((img != frame).any(axis=(0, 2)))
+    assert touched(inside).max() > touched(out).max() - 2              # the box reaches past the icon
+    row = inside[-6]                                                    # a row through the box, below the icon
+    right = touched(inside).max()
+    seg = row[touched(inside)[0]:right + 1]
+    assert not (seg == 120).all(axis=-1).any()                         # box all the way to the icon: no frame shows
+    cap._memo.clear(), cap._layers.clear()
+    seg = render()[-6][touched(out)[0]:touched(out).max() + 1]
+    assert (seg == 120).all(axis=-1).any()                              # (outside: the frame shows before the icon)
