@@ -43,15 +43,16 @@ from display.modules.webcam_caption import (DEFAULT_OVERLAY, FONTS, INTRO_SEC, L
 
 DEFAULT_HUB = "http://192.168.1.111:8800"
 IDLE_SEC = 3.0               # hang up when the screen hasn't drawn this webcam for this long
-PLAY_START_SEC = 1.0         # video starts playing once this much is buffered here …
+PLAY_START_SEC = 2.0         # after running dry, video plays again once this much is buffered here; the first start
+                             # waits for the full PLAY_BUFFER_SEC ("Loading webcam feeds" meanwhile, unless prerolled)
 PLAY_BUFFER_SEC = 6.0        # … and settles at this depth, played at its own rate by this clock: the hub's (a busy
                              # server's) and the network's unevenness never shows (seconds behind live: nobody minds)
 PLAY_MAX_SEC = 15.0          # kept at most (only a far worse stall than seen drops anything)
 WARM_EVERY = 10.0            # while a webcam is next in the rotation, ask the hub to keep its feed going this often
 GIVE_UP_SEC = 25.0           # no picture this long after the play started: skip to the next screen
-PREROLL_SEC = 15.0           # the hub starts the next webcam's feed this long before it's due (~5-10 s from cold)
-STREAM_AHEAD_SEC = 5.0       # … and the Pi opens its own stream of it this long before (the hub's feed is up by then)
-HOLD_MAX_SEC = 10.0          # the current webcam stays up at most this much longer while the next one has no picture
+PREROLL_SEC = 30.0           # the hub starts the next webcam's feed this long before it's due (~5-10 s from cold)
+STREAM_AHEAD_SEC = 12.0      # … and the Pi opens its own stream this long before: its buffer is full when it's due
+HOLD_MAX_SEC = 15.0          # the current webcam stays up at most this much longer while the next one isn't buffered
 BLACK_SEC = 4.0              # a picture black for this long: the feed is down
 BAD_SEC = 600.0              # a webcam found down while playing sits out this long (the hub's checks may clear it)
 RETRY_DOWN_SEC = 1800.0      # a feed's "down" this old: try it again (only a play can say it's back)
@@ -130,6 +131,8 @@ class Stream:
         self._play_t0 = None                   # playback clock: when frame _play_k was due (None: buffering)
         self._play_k, self._play_pos, self._play_last = 0, 0.0, 0.0
         self._shown = None
+        self._played = False                   # started playing at least once (the first start waits for a full buffer)
+        self._buffer_since = time.time()       # when it last began buffering (the panel gives up on one that never fills)
         self.black_since = None                # when the picture went black (None: it isn't)
         self._black_checked = 0.0
         self.last_use = time.time()
@@ -151,7 +154,8 @@ class Stream:
             return self.frame
         now = time.time() if now is None else now
         q = self._q
-        start, target = max(1, int(self.fps * PLAY_START_SEC)), max(1, int(self.fps * PLAY_BUFFER_SEC))
+        target = max(1, int(self.fps * PLAY_BUFFER_SEC))
+        start = max(1, int(self.fps * PLAY_START_SEC)) if self._played else target   # first start: a full buffer
         if self._shown is None and q:
             self._shown = q[0]                                 # a picture at once (the hub's still, or the first)
         if self._play_t0 is None:
@@ -160,6 +164,7 @@ class Stream:
             while len(q) > target:                             # a prerolled backlog: start at the buffer's depth
                 q.popleft()
             self._play_t0, self._play_k, self._play_pos, self._play_last = now, 0, 0.0, now
+            self._played = True
         dt = min(0.25, max(0.0, now - self._play_last))
         self._play_last = now
         rate = min(1.1, max(0.9, 1.0 + 0.5 * (len(q) / target - 1.0)))   # steer towards the target depth, gently
@@ -170,11 +175,23 @@ class Stream:
             self._play_k += 1
         if self._play_k < due:                                 # ran dry: hold the picture, fill up again
             self._play_t0 = None
+            self._buffer_since = now
         return self._shown
 
+    def buffering(self):
+        """Video that isn't playing yet (filling its buffer, or filling again after running dry)."""
+        return self.video and self._play_t0 is None
+
+    def buffered(self):
+        """Ready to play smoothly from the start: playing, or a full buffer waiting (a prerolled stream)."""
+        if not self.video:
+            return True
+        return self._play_t0 is not None or len(self._q) >= max(1, int(self.fps * PLAY_BUFFER_SEC))
+
     def ready(self):
-        """A picture to show: a recent frame that isn't black."""
-        return self.frame is not None and time.time() - self.frame_t < 10 and self.black_since is None
+        """Ready to come up: a recent frame that isn't black and, for video, a full buffer (so it plays smoothly)."""
+        return self.frame is not None and time.time() - self.frame_t < 10 and self.black_since is None \
+            and self.buffered()
 
     def down(self, now=None):
         """Down beyond doubt: black for BLACK_SEC, or no picture GIVE_UP_SEC after opening (a hiccup mid-play isn't)."""
@@ -519,6 +536,13 @@ class WebcamPanel:
             return "skip"
         if st.frame is not None and now - st.frame_t < 10:
             c.Blit(st.current(now), x, y)
+            if st.buffering():                                 # not prepared ahead (played by hand): load, then play
+                _shade(c, x, y, w, h, 0.6)
+                self._centre(c, zone, "Loading webcam feeds" + "." * (1 + int(now * 2) % 3), Color(225, 225, 225))
+                if now - st._buffer_since > GIVE_UP_SEC:       # it never fills: on to the next screen
+                    self._mark_bad(entry.get("cam"), st.error or "too slow to buffer")
+                    return "skip"
+                return None
         else:
             c.FillRect(x, y, w, h, Color(0, 0, 0))
             label = " ".join(str(cam.get("label") or entry.get("cam")).split())      # (a name may have lines)

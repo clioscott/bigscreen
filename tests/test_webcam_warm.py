@@ -24,13 +24,13 @@ def test_screens_that_run_by_passes_use_how_long_their_passes_take():
     r.current(0.0)
     assert r.upcoming(0.5) is None                                      # no pass done yet: nothing to go on
     t = 0.0
-    for _ in range(2):                                                  # two 30 s passes: about 30 s to go
-        while t < 30.0 * (_ + 1):
+    for _ in range(2):                                                  # two 40 s passes: about 40 s to go
+        while t < 40.0 * (_ + 1):
             r.report(None, True, t)
             t += 0.5
         r.report("done", True, t)
     assert r.upcoming(t) is None
-    while t < 72.0:                                                     # 12 s into the last pass: ~18 s to go
+    while t < 92.0:                                                     # 12 s into the last pass: ~28 s to go
         r.report(None, True, t)
         t += 0.5
     assert r.upcoming(t)["cam"] == "a"
