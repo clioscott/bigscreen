@@ -890,7 +890,21 @@ const CropEditor = {
       const h = (w * sw) / aspect.value / sh;
       return { x: +((1 - w) / 2).toFixed(5), y: +Math.max(0, (1 - h) / 2).toFixed(5), w: +w.toFixed(5) };
     };
-    const crop = computed(() => props.cam.crops?.[props.shape] || fit());
+    // Tall with no crop of its own borrows the full-width one (same width and centre, taller), as the wall does
+    // (display/modules/webcam.py crop_for)
+    const borrowed = () => {
+      const f = props.cam.crops?.full;
+      if (props.shape !== "tall" || !f?.w) return null;
+      const [sw, sh] = nat.value;
+      const src = sw / sh || 16 / 9, fullAspect = 448 / 134;
+      let cw = f.w, x = f.x || 0;
+      const hFull = (cw * src) / fullAspect;
+      let hTall = (cw * src) / aspect.value;
+      if (hTall > 1) { cw = cw / hTall; x += (f.w - cw) / 2; hTall = 1; }
+      const y = Math.min(Math.max(0, (f.y || 0) + hFull / 2 - hTall / 2), 1 - hTall);
+      return { x: +Math.max(0, x).toFixed(5), y: +y.toFixed(5), w: +cw.toFixed(5) };
+    };
+    const crop = computed(() => props.cam.crops?.[props.shape] || borrowed() || fit());
     const box = computed(() => {
       const [sw, sh] = nat.value;
       const c = crop.value;
