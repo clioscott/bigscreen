@@ -625,6 +625,37 @@ def _snap_worker():
                 _snap_busy.discard(key)
 
 
+BLACK_LEVEL = 40             # a pixel brighter than this (its brightest channel) counts as lit
+BLACK_LIT = 0.004            # a picture with fewer lit pixels than this share is black (a night scene has lights)
+
+
+def is_black(frame) -> bool:
+    """A feed that's down but still sending: an all-black (or nearly) picture. Looks at every 4th pixel."""
+    if frame is None or not getattr(frame, "size", 0):
+        return False
+    sub = np.asarray(frame)[::4, ::4]
+    return float((sub.max(axis=-1) > BLACK_LEVEL).mean()) < BLACK_LIT
+
+
+def grab_frame(kind, url, timeout=40) -> np.ndarray:
+    """One current picture from a source, as RGB (480 wide for live streams). SourceError when there's none."""
+    if kind in STILLS:
+        return fetch_still(kind, url)[0]
+    import io
+    media, _ = resolve(kind, url)
+    args = ["ffmpeg", "-hide_banner", "-nostdin", "-nostats", "-loglevel", "error", "-protocol_whitelist", PROTOCOLS]
+    if kind == "youtube" or ".m3u8" in media:
+        args += ["-live_start_index", "-1"]
+    args += ["-i", media, "-frames:v", "1", "-vf", "scale=480:-2", "-f", "image2", "-c:v", "mjpeg", "-q:v", "4", "pipe:1"]
+    try:
+        r = subprocess.run(args, capture_output=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise SourceError("no picture in time")
+    if r.returncode or not r.stdout:
+        raise SourceError((r.stderr.decode("utf-8", "replace").strip().splitlines() or ["no picture"])[-1][:200])
+    return np.asarray(Image.open(io.BytesIO(r.stdout)).convert("RGB"))
+
+
 def _grab(kind, url):
     import tempfile
     if kind in STILLS:
