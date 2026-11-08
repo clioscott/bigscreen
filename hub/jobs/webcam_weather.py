@@ -4,7 +4,8 @@ Only webcams with a ``lat`` and ``lon`` are fetched, all in one Open-Meteo reque
 the current temperature, feels-like, humidity, wind, weather code and day/night, today's high and low, and the next
 two days' sunrise and sunset.
 Output, keyed by webcam id: {"temp", "feels", "humidity", "wind", "wind_dir", "gust", "code", "is_day", "high", "low",
-"sunrise": [epoch, …], "sunset": [epoch, …], "lat", "lon", "at"}.
+"sunrise": [epoch, …], "sunset": [epoch, …], "tz" (the location's time zone, for a webcam without one), "lat", "lon",
+"at"}.
 ``fetch`` is also used by the hub's previews for a location that hasn't been saved (and fetched) yet.
 """
 
@@ -67,6 +68,7 @@ def fetch(points: dict, timeout=30) -> dict:
                     "gust": cur.get("wind_gusts_10m"), "high": first("temperature_2m_max"),
                     "low": first("temperature_2m_min"),
                     "sunrise": daily.get("sunrise") or [], "sunset": daily.get("sunset") or [],
+                    "tz": row.get("timezone") or "",
                     "lat": points[key][0], "lon": points[key][1], "at": time.time()}
     return out
 

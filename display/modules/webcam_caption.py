@@ -28,7 +28,8 @@
     container   box | strip | outline | board
     fade        true: fade in and out instead of popping
 
-Weather and sunrise/sunset come from data/webcam_weather.json (hub/jobs/webcam_weather.py, for webcams with a lat/lon).
+Weather and sunrise/sunset come from data/webcam_weather.json (hub/jobs/webcam_weather.py, for webcams with a lat/lon);
+so does the local time's zone when the webcam has no ``tz`` of its own.
 Everything is drawn with approved bitmap fonts at their native size. Long content drops sections in DROP order before
 any text is cut.
 """
@@ -64,13 +65,13 @@ ORDER = ("name", "place", "time", "age", "weather", "conditions", "feels", "hilo
 DROP = ("credit", "custom", "humidity", "wind", "hilo", "feels", "conditions", "sun", "offset", "date", "weather", "age",
         "place", "shield", "name")    # dropped first → last
 TEXT_ALIGNS = ("auto", "left", "center", "right")
-SEPARATORS = {"dot": " · ", "slash": " / ", "pipe": " | ", "dash": " - ", "space": "   "}
+SEPARATORS = {"dot": " · ", "slash": " / ", "pipe": " | ", "dash": " - ", "space": "  "}   # space: just a gap
 DEFAULT_OVERLAY = {"style": "tag", "corner": "bl", "when": "always", "font": "small", "accent": "#e8202a",
                    "text": "#ffffff", "bg": "#000000", "opacity": 0.7, "time_format": "24h", "fade": True,
                    "show_sec": 12, "every_min": 3, "custom_text": "", "headline": "name", "lines": "auto",
-                   "separator": "dot", "uppercase": False, "order": list(ORDER),
+                   "separator": "space", "uppercase": False, "order": list(ORDER),
                    "show": {"name": True, "place": True, "time": True, "date": False, "offset": False,
-                            "daynight": False, "weather": False, "sun": False, "age": False, "live": True,
+                            "daynight": False, "weather": True, "sun": False, "age": False, "live": True,
                             "credit": False, "custom": False, "shield": False,
                             **{k: False for k in WX_EXTRAS}}}
 WHITE, BLACK = Color(255, 255, 255), Color(0, 0, 0)
@@ -240,12 +241,12 @@ def fit_detail(font, bits, width, drop=("credit", "place"), sep="dot"):
 
 @lru_cache(maxsize=2048)
 def _fit(font, bits, width, drop, sep, icon_kind=None):
-    """(the bits kept, the line). A line that starts with icon_kind has 9 px less room (its icon goes in front)."""
+    """(the bits kept, the line). A line with icon_kind in it has 9 px less room (its icon goes in front of it)."""
     sp = _sep(font, sep)
     kept = list(bits)
 
     def room(ks):
-        return width - (9 if icon_kind and ks and ks[0][0] == icon_kind else 0)
+        return width - (9 if icon_kind and any(k == icon_kind for k, _ in ks) else 0)
 
     line = sp.join(v for _, v in kept)
     for kind in drop:
@@ -265,7 +266,7 @@ def _note_dropped(bits, kept_kinds):
 def detail_lines(font, bits, width, mode="auto", sep="dot", max_lines=FIT_LINES, icon_kind=None):
     """The details as (first section's kind, text) lines for the `lines` setting:
     auto / wrap → one line if everything fits, else wrapped onto up to max_lines (sections drop only after that);
-    stacked → one per section. Lines starting with icon_kind (the weather with its icon) leave room for it."""
+    stacked → one per section. Lines with icon_kind in them (the weather with its icon) leave room for it."""
     bits = tuple(tuple(b) for b in bits)
     if not bits:
         return []
@@ -280,7 +281,7 @@ def detail_lines(font, bits, width, mode="auto", sep="dot", max_lines=FIT_LINES,
     lines, cur = [], []
     for b in bits:                                         # wrap: fill each line, then start the next
         trial = sp.join(v for _, v in cur + [b])
-        room = width - (9 if icon_kind and (cur or [b])[0][0] == icon_kind else 0)
+        room = width - (9 if icon_kind and any(k == icon_kind for k, _ in cur + [b]) else 0)
         if cur and _tw(font, trial) > room:
             lines.append(cur)
             cur = [b]
@@ -309,7 +310,7 @@ def _wrap_count(font, bits, width, sp, icon_kind):
     lines, cur = [], []
     for b in bits:
         trial = sp.join(v for _, v in cur + [b])
-        room = width - (9 if icon_kind and (cur or [b])[0][0] == icon_kind else 0)
+        room = width - (9 if icon_kind and any(k == icon_kind for k, _ in cur + [b]) else 0)
         if cur and _tw(font, trial) > room:
             lines.append(cur)
             cur = [b]
@@ -327,7 +328,7 @@ class Content:
     def __init__(self, cam, ov, now_local=None, here=None, wx=None, extra=None):
         sh = ov["show"]
         up = (lambda s: s.upper()) if ov.get("uppercase") else (lambda s: s)
-        t = now_local or _local_time(cam.get("tz"))
+        t = now_local or _local_time(cam.get("tz") or (wx or {}).get("tz"))   # no zone set: the location's own
         self.tz = t.tzinfo
         twelve = ov.get("time_format") == "12h"
         sec = {}
@@ -494,7 +495,7 @@ class Ctx:
         self.text = Color(*_hex(ov.get("text"), (255, 255, 255)))
         self.bg = _hex(ov.get("bg"), (0, 0, 0))
         self.op = _num(ov.get("opacity"), 0.7, 0.0, 1.0)
-        self.sep = ov.get("separator") if ov.get("separator") in SEPARATORS else "dot"
+        self.sep = ov.get("separator") if ov.get("separator") in SEPARATORS else "space"
         self.lines = ov.get("lines") if ov.get("lines") in ("auto", "wrap", "stacked", "inline") else "auto"
         corner = ov.get("corner") if ov.get("corner") in ("tl", "tc", "tr", "bl", "bc", "br") else "bl"
         self.top = corner[0] == "t"
@@ -543,13 +544,33 @@ class Ctx:
                             icon_kind="weather" if ct.icon else None)
 
     def text_with_icon(self, f, x, y_top, ct, kind, text, color=None, put=None):
-        """Draw a detail line; the weather icon goes in front when the line starts with the weather."""
+        """Draw a detail line; the weather icon goes in front of the weather, wherever it is in the line."""
         put = put or graphics.DrawText
         color = color or self.text
-        if kind == "weather" and ct.icon:
-            draw_icon(self.c, x, y_top + (f.height - 7) // 2, ct.icon)
-            x += 9
-        return put(self.c, f, x, y_top + f.baseline, color, text)
+        at = _icon_at(ct, kind, text)
+        if at is None:
+            return put(self.c, f, x, y_top + f.baseline, color, text)
+        if at:
+            put(self.c, f, x, y_top + f.baseline, color, text[:at])
+            x += _tw(f, text[:at])
+        draw_icon(self.c, x, y_top + (f.height - 7) // 2, ct.icon)
+        return put(self.c, f, x + 9, y_top + f.baseline, color, text[at:])
+
+
+def _icon_at(ct, kind, text):
+    """Where in a detail line the weather icon goes (its index in text), or None when the line has no weather."""
+    if not ct.icon:
+        return None
+    if kind == "weather":
+        return 0
+    w = ct.sections.get("weather") or ""
+    i = text.find(w) if w else -1
+    return i if i > 0 else None
+
+
+def _icon_w(ct, kind, text):
+    """The room a detail line's weather icon takes (9 px), or 0."""
+    return 9 if _icon_at(ct, kind, text) is not None else 0
 
 class _Zone:
     """The canvas as layouts see it: every draw is clipped to the caption's zone (a scrolling ticker can't spill into
@@ -763,7 +784,7 @@ def _l_tag(k, ct, outline=False):
     if not (title or lines or bw):
         return
     head_w = (bw + 3 if bw and title else bw) + (_tw(T, title) if title else 0)
-    line_ws = [_tw(S, ln) + (9 if kd == "weather" and ct.icon else 0) for kd, ln in lines]
+    line_ws = [_tw(S, ln) + _icon_w(ct, kd, ln) for kd, ln in lines]
     box_w = k.sized(pad * 2 + max([head_w] + line_ws) + edge)
     inner = box_w - 2 * pad - edge
     head_h = max(T.height if title else 0, S.height + 1 if bw else 0)
@@ -845,7 +866,7 @@ def _l_lower_third(k, ct):
     if not (th or dh):
         return
     tw = (_tw(T, title) + 2 * padx + (bw + 4 if bw else 0)) if title else 0
-    dw = max([_tw(S, ln) + 2 * padx + (9 if kd == "weather" and ct.icon else 0) for kd, ln in lines], default=0)
+    dw = max([_tw(S, ln) + 2 * padx + _icon_w(ct, kd, ln) for kd, ln in lines], default=0)
     W = max(tw, dw + (3 if title else 0))
     bx, by = k.place(W, th + dh, margin=3)
     tx = bx if k.align != "right" else bx + W - tw
@@ -921,7 +942,7 @@ def _l_postcard(k, ct):
         _shadowed(c, T, k.x + (k.w - _tw(T, title)) // 2, ty + T.baseline, k.text, title)
         ty += T.height + 2
     for kd, ln in lines:
-        w_ = _tw(S, ln) + (9 if kd == "weather" and ct.icon else 0)
+        w_ = _tw(S, ln) + _icon_w(ct, kd, ln)
         k.text_with_icon(S, k.x + (k.w - w_) // 2, ty, ct, kd, ln, put=_outlined)
         ty += S.height + 1
     if ct.live:                                             # LIVE in a top corner away from the text
@@ -1072,7 +1093,7 @@ def _l_stack(k, ct):
     if ct.live:
         lines.insert(0, (S, "LIVE", "live"))
     total = sum(f.height + 1 for f, _, _ in lines)
-    widths = [(_tw(f, t) + (9 if kd == "weather" and ct.icon else 0)) for f, t, kd in lines]
+    widths = [(_tw(f, t) + _icon_w(ct, kd, t)) for f, t, kd in lines]
     bx, by = k.place(max(widths, default=10), total, margin=3)
     ty = by
     for (f, t, kd), w_ in zip(lines, widths):
@@ -1094,7 +1115,7 @@ def _l_underline(k, ct):
     if not (title or lines):
         return
     head_w = (bw + 4 if bw else 0) + _tw(B, title)
-    widths = [head_w] + [_tw(S, ln) + (9 if kd == "weather" and ct.icon else 0) for kd, ln in lines]
+    widths = [head_w] + [_tw(S, ln) + _icon_w(ct, kd, ln) for kd, ln in lines]
     w = max(widths)
     h = B.height + 3 + sum(S.height + 1 for _ in lines)
     bx, by = k.place(w, h, margin=4)
