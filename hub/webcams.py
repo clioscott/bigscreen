@@ -37,6 +37,7 @@ BUFFER_SEC = 3.5             # playout buffer for HLS (YouTube): longer than a s
                              # shows as a freeze
 BUFFER_SEC_LIVE = 0.3        # … for sources that already arrive in real time (RTSP, MJPEG)
 BUFFER_HEADROOM = 4.0        # frames kept beyond the buffer (about one long segment) before the oldest are dropped
+RECENT_FRAMES = 90           # published frames kept per feed (3 s at 30 fps) for viewers catching up
 OPEN_SEC = 45.0              # … or no first frame this long after starting it
 RESOLVE_TTL = 3 * 3600.0     # YouTube manifest URLs last ~6 h; resolve again after 3 (fewer lookups: see BOT_COOL)
 BOT_COOL = 20 * 60.0         # YouTube asked the hub to prove it isn't a bot: no new lookups for this long
@@ -233,6 +234,8 @@ class Feed:
         self._cond = threading.Condition(self._lock)
         self._buf = collections.deque()  # decoded frames waiting for their turn (the pacer publishes them)
         self._buf_lock = threading.Lock()
+        self.recent = collections.deque(maxlen=RECENT_FRAMES)   # (seq, frame) just published: a viewer that fell
+                                                                # behind (a busy hub) catches up instead of skipping
         self._buffer_sec = BUFFER_SEC
         self._new_run = False
         self.decoded_t = 0.0
@@ -281,6 +284,15 @@ class Feed:
         if proc is not None and proc.poll() is None:
             self._restart = True
             proc.kill()
+
+    def after(self, seq):
+        """The first frame published after ``seq`` that's still kept: (its seq, frame), or None if there's none yet."""
+        with self._cond:
+            if self.seq <= seq or not self.recent:
+                return None
+            first = self.recent[0][0]
+            i = max(0, seq + 1 - first)                     # fell further behind than kept: the oldest kept
+            return self.recent[i] if i < len(self.recent) else None
 
     def wait(self, after_seq, timeout):
         """The next frame after ``after_seq``: (seq, frame), or (after_seq, None) on timeout."""
@@ -496,6 +508,7 @@ class Feed:
             with self._cond:
                 self.frame, self.frame_t = frame, now
                 self.seq += 1
+                self.recent.append((self.seq, frame))
                 if self.state == "starting":
                     self.state = "live"
                 waiters = list(self._waiters)

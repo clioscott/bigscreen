@@ -866,3 +866,68 @@ def test_note_health_ignores_bot_checks(monkeypatch):
     monkeypatch.setattr(webcams.threading, "Thread", lambda **k: started.append(k) or type("T", (), {"start": lambda s: None})())
     webcams.note_health("youtube", "https://youtu.be/abcdefghijk", False, "YouTube is limiting the hub (bot check)")
     assert started == []
+
+
+def test_playback_buffer_evens_out_bursty_frames(monkeypatch):
+    st = wm.Stream.__new__(wm.Stream)                                   # no reader thread: frames fed by hand
+    st.fps, st.video, st.frame, st.frame_t = 30, True, None, 0.0
+    import collections
+    st._q = collections.deque(maxlen=200)
+    st._play_t0, st._play_k, st._play_pos, st._play_last, st._shown = None, 0, 0.0, 0.0, None
+    frames = [np.full((2, 2, 3), i % 256, np.uint8) for i in range(400)]
+    shown, t, fed = [], 0.0, 0
+    while t < 8.0:
+        while fed < len(frames) and fed / 30.0 <= t - (0.3 if int(t * 2) % 2 else 0.0):   # arrives in bursts
+            st._q.append(frames[fed]); st.frame = frames[fed]; fed += 1
+        fr = st.current(t)
+        if not shown or fr is not shown[-1][1]:
+            shown.append((t, fr))
+        t += 0.02                                                       # a 50 Hz loop
+    steady = [s for s in shown if s[0] > 3.0]
+    gaps = [round(b[0] - a[0], 3) for a, b in zip(steady, steady[1:])]
+    assert max(gaps) <= 0.041 and len(steady) > 100                    # every frame, one or two loops each
+    assert int(shown[0][1][0, 0, 0]) == 0                               # a picture from the start
+
+
+def test_stills_show_the_newest_and_the_buffer_holds_when_dry():
+    import collections
+    st = wm.Stream.__new__(wm.Stream)
+    st.fps, st.video, st.frame = 1, False, np.zeros((2, 2, 3), np.uint8)
+    assert st.current(0.0) is st.frame                                  # a still: the newest, no buffering
+    st.fps, st.video = 10, True
+    st._q = collections.deque(np.full((2, 2, 3), i, np.uint8) for i in range(10))
+    st._play_t0, st._play_k, st._play_pos, st._play_last, st._shown = None, 0, 0.0, 0.0, None
+    t = 0.0
+    while t < 3.0:                                                      # 1 s of frames, played by a 50 Hz loop
+        held = st.current(t)
+        t += 0.02
+    assert st._play_t0 is None and st.current(t) is held                # ran dry: holds the picture while it fills
+
+
+def test_the_hub_sends_every_frame_in_order(monkeypatch):
+    import asyncio
+
+    from hub import app as hub_app
+    from hub import webcams
+    f = webcams.Feed.__new__(webcams.Feed)
+    import collections
+    import threading
+    f.kind, f.url, f.fps, f.seq, f.state, f.frame = "youtube", "u", 30, 0, "live", None
+    f._lock = threading.Lock()
+    f._cond = threading.Condition(f._lock)
+    f._waiters = set()
+    f.recent = collections.deque(maxlen=webcams.RECENT_FRAMES)
+    for i in range(1, 21):                                              # 20 frames published before the viewer reads
+        f.seq, f.frame = i, i
+        f.recent.append((i, i))
+    f.viewers, f.last_view = 0, 0.0
+
+    async def read(n):
+        gen = hub_app._webcam_frames(f, lambda frame, feed: frame, fps=30)
+        out = [await gen.__anext__() for _ in range(n)]
+        await gen.aclose()
+        return out
+    got = asyncio.run(read(1))
+    assert got == [20]                                                  # it starts at the newest
+    f2 = asyncio.run(read(1))
+    assert f.after(15) == (16, 16) and f.after(20) is None and f.after(-500) == (1, 1)

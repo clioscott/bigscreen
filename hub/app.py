@@ -1416,10 +1416,20 @@ async def _webcam_frames(f, make, fps=None, still=None):
             arr = await asyncio.to_thread(still)
             if arr is not None and f.frame is None:
                 yield await asyncio.to_thread(make, arr, f)
+        after = getattr(f, "after", None)                   # every frame in order (stills: just the newest)
         while True:
             ev.clear()
             step = max(1, round(max(1, f.fps) / fps)) if fps else 1
-            if f.frame is not None and (seq == 0 or f.seq >= seq + step):
+            if f.frame is not None and seq == 0:
+                seq, frame = f.seq, f.frame
+                yield await asyncio.to_thread(make, frame, f)
+                continue
+            got = after(seq + step - 1) if after is not None and f.frame is not None else None
+            if got is not None:                             # behind (a busy hub): the next one, not the newest
+                seq, frame = got
+                yield await asyncio.to_thread(make, frame, f)
+                continue
+            if after is None and f.frame is not None and f.seq >= seq + step:
                 seq, frame = f.seq, f.frame
                 yield await asyncio.to_thread(make, frame, f)
                 continue
