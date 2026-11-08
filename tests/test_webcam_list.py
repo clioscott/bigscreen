@@ -1082,3 +1082,39 @@ def test_long_turns_still_prepare_just_the_next_one(monkeypatch):
     clock[0] += 15                                                      # 10 s to go: the Pi buffers b
     p.draw(c, z, entry, False)
     assert streams == ["b"]
+
+
+def test_the_starting_still_never_plays_as_a_video_frame(monkeypatch):
+    import io
+    import time as _t
+
+    from hub import webcams as hw
+    w, h = 8, 4
+    still = hw.pack(np.full((h, w, 3), 99, np.uint8), hw.PLACEHOLDER_AGE)
+    video = b"".join(hw.pack(np.full((h, w, 3), i, np.uint8), 0) for i in range(1, 7))
+
+    class Resp:
+        status = 200
+
+        def __init__(self):
+            self.b = io.BytesIO(still + video)
+
+        def read(self, n):
+            return self.b.read(n)
+
+    class Conn:
+        def __init__(self, *a, **k):
+            self.sock = None
+
+        def connect(self): pass
+        def request(self, *a, **k): pass
+        def getresponse(self): return Resp()
+        def close(self): pass
+    monkeypatch.setattr(wm.http.client, "HTTPConnection", Conn)
+    st = wm.Stream("http://hub:1", {"type": "youtube", "url": "u", "fps": 30, "w": w, "h": h})
+    for _ in range(100):
+        if len(st._q) >= 6:
+            break
+        _t.sleep(0.01)
+    st.close()
+    assert [int(f[0, 0, 0]) for f in st._q] == [1, 2, 3, 4, 5, 6]       # the placeholder (99) isn't in the video

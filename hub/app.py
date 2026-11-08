@@ -1401,7 +1401,7 @@ def webcams_probe(payload: dict = Body(...)):
         return {"ok": False, "error": str(e)}
 
 
-async def _webcam_frames(f, make, fps=None, still=None, direct=False):
+async def _webcam_frames(f, make, fps=None, still=None, direct=False, make_still=None):
     """Yield make(frame) for the feed's frames while the client stays (it holds the feed open). Woken by the feed
     on every frame (no polling, so the even timing survives), taking every n-th when the feed runs faster than fps.
     still(): a picture to send first while the feed has none yet (webcams.still_for), so the wall shows the camera
@@ -1414,8 +1414,8 @@ async def _webcam_frames(f, make, fps=None, still=None, direct=False):
         seq, t0 = 0, time.time()
         if still is not None and f.frame is None:
             arr = await asyncio.to_thread(still)
-            if arr is not None and f.frame is None:
-                yield await asyncio.to_thread(make, arr, f)
+            if arr is not None and f.frame is None:              # marked a placeholder: shown while loading only
+                yield await asyncio.to_thread(make_still or make, arr, f)
         after = getattr(f, "after", None)                   # every frame in order (stills: just the newest)
         if direct and getattr(f, "kind", None) not in webcams.STILLS and hasattr(f, "decoded_after"):
             # the wall's stream: every frame as soon as it's decoded, starting with the few seconds already decoded;
@@ -1492,9 +1492,13 @@ async def webcams_frames(type: str, w: int, h: int, url: str = "", id: int | Non
         age = time.time() - (feed.image_t or feed.frame_t)      # stills: the image's age, for the caption
         return webcams.pack(webcams.render(frame, w, h, crop, colour), age * 1000)
 
+    def make_still(frame, feed):                              # the still while a feed starts: a placeholder
+        return webcams.pack(webcams.render(frame, w, h, crop, colour), webcams.PLACEHOLDER_AGE)
+
     fps = max(1, min(30, fps))                                # the feed may decode faster for another viewer
     src = {"type": type, "url": url, "id": id}
-    return StreamingResponse(_webcam_frames(f, make, fps=fps, still=lambda: webcams.still_for(src), direct=True),
+    return StreamingResponse(_webcam_frames(f, make, fps=fps, still=lambda: webcams.still_for(src), direct=True,
+                                            make_still=make_still),
                              media_type="application/octet-stream",
                              headers={"Cache-Control": "no-store"})
 

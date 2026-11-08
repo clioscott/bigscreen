@@ -59,6 +59,7 @@ BLACK_SEC = 4.0              # a picture black for this long: the feed is down
 BAD_SEC = 600.0              # a webcam found down while playing sits out this long (the hub's checks may clear it)
 RETRY_DOWN_SEC = 1800.0      # a feed's "down" this old: try it again (only a play can say it's back)
 MAGIC = b"BSWC"
+PLACEHOLDER_AGE = 0xFFFFFFFF  # hub/webcams.py: a frame with this age is the still sent while a feed starts
 GRID_MAGIC = b"BSG2"
 GRID_ROWS = 2                # the camera grid's rows by default; its columns fit the frame
 GRID_MAX_ROWS, GRID_MAX_COLS = 4, 10
@@ -281,7 +282,9 @@ class Stream:
             if len(head) < 12 or head[:4] != MAGIC:
                 raise RuntimeError("stream ended")
             w, h = int.from_bytes(head[4:6], "big"), int.from_bytes(head[6:8], "big")
-            age = int.from_bytes(head[8:12], "big") / 1000.0       # a still's image age at send (s)
+            raw_age = int.from_bytes(head[8:12], "big")
+            placeholder = raw_age == PLACEHOLDER_AGE                # the hub's still while the feed starts
+            age = None if placeholder else raw_age / 1000.0         # a still's image age at send (s)
             if (w, h) != (self.w, self.h):
                 raise RuntimeError(f"hub sent {w}x{h}, wanted {self.w}x{self.h}")
             body = r.read(n)
@@ -289,7 +292,7 @@ class Stream:
                 raise RuntimeError("stream ended")
             self.frame = np.frombuffer(body, np.uint8).reshape(h, w, 3)
             self.frame_t = time.time()
-            if self.video:
+            if self.video and not placeholder:                  # the placeholder shows while loading, never in the video
                 self._q.append(self.frame)
             if self.frame_t - self._black_checked >= 1.0:       # on the reader's core, once a second
                 self._black_checked = self.frame_t
