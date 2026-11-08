@@ -17,7 +17,19 @@ def _panel(webcams, monkeypatch, clock):
     p = wm.WebcamPanel(_Cfg(webcams))
     drawn = []
     p._draw_cam = lambda c, zone, entry, transition: drawn.append(entry["cam"])
+    p._preroll = lambda cid, shape, zone: _Ready()                     # the next webcam's stream: has a picture
+    p._warm_hub = lambda cid: None
     return p, drawn
+
+
+class _Ready:
+    black_since, error = None, ""
+
+    def ready(self):
+        return True
+
+    def down(self, now=None):
+        return False
 
 
 def test_playlist_keeps_order_and_skips_off_and_missing():
@@ -457,3 +469,113 @@ def test_every_view_shows_before_its_tile_is_taken_over_and_the_last_screen_fini
     t4 = [np.full((geo[1], geo[0], 3), 9, np.uint8)] * 5
     assert late.draw_tiles(Canvas(400, 100), t4, geo, 0.7) is None      # both in at 0.4 s, A still looping (till 0.8 s)
     assert late.draw_tiles(Canvas(400, 100), t4, geo, 0.85) == "done"
+
+
+class _Slow(_Ready):
+    """A prerolled stream whose picture hasn't come yet."""
+
+    def __init__(self):
+        self.has = False
+
+    def ready(self):
+        return self.has
+
+
+def test_the_current_webcam_stays_up_until_the_next_has_a_picture(monkeypatch):
+    clock = [1000.0]
+    p, drawn = _panel({"cams": {"a": {}, "b": {}}, "per_turn": 2,
+                       "playlist": [{"cam": "a", "sec": 20}, {"cam": "b", "sec": 20}]}, monkeypatch, clock)
+    slow, warmed = _Slow(), []
+    p._preroll = lambda cid, shape, zone: slow
+    p._warm_hub = lambda cid: warmed.append(cid)
+    c, z, entry = Canvas(448, 130), (0, 0, 448, 130), {"panel": "webcam_full", "_play": 1}
+    p.draw(c, z, entry, True)
+    clock[0] += 6                                                       # 14 s to go: the hub starts b's feed
+    p.draw(c, z, entry, False)
+    assert warmed == ["b"]
+    clock[0] += 16                                                      # due, but b has no picture yet: a stays
+    p.draw(c, z, entry, False)
+    assert drawn[-1] == "a"
+    slow.has = True                                                     # b's frames are in: cut to it
+    p.draw(c, z, entry, False)
+    assert drawn[-1] == "b"
+
+
+def test_the_next_webcam_comes_up_after_a_while_even_without_a_picture(monkeypatch):
+    clock = [1000.0]
+    p, drawn = _panel({"cams": {"a": {}, "b": {}}, "per_turn": 2,
+                       "playlist": [{"cam": "a", "sec": 20}, {"cam": "b", "sec": 20}]}, monkeypatch, clock)
+    p._preroll = lambda cid, shape, zone: _Slow()
+    c, z, entry = Canvas(448, 130), (0, 0, 448, 130), {"panel": "webcam_full", "_play": 1}
+    p.draw(c, z, entry, True)
+    clock[0] += 20 + wm.HOLD_MAX_SEC
+    p.draw(c, z, entry, False)
+    assert drawn[-1] == "b"
+
+
+def test_webcams_the_hub_found_down_are_skipped(monkeypatch, tmp_path):
+    import json
+    clock = [1000.0]
+    (tmp_path / "webcam_health.json").write_text(json.dumps({"b": {"up": False, "why": "black", "since": 900}}))
+    p, drawn = _panel({"cams": {k: {} for k in "abc"}, "per_turn": 2,
+                       "playlist": [{"cam": k, "sec": 10} for k in "abc"]}, monkeypatch, clock)
+    p.data_dir = str(tmp_path)
+    c, z, entry = Canvas(448, 130), (0, 0, 448, 130), {"panel": "webcam_full", "_play": 1}
+    p.draw(c, z, entry, True)
+    clock[0] += 10
+    p.draw(c, z, entry, False)
+    assert drawn == ["a", "c"]
+    assert wm._list_pos["i"] == 2
+
+
+def test_a_prerolled_webcam_that_is_black_is_passed_over(monkeypatch):
+    clock = [1000.0]
+    p, drawn = _panel({"cams": {k: {} for k in "abc"}, "per_turn": 3,
+                       "playlist": [{"cam": k, "sec": 10} for k in "abc"]}, monkeypatch, clock)
+
+    class Black(_Ready):
+        black_since = 0.0
+
+        def ready(self):
+            return False
+
+        def down(self, now=None):
+            return True
+    p._preroll = lambda cid, shape, zone: Black() if cid == "b" else _Ready()
+    c, z, entry = Canvas(448, 130), (0, 0, 448, 130), {"panel": "webcam_full", "_play": 1}
+    p.draw(c, z, entry, True)
+    clock[0] += 10
+    p.draw(c, z, entry, False)
+    assert drawn == ["a", "c"] and p.is_down("b")
+
+
+def test_a_stream_that_goes_black_is_down():
+    from hub import webcams
+    night = np.zeros((90, 160, 3), np.uint8)
+    night[40:44, ::8] = 230                                             # a dark street with its lights on
+    assert not wm.is_black(night) and not webcams.is_black(night)
+    assert wm.is_black(np.full((90, 160, 3), 12, np.uint8)) and webcams.is_black(np.zeros((90, 160, 3), np.uint8))
+
+
+def test_health_job_remembers_since_when_a_webcam_is_down(monkeypatch):
+    from hub.jobs import webcam_health as job
+    first = job.update({}, {"a": (True, ""), "b": (False, "black")}, 100.0)
+    assert first["b"] == {"up": False, "why": "black", "since": 100.0, "checked": 100.0}
+    later = job.update(first, {"a": (True, ""), "b": (False, "no picture")}, 400.0)
+    assert later["b"]["since"] == 100.0 and later["a"]["since"] == 100.0 and later["b"]["checked"] == 400.0
+    back = job.update(later, {"a": (True, ""), "b": (True, "")}, 700.0)
+    assert back["b"] == {"up": True, "why": "", "since": 700.0, "checked": 700.0}
+
+    from hub import webcams
+    monkeypatch.setattr(webcams, "grab_frame", lambda kind, url: np.zeros((20, 20, 3), np.uint8))
+    assert job.check({"source": {"type": "youtube", "url": "https://youtu.be/x"}}) == (False, "black")
+    assert job.check({"source": {"type": "nope"}})[0] is False
+
+
+def test_caption_time_follows_the_location_when_the_webcam_has_no_zone():
+    import time
+
+    from display.modules.webcam_caption import DEFAULT_OVERLAY, Content
+    ct = Content({"label": "A"}, DEFAULT_OVERLAY, wx={"temp": 3, "code": 0, "tz": "Asia/Tokyo", "at": time.time()})
+    assert str(ct.tz) == "Asia/Tokyo" and ct.sections["weather"] == "3°C" and ct.icon == "sun"
+    assert DEFAULT_OVERLAY["corner"] == "bl" and DEFAULT_OVERLAY["separator"] == "space"
