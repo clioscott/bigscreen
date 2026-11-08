@@ -583,8 +583,15 @@ const PlaylistTab = {
           so the rotation has one Webcams entry and the order lives here.
           <button class="btn sm primary" style="margin-left:6px" @click="combine">Combine into the list</button></span></div>
       <div class="row" style="gap:18px; align-items:flex-end">
-        <Field label="Each turn plays" hint="Then the rotation moves on; the next turn carries on down the list">
-          <Stepper :modelValue="wc.per_turn || 1" @update:modelValue="v => wc.per_turn = v" :min="1" :max="50" :unit="(wc.per_turn || 1) === 1 ? ' webcam' : ' webcams'"/></Field>
+        <Field label="Each turn plays" hint="Then the rotation moves on">
+          <div class="row nowrap" style="gap:8px"><Seg :modelValue="wc.per_turn === 'all' ? 'all' : 'some'"
+              @update:modelValue="v => wc.per_turn = v === 'all' ? 'all' : (on.length > 1 ? Math.min(on.length, 50) : 1)"
+              :options="[{ value: 'all', label: 'The whole list' }, { value: 'some', label: 'Some' }]"/>
+            <Stepper v-if="wc.per_turn !== 'all'" :modelValue="wc.per_turn || 1" @update:modelValue="v => wc.per_turn = v" :min="1" :max="50"
+              :unit="(wc.per_turn || 1) === 1 ? ' webcam' : ' webcams'"/></div></Field>
+        <Field label="Each turn starts" hint="At the top, or where the last turn stopped">
+          <Seg :modelValue="wc.from_top === false ? 'carry' : 'top'" @update:modelValue="v => wc.from_top = v !== 'carry'"
+            :options="[{ value: 'top', label: 'At the top' }, { value: 'carry', label: 'Where it stopped' }]"/></Field>
         <div class="faint" style="font-size:12.5px; padding-bottom:6px">{{ on.length }} of {{ list.length }} on · the whole list takes {{ mins(total) }}</div>
       </div>
     </div></div>
