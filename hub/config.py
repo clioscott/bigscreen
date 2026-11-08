@@ -231,12 +231,13 @@ def _validate_overlay(name, ov):
         return
     if not isinstance(ov, dict):
         raise ConfigError(f"webcam {name}: overlay must be an object")
-    from display.modules.webcam_caption import FONTS, LAYOUTS, SECTIONS, SEPARATORS
+    from display.modules.webcam_caption import FONTS, JP_FACES, LAYOUTS, SECTIONS, SEPARATORS
     choices = {"style": LAYOUTS, "corner": ("tl", "tc", "tr", "bl", "bc", "br"), "font": tuple(FONTS),
                "headline": ("name", "place", "custom", "time"), "lines": ("auto", "wrap", "stacked", "inline"),
                "separator": tuple(SEPARATORS), "when": ("always", "intro", "periodic"), "time_format": ("24h", "12h"),
                "container": ("box", "strip", "outline", "board"), "taken_format": ("time", "relative", "both"),
-               "text_align": ("auto", "left", "center", "right")}
+               "text_align": ("auto", "left", "center", "right"), "jp_font": ("auto",) + tuple(FONTS),
+               "jp_face": ("auto",) + tuple(JP_FACES)}
     for key, allowed in choices.items():
         if key in ov and ov[key] not in allowed:
             raise ConfigError(f"webcam {name}: caption {key} must be one of {', '.join(allowed)}")

@@ -69,7 +69,8 @@ SEPARATORS = {"dot": " · ", "slash": " / ", "pipe": " | ", "dash": " - ", "spac
 DEFAULT_OVERLAY = {"style": "tag", "corner": "bl", "when": "always", "font": "small", "accent": "#e8202a",
                    "text": "#ffffff", "bg": "#000000", "opacity": 0.7, "time_format": "24h", "fade": True,
                    "show_sec": 12, "every_min": 3, "custom_text": "", "headline": "name", "lines": "auto",
-                   "separator": "space", "uppercase": False, "order": list(ORDER),
+                   "separator": "space", "uppercase": False, "order": list(ORDER), "jp_font": "auto",
+                   "jp_face": "auto", "wx_beside": False, "temp_icon": False,
                    "show": {"name": True, "place": True, "time": True, "date": False, "offset": False,
                             "daynight": False, "weather": True, "sun": False, "age": False, "live": True,
                             "credit": False, "custom": False, "shield": False,
@@ -94,6 +95,70 @@ ICONS = {
     "snow": [".ggg...", "ggggg..", "ggggggg", ".......", "c.c.c..", ".......", ".c.c.c."],
     "storm": [".ggg...", "ggggg..", "ggggggg", "...y...", "..yy...", "...y...", "..y...."],
 }
+
+
+# 15×15 icons for the weather beside the caption (wx_beside), drawn with a 1 px black outline; same palette
+ICONS15 = {
+    "sun": [
+        "...............", ".......y.......", ".......y.......", "...y.......y...", "......yyy......",
+        ".....yyyyy.....", "....yyyyyyy....", ".yy.yyyyyyy.yy.", "....yyyyyyy....", ".....yyyyy.....",
+        "......yyy......", "...y.......y...", ".......y.......", ".......y.......", "...............",
+    ],
+    "moon": [
+        "...............", "...............", ".....m.........", "....mm.........", "...mm..........",
+        "..mmm..........", "..mmmm.........", "..mmmm.........", "..mmmmm........", "..mmmmmm.......",
+        "...mmmmmmmmm...", "....mmmmmmm....", ".....mmmmm.....", "...............", "...............",
+    ],
+    "partly": [
+        ".....y.........", ".....y.........", "..y.....y......", "....yyy........", "...yyyyy.......",
+        "yy.yyyyy.yy....", "...yyyywwww....", "....yywwwwww...", "..ywwwwwwwwww..", "..wwwwwwwwwwww.",
+        "..wwwwwwwwwwww.", "..wwwwwwwwwwww.", "...gggggggggg..", "...............", "...............",
+    ],
+    "partly_night": [
+        "...............", "....m..........", "...m...........", "..mm...........", ".mmm...........",
+        ".mmmm..........", ".mmmm..wwww....", "..mmmmwwwwww...", "...wwwwwwwwww..", "..wwwwwwwwwwww.",
+        "..wwwwwwwwwwww.", "..wwwwwwwwwwww.", "...gggggggggg..", "...............", "...............",
+    ],
+    "cloud": [
+        "...............", "...............", "...............", "...............", ".......wwww....",
+        "......wwwwww...", "...wwwwwwwwww..", "..wwwwwwwwwwww.", "..wwwwwwwwwwww.", "..wwwwwwwwwwww.",
+        "...gggggggggg..", "...............", "...............", "...............", "...............",
+    ],
+    "fog": [
+        "...............", "...............", ".ggggggggggg...", "...............", "...............",
+        "...............", "...ggggggggggg.", "...............", "...............", "...............",
+        ".gggggggggggg..", "...............", "...............", "...............", "....gggggggggg.",
+    ],
+    "rain": [
+        "...............", ".......wwww....", "......wwwwww...", "...wwwwwwwwww..", "..wwwwwwwwwwww.",
+        "..wwwwwwwwwwww.", "..wwwwwwwwwwww.", "...gggggggggg..", "...............", "...............",
+        "....b...b...b..", "...b...b...b...", "...............", "..b...b...b....", ".b...b...b.....",
+    ],
+    "snow": [
+        "...............", ".......wwww....", "......wwwwww...", "...wwwwwwwwww..", "..wwwwwwwwwwww.",
+        "..wwwwwwwwwwww.", "..wwwwwwwwwwww.", "...gggggggggg..", "...............", "...............",
+        "...c....c....c.", "...............", "...............", ".....c....c....", "...............",
+    ],
+    "storm": [
+        ".......gggg....", "......gggggg...", "...gggggggggg..", "..gggggggggggg.", "..gggggggggggg.",
+        "..gggggggggggg.", "...gggggggggg..", "........y......", ".......y.......", "......yyyy.....",
+        "........y......", ".......y.......", "......y........", "......y........", "...............",
+    ],
+}
+
+
+def draw_icon_beside(c, x, y, name):
+    """A 15×15 weather icon at (x, y) with a 1 px black outline round it (the outline goes outside the 15×15)."""
+    rows = ICONS15.get(name)
+    if not rows:
+        return
+    on = lambda i, j: 0 <= i < 15 and 0 <= j < 15 and rows[j][i] in PALETTE
+    for j in range(-1, 16):
+        for i in range(-1, 16):
+            if on(i, j):
+                c.SetPixel(x + i, y + j, *PALETTE[rows[j][i]])
+            elif any(on(i + di, j + dj) for di in (-1, 0, 1) for dj in (-1, 0, 1)):
+                c.SetPixel(x + i, y + j, 0, 0, 0)
 
 
 def weather_icon(code, is_day=True):
@@ -332,7 +397,10 @@ class Content:
         self.tz = t.tzinfo
         twelve = ov.get("time_format") == "12h"
         sec = {}
-        sec["name"] = (cam.get("label") or "") if sh.get("name") else ""
+        # the name may have several lines (the panel's Name box): the first is the headline, the rest go under it
+        name_lines = [s.strip() for s in str(cam.get("label") or "").splitlines() if s.strip()] if sh.get("name") else []
+        sec["name"] = name_lines[0] if name_lines else ""
+        self.name_more = name_lines[1:]
         sec["place"] = (cam.get("place") or "") if sh.get("place") else ""
         sec["credit"] = (cam.get("credit") or "") if sh.get("credit") else ""
         sec["custom"] = (ov.get("custom_text") or "").strip() if sh.get("custom") else ""
@@ -357,7 +425,10 @@ class Content:
         sec["weather"] = ""
         if sh.get("weather") and wx.get("temp") is not None:
             sec["weather"] = f"{round(wx['temp'])}°C"
-            self.icon = weather_icon(wx.get("code"), bool(wx.get("is_day", 1)))
+            if ov.get("temp_icon"):                       # the small icon in front of the temperature: an option
+                self.icon = weather_icon(wx.get("code"), bool(wx.get("is_day", 1)))
+        # the bigger icon beside the caption box (needs the weather, not the temperature section)
+        self.side_icon = weather_icon(wx.get("code"), bool(wx.get("is_day", 1))) if ov.get("wx_beside") else None
         sec["sun"] = self._sun(wx, t) if sh.get("sun") else ""
         sec.update(self._extras(wx, sh))
         taken = (extra or {}).get("taken")                  # when a still image was taken (epoch), from the hub
@@ -369,6 +440,10 @@ class Content:
         head = ov.get("headline", "name")
         if head not in ("name", "place", "custom", "time") or not sec.get(head):
             head = "name" if sec["name"] else ("place" if sec["place"] else "name")
+        if head != "name" or ov.get("style") == "custom":   # the name as one detail (or one custom slot): one line
+            sec["name"] = " ".join(name_lines)
+            self.name_more = []
+        self.name_more = [up(s) for s in self.name_more]
         self.headline_kind = head
         self.title = up(sec[head] + (" " + self.ampm if head == "time" and self.ampm else ""))
         order = [k for k in (ov.get("order") or []) if k in ORDER] + [k for k in ORDER if k not in (ov.get("order") or [])]
@@ -413,8 +488,8 @@ class Content:
         return self.time + (" " + self.ampm if self.ampm else "")
 
     def bits(self, with_time=True, with_place=True):
-        """The detail sections, in the chosen order (not the headline)."""
-        out = []
+        """The detail sections, in the chosen order (not the headline); the name's further lines first ("name2")."""
+        out = [("name2", s) for s in self.name_more]
         for k in self.order:
             if (k == "time" and not with_time) or (k == "place" and not with_place):
                 continue
@@ -483,7 +558,7 @@ def visibility(ov, elapsed):
 
 # --- drawing ------------------------------------------------------------------------------------------------------
 class Ctx:
-    def __init__(self, c, zone, ov, font_for):
+    def __init__(self, c, zone, ov, font_for, cjk=False):
         self.c, self.ov = c, ov
         self.x, self.y, self.w, self.h = zone
         size = ov.get("font") if ov.get("font") in FONTS else "small"
@@ -491,6 +566,12 @@ class Ctx:
         self.T = font_for(FONTS.get(size, FONTS["small"]))            # the headline
         self.S = font_for(DETAIL.get(size, FONTS["small"]))           # details
         self.B = font_for(BIG.get(size, BIG["small"]))                # big clock / postcard
+        jp = ov.get("jp_font") if ov.get("jp_font") in FONTS else size
+        face = ov.get("jp_face") if ov.get("jp_face") in JP_FACES else "auto"
+        if cjk and (jp != size or face != "auto"):        # Japanese at its own size or in its own font; Latin stays
+            self.T = jp_sized(self.T, font_for(FONTS[jp]).height, face)
+            self.S = jp_sized(self.S, font_for(DETAIL.get(jp, FONTS["small"])).height, face)
+            self.B = jp_sized(self.B, font_for(BIG[jp]).height, face)
         self.accent = Color(*_hex(ov.get("accent"), (232, 32, 42)))
         self.text = Color(*_hex(ov.get("text"), (255, 255, 255)))
         self.bg = _hex(ov.get("bg"), (0, 0, 0))
@@ -540,8 +621,11 @@ class Ctx:
     def details(self, ct, width, with_time=True, with_place=True, max_lines=None):
         """[(first kind, text)] detail lines for this caption's line mode (stacked: up to 4, fit: up to FIT_LINES)."""
         n = max_lines or (4 if self.lines == "stacked" else FIT_LINES)
-        return detail_lines(self.S, ct.bits(with_time, with_place), width, self.lines, self.sep, max_lines=n,
-                            icon_kind="weather" if ct.icon else None)
+        bits = ct.bits(with_time, with_place)
+        more = [] if getattr(self, "title_multi", False) else [(kd, _clip(self.S, v, width)) for kd, v in bits if kd == "name2"]
+        rest = [b for b in bits if b[0] != "name2"]
+        return more + detail_lines(self.S, rest, width, self.lines, self.sep, max_lines=max(1, n - len(more)),
+                                   icon_kind="weather" if ct.icon else None)
 
     def text_with_icon(self, f, x, y_top, ct, kind, text, color=None, put=None):
         """Draw a detail line; the weather icon goes in front of the weather, wherever it is in the line."""
@@ -643,7 +727,7 @@ def draw_caption(c, zone, cam, elapsed, font_for, now_local=None, wx=None, extra
     if style == "ticker":
         zc = _Zone(c, zone)
         before = c.buf[zc.y0:zc.y1, zc.x0:zc.x1].copy() if a < 1 else None
-        LAYOUT_FUNCS[style](Ctx(zc, zone, ov, _font_loader(font_for)), content)
+        LAYOUT_FUNCS[style](Ctx(zc, zone, ov, _font_loader(font_for), has_cjk(content)), content)
         if before is not None and zc.bbox:
             _blend_back(c, zc, before, a)
         return
@@ -690,7 +774,7 @@ def dropped_sections(cam, zone_size, font_for, wx=None, extra=None):
     _rec.dropped = found = set()
     try:
         ct = Content(cam, ov, wx=wx, extra=extra)
-        LAYOUT_FUNCS[style](Ctx(_Zone(Canvas(w, h), (0, 0, w, h)), (0, 0, w, h), ov, _font_loader(font_for)), ct)
+        LAYOUT_FUNCS[style](Ctx(_Zone(Canvas(w, h), (0, 0, w, h)), (0, 0, w, h), ov, _font_loader(font_for), has_cjk(ct)), ct)
     finally:
         _rec.dropped = None
     return sorted(found)
@@ -708,7 +792,7 @@ def _layer(style, ov, ct, w, h, font_for):
     from display.gfx import Canvas
     blink = int(time.time() * 1.25) % 2 if style in BLINKING else 0
     key = (style, json.dumps(ov, sort_keys=True, default=str), ct.title, tuple(ct.bits()), ct.icon, ct.night, ct.live,
-           ct.ampm, ct.clock(), w, h, blink, id(font_for))
+           ct.ampm, ct.clock(), w, h, blink, id(font_for), ct.side_icon)
     hit = _layers.get(key)
     if hit is not None:
         return hit
@@ -719,7 +803,9 @@ def _layer(style, ov, ct, w, h, font_for):
         cv = Canvas(w, h)
         cv.buf[:] = bgv
         zc = _Zone(cv, (0, 0, w, h))
-        LAYOUT_FUNCS[style](Ctx(zc, (0, 0, w, h), ov, fl), ct)
+        LAYOUT_FUNCS[style](Ctx(zc, (0, 0, w, h), ov, fl, has_cjk(ct)), ct)
+        if ct.side_icon and zc.bbox:
+            _icon_beside(zc, zc.bbox, w, h, ov, ct.side_icon)
         planes.append(cv.buf.astype(np.int32))
         if zc.bbox:
             bbox = zc.bbox if bbox is None else (min(bbox[0], zc.bbox[0]), min(bbox[1], zc.bbox[1]),
@@ -746,6 +832,17 @@ def _layer(style, ov, ct, w, h, font_for):
     return out
 
 
+def _icon_beside(zc, box, w, h, ov, name):
+    """The weather icon just outside the caption box (1 px gap, then its outline): to its right, or to its left when
+    the caption sits on the right; centred on the box's height. Left out when there's no room."""
+    x0, y0, x1, y1 = box
+    right_side = str(ov.get("corner") or "bl")[1:] != "r"
+    x = x1 + 2 if right_side else x0 - 17
+    y = min(max(1, (y0 + y1) // 2 - 7), h - 16)
+    if x - 1 >= 0 and x + 16 <= w and y >= 1:
+        draw_icon_beside(zc, x, y, name)
+
+
 def _font_loader(font_for):
     """Accept the older font_for(size) callables as well as font_for(path). Every font comes back able to draw
     Japanese (with_japanese)."""
@@ -768,24 +865,105 @@ JP_FALLBACK = ((9, "fonts/alert/jp-misaki_gothic.bdf"),       # tom-thumb, 5x8 (
                (17, "fonts/alert/jp-shnm16b.bdf"),            # 9x15B (16 px, bold)
                (99, "fonts/alert/jp-kappa20b.bdf"))           # 10x20 (20 px, bold)
 _jp_fonts: dict = {}
+# The Japanese fonts a caption can choose (overlay "jp_face"): every approved Japanese bitmap font on the Fonts tab
+# whose box height is its real size (the proportional and Galmuri cuts aren't), by family: [(height px, path)].
+# The size used is the family's largest that fits the text size (else its smallest). "auto": JP_FALLBACK.
+_J = "fonts/alert/jp-"
+_K = "fonts/candidates/jp-"
+JP_FACES = {
+    "misaki": ("Misaki Gothic", [(8, _J + "misaki_gothic.bdf")]),
+    "misaki_2nd": ("Misaki Gothic 2nd", [(8, _J + "misaki_gothic_2nd.bdf")]),
+    "misaki_mincho": ("Misaki Mincho", [(8, _J + "misaki_mincho.bdf")]),
+    "fusion": ("Fusion Pixel", [(8, _K + "fusion8-mono.bdf"), (10, _K + "fusion10-mono.bdf"),
+                                (12, _K + "fusion12-mono.bdf")]),
+    "ark": ("Ark Pixel", [(10, _K + "ark10-mono.bdf"), (12, _K + "ark12-mono.bdf")]),
+    "mplus": ("M+", [(11, _J + "mplus10r.bdf"), (13, _K + "mplus12r.bdf")]),
+    "mplus_bold": ("M+ bold", [(11, _K + "mplus10b.bdf")]),
+    "k8x12": ("k8x12", [(12, _J + "k8x12.bdf")]),
+    "k8x12l": ("k8x12 L", [(12, _J + "k8x12L.bdf")]),
+    "k12": ("K12", [(12, _K + "k12.bdf")]),
+    "kaname": ("Kaname", [(12, _K + "kaname12.bdf")]),
+    "kaname_bold": ("Kaname bold", [(12, _K + "kaname12b.bdf")]),
+    "shnm": ("Shinonome Gothic", [(12, _K + "shnm12.bdf"), (14, _K + "shnm14.bdf"), (16, _K + "shnm16.bdf")]),
+    "shnm_bold": ("Shinonome Gothic bold", [(16, _J + "shnm16b.bdf")]),
+    "shnm_maru": ("Shinonome Maru", [(12, _J + "shnm12maru.bdf")]),
+    "shnm_maru_bold": ("Shinonome Maru bold", [(12, _K + "shnm12marub.bdf")]),
+    "shnm_mincho": ("Shinonome Mincho", [(12, _J + "shnm12min.bdf"), (16, _J + "shnm16min.bdf")]),
+    "shnm_mincho_bold": ("Shinonome Mincho bold", [(16, _K + "shnm16minb.bdf")]),
+    "u8": ("U8 Gothic", [(12, _K + "u8-b12.bdf"), (14, _K + "u8-b14.bdf"), (16, _K + "u8-b16.bdf")]),
+    "u8_bold": ("U8 Gothic bold", [(12, _K + "u8-b12-b.bdf"), (14, _K + "u8-b14-b.bdf"), (16, _K + "u8-b16-b.bdf")]),
+    "jiskan": ("JIS Kan", [(16, _J + "jiskan16.bdf"), (24, _K + "jiskan24.bdf")]),
+    "maru": ("Maru", [(16, _K + "maru16.bdf"), (18, _K + "maru18.bdf")]),
+    "ayu": ("Ayu", [(18, _J + "ayu18.bdf"), (20, _J + "ayu20.bdf")]),
+    "j83": ("J83", [(18, _K + "j83-18.bdf")]),
+    "j83_bold": ("J83 bold", [(18, _K + "j83-18b.bdf")]),
+    "kappa": ("Kappa bold", [(20, _J + "kappa20b.bdf")]),
+    "kappa_medium": ("Kappa", [(20, _K + "kappa20m.bdf")]),
+}
 
 
-def with_japanese(f):
-    """The font with a Japanese fallback attached (once; a font that has kana itself is left alone)."""
-    if f is None or getattr(f, "fallback", None) is not None or 0x3042 in getattr(f, "glyphs", {0x3042: 1}):
-        return f
-    path = next(p for h, p in JP_FALLBACK if f.height <= h)
+def _jp_path(height, face="auto"):
+    """The Japanese font file for text about ``height`` px tall, in a family of JP_FACES or (auto) JP_FALLBACK."""
+    if face in JP_FACES:
+        sizes = JP_FACES[face][1]
+        fits = [s for s in sizes if s[0] <= height + 1]
+        return (fits[-1] if fits else sizes[0])[1]
+    return next(p for h, p in JP_FALLBACK if height <= h)
+
+
+def _jp_font(height, face="auto"):
+    """The approved Japanese font for text about ``height`` px tall (loaded once), or None."""
+    path = _jp_path(height, face)
     jp = _jp_fonts.get(path)
     if jp is None:
         jp = graphics.Font()
         try:
             jp.LoadFont(path)
         except Exception:
-            return f
+            return None
         _jp_fonts[path] = jp
-    f.fallback = jp
-    f._text_cache.clear()
+    return jp
+
+
+def with_japanese(f):
+    """The font with a Japanese fallback of its own height attached (once; a font that has kana itself is left
+    alone)."""
+    if f is None or getattr(f, "fallback", None) is not None or 0x3042 in getattr(f, "glyphs", {0x3042: 1}):
+        return f
+    jp = _jp_font(f.height)
+    if jp is not None:
+        f.fallback = jp
+        f._text_cache.clear()
     return f
+
+
+_jp_sized: dict = {}
+
+
+def jp_sized(f, height, face="auto"):
+    """The Latin font f with Japanese the size of a ``height`` px Latin font (the caption's "Japanese text size"), in
+    ``face`` (its "Japanese font"): a copy sharing f's glyphs, its lines tall enough for both (so only captions with
+    Japanese use it)."""
+    jp = _jp_font(height, face)
+    if jp is None or jp is getattr(f, "fallback", None):
+        return f
+    key = (id(f), id(jp))
+    hit = _jp_sized.get(key)
+    if hit is not None and hit[0] is f:
+        return hit[1]
+    v = graphics.Font()
+    v.glyphs, v.fallback = f.glyphs, jp
+    asc, desc = max(f.baseline, jp.baseline), max(f.height - f.baseline, jp.height - jp.baseline)
+    v.height, v.baseline = asc + desc, asc
+    if len(_jp_sized) > 64:
+        _jp_sized.clear()
+    _jp_sized[key] = (f, v)
+    return v
+
+
+def has_cjk(ct) -> bool:
+    """Whether the caption has any Japanese (or other CJK) text in it."""
+    return any(ord(ch) >= 0x2E80 for s in (ct.title, *ct.sections.values(), *ct.name_more) for ch in (s or ""))
 
 
 # --- layouts ------------------------------------------------------------------------------------------------------
@@ -811,15 +989,18 @@ def _l_tag(k, ct, outline=False):
     edge = 0 if outline else 1                             # the accent stripe
     bw = _tw(S, "LIVE") + 4 if ct.live else 0
     room = k.sized(10 ** 4) - 2 * pad - edge - 5
+    k.title_multi = k.lines != "inline"                    # the name's further lines: headline lines here
     title, lines = _headline_and_lines(k, ct, room - (bw + 3 if bw else 0))
+    more = [_clip(T, s, room) for s in ct.name_more] if title and k.title_multi else []
     if not (title or lines or bw):
         return
     head_w = (bw + 3 if bw and title else bw) + (_tw(T, title) if title else 0)
+    more_ws = [_tw(T, s) for s in more]
     line_ws = [_tw(S, ln) + _icon_w(ct, kd, ln) for kd, ln in lines]
-    box_w = k.sized(pad * 2 + max([head_w] + line_ws) + edge)
+    box_w = k.sized(pad * 2 + max([head_w] + more_ws + line_ws) + edge)
     inner = box_w - 2 * pad - edge
     head_h = max(T.height if title else 0, S.height + 1 if bw else 0)
-    box_h = pad * 2 + head_h + sum(S.height + 1 for _ in lines)
+    box_h = pad * 2 + head_h + sum(T.height + 1 for _ in more) + sum(S.height + 1 for _ in lines)
     bx, by = k.place(box_w, box_h)
     put = _outlined if outline else graphics.DrawText
     if not outline:
@@ -833,6 +1014,9 @@ def _l_tag(k, ct, outline=False):
     if title:
         put(c, T, cx, ty + T.baseline, k.text, title)
     ty += head_h + 1
+    for s, mw in zip(more, more_ws):
+        put(c, T, k.line_x(x0, inner, mw), ty + T.baseline, k.text, s)
+        ty += T.height + 1
     for (kd, ln), lw in zip(lines, line_ws):
         k.text_with_icon(S, k.line_x(x0, inner, lw), ty, ct, kd, ln, put=put)
         ty += S.height + 1

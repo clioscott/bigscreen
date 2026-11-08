@@ -65,7 +65,7 @@ const customCols = (ov, hasText) => [...new Set(Object.keys(DEFAULT_SLOTS)
   .map((k) => (ov.slots?.[k] || DEFAULT_SLOTS[k])[0]))].sort();
 const DEFAULT_OVERLAY = { style: "tag", corner: "bl", when: "always", font: "small", accent: "#e8202a", text: "#ffffff",
   bg: "#000000", opacity: 0.7, time_format: "24h", fade: true, show_sec: 12, every_min: 3, custom_text: "", headline: "name",
-  lines: "auto", separator: "space", uppercase: false, order: [...ORDERABLE],
+  lines: "auto", separator: "space", uppercase: false, order: [...ORDERABLE], jp_font: "auto", jp_face: "auto", wx_beside: false, temp_icon: false,
   show: { name: true, place: true, time: true, date: false, offset: false, daynight: false, weather: true, sun: false,
     age: false, live: true, credit: false, custom: false, shield: false, conditions: false, feels: false, hilo: false, wind: false, humidity: false },
   shield: { route: "99", kind: "auto", style: "pixel", place: "inside", size: "box" } };
@@ -1052,6 +1052,15 @@ const WebcamEditor = {
     const shape = ref("full");
     const { status, feedFor, healthFor } = useStatus();
     const zone = computed(() => status.value.zones[shape.value] || [448, 130]);
+    // the Japanese fonts a caption can use (webcam_caption.JP_FACES), and a sample of the chosen one in its own words
+    const jpFaces = computed(() => status.value.jp_faces || []);
+    const jpSample = computed(() => {
+      const f = jpFaces.value.find((x) => x.id === ov.value?.jp_face);
+      if (!f) return "";
+      const own = [cam.value?.label, cam.value?.place].join(" ").replace(/[\u0000-\u2e7f]+/g, " ").trim();
+      const path = f.sizes[f.sizes.length - 1][1];
+      return `/api/fonts/preview.png?${qs({ path, text: " ", jp: own || "渋谷 歌舞伎町 東京 交差点", scale: 2, width: 300 })}`;
+    });
     // what the caption will say there: the location's time zone (filled in when the webcam has none), time and weather
     const local = ref(null);
     let localTimer = null;
@@ -1197,7 +1206,7 @@ const WebcamEditor = {
     const customCrop = (s) => !!cam.value.crops?.[s];
     return { id, cam, shape, zone, ov, colour, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
       orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, hasText, customCols, SHIELD_PRESETS, SHIELD_KINDS, SHIELD_PLACES, SHIELD_SIZES, SHIELD_STYLES, shieldSrc, signMissing, presetShown, presetDone,
-      CONTAINERS, feedFor, feedPill, healthFor, downPill, local, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
+      CONTAINERS, feedFor, feedPill, healthFor, downPill, local, jpFaces, jpSample, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
   },
   template: `<div class="page" v-if="cam">
     <div class="page-head"><div class="grow">
@@ -1223,7 +1232,8 @@ const WebcamEditor = {
             <div v-if="probe" class="callout" :class="probe.ok ? 'ok' : 'bad'" style="font-size:12.5px">
               <Icon :name="probe.ok ? 'CircleCheck' : 'CircleX'" :size="14"/> {{ probe.ok ? (probe.title ? 'Found: ' + probe.title : 'The hub can open it') : probe.error }}</div>
             <div class="fields">
-              <Field label="Name"><input class="input" v-model="cam.label"></Field>
+              <Field label="Name" hint="Each line shows on its own line in the caption"><textarea class="input" rows="2" v-model="cam.label"
+                style="resize:vertical; min-height:58px; padding-top:6px; line-height:1.35"></textarea></Field>
               <Field label="Place" hint="Shown under the name"><input class="input" v-model="cam.place" placeholder="Tokyo, Japan"></Field>
               <Field label="Credit" hint="Who runs the camera"><input class="input" v-model="cam.credit" placeholder="FNN"></Field>
               <Field label="Time zone" hint="For the caption's local time"><input class="input" v-model.trim="cam.tz" list="wc-tz" placeholder="Asia/Tokyo">
@@ -1289,6 +1299,15 @@ const WebcamEditor = {
                 <Field label="Position"><div class="wc-corners wc-six">
                   <button v-for="c in POSITIONS" :key="c" type="button" :class="{on: ov.corner === c}" @click="ov.corner = c" :title="c"></button></div></Field>
                 <Field label="Text size" v-if="ov.style !== 'dot'"><Seg v-model="ov.font" :options="FONTS"/></Field>
+                <Field label="Japanese text size" hint="Kana and kanji only; the English keeps the text size" v-if="ov.style !== 'dot'">
+                  <Seg :modelValue="ov.jp_font || 'auto'" @update:modelValue="v => ov.jp_font = v" :options="[{ value: 'auto', label: 'Same as text' }, ...FONTS]"/></Field>
+              </div>
+              <div class="row" style="gap:16px; align-items:flex-start" v-if="ov.style !== 'dot'">
+                <Field label="Japanese font" hint="Approved Japanese fonts (Fonts tab); each comes in the sizes listed">
+                  <select class="input" style="width:auto" :value="ov.jp_face || 'auto'" @change="ov.jp_face = $event.target.value">
+                    <option value="auto">Matched to the text size</option>
+                    <option v-for="f in jpFaces" :key="f.id" :value="f.id">{{ f.name }} · {{ f.sizes.map(s => s[0]).join(', ') }} px</option></select>
+                  <img v-if="jpSample" :src="jpSample" alt="" style="image-rendering:pixelated; margin-top:6px; max-width:100%; display:block"></Field>
               </div>
               <div class="row" style="gap:16px; align-items:flex-start" v-if="ov.style !== 'dot'">
                 <Field label="Text alignment" hint="Auto follows the position"><Seg :modelValue="ov.text_align || 'auto'" @update:modelValue="v => ov.text_align = v" :options="TEXT_ALIGNS"/></Field>
@@ -1308,6 +1327,8 @@ const WebcamEditor = {
                 <Field v-for="g in SECTION_GROUPS" :key="g.label" :label="g.label"><div class="row" style="gap:6px">
                   <template v-for="k in g.keys" :key="k"><button v-if="k !== 'shield' || ov.style === 'custom'" type="button" class="chip" :class="{off: !ov.show[k]}"
                     style="height:26px; padding:0 10px" @click="toggleShow(k)">{{ SECTIONS[k] }}</button></template></div></Field></div>
+              <ToggleRow v-if="ov.style !== 'dot' && ov.show.weather" :modelValue="!!ov.temp_icon" @update:modelValue="v => ov.temp_icon = v"
+                label="Weather icon in front of the temperature" hint="Off: just the temperature"/>
             </template>
             <template v-if="ov.style !== 'none' && capTab === 'content'">
               <Field label="Highway shield" v-if="ov.style === 'custom' && ov.show.shield" hint="Pick a sign, or type a route; inside, the box grows to fit it">
@@ -1365,6 +1386,8 @@ const WebcamEditor = {
                 <Field label="Background strength"><div style="width:150px"><Slider v-model="ov.opacity" :min="0" :max="1" :step="0.05" :format="v => Math.round(v * 100) + '%'"/></div></Field>
               </div>
               <ToggleRow v-if="ov.style !== 'dot'" v-model="ov.uppercase" label="ALL CAPS"/>
+              <ToggleRow v-if="!['dot', 'ticker'].includes(ov.style)" :modelValue="!!ov.wx_beside" @update:modelValue="v => ov.wx_beside = v"
+                label="Weather icon beside the caption" :hint="Number.isFinite(cam.lat) ? 'A bigger icon just outside the box, outlined in black' : 'Needs a location for the webcam (Source → Location)'"/>
             </template>
             <template v-if="ov.style !== 'none' && capTab === 'when'">
               <div class="row" style="gap:16px; align-items:flex-start">

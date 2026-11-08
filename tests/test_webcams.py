@@ -356,7 +356,7 @@ def test_content_order_headline_and_sections():
     t = datetime(2026, 10, 19, 5, 41, tzinfo=ZoneInfo("Asia/Tokyo"))
     here = datetime(2026, 10, 18, 13, 41, tzinfo=ZoneInfo("America/Vancouver"))
     ov = cap.overlay_of({"overlay": {"headline": "place", "order": ["weather", "time"],
-                                     "show": {"weather": True, "offset": True, "date": True}}})
+                                     "show": {"weather": True, "offset": True, "date": True}, "temp_icon": True}})
     ct = cap.Content(CAM, ov, now_local=t, here=here, wx=WX)
     assert ct.title == "Tokyo, Japan"                                   # place is the headline…
     kinds = [k for k, _ in ct.bits()]
@@ -687,11 +687,13 @@ def test_wall_preview_batches_weather_and_skips_webcams_without_it(monkeypatch):
     on = {"overlay": {"show": {"weather": True}}}
     hub_app.display_preview({"overlay": {"modules": {"webcams": {"cams": {
         "a": {"lat": 49.0, "lon": -123.0, **on}, "b": {"lat": 35.0, "lon": 139.0, **on},
-        "c": {"lat": 48.0, "lon": -123.0}, "d": on}}}}, "ttl_sec": 60})
+        "c": {"lat": 48.0, "lon": -123.0, "tz": "America/Vancouver"}, "d": on,
+        "e": {"lat": 47.0, "lon": -122.0}}}}}, "ttl_sec": 60})
     cams = sent["overlay"]["modules"]["webcams"]["cams"]
     assert cams["a"]["_wx"]["temp"] == 12.0 and cams["b"]["_wx"]["temp"] == 12.0
     assert "_wx" not in cams["c"] and "_wx" not in cams["d"]                                  # no weather shown / no place
-    assert len(calls) == 1 and len(calls[0]) == 2                                             # one request for both
+    assert cams["e"]["_wx"]["temp"] == 12.0                     # no tz: its location's data gives the local time zone
+    assert len(calls) == 1 and len(calls[0]) == 3                                             # one request for all
 
 
 # --- custom layout: a section pushed to its line's right end ----------------------------------------------------

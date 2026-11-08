@@ -580,8 +580,10 @@ def test_caption_time_follows_the_location_when_the_webcam_has_no_zone():
     import time
 
     from display.modules.webcam_caption import DEFAULT_OVERLAY, Content
-    ct = Content({"label": "A"}, DEFAULT_OVERLAY, wx={"temp": 3, "code": 0, "tz": "Asia/Tokyo", "at": time.time()})
-    assert str(ct.tz) == "Asia/Tokyo" and ct.sections["weather"] == "3°C" and ct.icon == "sun"
+    wx = {"temp": 3, "code": 0, "tz": "Asia/Tokyo", "at": time.time()}
+    ct = Content({"label": "A"}, DEFAULT_OVERLAY, wx=wx)
+    assert str(ct.tz) == "Asia/Tokyo" and ct.sections["weather"] == "3°C" and ct.icon is None   # just the temperature
+    assert Content({"label": "A"}, {**DEFAULT_OVERLAY, "temp_icon": True}, wx=wx).icon == "sun"      # icon: an option
     assert DEFAULT_OVERLAY["corner"] == "bl" and DEFAULT_OVERLAY["separator"] == "space"
 
 
@@ -664,3 +666,96 @@ def test_captions_draw_japanese_with_an_approved_font_of_their_size():
                             np.zeros((130, 448, 3), np.uint8), (448, 130), elapsed=3)
     box = img[100:130, :200]
     assert (box.max(axis=-1) > 200).sum() > 150                             # the kanji and kana are drawn
+
+
+def test_japanese_text_size_changes_only_the_japanese():
+    from display.gfx import graphics
+    from display.modules import webcam_caption as cap
+    small = graphics.Font()
+    small.LoadFont(cap.FONTS["small"])
+    cap.with_japanese(small)
+    big = cap.jp_sized(small, 20)                                         # Japanese as tall as 10x20
+    assert big.glyphs is small.glyphs and "kappa20b" in next(p for p, f in cap._jp_fonts.items() if f is big.fallback)
+    assert big.height >= 20 and big.CharacterWidth(ord("K")) == small.CharacterWidth(ord("K"))
+    assert cap.jp_sized(small, 20) is big and cap.jp_sized(small, 8) is small    # cached; same size: the font itself
+    frame = np.zeros((130, 448, 3), np.uint8)
+    latin = {"label": "Kabukicho Ichibangai", "place": "Tokyo, Japan", "tz": "Asia/Tokyo"}
+    for style in ("tag", "postcard", "custom"):
+        cap._memo.clear(), cap._layers.clear()
+        a = wm.render_preview({**latin, "overlay": {"style": style}}, frame, (448, 130), elapsed=3)
+        cap._memo.clear(), cap._layers.clear()
+        b = wm.render_preview({**latin, "overlay": {"style": style, "jp_font": "xlarge"}}, frame, (448, 130), elapsed=3)
+        assert (a == b).all()                                            # no Japanese: nothing changes
+    jp = {**latin, "label": "Kabukicho 歌舞伎町"}
+    cap._memo.clear(), cap._layers.clear()
+    a = wm.render_preview({**jp, "overlay": {}}, frame, (448, 130), elapsed=3)
+    cap._memo.clear(), cap._layers.clear()
+    b = wm.render_preview({**jp, "overlay": {"jp_font": "xlarge"}}, frame, (448, 130), elapsed=3)
+    rows = lambda img: np.flatnonzero(img.max(axis=(1, 2)) > 0)
+    assert len(rows(b)) > len(rows(a))                                   # the caption grew to fit the bigger kanji
+
+
+def test_japanese_text_size_validates():
+    import pytest
+
+    from hub import config
+    cam = {"label": "A", "source": {"type": "image", "url": "https://x.example/a.jpg"}, "overlay": {"jp_font": "large"}}
+    config.validate(_cfg({"cams": {"a": cam}}))
+    with pytest.raises(config.ConfigError):
+        config.validate(_cfg({"cams": {"a": {**cam, "overlay": {"jp_font": "huge"}}}}))
+
+
+def test_weather_icon_beside_the_caption_box():
+    import time
+
+    from display.modules import webcam_caption as cap
+    wx = {"temp": 9, "code": 61, "is_day": 1, "tz": "Asia/Tokyo", "at": time.time()}
+    frame = np.full((130, 448, 3), 90, np.uint8)
+    cam = {"label": "Kabukicho", "place": "Tokyo, Japan"}
+
+    def render(**ov):
+        cap._memo.clear(), cap._layers.clear()
+        return wm.render_preview({**cam, "overlay": ov}, frame, (448, 130), elapsed=3, wx=wx)
+    plain, beside = render(), render(wx_beside=True)
+    diff = np.flatnonzero((plain != beside).any(axis=(0, 2)))
+    box_right = np.flatnonzero((plain != frame).any(axis=(0, 2))).max()
+    assert diff.min() > box_right + 1 and diff.max() - diff.min() <= 16      # icon + outline, a gap right of the box
+    assert ((beside[:, diff] == 0).all(axis=-1)).any()                        # the black outline
+    right = render(wx_beside=True, corner="br")
+    box_left = np.flatnonzero((render(corner="br") != frame).any(axis=(0, 2))).min()
+    assert np.flatnonzero((render(corner="br") != right).any(axis=(0, 2))).max() < box_left   # caption on the right: icon on its left
+    assert cap.Content(cam, cap.overlay_of({"overlay": {"wx_beside": True}})).side_icon is None   # no weather: no icon
+
+
+def test_a_chosen_japanese_font_and_its_sizes():
+    import os
+
+    from display.modules import webcam_caption as cap
+    for key, (name, sizes) in cap.JP_FACES.items():
+        assert sizes == sorted(sizes) and all(os.path.exists(os.path.join("assets", p)) for _, p in sizes), key
+    assert cap._jp_path(12, "shnm").endswith("shnm12.bdf") and cap._jp_path(13, "shnm").endswith("shnm14.bdf") and cap._jp_path(16, "shnm").endswith("shnm16.bdf")
+    assert cap._jp_path(8, "ayu").endswith("ayu18.bdf")                       # too small for the family: its smallest
+    frame = np.zeros((130, 448, 3), np.uint8)
+    cam = {"label": "Kabukicho 歌舞伎町"}
+    cap._memo.clear(), cap._layers.clear()
+    a = wm.render_preview({**cam, "overlay": {}}, frame, (448, 130), elapsed=3)
+    cap._memo.clear(), cap._layers.clear()
+    b = wm.render_preview({**cam, "overlay": {"jp_face": "shnm_maru"}}, frame, (448, 130), elapsed=3)   # (Fusion 8 is Misaki)
+    assert not (a == b).all()
+
+
+def test_a_name_on_several_lines():
+    from display.modules import webcam_caption as cap
+    cam = {"label": "Kabukicho Ichibangai\n 歌舞伎町一番街 \n\n", "place": "Tokyo"}
+    ct = cap.Content(cam, cap.overlay_of({}))
+    assert ct.title == "Kabukicho Ichibangai" and ct.name_more == ["歌舞伎町一番街"] and cap.has_cjk(ct)
+    assert ct.bits()[0] == ("name2", "歌舞伎町一番街")
+    one = cap.Content(cam, cap.overlay_of({"overlay": {"headline": "place"}}))          # the name as a detail
+    assert one.name_more == [] and one.sections["name"] == "Kabukicho Ichibangai 歌舞伎町一番街"
+    frame = np.zeros((130, 448, 3), np.uint8)
+    rows = lambda img: np.flatnonzero(img.max(axis=(1, 2)) > 0)
+    cap._memo.clear(), cap._layers.clear()
+    two = wm.render_preview(cam, frame, (448, 130), elapsed=3)
+    cap._memo.clear(), cap._layers.clear()
+    single = wm.render_preview({**cam, "label": "Kabukicho Ichibangai"}, frame, (448, 130), elapsed=3)
+    assert len(rows(two)) > len(rows(single))                            # the box grew by the second line
