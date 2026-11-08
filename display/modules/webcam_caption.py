@@ -747,14 +747,45 @@ def _layer(style, ov, ct, w, h, font_for):
 
 
 def _font_loader(font_for):
-    """Accept the older font_for(size) callables as well as font_for(path)."""
+    """Accept the older font_for(size) callables as well as font_for(path). Every font comes back able to draw
+    Japanese (with_japanese)."""
     def get(path_or_size):
         try:
-            return font_for(path_or_size)
+            f = font_for(path_or_size)
         except Exception:
             size = next((k for k, v in FONTS.items() if v == path_or_size), "small")
-            return font_for(size)
+            f = font_for(size)
+        return with_japanese(f)
     return get
+
+
+# Japanese (kana and kanji) for captions: the caption fonts are Latin only, so each gets an approved Japanese bitmap
+# font of about its height (Fonts tab: approved; all with the full JIS X 0208 set) for the characters it lacks, drawn
+# at native size on the same baseline. By the Latin font's height:
+JP_FALLBACK = ((9, "fonts/alert/jp-misaki_gothic.bdf"),       # tom-thumb, 5x8 (8 px)
+               (11, "fonts/alert/jp-mplus10r.bdf"),           # 6x10 (11 px)
+               (13, "fonts/candidates/jp-kaname12b.bdf"),     # 7x13B (12 px, bold)
+               (17, "fonts/alert/jp-shnm16b.bdf"),            # 9x15B (16 px, bold)
+               (99, "fonts/alert/jp-kappa20b.bdf"))           # 10x20 (20 px, bold)
+_jp_fonts: dict = {}
+
+
+def with_japanese(f):
+    """The font with a Japanese fallback attached (once; a font that has kana itself is left alone)."""
+    if f is None or getattr(f, "fallback", None) is not None or 0x3042 in getattr(f, "glyphs", {0x3042: 1}):
+        return f
+    path = next(p for h, p in JP_FALLBACK if f.height <= h)
+    jp = _jp_fonts.get(path)
+    if jp is None:
+        jp = graphics.Font()
+        try:
+            jp.LoadFont(path)
+        except Exception:
+            return f
+        _jp_fonts[path] = jp
+    f.fallback = jp
+    f._text_cache.clear()
+    return f
 
 
 # --- layouts ------------------------------------------------------------------------------------------------------

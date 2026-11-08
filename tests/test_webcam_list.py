@@ -644,3 +644,23 @@ def test_health_job_writes_what_it_checked_in_time(monkeypatch):
     assert got == {"fast": (True, "")}
     kept = job.update({"slow": {"up": False, "since": 1}, "gone": {"up": True}}, got, 10.0, keep={"fast", "slow"})
     assert kept["slow"] == {"up": False, "since": 1} and "gone" not in kept and kept["fast"]["up"]
+
+
+def test_captions_draw_japanese_with_an_approved_font_of_their_size():
+    from display.gfx import graphics
+    from display.modules import webcam_caption as cap
+    for size, jp in (("small", "jp-misaki_gothic"), ("medium", "jp-mplus10r"), ("large", "jp-kaname12b"),
+                     ("xlarge", "jp-shnm16b")):
+        f = graphics.Font()
+        f.LoadFont(cap.FONTS[size])
+        assert f.CharacterWidth(0x6E0B) == -1                               # 渋: the Latin font lacks it
+        cap.with_japanese(f)
+        assert f.CharacterWidth(0x6E0B) > 0 and f.fallback is cap._jp_fonts[next(p for p in cap._jp_fonts if jp in p)]
+        assert cap._tw(f, "渋谷 Tokyo") > cap._tw(f, " Tokyo")
+    plain = graphics.Font()
+    plain.LoadFont(cap.FONTS["small"])
+    assert plain.fallback is None                                           # other screens' fonts are untouched
+    img = wm.render_preview({"label": "渋谷スクランブル交差点", "overlay": {"show": {"place": False, "time": False}}},
+                            np.zeros((130, 448, 3), np.uint8), (448, 130), elapsed=3)
+    box = img[100:130, :200]
+    assert (box.max(axis=-1) > 200).sum() > 150                             # the kanji and kana are drawn
