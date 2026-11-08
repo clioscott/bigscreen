@@ -145,3 +145,38 @@ def test_hub_warm_starts_the_feed_and_never_fails_loudly(monkeypatch):
         raise hub_app.webcams.SourceError("already decoding 4 webcams")
     monkeypatch.setattr(hub_app.webcams, "feed", boom)
     assert hub_app.webcams_warm(type="youtube", url="x")["ok"] is False
+
+
+def test_pass_lengths_survive_a_display_restart():
+    entries = [{"panel": "headlines", "advance": "cycles", "cycles": 1, "max_sec": 1800},
+               {"panel": "webcam", "cam": "a", "dwell_sec": 5}]
+    r = Rotation("right", entries)
+    t = 0.0
+    r.current(t)
+    while t < 100.0:                                                    # headlines: a 100 s pass
+        r.report(None, True, t)
+        t += 0.5
+    r.report("done", True, t)
+    again = Rotation("right", entries)                                  # the display restarted
+    again.current(0.0)
+    t = 0.0
+    while t < 85.0:
+        again.report(None, True, t)
+        t += 0.5
+    assert again.upcoming(t)["cam"] == "a"                              # it still knows: warmed ~15 s before the end
+    assert Rotation("left", entries)._pass_len == {}                    # each side its own
+
+
+def test_the_next_screen_is_warmed_at_the_size_it_will_play():
+    class Env:
+        def allows(self, e):
+            return all(r.get("if") != "never" for r in e.get("rules") or [])
+    r = Rotation("right", [{"panel": "blank", "dwell_sec": 30},
+                           {"panel": "webcam_full", "variants": [{"panel": "webcam", "rules": []}]}], env=Env())
+    _run(r, 0.0, 20.0)
+    assert r.upcoming(20.0)["panel"] == "webcam"                        # the variant that will play (right half)
+    r2 = Rotation("right", [{"panel": "blank", "dwell_sec": 30},
+                            {"panel": "webcam_full", "variants": [{"panel": "webcam", "rules": [{"if": "never"}]}]}],
+                  env=Env())
+    _run(r2, 0.0, 20.0)
+    assert r2.upcoming(20.0)["panel"] == "webcam_full"

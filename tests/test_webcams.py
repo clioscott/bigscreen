@@ -911,3 +911,38 @@ def test_a_route_needs_a_number_on_the_wall_as_on_the_panel():
     assert cap.Content(CAM, ov).sections["shield"] == ""
     ov["shield"]["route"] = "US 97"
     assert cap.Content(CAM, ov).sections["shield"] == "US 97"
+
+
+def test_a_starting_feed_sends_a_still_of_the_camera_first(monkeypatch):
+    """No "loading" on the wall: until a feed has frames, the hub sends the camera's last frame or its snapshot."""
+    import asyncio
+
+    import numpy as np
+
+    from hub import app as hub_app
+    from hub import webcams
+
+    class Feed:
+        kind, url, frame, fps, seq, state = "youtube", "https://youtu.be/x", None, 15, 0, "starting"
+
+        def attach(self): pass
+        def detach(self): pass
+        def add_waiter(self, loop, ev): pass
+        def remove_waiter(self, loop, ev): pass
+    f = Feed()
+    still = np.full((36, 64, 3), 77, np.uint8)
+
+    async def first():
+        gen = hub_app._webcam_frames(f, lambda frame, feed: frame, fps=15, still=lambda: still)
+        got = await gen.__anext__()
+        await gen.aclose()
+        return got
+    assert asyncio.run(first()) is still
+    monkeypatch.setattr(webcams, "_feeds", {})
+    monkeypatch.setattr(webcams, "_last_frames", __import__("collections").OrderedDict())
+    f.frame = np.full((36, 64, 3), 9, np.uint8)
+    webcams._forget(f)                                                  # the feed stopped: its last frame is kept
+    assert webcams.still_for({"type": "youtube", "url": "https://youtu.be/x"}) is f.frame
+    monkeypatch.setattr(webcams, "snapshot", lambda src: (None, "pending"))
+    assert webcams.still_for({"type": "youtube", "url": "https://youtu.be/other"}) is None
+    assert webcams.still_for({"type": "drivebc", "id": 5}) is None     # stills send their own picture at once
