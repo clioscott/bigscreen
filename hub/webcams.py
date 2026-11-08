@@ -30,8 +30,8 @@ import numpy as np
 from PIL import Image
 
 WORK_W = 640                 # decoded frames are this wide; crops come out of these
-MAX_FEEDS = 4                # ffmpegs at once
-GRACE_SEC = 30.0             # a feed outlives its last viewer by this long (the next play starts instantly)
+MAX_FEEDS = 6                # ffmpegs at once (the wall's list prepares a few ahead: display/modules/webcam.py LOOKAHEAD)
+GRACE_SEC = 15.0             # a feed outlives its last viewer (or warm ask, every 10 s) by this long
 STALL_SEC = 20.0             # nothing decoded for this long: restart ffmpeg
 BUFFER_SEC = 3.5             # playout buffer for HLS (YouTube): longer than a segment, so fetching the next one never
                              # shows as a freeze

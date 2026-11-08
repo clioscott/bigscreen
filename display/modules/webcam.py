@@ -53,6 +53,8 @@ GIVE_UP_SEC = 25.0           # no picture this long after the play started: skip
 PREROLL_SEC = 30.0           # the hub starts the next webcam's feed this long before it's due (~5-10 s from cold)
 STREAM_AHEAD_SEC = 12.0      # … and the Pi opens its own stream this long before: its buffer is full when it's due
 HOLD_MAX_SEC = 15.0          # the current webcam stays up at most this much longer while the next one isn't buffered
+LOOKAHEAD = 3                # the list prepares this many webcams ahead, each by how soon its turn is (short turns:
+PREROLL_STREAMS = 2          # several at once); at most this many of them also have the Pi's stream open (buffering)
 BLACK_SEC = 4.0              # a picture black for this long: the feed is down
 BAD_SEC = 600.0              # a webcam found down while playing sits out this long (the hub's checks may clear it)
 RETRY_DOWN_SEC = 1800.0      # a feed's "down" this old: try it again (only a play can say it's back)
@@ -354,8 +356,21 @@ class WebcamPanel:
         if str((entry or {}).get("panel", "")).startswith("webcam_grid"):
             return self.grid.warm(zone)
         cid = (entry or {}).get("cam")
-        if not cid and self.playlist:                         # the Webcams list: the one it plays next
-            cid = self._next_up(_list_pos["i"], self._taken())
+        if not cid and self.playlist:                         # the Webcams list: the first few it will play
+            first, taken = [], self._taken()
+            n = len(self.playlist)
+            for step in range(1, n + 1):
+                k = self.playlist[(_list_pos["i"] + step) % n][0]
+                if k not in taken and not self.is_down(k) and k not in first:
+                    first.append(k)
+                if len(first) >= LOOKAHEAD:
+                    break
+            for i, k in enumerate(first):                     # the first ones' streams too (short turns), the rest
+                if soon and zone is not None and i < PREROLL_STREAMS:    # at the hub
+                    self._preroll(k, self.shape_for(entry, zone), zone)
+                else:
+                    self._warm_hub(k)
+            return
         if soon and zone is not None and cid in self.cams:
             self._preroll(cid, self.shape_for(entry, zone), zone)
         else:
@@ -518,23 +533,48 @@ class WebcamPanel:
             self._switch(t, self._next_up(_list_pos["i"], self._taken(t)), now)
         return None
 
+    def _ahead(self, t, now, due):
+        """The next LOOKAHEAD webcams of the list after the one on screen, with when each comes up: [(cam, start)]. The
+        other half's webcams and ones that are down are passed over."""
+        n = len(self.playlist)
+        skip = self._taken(t) | {t["cam"]}
+        out, start = [], due
+        for step in range(1, n + 1):
+            cid = self.playlist[(_list_pos["i"] + step) % n][0]
+            if cid in skip or self.is_down(cid, now) or any(cid == c for c, _ in out):
+                continue
+            out.append((cid, start))
+            start += self._sec(cid)
+            if len(out) >= LOOKAHEAD:
+                break
+        return out
+
     def _lookahead(self, t, shape, zone, now, due):
-        """The webcam that comes after the current one: its hub feed warmed from PREROLL_SEC before it's due, its stream
-        here open from STREAM_AHEAD_SEC. One found down by then is passed over for the one after it, never shown."""
+        """The webcam that comes after the current one. The next LOOKAHEAD are prepared by how soon each comes up: the
+        hub's feed from PREROLL_SEC before, the Pi's stream (buffering) from STREAM_AHEAD_SEC before, for at most
+        PREROLL_STREAMS at once; with short turns several are getting ready together. The next one found down by then
+        is passed over for the one after it, never shown."""
         for _ in range(len(self.playlist)):
-            cid = t.get("next")
-            if cid is None or self.is_down(cid, now) or cid in self._taken(t):   # (the other half may have taken it)
-                cid = t["next"] = self._next_up(_list_pos["i"], self._taken(t) | {t["cam"]})
-            if cid is None or cid == t["cam"]:
+            ahead = self._ahead(t, now, due)
+            if not ahead:
+                t["next"] = None
                 return None                                   # the only one up is on screen now
-            if now < due - STREAM_AHEAD_SEC:
-                self._warm_hub(cid)
-                return cid
-            st = self._preroll(cid, shape, zone)
-            if st is None or not st.down(now):
-                return cid
+            streams, bad = 0, None
+            for i, (cid, start) in enumerate(ahead):
+                lead = start - now
+                if lead <= STREAM_AHEAD_SEC and streams < PREROLL_STREAMS:
+                    st = self._preroll(cid, shape, zone)
+                    streams += 1
+                    if i == 0 and st is not None and st.down(now):
+                        bad = (cid, st)
+                        break
+                elif lead <= PREROLL_SEC:
+                    self._warm_hub(cid)
+            if bad is None:
+                t["next"] = ahead[0][0]
+                return t["next"]
+            cid, st = bad
             self._mark_bad(cid, "black" if st.black_since is not None else (st.error or "no picture"))
-            t["next"] = None
         return None
 
     def _switch(self, t, cid, now):
