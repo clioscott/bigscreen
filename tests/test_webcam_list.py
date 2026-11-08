@@ -1046,3 +1046,39 @@ def test_tall_borrows_the_full_width_crop():
     assert wm.crop_for(cam, "left", 224, 134) is None                   # only tall borrows
     q = wm.stream_query({**cam, "source": {"type": "youtube", "url": "https://youtu.be/x"}}, "tall", 448, 175)
     assert q["cw"] == 0.5 and q["x"] == 0.2
+
+
+def test_short_turns_prepare_several_webcams_at_once(monkeypatch):
+    clock = [1000.0]
+    p, drawn = _panel({"cams": {k: {} for k in "abcdef"}, "per_turn": 6,
+                       "playlist": [{"cam": k, "sec": 5} for k in "abcdef"]}, monkeypatch, clock)
+    streams, warmed = [], []
+    p._preroll = lambda cid, shape, zone: streams.append(cid) or _Ready()
+    p._warm_hub = lambda cid: warmed.append(cid)
+    c, z, entry = Canvas(448, 130), (0, 0, 448, 130), {"panel": "webcam_full", "_play": 1}
+    p.draw(c, z, entry, True)                                           # a on screen, 5 s each
+    assert streams == ["b", "c"] and warmed == ["d"]                    # two buffering here, one more at the hub
+    switches = []
+    for _ in range(4):
+        clock[0] += 5
+        p.draw(c, z, entry, False)
+        switches.append((round(clock[0] - 1000), drawn[-1]))
+    assert switches == [(5, "b"), (10, "c"), (15, "d"), (20, "e")]       # on time, every 5 s
+
+
+def test_long_turns_still_prepare_just_the_next_one(monkeypatch):
+    clock = [1000.0]
+    p, drawn = _panel({"cams": {k: {} for k in "abcd"}, "per_turn": 4,
+                       "playlist": [{"cam": k, "sec": 60} for k in "abcd"]}, monkeypatch, clock)
+    streams, warmed = [], []
+    p._preroll = lambda cid, shape, zone: streams.append(cid) or _Ready()
+    p._warm_hub = lambda cid: warmed.append(cid)
+    c, z, entry = Canvas(448, 130), (0, 0, 448, 130), {"panel": "webcam_full", "_play": 1}
+    p.draw(c, z, entry, True)
+    assert streams == [] and warmed == []                               # 60 s to go: nothing yet
+    clock[0] += 35                                                      # 25 s to go: the hub starts b
+    p.draw(c, z, entry, False)
+    assert warmed == ["b"] and streams == []
+    clock[0] += 15                                                      # 10 s to go: the Pi buffers b
+    p.draw(c, z, entry, False)
+    assert streams == ["b"]
