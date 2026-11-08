@@ -1056,3 +1056,43 @@ def test_youtube_thumbnails_without_yt_dlp(monkeypatch, tmp_path):
     assert webcams._snap_path("youtube", "https://www.youtube.com/watch?v=abcdefghijk").read_bytes()[:2] == b"\xff\xd8"
     assert webcams.youtube_id("https://www.youtube.com/@Channel/live") == ""
     assert webcams.youtube_id("https://youtu.be/abcdefghijk?t=1") == "abcdefghijk"
+
+
+def test_fetch_all_feeds_one_at_a_time_and_stops_at_a_bot_check(monkeypatch):
+    import time as _time
+
+    from hub import webcams
+    monkeypatch.setattr(webcams, "FETCH_GAP", 0)
+    monkeypatch.setattr(webcams, "_yt_block", {"until": 0.0})
+    monkeypatch.setattr(webcams, "_grab", lambda kind, url: None)
+    monkeypatch.setattr(webcams, "fetch_still", lambda kind, url: (None, _time.time() - 300))
+    asked = []
+
+    def resolve(kind, url, fresh=False, timeout=60):
+        asked.append(url)
+        if url.endswith("ccccccccccc"):
+            raise webcams.BotCheck("Sign in to confirm you're not a bot")
+        if url.endswith("bbbbbbbbbbb"):
+            raise webcams.SourceError("Video unavailable")
+        return "https://m/x.m3u8", "Cam"
+    monkeypatch.setattr(webcams, "resolve", resolve)
+    yt = lambda v: {"source": {"type": "youtube", "url": f"https://youtu.be/{v * 11}"}}
+    cams = {"a": yt("a"), "s": {"source": {"type": "drivebc", "id": 18}}, "b": yt("b"), "c": yt("c"), "d": yt("d")}
+
+    def run():
+        webcams.start_fetch_all(cams)
+        for _ in range(200):
+            if not webcams.fetch_all_status()["running"]:
+                break
+            _time.sleep(0.01)
+        return webcams.fetch_all_status()
+    st = run()
+    r = st["results"]
+    assert r["a"]["ok"] and r["s"]["ok"] and "5 min ago" in r["s"]["msg"]
+    assert not r["b"]["ok"] and r["b"]["msg"] == "Video unavailable"
+    assert not r["c"]["ok"] and "bot" in st["stopped"] and "d" not in r            # stopped there: d never asked
+    assert len(asked) == 3
+    monkeypatch.setattr(webcams, "_yt_block", {"until": _time.time() + 600})
+    asked.clear()
+    st = run()
+    assert asked == [] and not st["results"]["a"]["ok"] and "try again" in st["stopped"]   # paused: YouTube not asked
