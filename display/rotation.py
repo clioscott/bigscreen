@@ -28,6 +28,8 @@ How it plays:
 
 from __future__ import annotations
 
+import json
+import os
 import threading
 import time
 
@@ -71,6 +73,34 @@ def normalise(raw) -> dict | None:
     return e
 
 
+PASS_DIR = os.environ.get("BIGSCREEN_STATE_DIR", "/dev/shm/bigscreen-state")
+
+
+def _load_pass_len(side) -> dict:
+    """The pass lengths a side's rotation remembered before the display restarted (tmpfs: gone at reboot)."""
+    try:
+        with open(os.path.join(PASS_DIR, f"pass_len_{side}.json"), encoding="utf-8") as f:
+            raw = json.load(f)
+        back = lambda k: tuple(tuple(x) if isinstance(x, list) else x for x in json.loads(k))   # the key's inner tuple
+        return {back(k): float(v) for k, v in raw.items()}
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+def _save_pass_len(side, lens: dict):
+    if not os.path.isdir(os.path.dirname(PASS_DIR.rstrip("/\\")) or "."):   # no tmpfs here (a dev machine)
+        return
+    try:
+        os.makedirs(PASS_DIR, exist_ok=True)
+        path = os.path.join(PASS_DIR, f"pass_len_{side}.json")
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({json.dumps(list(k), default=str): v for k, v in list(lens.items())[-200:]}, f)
+        os.replace(tmp, path)
+    except (OSError, TypeError, ValueError) as e:
+        print(f"[rotation] pass lengths not saved: {e}")
+
+
 def _shape_key(e):
     """An entry at the size it plays: each size of a screen keeps its own pass length."""
     return entry_key(e), e.get("panel")
@@ -102,7 +132,8 @@ class Rotation:
         self._prio_seen: dict = {}           # key -> rules held last check
         self._prio_tok: dict = {}            # key -> the new-alert token last check (see Env.priority_token)
         self._full_keys: set = set()         # keys queued by a new alert: they play their own (full) size
-        self._pass_len: dict = {}            # (key, size) -> seconds its last real pass took (upcoming: when it ends)
+        self._pass_len: dict = _load_pass_len(side)   # (key, size) -> seconds its last real pass took (upcoming: when
+                                                      # it ends); kept in tmpfs, so a display restart still knows them
         self._prio_t = 0.0
         self._idle_t = 0.0
         self._last_t = None
@@ -216,14 +247,15 @@ class Rotation:
                 left = min(left, self._pass_len[_shape_key(e)] * self.need(e) - c["visible"])
             if left > ahead:
                 return None
+            # as it will play: its variant's panel (a webcam warmed at the size it comes up at)
             for i in self.pending:
                 if i < len(self.entries) and self._allows(self.entries[i]):
-                    return self.entries[i]
+                    return self._shaped(self.entries[i])
             n = len(self.entries)
             for step in range(1, n + 1):
                 i = (self.pos + step) % n
                 if self._allows(self.entries[i]):
-                    return self.entries[i]
+                    return self._shaped(self.entries[i])
             return None
 
     # -- progress ------------------------------------------------------------------------
@@ -267,6 +299,7 @@ class Rotation:
                     c["pass_at"] = c["visible"]      # screen time when that pass ended (upcoming estimates from it)
                     if took >= 1.0:                  # remembered for next time ("nothing to show" passes aren't)
                         self._pass_len[_shape_key(c["entry"])] = took
+                        _save_pass_len(self.side, self._pass_len)
             if visible and result == "skip":
                 if self.preview and c["source"] == "preview":
                     self._end_preview(now)

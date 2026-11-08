@@ -1324,15 +1324,21 @@ def webcams_probe(payload: dict = Body(...)):
         return {"ok": False, "error": str(e)}
 
 
-async def _webcam_frames(f, make, fps=None):
+async def _webcam_frames(f, make, fps=None, still=None):
     """Yield make(frame) for the feed's frames while the client stays (it holds the feed open). Woken by the feed
-    on every frame (no polling, so the even timing survives), taking every n-th when the feed runs faster than fps."""
+    on every frame (no polling, so the even timing survives), taking every n-th when the feed runs faster than fps.
+    still(): a picture to send first while the feed has none yet (webcams.still_for), so the wall shows the camera
+    instead of "loading" until the live frames come."""
     loop = asyncio.get_running_loop()
     ev = asyncio.Event()
     f.attach()
     f.add_waiter(loop, ev)
     try:
         seq, t0 = 0, time.time()
+        if still is not None and f.frame is None:
+            arr = await asyncio.to_thread(still)
+            if arr is not None and f.frame is None:
+                yield await asyncio.to_thread(make, arr, f)
         while True:
             ev.clear()
             step = max(1, round(max(1, f.fps) / fps)) if fps else 1
@@ -1378,7 +1384,9 @@ async def webcams_frames(type: str, w: int, h: int, url: str = "", id: int | Non
         return webcams.pack(webcams.render(frame, w, h, crop, colour), age * 1000)
 
     fps = max(1, min(30, fps))                                # the feed may decode faster for another viewer
-    return StreamingResponse(_webcam_frames(f, make, fps=fps), media_type="application/octet-stream",
+    src = {"type": type, "url": url, "id": id}
+    return StreamingResponse(_webcam_frames(f, make, fps=fps, still=lambda: webcams.still_for(src)),
+                             media_type="application/octet-stream",
                              headers={"Cache-Control": "no-store"})
 
 

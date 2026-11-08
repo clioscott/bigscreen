@@ -513,6 +513,8 @@ class Feed:
 
 _feeds: dict = {}            # (type, url) -> Feed
 _feeds_lock = threading.Lock()
+_last_frames: "collections.OrderedDict" = collections.OrderedDict()   # (type, url) -> a stopped feed's last frame
+LAST_FRAMES = 24             # kept (about 0.7 MB each)
 
 
 def _forget(feed):
@@ -520,6 +522,42 @@ def _forget(feed):
         for k, f in list(_feeds.items()):
             if f is feed:
                 del _feeds[k]
+        if feed.frame is not None and feed.kind not in STILLS:
+            key = (feed.kind, feed.url)
+            _last_frames[key] = feed.frame
+            _last_frames.move_to_end(key)
+            while len(_last_frames) > LAST_FRAMES:
+                _last_frames.popitem(last=False)
+
+
+def still_for(src):
+    """A picture of a live source to show while its feed starts, so a screen never opens on "loading": the last
+    frame it decoded (when it last played), else its snapshot (the panel's thumbnail, any age; a stale one is
+    refreshed in the background). None when there's neither. Never waits on the network."""
+    try:
+        kind, url = check_source(src)
+    except SourceError:
+        return None
+    if kind in STILLS:
+        return None
+    with _feeds_lock:
+        f = _feeds.get((kind, url))
+        if f is not None and f.frame is not None:
+            return f.frame
+        hit = _last_frames.get((kind, url))
+    if hit is not None:
+        return hit
+    try:
+        jpg, _ = snapshot(src)
+    except Exception:
+        return None
+    if not jpg:
+        return None
+    import io
+    try:
+        return np.ascontiguousarray(np.asarray(Image.open(io.BytesIO(jpg)).convert("RGB")), dtype=np.uint8)
+    except Exception:
+        return None
 
 
 def feed(src, fps=15) -> Feed:
