@@ -988,6 +988,7 @@ def render(frame, out_w, out_h, crop=None, colour=None) -> np.ndarray:
 # --- wire format to the Pi -------------------------------------------------------------------------------------
 MAGIC = b"BSWC"
 HEADER = 12                  # MAGIC, width u16, height u16, frame age in ms u32 (big-endian)
+PLACEHOLDER_AGE = 0xFFFFFFFF  # the age of the still sent while a feed starts: a placeholder, not part of the video
 
 
 def pack(arr, age_ms=0) -> bytes:
