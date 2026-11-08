@@ -65,8 +65,8 @@ const customCols = (ov, hasText) => [...new Set(Object.keys(DEFAULT_SLOTS)
   .map((k) => (ov.slots?.[k] || DEFAULT_SLOTS[k])[0]))].sort();
 const DEFAULT_OVERLAY = { style: "tag", corner: "bl", when: "always", font: "small", accent: "#e8202a", text: "#ffffff",
   bg: "#000000", opacity: 0.7, time_format: "24h", fade: true, show_sec: 12, every_min: 3, custom_text: "", headline: "name",
-  lines: "auto", separator: "dot", uppercase: false, order: [...ORDERABLE],
-  show: { name: true, place: true, time: true, date: false, offset: false, daynight: false, weather: false, sun: false,
+  lines: "auto", separator: "space", uppercase: false, order: [...ORDERABLE],
+  show: { name: true, place: true, time: true, date: false, offset: false, daynight: false, weather: true, sun: false,
     age: false, live: true, credit: false, custom: false, shield: false, conditions: false, feels: false, hilo: false, wind: false, humidity: false },
   shield: { route: "99", kind: "auto", style: "pixel", place: "inside", size: "box" } };
 // the caption's highway shield (display/modules/shields.py draws it; the Custom layout only)
@@ -102,6 +102,8 @@ const host = (u) => { try { return new URL(u).host.replace(/^www\./, ""); } catc
 const qs = (o) => Object.entries(o).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
 export const camEntry = (id, shape) => ({ panel: SHAPES[shape].panel, cam: id, rules: [], dwell_sec: 60 });
 
+// a location's time zone, local time and weather (hub /api/webcams/local, from Open-Meteo)
+const localOf = (lat, lon) => api(`/api/webcams/local?${qs({ lat, lon })}`);
 function useStatus() {
   const status = ref({ feeds: [], zones: { left: [295, 130], right: [152, 130], full: [448, 130], tall: [448, 175], wall: [448, 192] } });
   let t;
@@ -109,7 +111,15 @@ function useStatus() {
   onMounted(() => { load(); t = setInterval(load, 3000); });
   onBeforeUnmount(() => clearInterval(t));
   const feedFor = (cam) => status.value.feeds.find((f) => f.url === srcUrl(cam?.source) && f.type === (cam?.source?.type || "stream"));
-  return { status, feedFor };
+  const healthFor = (cid) => status.value.health?.[cid] || null;          // hub/jobs/webcam_health.py
+  return { status, feedFor, healthFor };
+}
+// "down for 1:25" (h:mm) when the hub's last check found the webcam down (no picture, or a black one); else null
+const hm = (sec) => { const m = Math.max(0, Math.floor(sec / 60)); return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`; };
+function downPill(h) {
+  if (!h || h.up !== false) return null;
+  const why = h.why === "black" ? "the picture is black" : h.why || "no picture";
+  return { cls: "bad", text: `down for ${hm(Date.now() / 1000 - (h.since || h.checked || Date.now() / 1000))}`, title: `The hub's checks: ${why}. The wall skips it until it's back.` };
 }
 function feedPill(f) {
   if (!f) return { cls: "", text: "idle" };
@@ -515,7 +525,7 @@ const PlaylistTab = {
     const wc = store.draft.modules.webcams;
     const cams = computed(() => wc.cams || {});
     const list = computed(() => wc.playlist);
-    const { feedFor } = useStatus();
+    const { feedFor, healthFor } = useStatus();
     const found = computed(() => rotationEntries(isListEntry));
     const single = computed(() => rotationEntries((e) => e.panel?.startsWith("webcam") && !e.panel.startsWith("webcam_grid") && e.cam));
     // older rotations had one entry per webcam: fold them into the list (their order first), with one Webcams entry
@@ -538,7 +548,7 @@ const PlaylistTab = {
     const srcHost = (s) => (s?.type === "drivebc" ? `DriveBC camera ${s.id}` : host(s?.url));
     const kindOf = (s) => (STILL.includes(s?.type) ? "Still" : "Live");
     const mins = (s) => (s >= 90 ? `${Math.round(s / 6) / 10} min` : `${s} s`);
-    return { LIST_SHAPES, wc, cams, list, on, total, found, single, combine, feedFor, feedPill, srcHost, kindOf, hasSource, mins, go };
+    return { LIST_SHAPES, wc, cams, list, on, total, found, single, combine, feedFor, feedPill, healthFor, downPill, srcHost, kindOf, hasSource, mins, go };
   },
   template: `<div class="stack">
     <div class="card"><div class="card-body stack" style="gap:10px">
@@ -565,7 +575,8 @@ const PlaylistTab = {
           <div class="grow" style="min-width:0; cursor:pointer" @click="go('webcams/' + it.cam)"><b>{{ cams[it.cam]?.label || it.cam }}</b>
             <div class="faint ellipsis" style="font-size:12.5px"><span class="wc-kind" :class="kindOf(cams[it.cam]?.source).toLowerCase()">{{ kindOf(cams[it.cam]?.source) }}</span>
               {{ [cams[it.cam]?.place, srcHost(cams[it.cam]?.source)].filter(Boolean).join(' · ') }}</div></div>
-          <span class="pill" :class="feedPill(feedFor(cams[it.cam])).cls">{{ feedPill(feedFor(cams[it.cam])).text }}</span>
+          <span v-if="downPill(healthFor(it.cam))" class="pill bad" :title="downPill(healthFor(it.cam)).title">{{ downPill(healthFor(it.cam)).text }}</span>
+          <span v-else class="pill" :class="feedPill(feedFor(cams[it.cam])).cls">{{ feedPill(feedFor(cams[it.cam])).text }}</span>
           <Stepper :modelValue="it.sec || 60" @update:modelValue="v => it.sec = v" :min="5" :max="3600" :step="5" unit=" s" title="How long it shows"/>
           <Toggle :modelValue="it.on !== false" @update:modelValue="v => it.on = v" title="In the rotation"/>
           <button class="btn sm ghost icon-only" title="Crop, colour and caption" @click="go('webcams/' + it.cam)"><Icon name="Pencil" :size="14"/></button>
@@ -796,6 +807,8 @@ const WebcamList = {
       if (STILL.includes(f.source?.type)) Object.assign(overlay.show, { age: true, live: false });   // a still isn't LIVE
       all[id] = { fps: 15, ...base, overlay, crops: {} };
       store.draft.modules.webcams.playlist.push({ cam: id, sec: 60, on: true });
+      if (!base.tz && Number.isFinite(base.lat) && Number.isFinite(base.lon))      // its local time: the location's zone
+        localOf(base.lat, base.lon).then((r) => { if (r.tz && all[id] && !all[id].tz) all[id].tz = r.tz; }).catch(() => {});
       if (open) go(`webcams/${id}`);
       return id;
     };
@@ -1037,8 +1050,31 @@ const WebcamEditor = {
     const id = computed(() => store.route.params[0]);
     const cam = computed(() => store.draft.modules.webcams.cams?.[id.value]);
     const shape = ref("full");
-    const { status, feedFor } = useStatus();
+    const { status, feedFor, healthFor } = useStatus();
     const zone = computed(() => status.value.zones[shape.value] || [448, 130]);
+    // what the caption will say there: the location's time zone (filled in when the webcam has none), time and weather
+    const local = ref(null);
+    let localTimer = null;
+    watch(() => [id.value, cam.value?.lat, cam.value?.lon], () => {
+      clearTimeout(localTimer);
+      local.value = null;
+      const c = cam.value;
+      if (!c || !Number.isFinite(c.lat) || !Number.isFinite(c.lon)) return;
+      localTimer = setTimeout(async () => {
+        try {
+          const r = await localOf(c.lat, c.lon);
+          if (cam.value !== c) return;
+          local.value = r;
+          if (!c.tz && r.tz) {
+            c.tz = r.tz;
+            // only opened, not edited (same location as saved): fill the saved copy too, so it isn't an unsaved change
+            const sc = store.saved?.modules?.webcams?.cams?.[id.value];
+            if (sc && !sc.tz && sc.lat === c.lat && sc.lon === c.lon) sc.tz = r.tz;
+          }
+        } catch {}
+      }, 600);
+    }, { immediate: true });
+    onBeforeUnmount(() => clearTimeout(localTimer));
     // fill in fields older or hand-written webcams lack, in saved and draft alike (opening one isn't a change);
     // runs on every webcam opened: the editor stays mounted when going from one webcam to another
     const fill = (cid) => {
@@ -1161,12 +1197,13 @@ const WebcamEditor = {
     const customCrop = (s) => !!cam.value.crops?.[s];
     return { id, cam, shape, zone, ov, colour, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
       orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, hasText, customCols, SHIELD_PRESETS, SHIELD_KINDS, SHIELD_PLACES, SHIELD_SIZES, SHIELD_STYLES, shieldSrc, signMissing, presetShown, presetDone,
-      CONTAINERS, feedFor, feedPill, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
+      CONTAINERS, feedFor, feedPill, healthFor, downPill, local, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
   },
   template: `<div class="page" v-if="cam">
     <div class="page-head"><div class="grow">
       <a href="#/webcams" class="faint" style="font-size:12.5px"><Icon name="ArrowLeft" :size="13"/> Webcams</a>
       <h1>{{ cam.label || id }}</h1></div>
+      <span v-if="downPill(healthFor(id))" class="pill bad" :title="downPill(healthFor(id)).title">{{ downPill(healthFor(id)).text }}</span>
       <span class="pill" :class="feedPill(feedFor(cam)).cls">{{ feedPill(feedFor(cam)).text }}</span>
       <ConfirmButton small label="Delete webcam" @confirm="remove"/></div>
 
@@ -1198,6 +1235,9 @@ const WebcamEditor = {
                 <div class="row nowrap" style="gap:6px"><input class="input" style="width:50%" :value="cam.lat ?? ''" @change="setCoord('lat', $event, 90)" placeholder="49.2888">
                   <input class="input" style="width:50%" :value="cam.lon ?? ''" @change="setCoord('lon', $event, 180)" placeholder="-123.1111"></div></Field>
             </div>
+            <div v-if="local" class="faint" style="font-size:12.5px"><Icon name="MapPin" :size="13"/> There now: <b>{{ local.time }}</b>
+              <template v-if="local.temp != null"> · {{ Math.round(local.temp) }}°C{{ local.conditions ? ' ' + local.conditions.toLowerCase() : '' }}</template>
+              <template v-if="local.tz"> · {{ local.tz }}{{ cam.tz && cam.tz !== local.tz ? ' (the time zone above says ' + cam.tz + ')' : '' }}</template></div>
           </div></div>
 
         <div class="card"><div class="card-head"><Icon name="Crop" :size="16"/><h3>Picture</h3></div>

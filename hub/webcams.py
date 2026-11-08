@@ -159,7 +159,7 @@ def _yt_dlp(*args, timeout=60):
                           capture_output=True, text=True, timeout=timeout)
 
 
-def resolve(kind, url, fresh=False) -> tuple[str, str]:
+def resolve(kind, url, fresh=False, timeout=60) -> tuple[str, str]:
     """(media URL for ffmpeg, title). YouTube pages go through yt-dlp: video only, 480p is plenty for 448 px."""
     if kind != "youtube":                               # streams and stills are used as given
         return url, ""
@@ -169,7 +169,7 @@ def resolve(kind, url, fresh=False) -> tuple[str, str]:
             return hit[0], hit[1]
     try:
         r = _yt_dlp("-f", "bv*[height<=480]/bv*/b", "--print", "%(title)s", "--print", "%(live_status)s",
-                    "-g", url)
+                    "-g", url, timeout=timeout)
     except FileNotFoundError:
         raise SourceError("yt-dlp is not installed on the hub")
     except subprocess.TimeoutExpired:
@@ -623,6 +623,41 @@ def _snap_worker():
         finally:
             with _snap_lock:
                 _snap_busy.discard(key)
+
+
+BLACK_LEVEL = 24             # a pixel brighter than this (its brightest channel) counts as lit
+BLACK_LIT = 0.001            # a picture with fewer lit pixels than this share is black: strict, since a dark night
+                             # scene still has a few (lights, sky glow, the encoder's noise); a dead feed has none
+
+
+def is_black(frame) -> bool:
+    """A feed that's down but still sending: an all-black (or nearly) picture. Looks at every 4th pixel."""
+    if frame is None or not getattr(frame, "size", 0):
+        return False
+    sub = np.asarray(frame)[::4, ::4]
+    return float((sub.max(axis=-1) > BLACK_LEVEL).mean()) < BLACK_LIT
+
+
+def grab_frame(kind, url, timeout=40) -> np.ndarray:
+    """One current picture from a source, as RGB (480 wide for live streams). SourceError when there's none.
+    ``timeout`` bounds each step (yt-dlp, then ffmpeg; ffmpeg also gives up on a network read stalled for 15 s)."""
+    if kind in STILLS:
+        return fetch_still(kind, url)[0]
+    import io
+    media, _ = resolve(kind, url, timeout=timeout)
+    args = ["ffmpeg", "-hide_banner", "-nostdin", "-nostats", "-loglevel", "error", "-protocol_whitelist", PROTOCOLS]
+    if urlparse(media).scheme.lower() in ("http", "https"):
+        args += ["-rw_timeout", "15000000"]
+    if kind == "youtube" or ".m3u8" in media:
+        args += ["-live_start_index", "-1"]
+    args += ["-i", media, "-frames:v", "1", "-vf", "scale=480:-2", "-f", "image2", "-c:v", "mjpeg", "-q:v", "4", "pipe:1"]
+    try:
+        r = subprocess.run(args, capture_output=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise SourceError("no picture in time")
+    if r.returncode or not r.stdout:
+        raise SourceError((r.stderr.decode("utf-8", "replace").strip().splitlines() or ["no picture"])[-1][:200])
+    return np.asarray(Image.open(io.BytesIO(r.stdout)).convert("RGB"))
 
 
 def _grab(kind, url):

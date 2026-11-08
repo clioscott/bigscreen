@@ -137,6 +137,7 @@ class Font:
         self.height = 0
         self.baseline = 0
         self._text_cache: OrderedDict = OrderedDict()
+        self.fallback = None     # another Font for characters this one lacks (e.g. Japanese); off unless a module sets it
 
     def LoadFont(self, path):
         path = resolve_asset(path)
@@ -187,11 +188,14 @@ class Font:
         return True
 
     def CharacterWidth(self, cp):
-        g = self.glyphs.get(cp)
+        g = self.glyphs.get(cp) or (self.fallback.glyphs.get(cp) if self.fallback is not None else None)
         return g.device_width if g else -1
 
     def _glyph(self, cp):
-        return self.glyphs.get(cp) or self.glyphs.get(REPLACEMENT_CP)
+        g = self.glyphs.get(cp)
+        if g is None and self.fallback is not None:
+            g = self.fallback.glyphs.get(cp)              # placed on the same baseline by its own offsets
+        return g or self.glyphs.get(REPLACEMENT_CP)
 
     def text_mask(self, text, extra_spacing=0):
         """Rendered string as (mask[h, w] bool, top relative to baseline, advance width). Cached."""

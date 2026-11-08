@@ -29,6 +29,7 @@ from display.gfx import Canvas, Color, graphics
 
 DATA_DIR = os.environ.get("BIGSCREEN_DATA_DIR", "/dev/shm/bigscreen")
 BOTTOM_STRIP_PX = 17
+STREAM_AHEAD = 5.0           # a webcam this close: the Pi opens its stream (display/modules/webcam.py warm)
 GRID_WARM_AHEAD = 120.0      # the camera grid's tiles are fetched this far ahead of its turn (s)
 TILE_W, TILE_H = 64, 16      # dirty-tile granularity for pushing frames to the panels
 BLACK = Color(0, 0, 0)
@@ -278,7 +279,8 @@ class Screen:
                 if not (nxt and str(nxt.get("panel", "")).startswith("webcam_grid")):
                     nxt = eng.upcoming(now)
                 if nxt and str(nxt.get("panel", "")).startswith("webcam"):
-                    warm(nxt, self._zone_of(nxt.get("panel"), side))
+                    soon = eng.upcoming(now, ahead=STREAM_AHEAD) is not None    # open the Pi's own stream too
+                    warm(nxt, self._zone_of(nxt.get("panel"), side), soon=soon)
             except Exception as e:                   # never cost a frame: the webcam just loads as before
                 print(f"[webcam] warm next on {side}: {e}")
 

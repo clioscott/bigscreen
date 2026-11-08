@@ -99,7 +99,7 @@ hot-reload on the wall, no restart needed.
 - **Tsunami**: 4 themes (North Pacific, BC zones, Bulletin, Hazard sign), 3 built-in samples.
 - **Wildfire**: 4 themes (Situation map, Incident card, Fire danger sign, Evacuation notice), 3 built-in samples.
 - **Japan EEW**: 12 themes (Kyoshin Monitor, JQuake style, TV broadcast, LED countdown, Departure board, Pachinko, Fever mode, Data terminal, 号外 extra edition, Seismograph lab, Arcade cabinet, Instrument panel).
-- **16 fetch jobs** on the hub, each a short-lived subprocess with a timeout:
+- **17 fetch jobs** on the hub, each a short-lived subprocess with a timeout:
   - `alerts`: Current ECCC alerts for the configured area → data/alerts.json
   - `bridges`: Bridges now: the latest DriveBC still from a camera on each Metro Vancouver bridge → data/bridges.json + tiles
   - `calendar`: Google Calendar events → data/calendar.json (v1 format, via the v1 CalendarService)
@@ -114,6 +114,7 @@ hot-reload on the wall, no restart needed.
   - `timezones`: Time zone map: US/Canada offsets for a year from the newest tzdata, plus map rasters → data/tzmap.json
   - `tsunami`: NTWC bulletins for the BC coast → data/tsunami.json
   - `weather`: Environment Canada citypage forecast + SWOB live observations → data/weather.json
+  - `webcam_health`: Which webcams are down → data/webcam_health.json (the display skips them; the control panel says for how long)
   - `webcam_weather`: Weather and sunrise/sunset at each webcam → data/webcam_weather.json (for the webcam captions)
   - `wildfire`: BC Wildfire Service data for south-west BC and the Okanagan → data/wildfire.json
 - **438 bitmap fonts**, always drawn at native size ([credits](assets/fonts/CREDITS.md)).

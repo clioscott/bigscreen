@@ -80,6 +80,9 @@ def put_config(payload: dict = Body(...)):
                          ("election", "us_election"), ("webcam_weather", "webcams"), ("shield_signs", "webcams")):
         if before["modules"].get(section) != saved["modules"].get(section):
             _sched().run_now(job)
+    sources = lambda c: {k: (v or {}).get("source") for k, v in (((c["modules"].get("webcams") or {}).get("cams")) or {}).items()}
+    if sources(before) != sources(saved):           # a webcam added, removed or pointed elsewhere: check them now
+        _sched().run_now("webcam_health")
     sync.push_data()          # config.json rides along; the v2 display hot-reloads it
     return {"config": saved, "display_in_sync": pi.display_in_sync(saved)[0]}
 
@@ -1270,7 +1273,31 @@ def _fetch_wx(points, timeout=8):
 @app.get("/api/webcams/status")
 def webcams_status():
     return {"feeds": webcams.describe(), "zones": _webcam_zones(), "max_feeds": webcams.MAX_FEEDS,
-            "js_runtime": bool(webcams.deno_path())}
+            "js_runtime": bool(webcams.deno_path()),
+            "health": read_json(paths.DATA_DIR / "webcam_health.json", {}) or {}}   # hub/jobs/webcam_health.py
+
+
+@app.get("/api/webcams/local")
+def webcams_local(lat: float, lon: float):
+    """What a location's caption will say: its time zone (Open-Meteo's, for a webcam without one), local time and
+    current weather. For the panel, when a webcam's location is set or picked from the gallery."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from hub.jobs import webcam_weather as job
+    pt = job.point({"lat": lat, "lon": lon})
+    if not pt:
+        raise HTTPException(400, "latitude -90..90, longitude -180..180")
+    wx = _webcam_wx("", {"lat": lat, "lon": lon}, block=True)
+    if not wx:
+        raise HTTPException(503, "no weather for that location right now")
+    tz = wx.get("tz") or ""
+    try:
+        now = datetime.now(ZoneInfo(tz)) if tz else None
+    except Exception:
+        now = None
+    return {"tz": tz, "time": now.strftime("%H:%M") if now else "", "temp": wx.get("temp"), "code": wx.get("code"),
+            "is_day": wx.get("is_day"), "conditions": _webcam_caption.conditions_text(wx.get("code"))}
 
 
 @app.post("/api/webcams/probe")

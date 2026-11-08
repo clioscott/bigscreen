@@ -828,7 +828,7 @@ def test_route_without_a_number_draws_the_blank_sign():
 
 def test_shield_only_column_leaves_headline_and_alignment_to_the_text():
     from display.gfx import Canvas
-    ov = cap.overlay_of({"overlay": {"style": "custom", "font": "large", "show": {"shield": True},
+    ov = cap.overlay_of({"overlay": {"style": "custom", "font": "large", "show": {"shield": True, "weather": False},
                                      "shield": {"route": "99", "place": "inside"},
                                      "slots": {"shield": [1, 1], "live": [2, 1], "name": [2, 1], "place": [2, 2],
                                                "time": [2, 2, "right"]}}})
