@@ -253,6 +253,15 @@ def _validate_overlay(name, ov):
                 ok = False
             if not ok:
                 raise ConfigError(f"webcam {name}: caption {key} must be between {lo} and {hi}")
+    jc = ov.get("jp_caption")
+    if jc is not None:                                     # the separate Japanese caption
+        corners = ("auto", "tl", "tc", "tr", "bl", "bc", "br")
+        if not isinstance(jc, dict) or not isinstance(jc.get("text", ""), str) or len(jc.get("text", "")) > 400 \
+                or jc.get("face", "k8x12") not in JP_FACES or jc.get("corner", "auto") not in corners \
+                or not isinstance(jc.get("size", 12), (int, float)) or isinstance(jc.get("size", 12), bool) \
+                or not 1 <= jc.get("size", 12) <= 64:
+            raise ConfigError(f"webcam {name}: the Japanese caption needs text (up to 400 characters), a Japanese "
+                              "font, a size and a position")
     show = ov.get("show", {})
     if not isinstance(show, dict) or any(k not in SECTIONS for k in show):
         raise ConfigError(f"webcam {name}: caption show has an unknown section")

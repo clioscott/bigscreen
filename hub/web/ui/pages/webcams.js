@@ -66,6 +66,7 @@ const customCols = (ov, hasText) => [...new Set(Object.keys(DEFAULT_SLOTS)
 const DEFAULT_OVERLAY = { style: "tag", corner: "bl", when: "always", font: "small", accent: "#e8202a", text: "#ffffff",
   bg: "#000000", opacity: 0.7, time_format: "24h", fade: true, show_sec: 12, every_min: 3, custom_text: "", headline: "name",
   lines: "auto", separator: "space", uppercase: false, order: [...ORDERABLE], jp_font: "auto", jp_face: "auto", wx_beside: false, wx_beside_box: false, temp_icon: false,
+  jp_caption: { on: false, text: "", face: "k8x12", size: 12, corner: "auto" },
   show: { name: true, place: true, time: true, date: false, offset: false, daynight: false, weather: true, sun: false,
     age: false, live: true, credit: false, custom: false, shield: false, conditions: false, feels: false, hilo: false, wind: false, humidity: false },
   shield: { route: "99", kind: "auto", style: "pixel", place: "inside", size: "box" } };
@@ -1054,6 +1055,25 @@ const WebcamEditor = {
     const zone = computed(() => status.value.zones[shape.value] || [448, 130]);
     // the Japanese fonts a caption can use (webcam_caption.JP_FACES), and a sample of the chosen one in its own words
     const jpFaces = computed(() => status.value.jp_faces || []);
+    // the separate Japanese caption: its font's sizes, a sample of its own text, where it goes
+    const jc = computed(() => ov.value?.jp_caption || {});
+    const jcFace = computed(() => jpFaces.value.find((x) => x.id === jc.value.face) || null);
+    const jcSizes = computed(() => (jcFace.value?.sizes || []).map(([h]) => ({ value: h, label: `${h} px` })));
+    const jcSetFace = (id) => {                         // keep the size when the new font has it, else its nearest
+      const f = jpFaces.value.find((x) => x.id === id);
+      jc.value.face = id;
+      if (f && !f.sizes.some(([h]) => h === jc.value.size))
+        jc.value.size = f.sizes.reduce((a, [h]) => (Math.abs(h - jc.value.size) < Math.abs(a - jc.value.size) ? h : a), f.sizes[0][0]);
+    };
+    const jcSample = computed(() => {
+      const f = jcFace.value;
+      if (!f) return "";
+      const path = (f.sizes.find(([h]) => h === jc.value.size) || f.sizes[0])[1];
+      const text = (jc.value.text || "").split("\n").map((s) => s.trim()).filter(Boolean).join("  ") || "歌舞伎町一番街";
+      return `/api/fonts/preview.png?${qs({ path, text: " ", jp: text.slice(0, 120), scale: 2, width: 300 })}`;
+    });
+    const JC_POSITIONS = [{ value: "auto", label: "Next to the caption" }, { value: "tl", label: "Top left" }, { value: "tc", label: "Top" },
+      { value: "tr", label: "Top right" }, { value: "bl", label: "Bottom left" }, { value: "bc", label: "Bottom" }, { value: "br", label: "Bottom right" }];
     const jpSample = computed(() => {
       const f = jpFaces.value.find((x) => x.id === ov.value?.jp_face);
       if (!f) return "";
@@ -1097,6 +1117,7 @@ const WebcamEditor = {
         if (!ord.includes("live")) ord.unshift("live");      // older orders don't list LIVE: it leads (as on the wall)
         if (!ord.includes("shield")) ord.unshift("shield");  // nor the shield
         c.overlay.shield = { ...DEFAULT_OVERLAY.shield, ...(c.overlay.shield || {}) };
+        c.overlay.jp_caption = { ...DEFAULT_OVERLAY.jp_caption, ...(c.overlay.jp_caption || {}) };
         c.overlay.order = [...ord, ...ORDERABLE.filter((k) => !ord.includes(k))];
         c.colour = c.colour || {};
         c.crops = c.crops || {};
@@ -1206,7 +1227,7 @@ const WebcamEditor = {
     const customCrop = (s) => !!cam.value.crops?.[s];
     return { id, cam, shape, zone, ov, colour, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
       orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, hasText, customCols, SHIELD_PRESETS, SHIELD_KINDS, SHIELD_PLACES, SHIELD_SIZES, SHIELD_STYLES, shieldSrc, signMissing, presetShown, presetDone,
-      CONTAINERS, feedFor, feedPill, healthFor, downPill, local, jpFaces, jpSample, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
+      CONTAINERS, feedFor, feedPill, healthFor, downPill, local, jpFaces, jpSample, jc, jcSizes, jcSetFace, jcSample, JC_POSITIONS, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
   },
   template: `<div class="page" v-if="cam">
     <div class="page-head"><div class="grow">
@@ -1290,8 +1311,8 @@ const WebcamEditor = {
         <div class="card"><div class="card-head"><Icon name="Captions" :size="16"/><h3>Caption</h3>
             <span class="spacer"></span><button class="btn sm ghost" @click="captionToAll" title="Copy this caption look to every webcam"><Icon name="Copy" :size="14"/>Use on all webcams</button></div>
           <div class="card-body stack">
-            <div class="seg wc-captabs"><button v-for="t in [{v:'theme', l:'Theme', i:'Palette'}, {v:'content', l:'What it says', i:'Text'}, {v:'look', l:'Size & look', i:'Ruler'}, {v:'when', l:'When', i:'Clock'}]"
-              :key="t.v" type="button" :class="{on: capTab === t.v}" @click="capTab = t.v" :disabled="t.v !== 'theme' && ov.style === 'none'"><Icon :name="t.i" :size="14"/>{{ t.l }}</button></div>
+            <div class="seg wc-captabs"><button v-for="t in [{v:'theme', l:'Theme', i:'Palette'}, {v:'content', l:'What it says', i:'Text'}, {v:'look', l:'Size & look', i:'Ruler'}, {v:'when', l:'When', i:'Clock'}, {v:'japanese', l:'Japanese', i:'Languages'}]"
+              :key="t.v" type="button" :class="{on: capTab === t.v}" @click="capTab = t.v" :disabled="!['theme', 'japanese'].includes(t.v) && ov.style === 'none'"><Icon :name="t.i" :size="14"/>{{ t.l }}</button></div>
             <div v-if="capTab === 'theme'" class="wc-layouts"><button v-for="(l, k) in LAYOUTS" :key="k" type="button" class="wc-layout" :class="{on: ov.style === k}" @click="ov.style = k" :title="l.note">
               <Icon :name="l.icon" :size="15"/><b>{{ l.label }}</b><span class="faint">{{ l.note }}</span></button></div>
             <template v-if="ov.style !== 'none' && capTab === 'look'">
@@ -1399,6 +1420,23 @@ const WebcamEditor = {
                   <Field label="Every"><Stepper v-model="ov.every_min" :min="1" :max="30" unit=" min"/></Field></template>
                 <Field label="Fade" v-if="ov.when !== 'always'"><Toggle v-model="ov.fade"/></Field>
               </div>
+            </template>
+            <template v-if="capTab === 'japanese'">
+              <ToggleRow :modelValue="!!jc.on" @update:modelValue="v => jc.on = v" label="Show a Japanese caption"
+                hint="Its own box with your text, in its own Japanese font and size, on the caption's background"/>
+              <template v-if="jc.on">
+                <Field label="Text" hint="Each line shows as a line"><textarea class="input" rows="3" v-model="jc.text" maxlength="400"
+                  style="resize:vertical; min-height:72px; padding-top:6px; line-height:1.35" placeholder="歌舞伎町一番街"></textarea></Field>
+                <div class="row" style="gap:16px; align-items:flex-start">
+                  <Field label="Japanese font" hint="Approved Japanese fonts (Fonts tab)">
+                    <select class="input" style="width:auto" :value="jc.face" @change="jcSetFace($event.target.value)">
+                      <option v-for="f in jpFaces" :key="f.id" :value="f.id">{{ f.name }} · {{ f.sizes.map(s => s[0]).join(', ') }} px</option></select></Field>
+                  <Field label="Size" v-if="jcSizes.length > 1"><Seg :modelValue="jc.size" @update:modelValue="v => jc.size = v" :options="jcSizes"/></Field>
+                </div>
+                <img v-if="jcSample" :src="jcSample" alt="" style="image-rendering:pixelated; max-width:100%; display:block">
+                <Field label="Position" hint="Next to the caption: above it in a bottom corner, below it in a top one">
+                  <Seg :modelValue="jc.corner || 'auto'" @update:modelValue="v => jc.corner = v" :options="JC_POSITIONS"/></Field>
+              </template>
             </template>
             <div class="faint" style="font-size:12px" v-if="capTab === 'content'">When space runs out, sections drop in this order before anything is cut: credit, your text,
               humidity, wind, high/low, feels like, conditions, sunrise/sunset, time difference, date, temperature, place.</div>
