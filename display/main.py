@@ -29,7 +29,7 @@ from display.gfx import Canvas, Color, graphics
 
 DATA_DIR = os.environ.get("BIGSCREEN_DATA_DIR", "/dev/shm/bigscreen")
 BOTTOM_STRIP_PX = 17
-STREAM_AHEAD = 5.0           # a webcam this close: the Pi opens its stream (display/modules/webcam.py warm)
+STREAM_AHEAD = 12.0          # a webcam this close: the Pi opens its stream and fills its buffer (webcam.py warm)
 GRID_WARM_AHEAD = 120.0      # the camera grid's tiles are fetched this far ahead of its turn (s)
 TILE_W, TILE_H = 64, 16      # dirty-tile granularity for pushing frames to the panels
 BLACK = Color(0, 0, 0)

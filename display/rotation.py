@@ -36,7 +36,7 @@ import time
 from display.rules import legacy_rules
 
 DEFAULT_DWELL = 30.0
-WARM_AHEAD = 20.0          # this close to the end of a screen, the next one may get its source ready (webcams)
+WARM_AHEAD = 30.0          # this close to the end of a screen, the next one may get its source ready (webcams)
 DEFAULT_CAP = 1800.0
 
 

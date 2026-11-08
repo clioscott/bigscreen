@@ -38,6 +38,8 @@ BUFFER_SEC = 3.5             # playout buffer for HLS (YouTube): longer than a s
 BUFFER_SEC_LIVE = 0.3        # … for sources that already arrive in real time (RTSP, MJPEG)
 BUFFER_HEADROOM = 4.0        # frames kept beyond the buffer (about one long segment) before the oldest are dropped
 RECENT_FRAMES = 90           # published frames kept per feed (3 s at 30 fps) for viewers catching up
+DECODED_SEC = 6.0            # decoded frames kept per feed for the wall's stream, which takes them as decoded (the
+                             # Pi evens them out): a new viewer starts with these, a slow one catches up through them
 OPEN_SEC = 45.0              # … or no first frame this long after starting it
 RESOLVE_TTL = 3 * 3600.0     # YouTube manifest URLs last ~6 h; resolve again after 3 (fewer lookups: see BOT_COOL)
 BOT_COOL = 20 * 60.0         # YouTube asked the hub to prove it isn't a bot: no new lookups for this long
@@ -234,7 +236,9 @@ class Feed:
         self._cond = threading.Condition(self._lock)
         self._buf = collections.deque()  # decoded frames waiting for their turn (the pacer publishes them)
         self._buf_lock = threading.Lock()
-        self.recent = collections.deque(maxlen=RECENT_FRAMES)   # (seq, frame) just published: a viewer that fell
+        self.recent = collections.deque(maxlen=RECENT_FRAMES)
+        self.decoded = collections.deque(maxlen=int(DECODED_SEC * max(1, fps)) + 1)   # (dseq, frame), as decoded
+        self.dseq = 0   # (seq, frame) just published: a viewer that fell
                                                                 # behind (a busy hub) catches up instead of skipping
         self._buffer_sec = BUFFER_SEC
         self._new_run = False
@@ -293,6 +297,20 @@ class Feed:
             first = self.recent[0][0]
             i = max(0, seq + 1 - first)                     # fell further behind than kept: the oldest kept
             return self.recent[i] if i < len(self.recent) else None
+
+    def decoded_after(self, seq):
+        """The first decoded frame after ``seq`` still kept: (its dseq, frame), or None if there's none yet."""
+        with self._cond:
+            if self.dseq <= seq or not self.decoded:
+                return None
+            first = self.decoded[0][0]
+            i = max(0, seq + 1 - first)
+            return self.decoded[i] if i < len(self.decoded) else None
+
+    def oldest_decoded(self):
+        """The dseq just before the oldest decoded frame still kept (a new viewer starts there), or None."""
+        with self._cond:
+            return self.decoded[0][0] - 1 if self.decoded else None
 
     def wait(self, after_seq, timeout):
         """The next frame after ``after_seq``: (seq, frame), or (after_seq, None) on timeout."""
@@ -463,6 +481,17 @@ class Feed:
                     self._buf.append(frame)
                     while len(self._buf) > self._cap():          # bounded memory, even while re-buffering
                         self._buf.popleft()
+                with self._cond:                           # the wall's stream takes it now (not paced)
+                    self.dseq += 1
+                    if self.decoded.maxlen != int(DECODED_SEC * max(1, self.fps)) + 1:
+                        self.decoded = collections.deque(self.decoded, maxlen=int(DECODED_SEC * max(1, self.fps)) + 1)
+                    self.decoded.append((self.dseq, frame))
+                    waiters = list(self._waiters)
+                for loop, ev in waiters:
+                    try:
+                        loop.call_soon_threadsafe(ev.set)
+                    except RuntimeError:
+                        pass
                 self.decoded_t = time.time()
                 if not got:
                     got, self.error = True, ""

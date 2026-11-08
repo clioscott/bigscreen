@@ -1401,7 +1401,7 @@ def webcams_probe(payload: dict = Body(...)):
         return {"ok": False, "error": str(e)}
 
 
-async def _webcam_frames(f, make, fps=None, still=None):
+async def _webcam_frames(f, make, fps=None, still=None, direct=False):
     """Yield make(frame) for the feed's frames while the client stays (it holds the feed open). Woken by the feed
     on every frame (no polling, so the even timing survives), taking every n-th when the feed runs faster than fps.
     still(): a picture to send first while the feed has none yet (webcams.still_for), so the wall shows the camera
@@ -1417,6 +1417,28 @@ async def _webcam_frames(f, make, fps=None, still=None):
             if arr is not None and f.frame is None:
                 yield await asyncio.to_thread(make, arr, f)
         after = getattr(f, "after", None)                   # every frame in order (stills: just the newest)
+        if direct and getattr(f, "kind", None) not in webcams.STILLS and hasattr(f, "decoded_after"):
+            # the wall's stream: every frame as soon as it's decoded, starting with the few seconds already decoded;
+            # the Pi plays them evenly from its own buffer, so a stalled hub (a busy server) never shows as a skip
+            dseq = None
+            while True:
+                ev.clear()
+                step = max(1, round(max(1, f.fps) / fps)) if fps else 1
+                if dseq is None:
+                    dseq = f.oldest_decoded()
+                got = f.decoded_after(dseq + step - 1) if dseq is not None else None
+                if got is not None:
+                    dseq, frame = got
+                    yield await asyncio.to_thread(make, frame, f)
+                    continue
+                if f.state == "stopped":
+                    return
+                if dseq is None and time.time() - t0 > 60:
+                    return
+                try:
+                    await asyncio.wait_for(ev.wait(), 1.0)
+                except asyncio.TimeoutError:
+                    pass
         while True:
             ev.clear()
             step = max(1, round(max(1, f.fps) / fps)) if fps else 1
@@ -1472,7 +1494,7 @@ async def webcams_frames(type: str, w: int, h: int, url: str = "", id: int | Non
 
     fps = max(1, min(30, fps))                                # the feed may decode faster for another viewer
     src = {"type": type, "url": url, "id": id}
-    return StreamingResponse(_webcam_frames(f, make, fps=fps, still=lambda: webcams.still_for(src)),
+    return StreamingResponse(_webcam_frames(f, make, fps=fps, still=lambda: webcams.still_for(src), direct=True),
                              media_type="application/octet-stream",
                              headers={"Cache-Control": "no-store"})
 

@@ -491,9 +491,9 @@ def test_the_current_webcam_stays_up_until_the_next_has_a_picture(monkeypatch):
     p._warm_hub = lambda cid: warmed.append(cid)
     c, z, entry = Canvas(448, 130), (0, 0, 448, 130), {"panel": "webcam_full", "_play": 1}
     p.draw(c, z, entry, True)
-    clock[0] += 6                                                       # 14 s to go: the hub starts b's feed
+    clock[0] += 6                                                       # 14 s to go: the hub has started b's feed
     p.draw(c, z, entry, False)
-    assert warmed == ["b"]
+    assert set(warmed) == {"b"}
     clock[0] += 16                                                      # due, but b has no picture yet: a stays
     p.draw(c, z, entry, False)
     assert drawn[-1] == "a"
@@ -874,6 +874,7 @@ def test_playback_buffer_evens_out_bursty_frames(monkeypatch):
     import collections
     st._q = collections.deque(maxlen=200)
     st._play_t0, st._play_k, st._play_pos, st._play_last, st._shown = None, 0, 0.0, 0.0, None
+    st._played, st._buffer_since = True, 0.0
     frames = [np.full((2, 2, 3), i % 256, np.uint8) for i in range(400)]
     shown, t, fed = [], 0.0, 0
     while t < 8.0:
@@ -897,6 +898,7 @@ def test_stills_show_the_newest_and_the_buffer_holds_when_dry():
     st.fps, st.video = 10, True
     st._q = collections.deque(np.full((2, 2, 3), i, np.uint8) for i in range(10))
     st._play_t0, st._play_k, st._play_pos, st._play_last, st._shown = None, 0, 0.0, 0.0, None
+    st._played, st._buffer_since = True, 0.0
     t = 0.0
     while t < 3.0:                                                      # 1 s of frames, played by a 50 Hz loop
         held = st.current(t)
@@ -931,3 +933,101 @@ def test_the_hub_sends_every_frame_in_order(monkeypatch):
     assert got == [20]                                                  # it starts at the newest
     f2 = asyncio.run(read(1))
     assert f.after(15) == (16, 16) and f.after(20) is None and f.after(-500) == (1, 1)
+
+
+def test_a_burst_after_a_stall_is_played_not_skipped():
+    import collections
+    st = wm.Stream.__new__(wm.Stream)
+    st.fps, st.video, st.frame = 30, True, None
+    st._q = collections.deque(maxlen=int(30 * wm.PLAY_MAX_SEC) + 4)
+    st._play_t0, st._play_k, st._play_pos, st._play_last, st._shown = None, 0, 0.0, 0.0, None
+    st._played, st._buffer_since = False, 0.0
+    frames = [np.full((1, 1, 3), i % 256, np.uint8) for i in range(30 * 60)]
+    fed, shown, last, t = 0, 0, None, 0.0
+    while t < 50.0:
+        # real time, except a 4 s stall at 20 s, then everything that was held comes at once
+        upto = int(t * 30) if not 20.0 <= t < 24.0 else 20 * 30
+        while fed < min(upto, len(frames)):
+            st._q.append(frames[fed]); fed += 1
+        fr = st.current(t)
+        if fr is not None and fr is not last:
+            shown += 1
+            last = fr
+        t += 0.02
+    assert fed - shown - len(st._q) == 0                                # nothing thrown away
+    assert st._play_t0 is not None                                      # and it never ran dry (6 s of buffer)
+
+
+def test_the_walls_stream_gets_frames_as_they_are_decoded():
+    import asyncio
+    import collections
+    import threading
+
+    from hub import app as hub_app
+    from hub import webcams
+    f = webcams.Feed.__new__(webcams.Feed)
+    f.kind, f.url, f.fps, f.seq, f.state, f.frame = "youtube", "u", 30, 0, "live", "paced"
+    f._lock = threading.Lock()
+    f._cond = threading.Condition(f._lock)
+    f._waiters = set()
+    f.decoded = collections.deque(maxlen=200)
+    f.viewers, f.last_view = 0, 0.0
+    f.dseq = 0
+    for i in range(1, 11):                                              # 10 decoded, none paced out yet
+        f.dseq = i
+        f.decoded.append((i, i))
+
+    async def read(n):
+        gen = hub_app._webcam_frames(f, lambda frame, feed: frame, fps=30, direct=True)
+        out = [await gen.__anext__() for _ in range(n)]
+        await gen.aclose()
+        return out
+    assert asyncio.run(read(10)) == list(range(1, 11))                  # all of them, in order, from the oldest kept
+
+
+def _fresh_stream(fps=30):
+    import collections
+    st = wm.Stream.__new__(wm.Stream)
+    st.fps, st.video, st.frame, st.frame_t, st.black_since, st.error = fps, True, None, 0.0, None, ""
+    st._q = collections.deque(maxlen=int(fps * wm.PLAY_MAX_SEC) + 4)
+    st._play_t0, st._play_k, st._play_pos, st._play_last, st._shown = None, 0, 0.0, 0.0, None
+    st._played, st._buffer_since = False, 0.0
+    return st
+
+
+def test_video_starts_only_with_a_full_buffer():
+    st = _fresh_stream()
+    frames = [np.full((1, 1, 3), i % 256, np.uint8) for i in range(400)]
+    for fr in frames[:90]:                                              # 3 s in: not enough to start smoothly
+        st._q.append(fr)
+    st.frame, st.frame_t = frames[89], 1e12
+    assert st.current(10.0) is frames[0] and st.buffering() and not st.ready()
+    for fr in frames[90:180]:                                           # 6 s: plays
+        st._q.append(fr)
+    st.current(10.1)
+    assert not st.buffering() and st.ready()
+    pre = _fresh_stream()                                               # prerolled: full before it comes up
+    for fr in frames[:300]:
+        pre._q.append(fr)
+    pre.frame, pre.frame_t = frames[299], 1e12
+    assert pre.ready()
+    pre.current(0.0)
+    assert not pre.buffering() and len(pre._q) <= int(30 * wm.PLAY_BUFFER_SEC)   # starts at the buffer's depth
+
+
+def test_a_webcam_played_by_hand_says_it_is_loading(monkeypatch):
+    import time as _t
+    clock = [1000.0]
+    monkeypatch.setattr(wm.time, "time", lambda: clock[0])
+    p = wm.WebcamPanel(_Cfg({"cams": {"a": {"label": "A"}}}))
+    st = _fresh_stream()
+    frame = np.full((130, 448, 3), 200, np.uint8)
+    st.frame, st.frame_t, st._buffer_since = frame, clock[0], clock[0]
+    st._q.append(frame)
+    p._stream = lambda cam, shape, w, h: st
+    c = Canvas(448, 130)
+    assert p.draw(c, (0, 0, 448, 130), {"panel": "webcam_full", "cam": "a"}, True) is None
+    assert int(c.buf[5, 5, 0]) < 120                                    # the still, dimmed under "Loading…"
+    clock[0] += wm.GIVE_UP_SEC + 1                                      # it never fills
+    st.frame_t = clock[0]
+    assert p.draw(c, (0, 0, 448, 130), {"panel": "webcam_full", "cam": "a"}, False) == "skip"
