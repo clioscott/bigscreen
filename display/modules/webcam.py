@@ -10,6 +10,13 @@ display/modules/webcam_caption.py for the sections and layouts.
 A rotation entry without a ``cam`` is the Webcams list (``modules.webcams.playlist``, set on the Webcams page): each
 turn plays the next ``per_turn`` webcams that are on, each for its own seconds, then ends ("done").
 
+No "loading" between webcams: the hub starts the next one's feed PREROLL_SEC before it's due (the list's next webcam,
+or the rotation's next screen through warm) and the Pi opens its stream STREAM_AHEAD_SEC before, so its frames are
+already arriving when it comes up; if they aren't yet,
+the current webcam stays up a little longer (HOLD_MAX_SEC) rather than cutting to black. Webcams that are down are
+skipped: the hub's checks (data/webcam_health.json, hub/jobs/webcam_health.py) and, while playing or prerolling, a
+stream that sends no picture or a black one (BLACK_SEC), which then sits out for BAD_SEC.
+
 The camera grid (``webcam_grid*`` panels, ``modules.webcams.grid``): tiles filling the whole frame (2 rows by
 default, as many columns as fit), filled one camera at a time (every ``interval_ms``, top row left to right, then the
 next) until every camera in the grid has appeared, each labelled with its name. The hub fetches the stills and sends
@@ -37,6 +44,11 @@ DEFAULT_HUB = "http://192.168.1.111:8800"
 IDLE_SEC = 3.0               # hang up when the screen hasn't drawn this webcam for this long
 WARM_EVERY = 10.0            # while a webcam is next in the rotation, ask the hub to keep its feed going this often
 GIVE_UP_SEC = 25.0           # no picture this long after the play started: skip to the next screen
+PREROLL_SEC = 15.0           # the hub starts the next webcam's feed this long before it's due (~5-10 s from cold)
+STREAM_AHEAD_SEC = 5.0       # … and the Pi opens its own stream of it this long before (the hub's feed is up by then)
+HOLD_MAX_SEC = 10.0          # the current webcam stays up at most this much longer while the next one has no picture
+BLACK_SEC = 4.0              # a picture black for this long: the feed is down
+BAD_SEC = 600.0              # a webcam found down while playing sits out this long (the hub's checks may clear it)
 MAGIC = b"BSWC"
 GRID_MAGIC = b"BSG2"
 GRID_ROWS = 2                # the camera grid's rows by default; its columns fit the frame
@@ -44,6 +56,12 @@ GRID_MAX_ROWS, GRID_MAX_COLS = 4, 10
 GRID_VIEW_MS = 1000          # an intersection's tile shows each of its views this long, round and round
 GRID_ASPECT = 1.1           # auto columns keep each tile about this much wider than tall (6 across full width)
 _list_pos = {"i": -1}        # where the Webcams list is (survives config reloads, which rebuild the panel)
+
+
+def is_black(frame) -> bool:
+    """An all-black (or nearly) picture: a feed that's down but still sending. As hub/webcams.py is_black."""
+    sub = frame[::4, ::4]
+    return float((sub.max(axis=-1) > 40).mean()) < 0.004
 
 
 def playlist_of(s: dict) -> list:
@@ -98,14 +116,29 @@ class Stream:
         self.frame_t = 0.0
         self.age = None
         self.error = ""
+        self.started = time.time()
+        self.black_since = None                # when the picture went black (None: it isn't)
+        self._black_checked = 0.0
         self.last_use = time.time()
         self.alive = True
         self._conn = None
         self._sock = None                      # our own reference: http.client drops conn.sock once a response owns it
         threading.Thread(target=self._run, name="webcam-reader", daemon=True).start()
 
-    def used(self):
-        self.last_use = time.time()
+    def used(self, hold=0.0):
+        """Keep the stream open: drawn now, or (hold) wanted for the next ``hold`` seconds more (a preroll)."""
+        self.last_use = max(self.last_use, time.time() + hold)
+
+    def ready(self):
+        """A picture to show: a recent frame that isn't black."""
+        return self.frame is not None and time.time() - self.frame_t < 10 and self.black_since is None
+
+    def down(self, now=None):
+        """Down beyond doubt: black for BLACK_SEC, or no picture GIVE_UP_SEC after opening (a hiccup mid-play isn't)."""
+        now = now or time.time()
+        if self.black_since is not None and now - self.black_since >= BLACK_SEC:
+            return True
+        return self.frame is None and now - self.started > GIVE_UP_SEC
 
     def close(self):
         """Safe from the render thread: never waits for the reader. Closing the connection would block on the
@@ -166,6 +199,12 @@ class Stream:
                 raise RuntimeError("stream ended")
             self.frame = np.frombuffer(body, np.uint8).reshape(h, w, 3)
             self.frame_t = time.time()
+            if self.frame_t - self._black_checked >= 1.0:       # on the reader's core, once a second
+                self._black_checked = self.frame_t
+                if not is_black(self.frame):
+                    self.black_since = None
+                elif self.black_since is None:
+                    self.black_since = self.frame_t
             self.age = age
             self.error = ""
 
@@ -189,33 +228,51 @@ class WebcamPanel:
         self.streams: dict = {}
         self.started: dict = {}
         self._warmed: dict = {}                               # source -> when the hub was last asked to warm it
+        self.health, self._health_mtime, self._health_checked = {}, None, 0.0
+        self._bad: dict = {}                                  # webcam -> until when it sits out (found down here)
         self.fonts: dict = {}
         self.white = Color(255, 255, 255)
         self.dim = Color(150, 150, 150)
 
     # streams ----------------------------------------------------------------------------------------------
-    def _stream(self, cam, shape, w, h):
+    def _stream(self, cam, shape, w, h, hold=0.0):
         q = stream_query(cam, shape, w, h)
         key = tuple(sorted(q.items()))
         st = self.streams.get(key)
         if st is None or not st.alive:
             st = self.streams[key] = Stream(self.hub, q)
-        st.used()
-        for k, other in list(self.streams.items()):          # hang up on ones nobody drew lately
+        st.used(hold)
+        for k, other in list(self.streams.items()):          # hang up on ones nobody drew (or prerolled) lately
             if not other.alive or time.time() - other.last_use > IDLE_SEC:
                 other.close()
                 self.streams.pop(k, None)
         return st
 
-    def warm(self, entry, zone=None):
-        """The rotation says this webcam is next: have the hub start its feed now (in the background), so its screen
-        opens on a picture a second or so behind live instead of "loading". The camera grid fetches all its tiles for
+    def _preroll(self, cid, shape, zone):
+        """Open this webcam's stream for the zone now, so its frames are already here when it comes up (kept open a few
+        seconds past each call). The stream starts the hub's feed too. Returns the stream, or None."""
+        cam = self.cams.get(cid)
+        if not cam:
+            return None
+        return self._stream(cam, shape, zone[2], zone[3], hold=IDLE_SEC)
+
+    def warm(self, entry, zone=None, soon=False):
+        """The rotation says this webcam is next: have the hub start its feed now (decoding and buffering take ~5-10 s),
+        and once it's ``soon`` (under STREAM_AHEAD_SEC to go) open the Pi's own stream for the zone too, so the screen
+        opens on a picture (a few seconds behind live) instead of "loading". The camera grid fetches all its tiles for
         the area it will play in (zone), so its reveal starts the moment it comes up."""
         if str((entry or {}).get("panel", "")).startswith("webcam_grid"):
             return self.grid.warm(zone)
         cid = (entry or {}).get("cam")
         if not cid and self.playlist:                         # the Webcams list: the one it plays next
-            cid = self.playlist[(_list_pos["i"] + 1) % len(self.playlist)][0]
+            cid = self._next_up(_list_pos["i"])
+        if soon and zone is not None and cid in self.cams:
+            self._preroll(cid, self.shape_for(entry, zone), zone)
+        else:
+            self._warm_hub(cid)
+
+    def _warm_hub(self, cid):
+        """Ask the hub to start (or keep up) this webcam's feed, at most every WARM_EVERY; in the background."""
         cam = self.cams.get(cid)
         if not cam:
             return
@@ -225,7 +282,7 @@ class WebcamPanel:
         if now - self._warmed.get(key, 0) < WARM_EVERY:
             return
         if any(st.alive and all(st.query.get(k) == v for k, v in q.items()) for st in self.streams.values()):
-            return                                            # already on screen: its stream keeps it going
+            return                                            # already open here: that stream keeps it going
         self._warmed[key] = now
         hub = urlparse(self.hub)
 
@@ -238,6 +295,44 @@ class WebcamPanel:
             except OSError as e:
                 print(f"[webcam] warm {q.get('url') or q.get('id')}: {e}")
         threading.Thread(target=ask, name="webcam-warm", daemon=True).start()
+
+    # which webcams are down ---------------------------------------------------------------------------------
+    def is_down(self, cid, now=None):
+        """Down by the hub's last check, or found down here while playing (for BAD_SEC)."""
+        now = now or time.time()
+        if now < self._bad.get(cid, 0):
+            return True
+        h = self._health(now).get(cid)
+        return isinstance(h, dict) and h.get("up") is False
+
+    def _mark_bad(self, cid, why=""):
+        self._bad[cid] = time.time() + BAD_SEC
+        print(f"[webcam] {cid} is down{': ' + why if why else ''}; skipping it for {int(BAD_SEC // 60)} min")
+
+    def _next_up(self, after):
+        """The list's next webcam after position ``after`` that isn't down (the next one at all when every one is)."""
+        n = len(self.playlist)
+        for step in range(1, n + 1):
+            cid = self.playlist[(after + step) % n][0]
+            if not self.is_down(cid):
+                return cid
+        return self.playlist[(after + 1) % n][0] if n else None
+
+    def _health(self, now):
+        """data/webcam_health.json (hub/jobs/webcam_health.py), re-read when it changes (checked every 5 s)."""
+        if self.data_dir and now - self._health_checked > 5:
+            self._health_checked = now
+            path = os.path.join(self.data_dir, "webcam_health.json")
+            try:
+                mt = os.stat(path).st_mtime
+                if mt != self._health_mtime:
+                    with open(path, encoding="utf-8") as f:
+                        got = json.load(f)
+                    self.health = got if isinstance(got, dict) else {}
+                    self._health_mtime = mt
+            except (OSError, ValueError):
+                pass
+        return self.health
 
     def font(self, size):
         """A font by size name (tiny…large) or by path, cached."""
@@ -269,33 +364,72 @@ class WebcamPanel:
         return self._draw_list(c, zone, entry, transition)
 
     def _draw_list(self, c, zone, entry, transition):
-        """The Webcams list: the next webcams that are on, each for its seconds; "done" after per_turn of them."""
+        """The Webcams list: the next webcams that are on and up, each for its seconds; "done" after per_turn of them.
+        The next one is prerolled near the end of each, and only cut to once it has a picture (or HOLD_MAX_SEC on)."""
         now = time.time()
         if not self.playlist:
             self._centre(c, zone, "No webcams in the list", self.dim)
             return "skip" if now - self.started.setdefault(("list", entry.get("_play")), now) > 4 else None
         where = tuple(zone)                                   # each half of the wall has its own turn
+        shape = self.shape_for(entry, zone)
         t = self._turns.get(where)
         if transition or t is None or t["play"] != entry.get("_play"):
-            t = self._turns[where] = {"play": entry.get("_play"), "cam": None, "t0": now, "shown": 0, "failed": 0}
+            t = self._turns[where] = {"play": entry.get("_play"), "cam": None, "t0": now, "shown": 0, "failed": 0,
+                                      "next": None}
         n = len(self.playlist)
-        if t["cam"] is None or now - t["t0"] >= self._sec(t["cam"]):
-            if t["cam"] is not None:
-                t["shown"] += 1
-                if t["shown"] >= min(self.per_turn, n):
-                    self._turns.pop(where, None)              # another pass of the same play starts afresh
-                    return "done"
-            _list_pos["i"] = (_list_pos["i"] + 1) % n
-            t["cam"], t["t0"], t["new"] = self.playlist[_list_pos["i"]][0], now, True
+        if t["cam"] is None:                                  # the turn's first webcam (prerolled by warm)
+            if all(self.is_down(cid, now) for cid, _ in self.playlist):
+                self._centre(c, zone, "Every webcam is down", self.dim)
+                return "skip" if now - t["t0"] > 4 else None
+            self._switch(t, self._next_up(_list_pos["i"]), now)
+        due = t["t0"] + self._sec(t["cam"])
+        last = t["shown"] + 1 >= min(self.per_turn, n)        # nothing after this one in this turn
+        if last and now >= due:
+            self._turns.pop(where, None)                      # another pass of the same play starts afresh
+            return "done"
+        if not last and now >= due - PREROLL_SEC:
+            nxt = self._lookahead(t, shape, zone, now, due)
+            if nxt is None and now >= due:                    # nothing else is up: this one carries on
+                t["t0"] = now
+            elif nxt is not None and now >= due:
+                st = self._preroll(nxt, shape, zone)
+                if st is not None and (st.ready() or now - due >= HOLD_MAX_SEC):
+                    t["shown"] += 1
+                    self._switch(t, nxt, now)
         new, t["new"] = t.get("new", False), False
         r = self._draw_cam(c, zone, {**entry, "cam": t["cam"]}, new)
-        if r == "skip":                                       # this one won't come up: on to the next
+        if r == "skip":                                       # this one won't come up: on to the next, uncounted
             t["failed"] += 1
-            t["shown"] -= 1                                   # (it doesn't count as shown)
-            t["t0"] = now - self._sec(t["cam"])
             if t["failed"] >= n:
+                self._turns.pop(where, None)
                 return "skip"
+            self._switch(t, self._next_up(_list_pos["i"]), now)
         return None
+
+    def _lookahead(self, t, shape, zone, now, due):
+        """The webcam that comes after the current one: its hub feed warmed from PREROLL_SEC before it's due, its stream
+        here open from STREAM_AHEAD_SEC. One found down by then is passed over for the one after it, never shown."""
+        for _ in range(len(self.playlist)):
+            cid = t.get("next")
+            if cid is None or self.is_down(cid, now):
+                cid = t["next"] = self._next_up(_list_pos["i"])
+            if cid is None or cid == t["cam"]:
+                return None                                   # the only one up is on screen now
+            if now < due - STREAM_AHEAD_SEC:
+                self._warm_hub(cid)
+                return cid
+            st = self._preroll(cid, shape, zone)
+            if st is None or not st.down(now):
+                return cid
+            self._mark_bad(cid, "black" if st.black_since is not None else (st.error or "no picture"))
+            t["next"] = None
+        return None
+
+    def _switch(self, t, cid, now):
+        """Put ``cid`` on screen in this turn (the list carries on after it next time)."""
+        _list_pos["i"] = next((i for i, (k, _) in enumerate(self.playlist) if k == cid), _list_pos["i"] + 1) \
+            % len(self.playlist)
+        t["cam"], t["t0"], t["new"], t["next"] = cid, now, True, None
 
     def _sec(self, cid):
         return next((sec for k, sec in self.playlist if k == cid), 60.0)
@@ -312,6 +446,9 @@ class WebcamPanel:
             self._centre(c, zone, f"No webcam '{entry.get('cam')}'", self.dim)
             return "skip" if now - started > 4 else None
         st = self._stream(cam, self.shape_for(entry, zone), w, h)
+        if st.black_since is not None and now - st.black_since >= BLACK_SEC:
+            self._mark_bad(entry.get("cam"), "black")         # down but still sending: on to the next screen
+            return "skip"
         if st.frame is not None and now - st.frame_t < 10:
             c.Blit(st.frame, x, y)
         else:
@@ -321,6 +458,7 @@ class WebcamPanel:
             if st.error:
                 self._centre(c, (x, y + 12, w, h), st.error[: max(8, w // 5)], Color(120, 60, 60))
             if now - max(started, st.frame_t) > GIVE_UP_SEC:      # a hiccup mid-play doesn't end a held webcam
+                self._mark_bad(entry.get("cam"), st.error or "no picture")
                 return "skip"
         wx = cam.get("_wx") or self._weather(now).get(entry.get("cam"))   # _wx: a preview of an unsaved location
         still = (cam.get("source") or {}).get("type") in ("drivebc", "image")
@@ -336,7 +474,6 @@ class WebcamPanel:
             try:
                 mt = os.stat(path).st_mtime
                 if mt != self._wx_mtime:
-                    import json
                     with open(path, encoding="utf-8") as f:
                         self.weather = json.load(f) or {}
                     self._wx_mtime = mt
