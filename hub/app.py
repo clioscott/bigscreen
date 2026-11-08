@@ -1281,6 +1281,70 @@ def webcams_status():
                          for k, (n, sizes) in _webcam_caption.JP_FACES.items()]}
 
 
+_geo_cache: dict = {}
+# "White Rock, BC": the usual short forms of provinces and states after the comma
+_REGIONS = {"ab": "alberta", "bc": "british columbia", "mb": "manitoba", "nb": "new brunswick",
+            "nl": "newfoundland and labrador", "ns": "nova scotia", "nt": "northwest territories", "nu": "nunavut",
+            "on": "ontario", "pe": "prince edward island", "pei": "prince edward island", "qc": "quebec",
+            "sk": "saskatchewan", "yt": "yukon", "al": "alabama", "ak": "alaska", "az": "arizona", "ar": "arkansas",
+            "ca": "california", "co": "colorado", "ct": "connecticut", "de": "delaware", "fl": "florida",
+            "ga": "georgia", "hi": "hawaii", "id": "idaho", "il": "illinois", "in": "indiana", "ia": "iowa",
+            "ks": "kansas", "ky": "kentucky", "la": "louisiana", "me": "maine", "md": "maryland",
+            "ma": "massachusetts", "mi": "michigan", "mn": "minnesota", "ms": "mississippi", "mo": "missouri",
+            "mt": "montana", "ne": "nebraska", "nv": "nevada", "nh": "new hampshire", "nj": "new jersey",
+            "nm": "new mexico", "ny": "new york", "nc": "north carolina", "nd": "north dakota", "oh": "ohio",
+            "ok": "oklahoma", "or": "oregon", "pa": "pennsylvania", "ri": "rhode island", "sc": "south carolina",
+            "sd": "south dakota", "tn": "tennessee", "tx": "texas", "ut": "utah", "vt": "vermont", "va": "virginia",
+            "wa": "washington", "wv": "west virginia", "wi": "wisconsin", "wy": "wyoming", "dc": "district of columbia",
+            "uk": "united kingdom", "usa": "united states", "us": "united states"}
+
+
+def _place_matches(g, wanted):
+    """Whether a geocoding result is in the region or country typed after the comma ("BC", "Ireland", "JP")."""
+    w = wanted.lower().strip(" .")
+    if not w:
+        return True
+    names = [str(g.get(k) or "").lower() for k in ("admin1", "admin2", "country")]
+    full = _REGIONS.get(w, w)
+    return any(n == full or n.startswith(full) for n in names if n) or str(g.get("country_code") or "").lower() == w
+
+
+@app.get("/api/webcams/geocode")
+def webcams_geocode(name: str, count: int = 10):
+    """Places called ``name`` (Open-Meteo's geocoding, free, no key), biggest first: [{name, admin1, country,
+    country_code, lat, lon, tz, population}]. For picking the city a webcam's weather comes from: several towns share
+    a name, so the panel lists them with their region and country; "White Rock, BC" or "Dublin, Ireland" narrows
+    them to that region or country."""
+    q = " ".join(str(name).split())[:80]
+    place, _, wanted = q.partition(",")
+    place = place.strip()
+    if len(place) < 2:
+        return {"results": []}
+    key = (q.lower(), max(1, min(10, count)))
+    hit = _geo_cache.get(key)
+    if hit and time.time() - hit[0] < 86400:
+        return {"results": hit[1]}
+    try:
+        r = requests.get("https://geocoding-api.open-meteo.com/v1/search",
+                         params={"name": place, "count": 50, "format": "json", "language": "en"},
+                         headers={"User-Agent": "BigScreen/2 (home LED wall; webcam weather)"}, timeout=8)
+        r.raise_for_status()
+        raw = r.json().get("results") or []
+    except Exception as e:
+        raise HTTPException(503, f"city search failed: {e}"[:200])
+    out = [{"name": g.get("name"), "admin1": g.get("admin1") or "", "country": g.get("country") or "",
+            "country_code": g.get("country_code") or "", "lat": round(float(g["latitude"]), 4),
+            "lon": round(float(g["longitude"]), 4), "tz": g.get("timezone") or "", "population": g.get("population") or 0}
+           for g in raw if g.get("latitude") is not None and g.get("longitude") is not None
+           and _place_matches(g, wanted)]
+    out.sort(key=lambda g: -(g["population"] or 0))
+    out = out[:key[1]]
+    if len(_geo_cache) > 200:
+        _geo_cache.clear()
+    _geo_cache[key] = (time.time(), out)
+    return {"results": out}
+
+
 @app.get("/api/webcams/local")
 def webcams_local(lat: float, lon: float):
     """What a location's caption will say: its time zone (Open-Meteo's, for a webcam without one), local time and

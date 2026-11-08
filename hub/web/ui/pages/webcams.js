@@ -103,6 +103,9 @@ const host = (u) => { try { return new URL(u).host.replace(/^www\./, ""); } catc
 const qs = (o) => Object.entries(o).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
 export const camEntry = (id, shape) => ({ panel: SHAPES[shape].panel, cam: id, rules: [], dwell_sec: 60 });
 
+// where a webcam's weather comes from: its weather city (picked by name), else its own coordinates
+const wxPoint = (c) => (c?.wx_city && Number.isFinite(c.wx_city.lat) ? c.wx_city
+  : Number.isFinite(c?.lat) && Number.isFinite(c?.lon) ? { lat: c.lat, lon: c.lon } : null);
 // a location's time zone, local time and weather (hub /api/webcams/local, from Open-Meteo)
 const localOf = (lat, lon) => api(`/api/webcams/local?${qs({ lat, lon })}`);
 function useStatus() {
@@ -1084,21 +1087,22 @@ const WebcamEditor = {
     // what the caption will say there: the location's time zone (filled in when the webcam has none), time and weather
     const local = ref(null);
     let localTimer = null;
-    watch(() => [id.value, cam.value?.lat, cam.value?.lon], () => {
+    watch(() => [id.value, cam.value?.lat, cam.value?.lon, cam.value?.wx_city?.lat, cam.value?.wx_city?.lon], () => {
       clearTimeout(localTimer);
       local.value = null;
       const c = cam.value;
-      if (!c || !Number.isFinite(c.lat) || !Number.isFinite(c.lon)) return;
+      const pt = wxPoint(c);
+      if (!pt) return;
       localTimer = setTimeout(async () => {
         try {
-          const r = await localOf(c.lat, c.lon);
+          const r = await localOf(pt.lat, pt.lon);
           if (cam.value !== c) return;
           local.value = r;
           if (!c.tz && r.tz) {
             c.tz = r.tz;
             // only opened, not edited (same location as saved): fill the saved copy too, so it isn't an unsaved change
             const sc = store.saved?.modules?.webcams?.cams?.[id.value];
-            if (sc && !sc.tz && sc.lat === c.lat && sc.lon === c.lon) sc.tz = r.tz;
+            if (sc && !sc.tz && sc.lat === c.lat && sc.lon === c.lon && !c.wx_city) sc.tz = r.tz;
           }
         } catch {}
       }, 600);
@@ -1184,9 +1188,28 @@ const WebcamEditor = {
     watch(() => ov.value?.shield?.style, () => { presetsLoaded.value = 1; });
     const presetShown = (r) => ov.value.shield.style !== "real" || SHIELD_PRESET_ROUTES.indexOf(r) < presetsLoaded.value;
     const presetDone = () => { presetsLoaded.value++; };
-    const hasText = (k) => (WX_KEYS.includes(k) ? Number.isFinite(cam.value.lat) : { place: !!cam.value.place, credit: !!cam.value.credit,
+    const hasText = (k) => (WX_KEYS.includes(k) ? !!wxPoint(cam.value) : { place: !!cam.value.place, credit: !!cam.value.credit,
       custom: !!ov.value.custom_text?.trim(), shield: /\d/.test(String(ov.value.shield?.route ?? "")) }[k] ?? true);
-    const needsLocation = computed(() => WX_KEYS.some((k) => ov.value.show[k]) && !(Number.isFinite(cam.value.lat) && Number.isFinite(cam.value.lon)));
+    const needsLocation = computed(() => WX_KEYS.some((k) => ov.value.show[k]) && !wxPoint(cam.value));
+    // the weather city: search by name, pick one of the places with that name (region and country shown)
+    const cityQ = ref("");
+    const cityHits = ref(null);
+    const citySearching = ref(false);
+    const searchCity = async () => {
+      const q = cityQ.value.trim();
+      if (q.length < 2) return;
+      citySearching.value = true;
+      try { cityHits.value = (await api(`/api/webcams/geocode?${qs({ name: q })}`)).results; } catch (e) { fail(e); cityHits.value = []; }
+      citySearching.value = false;
+    };
+    const pickCity = (g) => {
+      cam.value.wx_city = { name: g.name, admin1: g.admin1, country: g.country, lat: g.lat, lon: g.lon, tz: g.tz };
+      if (!cam.value.tz && g.tz) cam.value.tz = g.tz;
+      cityHits.value = null;
+      cityQ.value = "";
+    };
+    const clearCity = () => { delete cam.value.wx_city; };
+    const cityLabel = (g) => [g.name, g.admin1, g.country].filter((x, i, a) => x && a.indexOf(x) === i).join(", ");
     const boxMode = computed({ get: () => (ov.value.box_w === "full" ? "full" : Number(ov.value.box_w) > 0 ? "min" : "auto"),
       set: (v) => { ov.value.box_w = v === "full" ? "full" : v === "min" ? Math.max(60, Number(ov.value.box_w) || 160) : "auto"; } });
     const galleryLoc = computed(() => GALLERY.find((g) => (g.source.url === cam.value.source?.url || g.id === youtubeId(cam.value.source?.url || "")) && g.lat != null) || null);
@@ -1227,7 +1250,7 @@ const WebcamEditor = {
     const customCrop = (s) => !!cam.value.crops?.[s];
     return { id, cam, shape, zone, ov, colour, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
       orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, hasText, customCols, SHIELD_PRESETS, SHIELD_KINDS, SHIELD_PLACES, SHIELD_SIZES, SHIELD_STYLES, shieldSrc, signMissing, presetShown, presetDone,
-      CONTAINERS, feedFor, feedPill, healthFor, downPill, local, jpFaces, jpSample, jc, jcSizes, jcSetFace, jcSample, JC_POSITIONS, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
+      CONTAINERS, feedFor, feedPill, healthFor, downPill, local, cityQ, cityHits, citySearching, searchCity, pickCity, clearCity, cityLabel, wxPoint, jpFaces, jpSample, jc, jcSizes, jcSetFace, jcSample, JC_POSITIONS, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
   },
   template: `<div class="page" v-if="cam">
     <div class="page-head"><div class="grow">
@@ -1266,6 +1289,17 @@ const WebcamEditor = {
                 <div class="row nowrap" style="gap:6px"><input class="input" style="width:50%" :value="cam.lat ?? ''" @change="setCoord('lat', $event, 90)" placeholder="49.2888">
                   <input class="input" style="width:50%" :value="cam.lon ?? ''" @change="setCoord('lon', $event, 180)" placeholder="-123.1111"></div></Field>
             </div>
+            <Field label="Weather from a city" hint="Instead of the coordinates: pick the city (its region and country are shown, as several places share a name)">
+              <div v-if="cam.wx_city" class="row nowrap" style="gap:8px"><span class="pill accent"><Icon name="CloudSun" :size="13"/> {{ cityLabel(cam.wx_city) }}</span>
+                <button class="btn sm ghost" @click="clearCity"><Icon name="X" :size="13"/>Use the coordinates</button></div>
+              <div v-else class="stack" style="gap:6px">
+                <div class="row nowrap" style="gap:6px"><input class="input grow" v-model="cityQ" placeholder="New Orleans  ·  or narrow it: White Rock, BC" @keydown.enter.prevent="searchCity">
+                  <button class="btn" :disabled="citySearching || cityQ.trim().length < 2" @click="searchCity"><Icon :name="citySearching ? 'LoaderCircle' : 'Search'" :size="14" :class="{spin: citySearching}"/>Find</button></div>
+                <div v-if="cityHits && !cityHits.length" class="faint" style="font-size:12.5px">No place by that name.</div>
+                <div v-if="cityHits && cityHits.length" class="stack" style="gap:4px">
+                  <button v-for="g in cityHits" :key="g.lat + ',' + g.lon" type="button" class="btn sm ghost" style="justify-content:flex-start" @click="pickCity(g)">
+                    <Icon name="MapPin" :size="13"/>{{ cityLabel(g) }}<span class="faint" v-if="g.population">· {{ g.population.toLocaleString() }} people</span></button></div>
+              </div></Field>
             <div v-if="local" class="faint" style="font-size:12.5px"><Icon name="MapPin" :size="13"/> There now: <b>{{ local.time }}</b>
               <template v-if="local.temp != null"> · {{ Math.round(local.temp) }}°C{{ local.conditions ? ' ' + local.conditions.toLowerCase() : '' }}</template>
               <template v-if="local.tz"> · {{ local.tz }}{{ cam.tz && cam.tz !== local.tz ? ' (the time zone above says ' + cam.tz + ')' : '' }}</template></div>

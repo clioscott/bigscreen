@@ -946,3 +946,42 @@ def test_a_starting_feed_sends_a_still_of_the_camera_first(monkeypatch):
     monkeypatch.setattr(webcams, "snapshot", lambda src: (None, "pending"))
     assert webcams.still_for({"type": "youtube", "url": "https://youtu.be/other"}) is None
     assert webcams.still_for({"type": "drivebc", "id": 5}) is None     # stills send their own picture at once
+
+
+def test_weather_from_a_picked_city(monkeypatch):
+    import pytest
+
+    from hub import app as hub_app
+    from hub import config
+    from hub.jobs import webcam_weather as job
+    cam = {"lat": 29.9572, "lon": 90.068}                              # a sign lost: Tibet, not New Orleans
+    assert job.point(cam) == (29.9572, 90.068)
+    city = {"name": "New Orleans", "admin1": "Louisiana", "country": "United States", "lat": 29.9547, "lon": -90.0751,
+            "tz": "America/Chicago"}
+    assert job.point({**cam, "wx_city": city}) == (29.9547, -90.0751)   # the city wins
+    assert job.point({"wx_city": city}) == (29.9547, -90.0751)
+
+    class R:
+        def raise_for_status(self): pass
+
+        def json(self):
+            return {"results": [
+                {"name": "White Rock", "admin1": "New Mexico", "country": "United States", "country_code": "US",
+                 "latitude": 35.8, "longitude": -106.2, "timezone": "America/Denver", "population": 5000},
+                {"name": "White Rock", "admin1": "British Columbia", "country": "Canada", "country_code": "CA",
+                 "latitude": 49.02, "longitude": -122.8, "timezone": "America/Vancouver", "population": 21000}]}
+    monkeypatch.setattr(hub_app.requests, "get", lambda *a, **k: R())
+    monkeypatch.setattr(hub_app, "_geo_cache", {})
+    got = hub_app.webcams_geocode("White Rock")["results"]
+    assert [g["admin1"] for g in got] == ["British Columbia", "New Mexico"]          # biggest first
+    for q in ("White Rock, BC", "White Rock, Canada", "White Rock, ca"):
+        assert [g["admin1"] for g in hub_app.webcams_geocode(q)["results"]] == ["British Columbia"], q
+    assert hub_app.webcams_geocode("x")["results"] == []
+
+    def cfg(c):
+        return {"system": {}, "layout": {}, "modules": {"webcams": {"cams": {"a": {
+            "label": "A", "source": {"type": "image", "url": "https://x.example/a.jpg"}, **c}}}}}
+    config.validate(cfg({"wx_city": city}))
+    for bad in ({"name": "", "lat": 1, "lon": 1}, {"name": "X", "lat": 91, "lon": 0}, "New Orleans"):
+        with pytest.raises(config.ConfigError):
+            config.validate(cfg({"wx_city": bad}))
