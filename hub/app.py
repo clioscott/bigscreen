@@ -1215,8 +1215,10 @@ WX_TTL, WX_RETRY, WX_SETTLE = 900.0, 60.0, 1.0
 
 
 def _wants_wx(cam):
+    """A preview needs the location's weather: shown, or for the local time (a webcam with no tz uses the zone it
+    carries; webcam_caption.Content)."""
     show = ((cam or {}).get("overlay") or {}).get("show") or {}
-    return bool(show.get("weather") or show.get("sun"))
+    return bool(show.get("weather") or show.get("sun") or (show.get("time", True) and not (cam or {}).get("tz")))
 
 
 def _webcam_wx(cam_id, cam, block=False):
@@ -1274,7 +1276,9 @@ def _fetch_wx(points, timeout=8):
 def webcams_status():
     return {"feeds": webcams.describe(), "zones": _webcam_zones(), "max_feeds": webcams.MAX_FEEDS,
             "js_runtime": bool(webcams.deno_path()),
-            "health": read_json(paths.DATA_DIR / "webcam_health.json", {}) or {}}   # hub/jobs/webcam_health.py
+            "health": read_json(paths.DATA_DIR / "webcam_health.json", {}) or {},   # hub/jobs/webcam_health.py
+            "jp_faces": [{"id": k, "name": n, "sizes": [[h, p.removeprefix("fonts/")] for h, p in sizes]}
+                         for k, (n, sizes) in _webcam_caption.JP_FACES.items()]}
 
 
 @app.get("/api/webcams/local")
