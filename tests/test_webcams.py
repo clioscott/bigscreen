@@ -985,3 +985,74 @@ def test_weather_from_a_picked_city(monkeypatch):
     for bad in ({"name": "", "lat": 1, "lon": 1}, {"name": "X", "lat": 91, "lon": 0}, "New Orleans"):
         with pytest.raises(config.ConfigError):
             config.validate(cfg({"wx_city": bad}))
+
+
+def test_a_youtube_bot_check_pauses_lookups_and_is_not_a_webcam_down(monkeypatch):
+    import subprocess
+
+    import pytest
+
+    from hub import webcams
+    monkeypatch.setattr(webcams, "_resolved", {})
+    monkeypatch.setattr(webcams, "_yt_block", {"until": 0.0})
+    calls = []
+
+    def yt(*args, timeout=60):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 1, "", "ERROR: [youtube] abc: Sign in to confirm you’re not a bot.")
+    monkeypatch.setattr(webcams, "_yt_dlp", yt)
+    with pytest.raises(webcams.BotCheck):
+        webcams.resolve("youtube", "https://www.youtube.com/watch?v=abcdefghijk")
+    with pytest.raises(webcams.BotCheck, match="trying again"):
+        webcams.resolve("youtube", "https://www.youtube.com/watch?v=bcdefghijkl")
+    assert len(calls) == 1                                              # the second never asked YouTube
+    assert webcams.is_bot_check("HTTP Error 429: Too Many Requests") and not webcams.is_bot_check("Video unavailable")
+    noted = []
+    monkeypatch.setattr(webcams, "note_health", lambda *a: noted.append(a))
+    monkeypatch.setattr(webcams, "_yt_block", {"until": 0.0})
+
+    class F(webcams.Feed):                                              # one run of the feed loop, then stop
+        def __init__(self):
+            self.kind, self.url, self.title, self.error, self.restarts = "youtube", "https://youtu.be/abcdefghijk", "", "", 0
+            self._lock = __import__("threading").Lock()
+            self._stop = __import__("threading").Event()
+            self.state, self._n = "starting", 0
+
+        def wanted(self):
+            self._n += 1
+            return self._n < 3
+    monkeypatch.setattr(webcams, "_forget", lambda f: None)
+    monkeypatch.setattr(webcams.time, "sleep", lambda s: None)
+    F()._run()
+    assert noted == []                                                  # a bot check doesn't mark it down
+
+
+def test_feeds_note_their_own_health(monkeypatch, tmp_path):
+    import json
+    import threading
+
+    from hub import config, paths, sync, webcams
+    monkeypatch.setattr(paths, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(config, "load", lambda: {"modules": {"webcams": {"cams": {
+        "a": {"source": {"type": "youtube", "url": "https://youtu.be/abcdefghijk"}},
+        "b": {"source": {"type": "youtube", "url": "https://youtu.be/zzzzzzzzzzz"}}}}}})
+    monkeypatch.setattr(sync, "push_data", lambda: None)
+    monkeypatch.setattr(webcams, "_health_seen", {})
+    started = []
+    monkeypatch.setattr(threading, "Thread", lambda target, args, **k: started.append((target, args)) or type(
+        "T", (), {"start": lambda self: target(*args)})())
+    webcams.note_health("youtube", "https://youtu.be/abcdefghijk", False, "black")
+    webcams.note_health("youtube", "https://youtu.be/abcdefghijk", False, "black")     # unchanged: not written again
+    got = json.loads((tmp_path / "webcam_health.json").read_text())
+    assert list(got) == ["a"] and got["a"]["up"] is False and got["a"]["why"] == "black" and len(started) == 1
+
+
+def test_youtube_thumbnails_without_yt_dlp(monkeypatch, tmp_path):
+    from hub import paths, webcams
+    monkeypatch.setattr(paths, "CACHE_DIR", tmp_path)
+    monkeypatch.setattr(webcams, "resolve", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no yt-dlp")))
+    monkeypatch.setattr(webcams, "youtube_thumb", lambda vid: b"\xff\xd8" + vid.encode() * 300)
+    webcams._grab("youtube", "https://www.youtube.com/watch?v=abcdefghijk")
+    assert webcams._snap_path("youtube", "https://www.youtube.com/watch?v=abcdefghijk").read_bytes()[:2] == b"\xff\xd8"
+    assert webcams.youtube_id("https://www.youtube.com/@Channel/live") == ""
+    assert webcams.youtube_id("https://youtu.be/abcdefghijk?t=1") == "abcdefghijk"

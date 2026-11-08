@@ -38,7 +38,8 @@ BUFFER_SEC = 3.5             # playout buffer for HLS (YouTube): longer than a s
 BUFFER_SEC_LIVE = 0.3        # … for sources that already arrive in real time (RTSP, MJPEG)
 BUFFER_HEADROOM = 4.0        # frames kept beyond the buffer (about one long segment) before the oldest are dropped
 OPEN_SEC = 45.0              # … or no first frame this long after starting it
-RESOLVE_TTL = 3600.0         # YouTube manifest URLs last ~6 h; resolve again after an hour
+RESOLVE_TTL = 3 * 3600.0     # YouTube manifest URLs last ~6 h; resolve again after 3 (fewer lookups: see BOT_COOL)
+BOT_COOL = 20 * 60.0         # YouTube asked the hub to prove it isn't a bot: no new lookups for this long
 SCHEMES = {"http", "https", "rtsp", "rtsps", "rtmp", "rtmps"}
 PROTOCOLS = "http,https,tcp,tls,crypto,httpproxy,rtsp,rtsps,rtmp,rtmps,rtmpt"     # network only: no file:, data:
 NOISE = ("frame=", "  ", "Input #", "Output #", "Stream mapping", "Press [q]")
@@ -138,6 +139,16 @@ def fetch_still(kind, url, known_at=None, meta=True):
 
 # --- resolving -----------------------------------------------------------------------------------------------
 _resolved: dict = {}         # youtube url -> (media url, title, at)
+_yt_block = {"until": 0.0}   # no YouTube lookups before this (after a bot check)
+
+
+class BotCheck(SourceError):
+    """YouTube refused the hub as a suspected bot: the hub is throttled, the webcam isn't down."""
+
+
+def is_bot_check(text) -> bool:
+    t = str(text or "").lower()
+    return "not a bot" in t or "sign in to confirm" in t or "http error 429" in t
 _resolve_lock = threading.Lock()
 
 
@@ -167,6 +178,9 @@ def resolve(kind, url, fresh=False, timeout=60) -> tuple[str, str]:
         hit = _resolved.get(url)
         if hit and not fresh and time.time() - hit[2] < RESOLVE_TTL:
             return hit[0], hit[1]
+    wait = _yt_block["until"] - time.time()
+    if wait > 0:                                        # throttled: asking again only makes it last longer
+        raise BotCheck(f"YouTube is limiting the hub (bot check); trying again in {int(wait // 60) + 1} min")
     try:
         r = _yt_dlp("-f", "bv*[height<=480]/bv*/b", "--print", "%(title)s", "--print", "%(live_status)s",
                     "-g", url, timeout=timeout)
@@ -177,6 +191,10 @@ def resolve(kind, url, fresh=False, timeout=60) -> tuple[str, str]:
     lines = [ln for ln in r.stdout.splitlines() if ln.strip()]
     if r.returncode or len(lines) < 3:
         err = (r.stderr.strip().splitlines() or ["yt-dlp failed"])[-1]
+        if is_bot_check(err):
+            _yt_block["until"] = time.time() + BOT_COOL
+            print(f"[webcams] YouTube bot check: no lookups for {int(BOT_COOL // 60)} min ({err[:120]})", flush=True)
+            raise BotCheck(err.replace("ERROR: ", "")[:300])
         raise SourceError(err.replace("ERROR: ", "")[:300])
     title, status, media = lines[0], lines[1], lines[-1]
     if urlparse(media).scheme.lower() not in SCHEMES:
@@ -218,6 +236,7 @@ class Feed:
         self._new_run = False
         self.decoded_t = 0.0
         self.underflows = 0
+        self._health_t = 0.0             # last time what it shows was noted (note_health)
         self._stop = threading.Event()   # set by _run when the feed ends; the pacer exits on it
         self._waiters = set()            # (event loop, asyncio.Event) of async readers, woken on every frame
         self.image_t = None              # stills: when the current image was taken
@@ -308,8 +327,11 @@ class Feed:
                 fresh = self.kind == "youtube"         # a YouTube URL that stopped working may have expired
                 if not self.error:
                     self.error = "the stream ended"
+            except BotCheck as e:                      # the hub is throttled, not the webcam: not "down"
+                self.error = str(e)
             except SourceError as e:
                 self.error = str(e)
+                note_health(self.kind, self.url, False, str(e))
             except Exception as e:                     # never let a feed thread die silently
                 self.error = f"{type(e).__name__}: {e}"
             if not self.wanted():
@@ -317,6 +339,8 @@ class Feed:
             with self._lock:
                 self.state = "retrying"
             self.restarts += 1
+            if self.restarts >= 3 and self.error and not is_bot_check(self.error):
+                note_health(self.kind, self.url, False, self.error)     # it keeps failing: down
             delay = (5, 15, 30, 60)[min(backoff, 3)]
             backoff += 1
             end = time.time() + delay
@@ -481,6 +505,10 @@ class Feed:
                 except RuntimeError:                              # that reader's loop is gone
                     pass
             self._times = (self._times + [now])[-60:]
+            if now - self._health_t >= HEALTH_EVERY:          # what it shows: up, or black (down)
+                self._health_t = now
+                black = is_black(frame)
+                note_health(self.kind, self.url, not black, "black" if black else "")
             k += 1
             if now - due > 1.0:                                   # the clock slipped (a long pause): start over
                 t0, k = now, 0
@@ -698,6 +726,70 @@ def grab_frame(kind, url, timeout=40) -> np.ndarray:
     return np.asarray(Image.open(io.BytesIO(r.stdout)).convert("RGB"))
 
 
+_YT_ID = re.compile(r"(?:v=|youtu\.be/|/live/|/embed/|/shorts/)([A-Za-z0-9_-]{11})")
+
+
+def youtube_id(url) -> str:
+    """The 11-character video id in a YouTube URL, or "" (a channel's /live address has none)."""
+    m = _YT_ID.search(str(url or ""))
+    return m.group(1) if m else ""
+
+
+def youtube_thumb(vid) -> bytes:
+    """A live stream's current thumbnail from i.ytimg.com (refreshed by YouTube every few minutes)."""
+    import requests
+    for name in ("maxresdefault_live", "hqdefault_live", "mqdefault_live"):
+        r = requests.get(f"https://i.ytimg.com/vi/{vid}/{name}.jpg", timeout=10, headers=UA)
+        if r.status_code == 200 and len(r.content) > 2000:
+            return r.content
+    raise SourceError("no thumbnail")
+
+
+# --- health from what the feeds do (hub/jobs/webcam_health.py leaves YouTube to this) ----------------------------
+HEALTH_EVERY = 60.0          # a playing feed's picture is checked for black this often
+_health_seen: dict = {}      # (type, url) -> (up, why) last noted
+_health_lock = threading.Lock()
+
+
+def note_health(kind, url, up, why=""):
+    """A feed's own verdict: up (a lit picture), or down (black, or failing again and again). Written to
+    data/webcam_health.json for every webcam with this source, only when it changes; never blocks the feed."""
+    key, val = (kind, url), (bool(up), "" if up else str(why)[:200])
+    with _health_lock:
+        if _health_seen.get(key) == val:
+            return
+        _health_seen[key] = val
+    threading.Thread(target=_write_health, args=(kind, url, *val), name="webcam-health", daemon=True).start()
+
+
+def _write_health(kind, url, up, why):
+    try:
+        from hub import config, paths, sync
+        from hub.util import atomic_write_json, read_json
+        cams = ((config.load().get("modules") or {}).get("webcams") or {}).get("cams") or {}
+        ids = []
+        for cid, cam in cams.items():
+            try:
+                if isinstance(cam, dict) and check_source(cam.get("source")) == (kind, url):
+                    ids.append(cid)
+            except SourceError:
+                pass
+        if not ids:
+            return
+        path = paths.DATA_DIR / "webcam_health.json"
+        now = time.time()
+        with _health_lock:
+            data = read_json(path, {}) or {}
+            for cid in ids:
+                old = data.get(cid) if isinstance(data.get(cid), dict) else {}
+                since = old.get("since") if old.get("up") == up and old.get("since") else now
+                data[cid] = {"up": up, "why": why, "since": since, "checked": now, "by": "feed"}
+            atomic_write_json(path, data)
+        sync.push_data()
+    except Exception as e:
+        print(f"[webcams] health not written: {e}", flush=True)
+
+
 def _grab(kind, url):
     import tempfile
     if kind in STILLS:
@@ -708,6 +800,14 @@ def _grab(kind, url):
         path = _snap_path(kind, url)
         with tempfile.NamedTemporaryFile(dir=path.parent, suffix=".tmp", delete=False) as tmp:
             tmp.write(out.getvalue())
+        os.replace(tmp.name, path)
+        return
+    vid = youtube_id(url) if kind == "youtube" else ""
+    if vid:                                             # YouTube's own image server: no yt-dlp (no bot checks)
+        jpg = youtube_thumb(vid)
+        path = _snap_path(kind, url)
+        with tempfile.NamedTemporaryFile(dir=path.parent, suffix=".tmp", delete=False) as tmp:
+            tmp.write(jpg)
         os.replace(tmp.name, path)
         return
     media, _ = resolve(kind, url)
