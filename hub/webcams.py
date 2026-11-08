@@ -147,8 +147,9 @@ class BotCheck(SourceError):
 
 
 def is_bot_check(text) -> bool:
+    """YouTube refusing the hub (or the hub's own pause after that): never a sign the webcam is down."""
     t = str(text or "").lower()
-    return "not a bot" in t or "sign in to confirm" in t or "http error 429" in t
+    return any(s in t for s in ("not a bot", "sign in to confirm", "http error 429", "bot check", "limiting the hub"))
 _resolve_lock = threading.Lock()
 
 
@@ -754,6 +755,8 @@ _health_lock = threading.Lock()
 def note_health(kind, url, up, why=""):
     """A feed's own verdict: up (a lit picture), or down (black, or failing again and again). Written to
     data/webcam_health.json for every webcam with this source, only when it changes; never blocks the feed."""
+    if not up and is_bot_check(why):                  # the hub is throttled, not the webcam
+        return
     key, val = (kind, url), (bool(up), "" if up else str(why)[:200])
     with _health_lock:
         if _health_seen.get(key) == val:
@@ -827,6 +830,8 @@ def _fetch_all_run(todo):
                 if kind == "youtube":
                     _, title = resolve(kind, url)
                     res = {"ok": True, "msg": "ready" + (f": {title}"[:120] if "not live" in title else "")}
+                    if "not live" not in title:
+                        note_health(kind, url, True)        # it came up: no longer "down"
                 elif kind in STILLS:
                     _, at = fetch_still(kind, url)
                     res = {"ok": True, "msg": f"still from {int(max(0, time.time() - at) // 60)} min ago"}
