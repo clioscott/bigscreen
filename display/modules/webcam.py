@@ -49,6 +49,7 @@ STREAM_AHEAD_SEC = 5.0       # … and the Pi opens its own stream of it this lo
 HOLD_MAX_SEC = 10.0          # the current webcam stays up at most this much longer while the next one has no picture
 BLACK_SEC = 4.0              # a picture black for this long: the feed is down
 BAD_SEC = 600.0              # a webcam found down while playing sits out this long (the hub's checks may clear it)
+RETRY_DOWN_SEC = 1800.0      # a feed's "down" this old: try it again (only a play can say it's back)
 MAGIC = b"BSWC"
 GRID_MAGIC = b"BSG2"
 GRID_ROWS = 2                # the camera grid's rows by default; its columns fit the frame
@@ -299,12 +300,19 @@ class WebcamPanel:
 
     # which webcams are down ---------------------------------------------------------------------------------
     def is_down(self, cid, now=None):
-        """Down by the hub's last check, or found down here while playing (for BAD_SEC)."""
+        """Down by the hub's last check, or found down here while playing (for BAD_SEC). A verdict from a feed (only
+        a play can clear it) is tried again once it's RETRY_DOWN_SEC old, so a webcam that's back gets played; a
+        YouTube bot check is the hub being throttled, never the webcam down."""
         now = now or time.time()
         if now < self._bad.get(cid, 0):
             return True
         h = self._health(now).get(cid)
-        return isinstance(h, dict) and h.get("up") is False
+        if not (isinstance(h, dict) and h.get("up") is False):
+            return False
+        why = str(h.get("why") or "").lower()
+        if any(s in why for s in ("not a bot", "sign in to confirm", "bot check", "limiting the hub", "http error 429")):
+            return False
+        return not (h.get("by") == "feed" and now - float(h.get("checked") or 0) > RETRY_DOWN_SEC)
 
     def _mark_bad(self, cid, why=""):
         self._bad[cid] = time.time() + BAD_SEC

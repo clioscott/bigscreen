@@ -42,7 +42,9 @@ def check(cam) -> tuple[bool, str] | None:
 def update(before: dict, results: dict, now: float, keep=()) -> dict:
     """Each webcam's new state from its check, keeping when it went down (or came up). Webcams in ``keep`` that
     weren't checked keep their last state."""
-    out = {cid: s for cid, s in before.items() if cid in keep and isinstance(s, dict)}   # not checked this time
+    from hub.webcams import is_bot_check
+    out = {cid: s for cid, s in before.items() if cid in keep and isinstance(s, dict)   # not checked this time
+           and not (s.get("up") is False and is_bot_check(s.get("why")))}   # a bot check was never "down"
     for cid, (up, why) in results.items():
         old = before.get(cid) if isinstance(before.get(cid), dict) else {}
         since = old.get("since") if old.get("up") == up and old.get("since") else now

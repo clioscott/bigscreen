@@ -840,3 +840,29 @@ def test_the_place_beside_the_name():
     cap._memo.clear(), cap._layers.clear()
     b = wm.render_preview({**long, "overlay": {"font": "large"}}, frame, (448, 130), elapsed=3)
     assert (a == b).all()                                               # too long: it stays on its own line
+
+
+def test_a_youtube_bot_check_never_makes_a_webcam_down(monkeypatch):
+    import time
+
+    from hub.jobs import webcam_health as job
+    now = time.time()
+    p, drawn = _panel({"cams": {k: {} for k in "abcd"}, "playlist": [{"cam": k} for k in "abcd"]}, monkeypatch, [now])
+    p.health = {"a": {"up": False, "why": "[youtube] x: Sign in to confirm you’re not a bot.", "since": 1, "checked": now},
+                "b": {"up": False, "why": "YouTube is limiting the hub (bot check); trying again in 4 min", "by": "feed",
+                      "since": 1, "checked": now},
+                "c": {"up": False, "why": "black", "by": "feed", "since": 1, "checked": now - 3600},
+                "d": {"up": False, "why": "black", "by": "feed", "since": 1, "checked": now}}
+    p._health = lambda t: p.health
+    assert [p.is_down(k, now) for k in "abcd"] == [False, False, False, True]   # c: old enough to try again
+    kept = job.update(p.health, {}, now, keep={"a", "b", "c", "d"})
+    assert set(kept) == {"c", "d"}                                       # the bot-check "downs" are dropped
+
+
+def test_note_health_ignores_bot_checks(monkeypatch):
+    from hub import webcams
+    monkeypatch.setattr(webcams, "_health_seen", {})
+    started = []
+    monkeypatch.setattr(webcams.threading, "Thread", lambda **k: started.append(k) or type("T", (), {"start": lambda s: None})())
+    webcams.note_health("youtube", "https://youtu.be/abcdefghijk", False, "YouTube is limiting the hub (bot check)")
+    assert started == []
