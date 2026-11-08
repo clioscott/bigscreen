@@ -1,6 +1,6 @@
 """Weather and sunrise/sunset at each webcam → data/webcam_weather.json (for the webcam captions).
 
-Only webcams with a ``lat`` and ``lon`` are fetched, all in one Open-Meteo request (free, no key):
+Only webcams with a weather city (``wx_city``) or a ``lat`` and ``lon`` are fetched, all in one Open-Meteo request (free, no key):
 the current temperature, feels-like, humidity, wind, weather code and day/night, today's high and low, and the next
 two days' sunrise and sunset.
 Output, keyed by webcam id: {"temp", "feels", "humidity", "wind", "wind_dir", "gust", "code", "is_day", "high", "low",
@@ -33,9 +33,11 @@ def located(cfg) -> dict:
 
 
 def point(cam) -> tuple | None:
-    """(lat, lon) rounded to 4 places, or None when the webcam has no usable location."""
+    """(lat, lon) rounded to 4 places, or None when the webcam has no usable location. A city picked for the weather
+    (``wx_city``, from the panel's city search) wins over the webcam's own coordinates."""
+    city = cam.get("wx_city") if isinstance(cam.get("wx_city"), dict) else None
     try:
-        lat, lon = float(cam["lat"]), float(cam["lon"])
+        lat, lon = (float(city["lat"]), float(city["lon"])) if city else (float(cam["lat"]), float(cam["lon"]))
     except (KeyError, TypeError, ValueError):
         return None
     if -90 <= lat <= 90 and -180 <= lon <= 180:

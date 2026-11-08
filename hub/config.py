@@ -402,6 +402,15 @@ def _validate_webcams(wc):
             check_source(cam.get("source"))
         except SourceError as e:
             raise ConfigError(f"webcam {name}: {e}")
+        city = cam.get("wx_city")
+        if city is not None:                               # the city the weather comes from (panel: city search)
+            try:
+                ok = isinstance(city, dict) and isinstance(city.get("name"), str) and city["name"].strip() \
+                    and -90 <= float(city["lat"]) <= 90 and -180 <= float(city["lon"]) <= 180
+            except (KeyError, TypeError, ValueError):
+                ok = False
+            if not ok:
+                raise ConfigError(f"webcam {name}: the weather city needs a name, latitude and longitude")
         for key, lim in (("lat", 90), ("lon", 180)):
             v = cam.get(key)
             if v not in (None, ""):
