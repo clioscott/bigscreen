@@ -65,7 +65,7 @@ const customCols = (ov, hasText) => [...new Set(Object.keys(DEFAULT_SLOTS)
   .map((k) => (ov.slots?.[k] || DEFAULT_SLOTS[k])[0]))].sort();
 const DEFAULT_OVERLAY = { style: "tag", corner: "bl", when: "always", font: "small", accent: "#e8202a", text: "#ffffff",
   bg: "#000000", opacity: 0.7, time_format: "24h", fade: true, show_sec: 12, every_min: 3, custom_text: "", headline: "name",
-  lines: "auto", separator: "space", uppercase: false, order: [...ORDERABLE], jp_font: "auto", jp_face: "auto", wx_beside: false, wx_beside_box: false, temp_icon: false,
+  lines: "auto", separator: "space", uppercase: false, order: [...ORDERABLE], jp_font: "auto", jp_face: "auto", place_beside: false, wx_beside: false, wx_beside_box: false, temp_icon: false,
   jp_caption: { on: false, text: "", face: "k8x12", size: 12, corner: "auto" },
   show: { name: true, place: true, time: true, date: false, offset: false, daynight: false, weather: true, sun: false,
     age: false, live: true, credit: false, custom: false, shield: false, conditions: false, feels: false, hilo: false, wind: false, humidity: false },
@@ -1348,6 +1348,9 @@ const WebcamEditor = {
                 <Field v-for="g in SECTION_GROUPS" :key="g.label" :label="g.label"><div class="row" style="gap:6px">
                   <template v-for="k in g.keys" :key="k"><button v-if="k !== 'shield' || ov.style === 'custom'" type="button" class="chip" :class="{off: !ov.show[k]}"
                     style="height:26px; padding:0 10px" @click="toggleShow(k)">{{ SECTIONS[k] }}</button></template></div></Field></div>
+              <ToggleRow v-if="['tag', 'outline'].includes(ov.style) && ov.show.place && ov.headline !== 'place'" :modelValue="!!ov.place_beside"
+                @update:modelValue="v => ov.place_beside = v" label="Place beside the name"
+                hint="On the name's line, in its own smaller size; everything else stays on its own lines"/>
               <ToggleRow v-if="ov.style !== 'dot' && ov.show.weather" :modelValue="!!ov.temp_icon" @update:modelValue="v => ov.temp_icon = v"
                 label="Weather icon in front of the temperature" hint="Off: just the temperature"/>
             </template>

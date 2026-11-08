@@ -817,3 +817,25 @@ def test_a_separate_japanese_caption():
                                                             "overlay": {"jp_caption": {**jp, **bad}}}}}}}
         with pytest.raises(config.ConfigError):
             config.validate(cfg)
+
+
+def test_the_place_beside_the_name():
+    from display.modules import webcam_caption as cap
+    frame = np.zeros((130, 448, 3), np.uint8)
+    cam = {"label": "Shibuya Crossing", "place": "Tokyo, Japan", "tz": "Asia/Tokyo"}
+
+    def render(**ov):
+        cap._memo.clear(), cap._layers.clear()
+        return wm.render_preview({**cam, "overlay": {"font": "large", "opacity": 1.0, "lines": "stacked", **ov}}, frame,
+                                 (448, 130), elapsed=3)
+    lines = lambda img: np.flatnonzero((img.max(axis=(1, 2)) > 0))
+    below, beside = render(), render(place_beside=True)
+    assert len(lines(beside)) < len(lines(below))                      # one line fewer: the place moved up
+    width = lambda img: np.flatnonzero((img.max(axis=(0, 2)) > 0)).max()
+    assert width(beside) > width(below)                                # …onto the name's line
+    long = {**cam, "place": "A place with a name far too long to sit beside the headline on this wall"}
+    cap._memo.clear(), cap._layers.clear()
+    a = wm.render_preview({**long, "overlay": {"font": "large", "place_beside": True}}, frame, (448, 130), elapsed=3)
+    cap._memo.clear(), cap._layers.clear()
+    b = wm.render_preview({**long, "overlay": {"font": "large"}}, frame, (448, 130), elapsed=3)
+    assert (a == b).all()                                               # too long: it stays on its own line
