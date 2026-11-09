@@ -552,20 +552,22 @@ GRID_MAX = 5000                      # cameras a grid fetches (the wall's and th
                                      # of them (every city list together is ~2,500)
 
 
-GRID_FROZEN_SEC = 2 * 3600          # a still that hasn't changed for this long is a broken camera
-GRID_DARK, GRID_FLAT = 12.0, 4.0     # mean level below this: black; spread below this: one flat colour (a placeholder)
+grid_usable = webcams.grid_usable           # (hub/webcams.py: the worker processes use it too)
+GRID_PROCESSES = int(os.environ.get("BIGSCREEN_GRID_PROCESSES", "3"))   # 0: in the hub's own threads (tests)
+_grid_pool_box: dict = {}
 
 
-def grid_usable(frame, taken=None, now=None):
-    """Is this still worth a tile? Not when it's black, one flat colour (an "offline" card), or frozen for hours.
-    Night pictures are dark but not black: street lights and headlights keep them well above GRID_DARK."""
-    import numpy as np
-    if frame is None:
-        return False
-    if taken is not None and (now or time.time()) - taken > GRID_FROZEN_SEC:
-        return False
-    sample = frame[::6, ::6].astype(np.float32)
-    return float(sample.mean()) >= GRID_DARK and float(sample.std()) >= GRID_FLAT
+def _grid_pool():
+    """Worker processes for the camera grid's tiles (started fresh, not forked from this busy multithreaded process;
+    at a lower priority): fetching, decoding and scaling thousands of stills used two thirds of the hub's time and
+    held up the webcam video to the wall."""
+    pool = _grid_pool_box.get("pool")
+    if pool is None:
+        import multiprocessing
+        from concurrent.futures import ProcessPoolExecutor
+        pool = _grid_pool_box["pool"] = ProcessPoolExecutor(
+            GRID_PROCESSES, mp_context=multiprocessing.get_context("spawn"), initializer=webcams.grid_worker_init)
+    return pool
 
 
 def _grid_still(src):
@@ -579,6 +581,9 @@ def _grid_still(src):
         return None                                        # the grid shows stills only
     frame, taken = webcams.fetch_still(kind, url, meta=False)
     return frame if grid_usable(frame, taken) else None
+
+
+_grid_still_here = _grid_still
 
 
 _grid_fetching: set = set()          # tile keys being fetched now (a build never fetches one a straggler already is)
@@ -605,8 +610,11 @@ def _grid_tile(cam, w, h):
             return hit[1] if hit else None
         _grid_fetching.add(key)
     try:
-        frame = _grid_still(cam.get("source"))
-        tile = None if frame is None else webcams.render(frame, w, h, cam.get("crop"))
+        if GRID_PROCESSES > 0 and _grid_still is _grid_still_here:
+            tile = _grid_pool().submit(webcams.grid_tile_work, cam.get("source"), cam.get("crop"), w, h).result(60)
+        else:                                               # in this process (tests swap _grid_still)
+            frame = _grid_still(cam.get("source"))
+            tile = None if frame is None else webcams.render(frame, w, h, cam.get("crop"))
     except Exception:
         tile = hit[1] if hit else None                     # a hiccup: the last picture will do
     with _grid_cache_lock:

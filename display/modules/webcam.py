@@ -50,6 +50,8 @@ PLAY_START_SEC = 2.0         # after running dry, video plays again once this mu
 PLAY_BUFFER_SEC = 6.0        # … and settles at this depth, played at its own rate by this clock: the hub's (a busy
                              # server's) and the network's unevenness never shows (seconds behind live: nobody minds)
 PLAY_MAX_SEC = 15.0          # kept at most (only a far worse stall than seen drops anything)
+FILL_AVG_SEC = 20.0          # the speed follows the buffer's depth averaged over this long …
+DRIFT_MAX = 0.02             # … by at most this much (2 %: not something anyone sees)
 WARM_EVERY = 10.0            # while a webcam is next in the rotation, ask the hub to keep its feed going this often
 GIVE_UP_SEC = 25.0           # no picture this long after the play started: skip to the next screen
 PREROLL_SEC = 30.0           # the hub starts the next webcam's feed this long before it's due (~5-10 s from cold)
@@ -165,6 +167,7 @@ class Stream:
         self._play_k, self._play_pos, self._play_last = 0, 0.0, 0.0
         self._shown = None
         self._played = False                   # started playing at least once (the first start waits for a full buffer)
+        self._fill_avg = None                  # the buffer's depth averaged over ~FILL_AVG_SEC (steers the drift)
         self._buffer_since = time.time()       # when it last began buffering (the panel gives up on one that never fills)
         self.black_since = None                # when the picture went black (None: it isn't)
         self._black_checked = 0.0
@@ -179,10 +182,10 @@ class Stream:
         self.last_use = max(self.last_use, time.time() + hold)
 
     def current(self, now=None):
-        """The frame to show now. Video plays from the buffer by this clock, never skipping: it starts once
-        PLAY_START_SEC of frames are in (until then the first one shows) and settles at PLAY_BUFFER_SEC by playing up
-        to 10 % slower while it's under that and up to 10 % faster while it's over (a burst after a stall drains
-        smoothly, it isn't thrown away). If it runs dry, the picture holds while it fills again. Stills: the newest."""
+        """The frame to show now. Video plays from the buffer by this clock at the feed's own speed, never skipping:
+        the first start waits for a full PLAY_BUFFER_SEC, later ones (after running dry) for PLAY_START_SEC. The
+        speed is 1.0 but for a slow, invisible drift correction (DRIFT_MAX) by the buffer's averaged depth, so a
+        backlog after a stall drains over minutes instead of being thrown away. Stills: the newest."""
         if not self.video:
             return self.frame
         now = time.time() if now is None else now
@@ -198,9 +201,15 @@ class Stream:
                 q.popleft()
             self._play_t0, self._play_k, self._play_pos, self._play_last = now, 0, 0.0, now
             self._played = True
+            self._fill_avg = None
         dt = min(0.25, max(0.0, now - self._play_last))
         self._play_last = now
-        rate = min(1.1, max(0.9, 1.0 + 0.5 * (len(q) / target - 1.0)))   # steer towards the target depth, gently
+        # the speed is the feed's own: 1.0, but for a correction too small to see (±2 %) by the buffer's depth
+        # averaged over ~20 s. YouTube's chunks (2-4 s at a time) swing the depth by seconds; following that
+        # visibly sped the video up and slowed it down.
+        k = min(1.0, dt / FILL_AVG_SEC)
+        self._fill_avg = len(q) if self._fill_avg is None else self._fill_avg + (len(q) - self._fill_avg) * k
+        rate = min(1.0 + DRIFT_MAX, max(1.0 - DRIFT_MAX, 1.0 + 0.1 * (self._fill_avg / target - 1.0)))
         self._play_pos += dt * self.fps * rate
         due = int(self._play_pos)
         while self._play_k < due and q:

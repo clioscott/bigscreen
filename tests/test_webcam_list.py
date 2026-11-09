@@ -1145,3 +1145,50 @@ def test_whole_list_and_from_top_validate():
     for bad in ({"per_turn": "some"}, {"per_turn": 0}, {"from_top": "yes"}):
         with pytest.raises(config.ConfigError):
             config.validate({**base, "modules": {"webcams": {"cams": {}, **bad}}})
+
+
+def test_playback_speed_is_constant_while_chunks_arrive():
+    st = _fresh_stream()
+    st._played = True
+    frames = [np.full((1, 1, 3), i % 256, np.uint8) for i in range(30 * 120)]
+    fed, shown, last, t = 0, [], None, 0.0
+    for fr in frames[:180]:                                             # starts with its 6 s
+        st._q.append(fr)
+    fed = 180
+    while t < 90.0:
+        chunk_end = int(t // 4) * 4 * 30 + 180                          # a 4 s chunk lands every 4 s, all at once
+        while fed < min(chunk_end, len(frames)):
+            st._q.append(frames[fed]); fed += 1
+        fr = st.current(t)
+        if fr is not last:
+            shown.append(t)
+            last = fr
+        t += 0.02
+    per_second = [sum(1 for s in shown if k <= s < k + 1) for k in range(10, 89)]
+    assert min(per_second) >= 29 and max(per_second) <= 31             # 30 a second, chunk or no chunk
+
+
+def test_grid_tiles_are_made_in_worker_processes(monkeypatch):
+    from hub import app as hub_app
+    from hub import webcams
+    jobs = []
+
+    class Pool:                                                         # stands in for the worker processes
+        def submit(self, fn, *args):
+            jobs.append(fn)
+
+            class F:
+                def result(self, timeout=None):
+                    return fn(*args)
+            return F()
+    monkeypatch.setattr(hub_app, "GRID_PROCESSES", 3)
+    monkeypatch.setattr(hub_app, "_grid_pool", lambda: Pool())
+    monkeypatch.setattr(hub_app, "_grid_cache", {})
+    street = np.full((90, 160, 3), 40, np.uint8)                        # a dim street with its lights
+    street[::7, ::5] = 220
+    monkeypatch.setattr(webcams, "fetch_still", lambda kind, url, meta=True: (street, None))
+    tile = hub_app._grid_tile({"source": {"type": "image", "url": "https://x.example/a.jpg"}}, 40, 30)
+    assert jobs == [webcams.grid_tile_work] and tile.shape == (30, 40, 3)
+    assert webcams.grid_tile_work({"type": "image", "url": "https://x.example/a.jpg"}, None, 40, 30) is not None
+    monkeypatch.setattr(webcams, "fetch_still", lambda kind, url, meta=True: (np.zeros((90, 160, 3), np.uint8), None))
+    assert webcams.grid_tile_work({"type": "image", "url": "https://x.example/b.jpg"}, None, 40, 30) is None   # black
