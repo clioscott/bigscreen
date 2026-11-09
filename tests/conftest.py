@@ -6,6 +6,7 @@ from pathlib import Path
 # Never touch real runtime state or the Pi from tests.
 os.environ.setdefault("BIGSCREEN_STATE", tempfile.mkdtemp(prefix="bigscreen-test-state-"))
 os.environ.setdefault("BIGSCREEN_NO_PI", "1")
+os.environ.setdefault("BIGSCREEN_GRID_PROCESSES", "0")   # the camera grid in the test process (tests fake its stills)
 os.environ["BIGSCREEN_STATE_DIR"] = tempfile.mkdtemp(prefix="bigscreen-test-display-state-")   # rotation pass lengths
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 

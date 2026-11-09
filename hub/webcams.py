@@ -902,6 +902,42 @@ def _fetch_all_run(todo):
             _fetch_all["finished"] = time.time()
 
 
+GRID_DARK, GRID_FLAT = 12.0, 4.0     # mean level below this: black; spread below this: one flat colour (a placeholder)
+GRID_FROZEN_SEC = 2 * 3600          # a still that hasn't changed for this long is a broken camera
+
+
+def grid_usable(frame, taken=None, now=None):
+    """Is this still worth a grid tile? Not when it's black, one flat colour (an "offline" card), or frozen for hours.
+    Night pictures are dark but not black: street lights and headlights keep them well above GRID_DARK."""
+    if frame is None:
+        return False
+    if taken is not None and (now or time.time()) - taken > GRID_FROZEN_SEC:
+        return False
+    sample = frame[::6, ::6].astype(np.float32)
+    return float(sample.mean()) >= GRID_DARK and float(sample.std()) >= GRID_FLAT
+
+
+def grid_tile_work(src, crop, w, h):
+    """One camera grid tile, start to finish (fetch, check, crop and scale): run in a worker process (hub/app.py
+    _grid_pool), so the grid's thousands of stills never hold up the hub's webcam video. None: down or unusable."""
+    try:
+        kind, url = check_source(src)
+    except SourceError:
+        return None
+    if kind not in STILLS:
+        return None
+    frame, taken = fetch_still(kind, url, meta=False)
+    return render(frame, w, h, crop) if grid_usable(frame, taken) else None
+
+
+def grid_worker_init():
+    """Grid workers run at a lower priority than the hub: video first."""
+    try:
+        os.nice(10)
+    except (AttributeError, OSError):
+        pass
+
+
 def _grab(kind, url):
     import tempfile
     if kind in STILLS:
@@ -979,7 +1015,8 @@ def render(frame, out_w, out_h, crop=None, colour=None) -> np.ndarray:
     """One output frame: (out_h, out_w, 3) uint8."""
     h, w = frame.shape[:2]
     box = crop_box(w, h, out_w, out_h, crop)
-    img = Image.fromarray(frame).resize((out_w, out_h), Image.LANCZOS, box=box, reducing_gap=2.0)
+    img = Image.fromarray(frame).resize((out_w, out_h), Image.BILINEAR, box=box, reducing_gap=2.0)   # (Lanczos:
+    # twice the time, no visible difference at the wall's size; this runs for every frame of every webcam)
     c = colour or {}
     return adjust(np.asarray(img), float(c.get("brightness", 1)), float(c.get("contrast", 1)),
                   float(c.get("saturation", 1)))
