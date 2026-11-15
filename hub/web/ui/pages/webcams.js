@@ -70,6 +70,19 @@ const DEFAULT_OVERLAY = { style: "tag", corner: "bl", when: "always", font: "sma
   show: { name: true, place: true, time: true, date: false, offset: false, daynight: false, weather: true, sun: false,
     age: false, live: true, credit: false, custom: false, shield: false, conditions: false, feels: false, hilo: false, wind: false, humidity: false },
   shield: { route: "99", kind: "auto", style: "pixel", place: "inside", size: "box" } };
+// what a newly added webcam starts with, on top of DEFAULT_OVERLAY (existing webcams keep their own settings):
+// name, place (beside the name) and LIVE; local time and the time difference; the temperature (icon in front) and
+// conditions; 12 h clock, medium text, 30 fps
+const NEW_ORDER = ["shield", "live", "name", "place", "time", "offset", "weather", "conditions"];
+const NEW_WEBCAM = { fps: 30,
+  overlay: { font: "medium", time_format: "12h", place_beside: true, temp_icon: true,
+    order: [...NEW_ORDER, ...ORDERABLE.filter((k) => !NEW_ORDER.includes(k))],
+    show: { name: true, place: true, live: true, time: true, offset: true, weather: true, conditions: true } } };
+const newOverlay = () => {
+  const o = { ...clone(DEFAULT_OVERLAY), ...clone(NEW_WEBCAM.overlay) };
+  o.show = { ...clone(DEFAULT_OVERLAY.show), ...NEW_WEBCAM.overlay.show };
+  return o;
+};
 // the caption's highway shield (display/modules/shields.py draws it; the Custom layout only)
 const SHIELD_PRESETS = [
   { group: "BC", routes: ["1", "7", "10", "11", "13", "15", "17", "91", "99"] },
@@ -839,9 +852,9 @@ const WebcamList = {
         ...(f.lat != null ? { lat: f.lat, lon: f.lon } : {}) });
       let id = slug(base.label), n = 2;
       while (all[id]) id = `${slug(base.label)}_${n++}`;
-      const overlay = clone(DEFAULT_OVERLAY);
+      const overlay = newOverlay();
       if (STILL.includes(f.source?.type)) Object.assign(overlay.show, { age: true, live: false });   // a still isn't LIVE
-      all[id] = { fps: 15, ...base, overlay, crops: {} };
+      all[id] = { fps: NEW_WEBCAM.fps, ...base, overlay, crops: {} };
       store.draft.modules.webcams.playlist.push({ cam: id, sec: 60, on: true });
       if (!base.tz && Number.isFinite(base.lat) && Number.isFinite(base.lon))      // its local time: the location's zone
         localOf(base.lat, base.lon).then((r) => { if (r.tz && all[id] && !all[id].tz) all[id].tz = r.tz; }).catch(() => {});
@@ -1099,7 +1112,7 @@ const WebcamEditor = {
     seedWebcams();
     const id = computed(() => store.route.params[0]);
     const cam = computed(() => store.draft.modules.webcams.cams?.[id.value]);
-    const shape = ref("full");
+    const shape = ref("tall");                             // the crop shown first (and added to the rotation): above the clock
     const { status, feedFor, healthFor } = useStatus();
     const zone = computed(() => status.value.zones[shape.value] || [448, 130]);
     // the Japanese fonts a caption can use (webcam_caption.JP_FACES), and a sample of the chosen one in its own words
