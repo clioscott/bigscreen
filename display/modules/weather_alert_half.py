@@ -1,14 +1,17 @@
 """The ECCC weather alert's half-width version and its place in the shared alert lifecycle.
 
 ``WeatherAlerts`` adapts display.modules.weather_alert.AlertScreen to what bc_kit.HalfPanel and the rotation
-rules expect (ids, lifecycle phases, samples, half-width content). The content comes from the weather screen's own
-parsing (alert_brief: summary, details, what to expect, what to do) and its own zone maps (data/alertmaps, the
-alert's zones over the Lower Mainland), cropped round home with the zones pulsing in the level colour.
+rules expect (ids, lifecycle phases, samples, half-width content). Pages: the facts (the hazard, where — with how
+far and which way from home when home is outside it, a house when inside, never home's name — until when, how
+much, when issued); the essentials of the text (alert_brief: the summary, two sentences each of what to expect and
+what to do; the full text stays on the full-wall screen); the zone map (data/alertmaps) cropped to the alert's
+area, with home when both fit, the zones pulsing in the level colour and captioned.
 """
 
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 
 import numpy as np
@@ -21,6 +24,7 @@ from display.modules.bc_kit import BLACK, Para
 
 SOURCE = "weather"
 _MAPS = {}
+HOME = "Richmond"                                  # the wall's city when the settings name none (never drawn)
 
 
 def alert_id(a):
@@ -44,6 +48,67 @@ def _map_arrays(data_dir, meta):
             _MAPS.clear()
         hit = _MAPS[key] = (img, mask)
     return hit
+
+
+def _zone(data_dir, meta):
+    """The alert's zones on its map: image, mask, the zones' bounding box and centre, home, and which way the zones
+    lie from home (a compass word, "" when home is in them or they're off the map)."""
+    arr = _map_arrays(data_dir, meta) if meta and data_dir else None
+    if arr is None:
+        return None
+    img, mask = arr
+    hx, hy = meta.get("home_px") or (img.shape[1] / 2, img.shape[0] / 2)
+    ys, xs = np.nonzero(mask)
+    z = {"img": img, "mask": mask, "home": (hx, hy), "in_view": bool(len(xs)), "dir": ""}
+    if len(xs):
+        z["bbox"] = (int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max()))
+        z["centre"] = (float(xs.mean()), float(ys.mean()))
+        if not mask[int(min(max(hy, 0), mask.shape[0] - 1)), int(min(max(hx, 0), mask.shape[1] - 1))]:
+            z["dir"] = _compass(z["centre"][0] - hx, z["centre"][1] - hy)
+    return z
+
+
+def _compass(dx, dy):
+    """One of the eight compass points for a step (dx, dy) on a north-up map (y down)."""
+    b = (math.degrees(math.atan2(dx, -dy)) + 360) % 360
+    return ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][int((b + 22.5) // 45) % 8]
+
+
+def _window(z, w, h, home):
+    """Top-left of the w×h crop of the zone map: the whole area (and home, when both fit), else round home when
+    home is in it, else round the area."""
+    x0, y0, x1, y1 = z["bbox"]
+    hx, hy = z["home"]
+    if x1 - x0 <= w - 16 and y1 - y0 <= h - 16:
+        ux0, uy0, ux1, uy1 = min(x0, hx), min(y0, hy), max(x1, hx), max(y1, hy)
+        fits = ux1 - ux0 <= w - 16 and uy1 - uy0 <= h - 16
+        cx, cy = ((ux0 + ux1) / 2, (uy0 + uy1) / 2) if fits else ((x0 + x1) / 2, (y0 + y1) / 2)
+    else:
+        cx, cy = (hx, hy) if home else z["centre"]
+    img = z["img"]
+    return int(max(0, min(img.shape[1] - w, cx - w / 2))), int(max(0, min(img.shape[0] - h, cy - h / 2)))
+
+
+def essentials(b, words=35):
+    """The text pages' paragraphs: the summary, then up to two sentences (about ``words`` words) of what to expect
+    and of what to do; the detail paragraph only when there are neither. The full text is the full-wall screen's."""
+
+    def some(sentences):
+        keep, used = [], 0
+        for s in sentences[:2]:
+            n = len(s.split())
+            if keep and used + n > words:
+                break
+            keep.append(s)
+            used += n
+        return " ".join(keep)
+
+    out = [{"style": "lead", "text": b["summary"]}]
+    if not b["impacts"] and not b["advice"] and b["details"]:
+        out.append({"style": "detail", "text": some(b["details"])})
+    out.append({"style": "impact", "text": some(b["impacts"])})
+    out.append({"style": "advice", "text": some(b["advice"])})
+    return [p for p in out if p["text"]]
 
 
 class WeatherAlerts:
@@ -100,50 +165,74 @@ class WeatherAlerts:
             px.draw(c, px.hazard(hz), x, y, pal["icon"] if th.get("palette") != "blackout" else hcol, size=24)
             return 24, 24
 
+        home = bool(a["home"]) if "home" in a else alert_brief.mentions(a, (self.scr.settings or {}).get("home_city") or HOME)
+        zone = _zone(self.data_dir, a.get("map"))
+        where = b.get("where") or ""
+        if not home:                                                # how far and which way, never which city home is
+            km = a.get("home_km")
+            away = " ".join(s for s in (f"{km:.0f} km" if km else "", zone["dir"] if zone else "") if s)
+            where = f"{where} · {away}" if where and away else where or away
+        title = (a.get("name") or "weather alert")
+        title = title[:1].upper() + title[1:]
+
         def map_(c, x, y, w, h, now):
-            meta = a.get("map")
-            if not meta or not self.data_dir:
-                return
-            arr = _map_arrays(self.data_dir, meta)
-            if arr is None:
-                return
-            img, mask = arr
-            hx, hy = meta.get("home_px") or (img.shape[1] / 2, img.shape[0] / 2)
-            sx = int(max(0, min(img.shape[1] - w, hx - w / 2)))
-            sy = int(max(0, min(img.shape[0] - h, hy - h / 2)))
+            img, mask = zone["img"], zone["mask"]
+            sx, sy = _window(zone, w, h, home)
             c.Blit(img[sy:sy + h, sx:sx + w], x, y)
             m = mask[sy:sy + h, sx:sx + w]
             k.tint(c, m, lcol, 0.45 * k.pulse(now, 1.6, 0.6, 1.0), x, y)
             k.paint(c, k.edge(m), lcol, x, y)
+            hx, hy = zone["home"]
             if 0 <= hx - sx < w and 0 <= hy - sy < h:
                 k.icon_outlined(c, "house", int(x + hx - sx) - 8, int(y + hy - sy) - 7, (240, 240, 245))
+            cap = where.upper() if lk["upper"] else where
+            if cap:                                                 # what the tinted area is
+                f = k.font(lk["ladder"]["small"])
+                k.box(c, x, y + h - f.h - 5, min(w, k.tw(f, cap) + 7), f.h + 5, BLACK)   # clear of the frame
+                k.text(c, f, x + 3, y + h - f.h - 3, pal["text"], cap)
 
-        role = {"lead": "strong", "impact": "impact", "advice": "advice", "regions": "dim"}
-        body = []
-        for p in alert_brief.paragraphs(b):
-            style = p["style"]
-            body.append(Para(p["text"], "head" if style in ("lead", "advice") else "small" if style == "regions" else "body",
-                             pal[role.get(style, "text")]))
-        title = (a.get("name") or "weather alert")
-        title = title[:1].upper() + title[1:]
-        lines = [(b.get("where") or "", pal["text"]), (f"Until {b['until']}" if b.get("until") else "", pal["dim"])]
-        if th.get("structure") != "infographic":
-            lines.append((b.get("amount") or "", pal["amount"]))
-        summary = None
-        if th.get("structure") == "infographic" and b.get("amount"):
+        def summary(c, x, y, w, h, now, el):
+            """Facts first: the hazard (its level is in the title and the header chip), then where, until when, how
+            much and when it was issued, as labelled rows in one size."""
+            hero_(c, x, y + 1, 24, 24)
+            t = title.upper() if lk["upper"] else title
+            used = k.fit_text(c, t, x + 30, y, w - 30, 34, lk["title_fonts"], pal["strong"])
+            ty = y + max(26, used) + 4
+            k.box(c, x, ty, w, 1, k.dim(pal["dim"], 0.7))
+            ty += 4
+            small = k.font(lk["ladder"]["small"])
+            rows = [("WHERE", where, pal["text"]),
+                    ("UNTIL", " · ".join(s for s in (b.get("until"), k.until(a.get("expires"), now)) if s), pal["text"]),
+                    ("EXPECT", b.get("amount") or "", pal["amount"]),
+                    ("ISSUED", k.ago(a.get("published"), now), pal["dim"])]
+            rows = [(lb, v.upper() if lk["upper"] else v, col) for lb, v, col in rows if v]
+            lw = max((k.tw(small, r[0]) for r in rows), default=0) + 6
+            vw = w - lw
+            bold, reg, smallest = lk["line_fonts"]                  # one size for every fact: the largest that
+            f = next((k.font(r) for r in (reg, smallest)            # keeps each on a line (the area may wrap)
+                      if all(k.tw(k.font(r), v) <= vw for lb, v, _ in rows if lb != "WHERE")), k.font(smallest))
+            amount = next((v for lb, v, _ in rows if lb == "EXPECT"), "")
+            fb = k.font(bold) if k.font(bold).h == f.h and k.tw(k.font(bold), amount) <= vw else f   # the amount bold
+            for label, val, col in rows:
+                ff = fb if label == "EXPECT" else f
+                if ty + ff.h > y + h:
+                    break
+                house = label == "WHERE" and home                  # home inside the area: the house, no name
+                lines = k.wrap(ff, val, vw - (20 if house else 0))[:2]
+                for i, ln in enumerate(lines):
+                    k.text(c, ff, x + lw, ty + i * ff.h, col, ln)
+                used = len(lines) * ff.h
+                k.text(c, small, x, ty + max(0, (ff.h - small.h) // 2), pal["dim"], label)
+                if house:
+                    k.icon_outlined(c, "house", x + w - 16, ty - 1, (240, 240, 245))
+                ty += max(used, small.h) + 3
 
-            def summary(c, x, y, w, h, now, el):                     # big numbers: the amount is the headline
-                px.draw(c, px.hazard(hz), x, y, hcol, size=24)
-                t = title.upper() if lk["upper"] else title
-                ty = y + k.fit_text(c, t, x + 30, y + 2, w - 30, 30, lk["line_fonts"], pal["strong"]) + 6
-                ty = max(ty, y + 30)
-                amt = b["amount"].upper() if lk["upper"] else b["amount"]
-                ty += k.fit_text(c, amt, x, ty, w, 40, lk["title_fonts"], pal["amount"]) + 5
-                for line_, lc in lines:
-                    if line_ and ty < y + h - 10:
-                        ty += k.fit_text(c, line_.upper() if lk["upper"] else line_, x, ty, w, 26, lk["line_fonts"], lc) + 2
-        return {"summary": summary, "label": th.get("header") or self.LABEL, "col": lcol, "chip": (lvl.upper(), lcol), "hero": hero_, "title": title,
-                "lines": lines, "body": body, "map": map_ if a.get("map") else None, "look": lk}
+        role = {"lead": "strong", "impact": "impact", "advice": "advice"}
+        body = [Para(p["text"], "head" if p["style"] in ("lead", "advice") else "body", pal[role.get(p["style"], "text")])
+                for p in essentials(b)]
+        return {"summary": summary, "label": th.get("header") or self.LABEL, "col": lcol, "chip": (lvl.upper(), lcol),
+                "hero": hero_, "title": title, "lines": [], "body": body,
+                "map": map_ if zone and zone["in_view"] else None, "look": lk}
 
 
 # the header style each weather layout's half-width version uses (see bc_kit.HalfPanel)
