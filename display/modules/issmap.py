@@ -292,7 +292,8 @@ def daylight(v, t):
     lat = np.radians(v.top - (np.arange(v.mh) + 0.5) / v.mh * (v.top - v.bot))
     ha = gmst(jd) + lon - ra
     # the sine of the Sun's elevation (linear in it through twilight: no arcsin needed)
-    se = (np.sin(lat)[:, None] * math.sin(dec)).astype(np.float32)         + (np.cos(lat)[:, None] * math.cos(dec)).astype(np.float32) * np.cos(ha).astype(np.float32)[None, :]
+    se = (np.sin(lat)[:, None] * math.sin(dec)).astype(np.float32) \
+        + (np.cos(lat)[:, None] * math.cos(dec)).astype(np.float32) * np.cos(ha).astype(np.float32)[None, :]
     lo = math.sin(math.radians(-TWILIGHT))
     f = np.clip((se - lo) / -lo, 0.0, 1.0)
     return (NIGHT + (1.0 - NIGHT) * f)[..., None]
@@ -360,6 +361,8 @@ def render(w, h, data, t, full=True, fixed=False):
     the detailed ISS); else the small map (coastlines, trail, the tiny ISS). fixed (full map only): the world held
     still with the ISS crossing it; else centred on the ISS."""
     from display.modules.space import position
+    if w < 8 or h < 4:
+        return np.zeros((max(0, h), max(0, w), 3), np.uint8)
     v = View(w, h, follow=not (full and fixed), small=not full)
     track = (data or {}).get("track") if isinstance(data, dict) else None
     pos = position(track, t) if track else None
@@ -416,9 +419,10 @@ def draw_full(c, zone, data, t, fixed=False):
 
 
 def small_size(w, h):
-    """The small map's size in a zone w×h: about a fifth of its width (96×48 on the whole wall), twice as wide as tall."""
-    sw = int(max(48, min(128, round(w * 0.214) // 2 * 2, (h - 8) * 2 // 2 * 2)))
-    return sw, sw // 2
+    """The small map's size in a zone w×h: about a fifth of its width (96×48 on the whole wall), twice as wide as tall,
+    at least 48 wide where that fits; (0, 0) when the zone is too small for one."""
+    sw = min(max(48, round(w * 0.214)), 128, w - 10, (h - 10) * 2) // 2 * 2
+    return (sw, sw // 2) if sw >= 24 else (0, 0)
 
 
 def small_box(w, h, corner="tr", avoid=None, margin=3):
@@ -429,11 +433,15 @@ def small_box(w, h, corner="tr", avoid=None, margin=3):
     corner = corner if corner in CORNERS else "tr"
     x = margin + 1 if corner[1] == "l" else w - sw - margin - 1
     y = margin + 1 if corner[0] == "t" else h - sh - margin - 1
-    if avoid:
+
+    def hits(yy):
         x0, y0, x1, y1 = avoid
-        if x < x1 + 1 and x + sw + 1 > x0 - 1 and y < y1 + 1 and y + sh + 1 > y0 - 1:
-            y = y0 - 2 - sh if corner[0] == "b" else y1 + 2
-    y = max(1, min(h - sh - 1, y))
+        return x < x1 + 1 and x + sw + 1 > x0 - 1 and yy < y1 + 1 and yy + sh + 1 > y0 - 1
+
+    if avoid and hits(y):
+        moved = avoid[1] - 2 - sh if corner[0] == "b" else avoid[3] + 2
+        if 1 <= moved <= h - sh - 1:                       # (no room past it: it stays in its corner)
+            y = moved
     return x, y, sw, sh
 
 
@@ -441,6 +449,8 @@ def draw_small(c, zone, data, t, corner="tr", avoid=None):
     """The small map in a corner of the zone, with a dark 1 px frame (off the caption: see small_box)."""
     zx, zy, w, h = zone
     x, y, sw, sh = small_box(w, h, corner, avoid)
+    if not sw:
+        return
     buf = c.buf
     X0, Y0 = zx + x - 1, zy + y - 1
     buf[max(0, Y0):Y0 + sh + 2, max(0, X0):X0 + sw + 2] = FRAME

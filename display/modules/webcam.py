@@ -60,6 +60,7 @@ STREAM_AHEAD_SEC = 12.0      # … and the Pi opens its own stream this long bef
 HOLD_MAX_SEC = 15.0          # the current webcam stays up at most this much longer while the next one isn't buffered
 LOOKAHEAD = 3                # the list prepares this many webcams ahead, each by how soon its turn is (short turns:
 PREROLL_STREAMS = 2          # several at once); at most this many of them also have the Pi's stream open (buffering)
+STALL_SEC = 4.0              # a mapped webcam (the ISS) whose feed sends nothing new this long shows its map
 BLACK_SEC = 4.0              # a picture black for this long: the feed is down
 BAD_SEC = 600.0              # a webcam found down while playing sits out this long (the hub's checks may clear it)
 RETRY_DOWN_SEC = 1800.0      # a feed's "down" this old: try it again (only a play can say it's back)
@@ -699,7 +700,19 @@ class WebcamPanel:
         cam = self.cams.get(cid) or {}
         return bool(cam.get("space")) and (cam.get("map") or {}).get("when_down", True) is not False
 
+    @staticmethod
+    def _unusable(st, now):
+        """A mapped webcam's video can't be shown now: no picture yet, loading, blank on screen (black, the
+        loss-of-signal card, frozen), or the feed stalled (nothing new for STALL_SEC)."""
+        if not st.showable(now) or st.buffering() or st.blank_on_screen(now):
+            return True
+        if st.in_step:
+            return st.overdue(now) > STALL_SEC
+        return now - st.frame_t > STALL_SEC
+
     def _mark_bad(self, cid, why=""):
+        if self._mapped(cid):                                 # (never down: its map plays instead)
+            return
         self._bad[cid] = time.time() + BAD_SEC
         print(f"[webcam] {cid} is down{': ' + why if why else ''}; skipping it for {int(BAD_SEC // 60)} min")
 
@@ -888,19 +901,25 @@ class WebcamPanel:
         if not cam:
             self._centre(c, zone, f"No webcam '{entry.get('cam')}'", self.dim)
             return "skip" if now - started > 4 else None
-        st = self._stream(cam, self.shape_for(entry, zone), w, h)
-        if self._mapped(entry.get("cam")):                    # the ISS: its map while the video is unusable
+        mapped = self._mapped(entry.get("cam"))
+        if mapped:                                            # the ISS: its map while the video is unusable
             from display.modules import issmap, space
             data, t = self._space(now), now - space.LAG
-            night = cam.get("daylight_only", True) and space.in_daylight(data, t, t) is False
-            if night or not st.showable(now) or st.buffering() or st.blank_on_screen(now):
+            dark = cam.get("daylight_only", True) and (lambda a: space.in_daylight(data, a, a) is False)
+            night = bool(dark) and dark(t)
+            st = None
+            if not (night and dark(t + STREAM_AHEAD_SEC)):    # the stream only from shortly before sunrise
+                st = self._stream(cam, self.shape_for(entry, zone), w, h)
+            if night or st is None or self._unusable(st, now):
                 issmap.draw_full(c, zone, data, t, fixed=bool((cam.get("map") or {}).get("fixed")))
                 draw_caption(c, zone, cam, now - started, self.font, extra={"space": data})
                 return None
-        if black_skips and st.black_since is not None and now - st.black_since >= BLACK_SEC:
+        else:
+            st = self._stream(cam, self.shape_for(entry, zone), w, h)
+        if not mapped and black_skips and st.black_since is not None and now - st.black_since >= BLACK_SEC:
             self._mark_bad(entry.get("cam"), "black")         # down but still sending: on to the next screen
             return "skip"
-        if st.in_step and st.overdue(now) > GIVE_UP_SEC:     # in step, nothing new for this long: it's gone
+        if not mapped and st.in_step and st.overdue(now) > GIVE_UP_SEC:   # in step, nothing new this long: gone
             self._mark_bad(entry.get("cam"), st.error or "stopped")
             return "skip"
         if st.showable(now):

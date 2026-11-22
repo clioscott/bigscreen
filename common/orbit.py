@@ -25,11 +25,3 @@ def sun_dir(jd):
     eps = math.radians(23.439 - 0.0000004 * n)
     return (math.cos(lam), math.cos(eps) * math.sin(lam), math.sin(eps) * math.sin(lam))
 
-
-def subsolar(t):
-    """(lat, lon) in degrees of the point with the Sun straight overhead at Unix time t."""
-    jd = julian(t)
-    s = sun_dir(jd)
-    lat = math.degrees(math.asin(max(-1.0, min(1.0, s[2]))))
-    lon = math.degrees(math.atan2(s[1], s[0]) - gmst(jd))
-    return lat, (lon + 540.0) % 360.0 - 180.0

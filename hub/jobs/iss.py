@@ -215,7 +215,7 @@ def run(cfg):
     tr = track(l1, l2, now - BACK, horizon=HORIZON + BACK)
     below = Below()
     over, tz = [], []
-    for row in tr[::max(1, OVER_STEP // STEP)]:
+    for row in [r for r in tr if r[0] >= now - 300][::max(1, OVER_STEP // STEP)]:   # (the past is only the trail)
         over.append([row[0], below.name(row[1], row[2])])
         tz.append([row[0], below.zone(row[1], row[2])])
     c, m = crew()

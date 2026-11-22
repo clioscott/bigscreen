@@ -118,3 +118,43 @@ def test_map_settings_are_checked_in_the_config():
     config._validate_overlay("x", {"minimap": {"on": True, "corner": "bl"}})
     with pytest.raises(config.ConfigError):
         config._validate_overlay("x", {"minimap": {"on": True, "corner": "tc"}})
+
+
+def _fake_stream(**kw):
+    d = dict(showable=lambda now=None: True, buffering=lambda: False, blank_on_screen=lambda now=None: False,
+             black_since=None, in_step=True, overdue=lambda now=None: 0.0, error="", frame_t=time.time(),
+             current=lambda now=None: np.zeros((130, 448, 3), np.uint8))
+    d.update(kw)
+    return SimpleNamespace(**d)
+
+
+@pytest.mark.parametrize("why", ["blank arrived early", "stalled"])
+def test_in_the_list_a_blank_or_stalled_iss_shows_its_map_instead_of_ending_the_turn(monkeypatch, why):
+    from display.gfx import Canvas
+    now = time.time()
+    cam = {"space": "iss", "label": "ISS", "source": {"type": "youtube", "url": "x"}, "overlay": {"style": "none"}}
+    p = _panel(cam)
+    p._iss = {"track": [[now - 6000 + i * 10, 10.0, (i * 0.6) % 360 - 180, 1] for i in range(1300)]}
+    if why == "stalled":
+        st = _fake_stream(overdue=lambda now=None: webcam.GIVE_UP_SEC + 5)
+    else:                                              # black by arrival (BLACK_SEC ago), not yet on screen
+        st = _fake_stream(black_since=now - webcam.BLACK_SEC - 1)
+    monkeypatch.setattr(p, "_stream", lambda *a, **k: st)
+    c = Canvas(448, 130)
+    r = p._draw_cam(c, (0, 0, 448, 130), {"panel": "webcam_full", "cam": "iss"}, True, black_skips=True)
+    assert r is None and not p._bad
+    if why == "stalled":
+        assert c.buf.any()                             # the map, not the frozen (here black) frame
+
+
+def test_the_small_map_stays_inside_small_zones_or_is_left_out():
+    from display.gfx import Canvas
+    c = Canvas(448, 192)
+    issmap.draw_small(c, (296, 100, 40, 20), _track(), T0 + 600)
+    out = c.buf.copy()
+    out[100:120, 296:336] = 0
+    assert not out.any()
+    for w, h in ((152, 130), (60, 40), (448, 192)):
+        x, y, sw, sh = issmap.small_box(w, h, "br")
+        assert sw == 0 or (x >= 1 and y >= 1 and x + sw < w and y + sh < h)
+    assert issmap.render(0, 0, _track(), T0).shape == (0, 0, 3)
