@@ -1454,6 +1454,10 @@ const WebcamEditor = {
               <template v-if="cam.hours"><input class="input" type="time" style="width:auto" v-model="cam.hours.from">
                 <span>and</span><input class="input" type="time" style="width:auto" v-model="cam.hours.to"></template>
               <span class="faint" style="font-size:12px">{{ hoursNote }}</span></div>
+            <div class="wc-rot" v-if="cam.space"><Icon name="Sun" :size="15"/>
+              <Toggle :modelValue="cam.daylight_only ?? true" @update:modelValue="v => cam.daylight_only = v" title="Only in orbital daylight"/>
+              <span>Only while the ISS is in daylight</span>
+              <span class="faint" style="font-size:12px">skipped on the night side of the orbit: its whole turn must be in sunlight</span></div>
             <div class="wc-rot"><Icon name="MonitorOff" :size="15"/>
               <Toggle :modelValue="cam.skip_plain ?? !!cam.space" @update:modelValue="v => cam.skip_plain = v" title="Skip a stand-in picture"/>
               <span>Skip it when the picture is frozen or one plain colour</span>

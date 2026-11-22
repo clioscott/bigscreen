@@ -121,3 +121,23 @@ def test_a_frozen_or_plain_picture_counts_as_down_for_webcams_that_ask():
     st.skip_plain = False
     st._last_sub = None
     assert st.blank(slate) is False and st.blank(slate) is False            # (only for webcams that ask)
+
+
+def test_a_webcam_in_space_is_skipped_unless_its_whole_turn_is_in_daylight(monkeypatch):
+    from display.modules import webcam as wm
+    t0 = 1_795_000_000
+    d = _data(t0)                                                        # lit for t0 .. t0 + 290, then shadow
+    assert space.in_daylight(d, t0, t0 + 200) is True
+    assert space.in_daylight(d, t0 + 250, t0 + 330) is False            # sunset during the turn
+    assert space.in_daylight(d, t0 - 50, t0 + 10) is None               # (before the track: unknown)
+    p = wm.WebcamPanel.__new__(wm.WebcamPanel)
+    p.cams = {"iss": {"space": "iss"}, "off": {"space": "iss", "daylight_only": False}, "earth": {}}
+    p.playlist = [("iss", 40), ("off", 40), ("earth", 40)]
+    p._bad = {}
+    monkeypatch.setattr(p, "_health", lambda now: {})
+    monkeypatch.setattr(p, "_space", lambda now: d)
+    day, night = t0 + 100 + space.LAG, t0 + 400 + space.LAG
+    assert not p.is_down("iss", day) and p.is_down("iss", night)
+    assert not p.is_down("off", night) and not p.is_down("earth", night)
+    monkeypatch.setattr(p, "_space", lambda now: None)                   # no orbit data: never hidden for it
+    assert not p.is_down("iss", night)

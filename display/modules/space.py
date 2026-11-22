@@ -52,6 +52,18 @@ def position(track, t):
 COORD_FORMATS = ("nsew", "signed", "dms")
 
 
+def in_daylight(data, t0, t1):
+    """Is the ISS in sunlight all the way from t0 to t1 (seconds, as filmed)? None when the track doesn't cover that
+    (no data yet, or old): the caller decides."""
+    track = (data or {}).get("track") if isinstance(data, dict) else None
+    if not track or t0 < track[0][0] or t1 > track[-1][0]:
+        return None
+    ts = _ts(track)
+    i = max(0, bisect.bisect_right(ts, t0) - 1)
+    j = bisect.bisect_right(ts, t1)
+    return all(r[3] for r in track[i:j + 1])
+
+
 def coords(lat, lon, fmt="nsew", digits=2) -> str:
     """The position as the caption writes it: "nsew" 12.35°S 145.68°W, "signed" -12.35°, -145.68°, "dms"
     12°21'00"S 145°40'48"W. ``digits``: decimal places (of the degrees, or of the seconds for dms)."""

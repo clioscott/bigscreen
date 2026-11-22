@@ -441,6 +441,8 @@ def _validate_webcams(wc):
                 r"([01]?\d|2[0-3]):[0-5]\d|24:00", hours[k]) for k in ("from", "to"))
             if not ok:
                 raise ConfigError(f'webcam {name}: hours must be {{"from": "HH:MM", "to": "HH:MM"}}')
+        if not isinstance(cam.get("daylight_only", True), bool):
+            raise ConfigError(f"webcam {name}: daylight_only must be true or false")
         if cam.get("space") not in (None, "iss"):
             raise ConfigError(f'webcam {name}: space must be "iss" (the only place in space with webcams)')
         q = cam.get("quality", "auto")

@@ -645,6 +645,8 @@ class WebcamPanel:
         now = now or time.time()
         if not in_hours(self.cams.get(cid), now):
             return True
+        if not self._daylit(cid, now):                         # in space, on the night side: nothing to see
+            return True
         if now < self._bad.get(cid, 0):
             return True
         h = self._health(now).get(cid)
@@ -654,6 +656,17 @@ class WebcamPanel:
         if any(s in why for s in ("not a bot", "sign in to confirm", "bot check", "limiting the hub", "http error 429")):
             return False
         return not (h.get("by") == "feed" and now - float(h.get("checked") or 0) > RETRY_DOWN_SEC)
+
+    def _daylit(self, cid, now):
+        """A webcam in space with daylight_only (on unless turned off): the ISS is in sunlight for its whole next turn,
+        as the video shows it (LAG behind). No orbit data: true (never hide it on a hub hiccup)."""
+        cam = self.cams.get(cid) or {}
+        if not cam.get("space") or not cam.get("daylight_only", True):
+            return True
+        from display.modules import space
+        t0 = now - space.LAG
+        lit = space.in_daylight(self._space(now), t0, t0 + self._sec(cid))
+        return lit is not False
 
     def _mark_bad(self, cid, why=""):
         self._bad[cid] = time.time() + BAD_SEC
