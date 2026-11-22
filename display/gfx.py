@@ -188,6 +188,8 @@ class Font:
         return True
 
     def CharacterWidth(self, cp):
+        if cp in COLOR_GLYPHS:
+            return COLOR_GLYPHS[cp].shape[1] + 1
         g = self.glyphs.get(cp) or (self.fallback.glyphs.get(cp) if self.fallback is not None else None)
         return g.device_width if g else -1
 
@@ -208,6 +210,10 @@ class Font:
         x = 0
         top, bottom = 0, 0
         for ch in text:
+            cg = COLOR_GLYPHS.get(ord(ch))
+            if cg is not None:                            # a colour picture (a flag): room here, drawn by DrawText
+                x += cg.shape[1] + 1 + extra_spacing
+                continue
             g = self._glyph(ord(ch))
             if g is None:
                 x += extra_spacing
@@ -258,12 +264,23 @@ def _make_glyph(device_width, cur):
 # graphics module functions
 # ---------------------------------------------------------------------------
 def DrawText(canvas, font, x, y, color, text, *args):
-    """Same signature/return as rgbmatrix graphics.DrawText (y is the baseline)."""
+    """Same signature/return as rgbmatrix graphics.DrawText (y is the baseline). Characters in COLOR_GLYPHS (small
+    pictures such as flags) are drawn in their own colours, standing on the baseline."""
     if not text:
         return 0
     mask, top, advance = font.text_mask(text)
     canvas.BlitMask(mask, x, y + top, color)
+    if COLOR_GLYPHS and any(ord(ch) in COLOR_GLYPHS for ch in text):
+        cx = x
+        for ch in text:
+            cg = COLOR_GLYPHS.get(ord(ch))
+            if cg is not None:
+                canvas.Blit(cg, cx, y - cg.shape[0])
+            cx += max(0, font.CharacterWidth(ord(ch)))
     return advance
+
+
+COLOR_GLYPHS: dict = {}      # code point (Unicode private use) -> (h, w, 3) uint8 picture: display/modules/flags.py
 
 
 def _cdiv(a, b):

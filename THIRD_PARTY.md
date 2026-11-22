@@ -81,6 +81,10 @@ and `assets/data`. Attribution is shown on screen where the provider asks for it
 - Boundaries: Statistics Canada, BC Data Catalogue, City of Vancouver Open Data and [Represent](https://represent.opennorth.ca)
   (Open North) — open government licences.
 - Maps: [Natural Earth](https://www.naturalearthdata.com) (public domain) and © [OpenStreetMap](https://www.openstreetmap.org/copyright)
+- The ISS (webcams in space): orbital elements from [CelesTrak](https://celestrak.org), the crew and expedition from
+  [corquaid/international-space-station-APIs](https://github.com/corquaid/international-space-station-APIs), the time
+  zone below from [timezonefinder](https://github.com/jannikmi/timezonefinder) (MIT; data © timezone-boundary-builder,
+  ODbL), the orbit computed with [sgp4](https://pypi.org/project/sgp4/) (MIT). Pixel flags are drawn in code.
   contributors (ODbL) via Overpass; basemap tiles © [Esri](https://www.esri.com) and © [CARTO](https://carto.com/attributions).
 - Time zone map: rules from the [IANA tz database](https://www.iana.org/time-zones) (public domain, via the
   [tzdata](https://pypi.org/project/tzdata/) package) and zone boundaries from

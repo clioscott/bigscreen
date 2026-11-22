@@ -835,8 +835,26 @@ class WebcamPanel:
         wx = cam.get("_wx") or self._weather(now).get(entry.get("cam"))   # _wx: a preview of an unsaved location
         still = (cam.get("source") or {}).get("type") in ("drivebc", "image")
         extra = {"taken": round(st.frame_t - st.age)} if still and st.age is not None else None   # capture time (s)
+        if cam.get("space"):                                  # in space: the ISS's orbit, crew and mission
+            extra = {**(extra or {}), "space": self._space(now)}
         draw_caption(c, zone, cam, now - started, self.font, wx=wx, extra=extra)
         return None
+
+    def _space(self, now):
+        """data/iss.json (hub/jobs/iss.py: the ISS's track, sunrises and sunsets, crew, mission), re-read when it
+        changes (checked every 5 s)."""
+        if self.data_dir and now - getattr(self, "_iss_checked", 0) > 5:
+            self._iss_checked = now
+            path = os.path.join(self.data_dir, "iss.json")
+            try:
+                mt = os.stat(path).st_mtime
+                if mt != getattr(self, "_iss_mtime", None):
+                    with open(path, encoding="utf-8") as f:
+                        self._iss = json.load(f)
+                    self._iss_mtime = mt
+            except (OSError, ValueError):
+                pass
+        return getattr(self, "_iss", None)
 
     def _weather(self, now):
         """data/webcam_weather.json (hub/jobs/webcam_weather.py), re-read when it changes (checked every 5 s)."""

@@ -19,3 +19,5 @@ websockets>=12            # quake.py: Japan EEW feeds
 resvg-py>=0.5             # shield_signs.py: real highway signs (Commons SVGs) for webcam captions
 yt-dlp[default]>=2026.10.26   # webcams.py: finds the video stream behind a YouTube live page ([default]: yt-dlp-ejs,
                               # which with deno (~/.deno/bin) solves YouTube's challenges: needed for the 1440p/4K)
+sgp4>=2.23                # jobs/iss.py: the ISS's orbit from its published elements
+timezonefinder>=6.5       # jobs/iss.py: the time zone below the ISS (oceans too), offline
