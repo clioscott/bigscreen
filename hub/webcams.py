@@ -10,6 +10,11 @@ and colour, or a panel preview) gets its frame rendered from them as they're dec
 costs no more memory than a 480p one. When the whole frame at the detail needed is over HI_BUDGET pixels, the hi
 picture is just the region the crops cover.
 
+YouTube's live HLS stops at 1080p; a live stream's 1440p and 4K exist only as DASH segments (VP9 WebM, 5 s each,
+fetched by sequence number: Feed._fetch_segments pipes them into ffmpeg). Those are used only when a crop needs more
+than the HLS has, and only on the video engine, which also crops and scales them (4K in software would take the
+N100's CPU).
+
 Sources (``modules.webcams.cams.<id>.source``):
     {"type": "youtube", "url": "https://www.youtube.com/watch?v=…"}   live stream; resolved with yt-dlp
     {"type": "stream",  "url": "https://…/index.m3u8"}                HLS, MP4, MJPEG, RTSP… anything ffmpeg opens
@@ -30,7 +35,9 @@ import subprocess
 import sys
 import threading
 import time
-from urllib.parse import urlparse
+import urllib.error
+import urllib.request
+from urllib.parse import urlencode, urlparse
 
 import numpy as np
 from PIL import Image
@@ -57,6 +64,11 @@ DECODED_SEC = 6.0            # decoded frames kept per feed for the wall's strea
 OPEN_SEC = 45.0              # … or no first frame this long after starting it
 RESOLVE_TTL = 3 * 3600.0     # YouTube manifest URLs last ~6 h; resolve again after 3 (fewer lookups: see BOT_COOL)
 BOT_COOL = 20 * 60.0         # YouTube asked the hub to prove it isn't a bot: no new lookups for this long
+LOOKUP_ARGS = ("--extractor-args", "youtube:formats=incomplete")   # a live stream's DASH formats (1440p, 4K) too,
+                             # beside its HLS ones (yt-dlp leaves them out by default: it can't download them whole)
+SEG_BACK = 1                 # DASH: a new feed starts this many segments before the newest (fills the buffer at once)
+SEG_POLL = 1.0               # … and asks for the newest segment number this often once it has caught up
+SEG_TIMEOUT = 20.0           # … gives up on one segment request after this long
 SCHEMES = {"http", "https", "rtsp", "rtsps", "rtmp", "rtmps"}
 PROTOCOLS = "http,https,tcp,tls,crypto,httpproxy,rtsp,rtsps,rtmp,rtmps,rtmpt"     # network only: no file:, data:
 NOISE = ("frame=", "  ", "Input #", "Output #", "Stream mapping", "Press [q]")
@@ -239,7 +251,7 @@ def _lookup(url, timeout):
     if wait > 0:                                        # throttled: asking again only makes it last longer
         raise BotCheck(f"YouTube is limiting the hub (bot check); trying again in {int(wait // 60) + 1} min")
     try:
-        r = _yt_dlp("-J", url, timeout=timeout)
+        r = _yt_dlp("-J", *LOOKUP_ARGS, url, timeout=timeout)
     except FileNotFoundError:
         raise SourceError("yt-dlp is not installed on the hub")
     except subprocess.TimeoutExpired:
@@ -274,8 +286,11 @@ def _lookup(url, timeout):
 
 def formats_of(info) -> list:
     """The video streams in yt-dlp's info, smallest first (video-only before muxed, 30 fps before 60, and H.264
-    before VP9/AV1 at the same size: cheaper to decode without the video engine)."""
-    out = []
+    before VP9/AV1 at the same size: cheaper to decode without the video engine). A live stream's DASH formats
+    ("dash": True: fetched a segment at a time, _fetch_segments) are kept only where they're bigger than every HLS
+    one, and only as WebM (each segment a whole file, so they simply join up)."""
+    out, dash = [], []
+    live = info.get("live_status") == "is_live"
     for f in info.get("formats") or []:
         try:
             w, h = int(f.get("width") or 0), int(f.get("height") or 0)
@@ -287,8 +302,14 @@ def formats_of(info) -> list:
         u = str(f.get("url") or "")
         if w < 16 or h < 16 or vcodec == "none" or urlparse(u).scheme.lower() not in SCHEMES:
             continue
-        out.append({"url": u, "w": w, "h": h, "fps": fps, "vcodec": vcodec.split(".")[0], "tbr": tbr,
-                    "audio": str(f.get("acodec") or "none") != "none"})
+        adaptive = live and str(f.get("protocol") or "") in ("http", "https")
+        if adaptive and (str(f.get("ext") or "") != "webm" or urlparse(u).scheme.lower() != "https"):
+            continue                                       # (an MP4 one: its segments don't join up as they are)
+        (dash if adaptive else out).append(
+            {"url": u, "w": w, "h": h, "fps": fps, "vcodec": vcodec.split(".")[0], "tbr": tbr,
+             "audio": str(f.get("acodec") or "none") != "none", "dash": adaptive})
+    top_h = max((f["h"] for f in out), default=0)
+    out += [f for f in dash if f["h"] > top_h]
     pref = {"avc1": 0, "h264": 0, "vp09": 1, "vp9": 1, "av01": 2}
     # 30 fps before 60 at the same size: the wall plays 30 (the panels' 60 Hz shows each frame twice), so a 60 fps
     # stream would be decoded only to drop every other frame
@@ -296,29 +317,56 @@ def formats_of(info) -> list:
     return out
 
 
+def playable(formats, hw=None) -> list:
+    """The formats this hub can play now: DASH ones only on the video engine (4K VP9 in software would take the
+    CPU). ``hw``: hw_decode() when None."""
+    if hw is None:
+        hw = hw_decode()
+    return [f for f in formats if hw or not f.get("dash")]
+
+
 def native_of(formats):
     """The biggest of a stream's formats (its own resolution), or None."""
     return max(formats, key=lambda f: (f["h"], f["w"], f["fps"], -f["audio"])) if formats else None
 
 
-def pick_format(formats, need_w=0.0, min_h=MIN_SOURCE_H):
+def pick_format(formats, need_w=0.0, min_h=MIN_SOURCE_H, snaps=()):
     """The smallest format at least need_w wide (and at least min_h tall when the stream has that), else the
-    biggest. None when there are none."""
+    biggest. With ``snaps`` [(out_w, out_h, crop)] (Whole pixels crops), the smallest of those on which every one is
+    still an exact multiple, if any is. None when there are none."""
     if not formats:
         return None
     top = native_of(formats)
     floor = min(min_h, top["h"])
     ok = [f for f in formats if f["w"] >= need_w and f["h"] >= floor]
-    return ok[0] if ok else top
+    exact = [f for f in ok if all(snap_k(c, f["w"], f["h"], ow, oh) for ow, oh, c in snaps)]
+    return exact[0] if exact else ok[0] if ok else top
+
+
+def is_snap(crop) -> bool:
+    return isinstance(crop, dict) and bool(crop.get("snap")) and bool(crop.get("w"))
+
+
+def choose_format(formats, wants, hw=None):
+    """The format a feed should decode for these consumers [(out_w, out_h, crop)]: the smallest playable one giving
+    each crop OVERSAMPLE pixels per LED, on which every Whole pixels crop is still exact (4K and 1080p both are for
+    a crop made on either: 4K is 2 x 2 of 1080p)."""
+    fs = playable(formats, hw)
+    if not fs:
+        return None
+    top = native_of(fs)
+    need = max([need_of(top["w"], top["h"], ow, oh, {k: v for k, v in c.items() if k != "snap"}
+                        if is_snap(c) else c) for ow, oh, c in wants] or [0.0])
+    return pick_format(fs, need, snaps=[w for w in wants if is_snap(w[2])])
 
 
 def resolve(kind, url, fresh=False, timeout=60, need_w=0.0, min_h=MIN_SOURCE_H) -> tuple[str, str]:
     """(media URL for ffmpeg, title). YouTube pages go through lookup(): the smallest stream that's at least need_w
-    wide (pick_format)."""
+    wide (pick_format), never a DASH one (ffmpeg can't open those by URL)."""
     if kind != "youtube":                               # streams and stills are used as given
         return url, ""
     info = lookup(url, fresh, timeout)
-    return pick_format(info["formats"], need_w, min_h)["url"], info["title"]
+    return pick_format(playable(info["formats"], hw=False), need_w, min_h)["url"], info["title"]
 
 
 _hw = {"failed": False}
@@ -327,6 +375,31 @@ _hw = {"failed": False}
 def hw_decode() -> bool:
     """Can ffmpeg use the video engine? (The hub's user must be in the render group.)"""
     return not _hw["failed"] and os.path.exists(HW_DEVICE) and os.access(HW_DEVICE, os.R_OK | os.W_OK)
+
+
+# --- DASH segments (a live stream's 1440p and 4K) -------------------------------------------------------------
+def seg_head(url, tries=3) -> int:
+    """The newest segment's number (YouTube's X-Head-Seqnum, from a HEAD of the format's URL); a couple of retries
+    a second apart (a blip shouldn't end the run)."""
+    for i in range(tries):
+        try:
+            req = urllib.request.Request(url, method="HEAD", headers=UA)
+            with urllib.request.urlopen(req, timeout=SEG_TIMEOUT) as r:
+                return int(r.headers["X-Head-Seqnum"])
+        except urllib.error.HTTPError:
+            raise                                       # 403: the URL expired (looked up again); no use retrying
+        except Exception:
+            if i == tries - 1:
+                raise
+            time.sleep(1.0)
+
+
+def seg_get(url, n) -> bytes:
+    """Segment n (a whole WebM file, ~5 s)."""
+    sep = "&" if "?" in url else "?"
+    with urllib.request.urlopen(urllib.request.Request(url + sep + urlencode({"sq": n}), headers=UA),
+                                timeout=SEG_TIMEOUT) as r:
+        return r.read()
 
 
 # --- how much detail a crop needs -------------------------------------------------------------------------------
@@ -339,7 +412,7 @@ def crop_frac(src_w, src_h, out_w, out_h, crop=None):
 def need_of(src_w, src_h, out_w, out_h, crop=None) -> float:
     """How wide the whole frame must be decoded for this crop to get OVERSAMPLE source pixels per LED pixel. A
     "snap" crop needs the stream's own pixels, unscaled (its whole multiples are of those)."""
-    if isinstance(crop, dict) and crop.get("snap") and crop.get("w"):
+    if is_snap(crop):
         return 1e6
     return out_w / max(1e-3, crop_frac(src_w, src_h, out_w, out_h, crop)[2]) * OVERSAMPLE
 
@@ -516,6 +589,7 @@ class Feed:
         self._run_t = 0.0                # when the current ffmpeg started
         self._run_hi = False             # the current ffmpeg gives a hi picture (its reader renders the consumers)
         self._hi_broken = False          # a run with a hi picture wouldn't open: this feed sticks to lo
+        self._dash_broken = False        # a DASH run wouldn't open: this feed sticks to HLS
         threading.Thread(target=self._run, name=f"webcam-{urlparse(url).netloc}", daemon=True).start()
         if kind not in STILLS:                              # stills publish directly
             threading.Thread(target=self._pace, name="webcam-pacer", daemon=True).start()
@@ -674,17 +748,19 @@ class Feed:
                 "formats": [{k: f[k] for k in ("w", "h", "fps", "vcodec")} for f in self.formats]}
 
     # the ffmpeg loop ------------------------------------------------------------------------------------------
+    def _playable(self, formats):
+        return [f for f in playable(formats) if not (f.get("dash") and self._dash_broken)]
+
     def _choose(self, fresh):
         """(media URL, title) for the next run, with self.source / self.native / self.hi set for it."""
         wants = self.wants()
         if self.kind == "youtube":
             info = lookup(self.url, fresh)
-            self.formats = info["formats"]
+            self.formats = self._playable(info["formats"])
             top = native_of(self.formats)
             self.native = {k: top[k] for k in ("w", "h", "fps", "vcodec")}
-            need = max([need_of(top["w"], top["h"], *w) for w in wants] or [0.0])
-            fmt = pick_format(self.formats, need)
-            self.source = {k: fmt[k] for k in ("w", "h", "fps", "vcodec")}
+            fmt = choose_format(self.formats, wants, hw=True)          # (already only what this hub can play)
+            self.source = {k: fmt[k] for k in ("w", "h", "fps", "vcodec", "dash")}
             media, title = fmt["url"], info["title"]
         else:
             media, title = self.url, ""                      # its size is known once ffmpeg has opened it once
@@ -702,9 +778,8 @@ class Feed:
             return False
         src = self.source
         if self.formats:                                      # a bigger stream would give more
-            top = native_of(self.formats)
-            need = max(need_of(top["w"], top["h"], *w) for w in wants)
-            if pick_format(self.formats, need)["w"] > src["w"]:
+            fmt = choose_format(self.formats, wants, hw=True)
+            if fmt and fmt["w"] > src["w"]:
                 return True
         lacking = [w for w in wants if need_of(src["w"], src["h"], *w) > WORK_W * 1.1
                    and not covers(self.hi, src["w"], src["h"], w)]
@@ -800,10 +875,13 @@ class Feed:
         self._stop.set()
         _forget(self)
 
-    def _args(self, media, hi_fd=None, hw=False):
-        """ffmpeg's command line: lo frames on pipe:1 and, with a hi plan, hi frames on hi_fd."""
+    def _args(self, media, hi_fd=None, hw=False, dash=False):
+        """ffmpeg's command line: lo frames on pipe:1 and, with a hi plan, hi frames on hi_fd. ``dash``: the stream
+        comes in on stdin (_fetch_segments), decoded, cropped and scaled on the video engine."""
         # -nostats: the progress line ends in \r, which readline would keep growing for hours
         args = ["ffmpeg", "-hide_banner", "-nostdin", "-nostats", "-loglevel", "info", "-protocol_whitelist", PROTOCOLS]
+        if dash:
+            return self._dash_args(args, hi_fd)
         scheme = urlparse(media).scheme.lower()
         if scheme in ("http", "https"):
             args += ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
@@ -839,15 +917,80 @@ class Feed:
                        "-map", "[lo]", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1",
                        "-map", "[hi]", "-f", "rawvideo", "-pix_fmt", "rgb24", f"pipe:{hi_fd}"]
 
+    def _dash_args(self, args, hi_fd):
+        """A DASH (4K) run: WebM segments on stdin; the video engine decodes, crops and scales, and only the two
+        pictures come back to memory (as NV12: its own RGB is a few levels off). Scaling a 4K frame on the CPU would
+        cost more than a core; pulling a cropped frame back without scale_vaapi, several."""
+        self._buffer_sec = BUFFER_SEC                       # 5 s segments, like the HLS
+        args = args[:-1] + [PROTOCOLS + ",pipe"]
+        args += ["-hwaccel", "vaapi", "-hwaccel_device", HW_DEVICE, "-hwaccel_output_format", "vaapi",
+                 "-f", "matroska", "-i", "pipe:0"]
+        src = self.source
+
+        def gpu(w, h):
+            return f"scale_vaapi=w={w}:h={h}:mode=hq:format=nv12,hwdownload,format=nv12"
+        lo = gpu(WORK_W, max(2, round(WORK_W * src["h"] / src["w"] / 2) * 2))
+        p = self.hi
+        if p is None or hi_fd is None:
+            return args + ["-an", "-sn", "-dn", "-vf", f"fps={self.fps},{lo}",
+                           "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"]
+        crop = "" if (p["x"], p["y"], p["w"], p["h"]) == (0, 0, src["w"], src["h"]) else \
+            f"crop=w={p['w']}:h={p['h']}:x={p['x']}:y={p['y']}:exact=1,"
+        graph = f"[0:v:0]fps={self.fps},split=2[a][b];[a]{lo}[lo];[b]{crop}{gpu(p['out_w'], p['out_h'])}[hi]"
+        return args + ["-filter_complex", graph,
+                       "-map", "[lo]", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1",
+                       "-map", "[hi]", "-f", "rawvideo", "-pix_fmt", "rgb24", f"pipe:{hi_fd}"]
+
+    def _fetch_segments(self, proc, url):
+        """A DASH run's input: the stream's WebM segments in order, into ffmpeg's stdin (each is a whole file, so
+        they simply join up), from SEG_BACK before the newest (the newest only when frames were already decoded: a
+        run restarted for more detail) and then each new one as it's published. Closing stdin ends the run (an
+        expired URL: _run looks the stream up again)."""
+        sink = proc.stdin
+        n = head = None
+        try:
+            while proc.poll() is None:
+                if head is None or n > head:
+                    if head is not None:
+                        time.sleep(SEG_POLL)
+                    head = seg_head(url)
+                    if n is None:
+                        n = max(0, head - (0 if self.decoded_t else SEG_BACK))
+                    if n > head:
+                        continue
+                try:
+                    data = seg_get(url, n)
+                except urllib.error.HTTPError as e:
+                    if e.code == 404 and n < head:                 # fell out of the stream's window: go to the newest
+                        n = head
+                        continue
+                    raise
+                sink.write(data)
+                n += 1
+        except (BrokenPipeError, ValueError):                       # ffmpeg ended (or was stopped)
+            pass
+        except Exception as e:
+            self.error = f"segments: {type(e).__name__}: {e}"[:300]
+        finally:
+            try:
+                sink.close()
+            except Exception:
+                pass
+
     def _decode(self, media) -> bool:
         """Run ffmpeg until the stream ends, stalls or nobody wants it. True if any frame arrived."""
         hw = hw_decode()
+        dash = self.kind == "youtube" and bool((self.source or {}).get("dash"))
+        if dash and not hw:                              # the video engine went away since this run was chosen
+            self._restart = True
+            return False
         hi_r = hi_w = None
         if self.hi is not None:
             hi_r, hi_w = os.pipe()
-        args = self._args(media, hi_w, hw)
+        args = self._args(media, hi_w, hw, dash)
         try:
             proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0,
+                                    stdin=subprocess.PIPE if dash else None,
                                     pass_fds=(hi_w,) if hi_w is not None else ())
         except BaseException as e:
             if hi_r is not None:
@@ -867,6 +1010,9 @@ class Feed:
         size_box, tail, src_box = {}, [], []
         threading.Thread(target=self._stderr, args=(proc, size_box, tail, src_box), daemon=True).start()
         threading.Thread(target=self._watchdog, args=(proc,), daemon=True).start()
+        if dash:
+            threading.Thread(target=self._fetch_segments, args=(proc, media), daemon=True,
+                             name="webcam-segments").start()
         got = False
         base = self.dseq                           # this run's frame n is dseq base + n, in both pictures
         try:
@@ -874,7 +1020,11 @@ class Feed:
             while 0 not in size_box or (hi_r is not None and 1 not in size_box):   # sizes: in ffmpeg's banner
                 if proc.poll() is not None or time.time() - t0 > 45:
                     msg = (tail[-1] if tail else "ffmpeg could not open the stream")[:300]
-                    if hw and any(s in " ".join(tail).lower() for s in ("vaapi", "hwaccel", "hardware device")):
+                    if dash:                               # the DASH run didn't open: HLS (up to 1080p) from now on
+                        self._dash_broken = True           # (first: its errors name vaapi, but the HLS run will
+                        self._restart = True               # tell whether the video engine itself works)
+                        print(f"[webcams] DASH run failed ({msg[:120]}); HLS for {self.url[:80]}", flush=True)
+                    elif hw and any(s in " ".join(tail).lower() for s in ("vaapi", "hwaccel", "hardware device")):
                         _hw["failed"] = True               # the video engine won't open: decode in software
                         print(f"[webcams] no hardware decoding ({msg[:120]}); software from now on", flush=True)
                         self._restart = True

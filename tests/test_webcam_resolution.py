@@ -219,3 +219,132 @@ def test_whole_pixels_is_the_plain_average_of_each_k_by_k_block():
 def test_a_snapped_crop_is_its_own_consumer():
     crop = {"x": 0.1, "y": 0.1, "w": 0.5}
     assert wc._key_of(448, 175, crop, {}) != wc._key_of(448, 175, {**crop, "snap": True}, {})
+
+
+# --- 4K: a live stream's DASH formats ----------------------------------------------------------------------------
+def _live_info():
+    """What yt-dlp -J --extractor-args youtube:formats=incomplete lists for a live 4K stream: HLS up to 1080p, and the
+    adaptive (DASH) formats, H.264 MP4 and VP9 WebM, up to 2160p."""
+    fs = []
+    for h, w in ((720, 1280), (1080, 1920)):
+        fs.append({"url": f"https://m/{h}.m3u8", "vcodec": "avc1.4d", "acodec": "none", "width": w, "height": h,
+                   "fps": 30, "protocol": "m3u8_native", "ext": "mp4"})
+    for h, w in ((720, 1280), (1080, 1920), (1440, 2560), (2160, 3840)):
+        fs.append({"url": f"https://v/{h}.webm?x=1", "vcodec": "vp9", "acodec": "none", "width": w, "height": h,
+                   "fps": 30, "protocol": "https", "ext": "webm"})
+        if h <= 1080:
+            fs.append({"url": f"https://v/{h}.mp4?x=1", "vcodec": "avc1.4d", "acodec": "none", "width": w,
+                       "height": h, "fps": 30, "protocol": "https", "ext": "mp4"})
+    return {"live_status": "is_live", "formats": fs}
+
+
+def test_a_live_streams_4k_comes_from_dash_beyond_what_hls_has():
+    f = wc.formats_of(_live_info())
+    assert [(x["h"], x["dash"]) for x in f] == [(720, False), (1080, False), (1440, True), (2160, True)]
+    assert wc.native_of(f)["w"] == 3840
+    assert [x["h"] for x in wc.playable(f, hw=False)] == [720, 1080]      # 4K VP9 only on the video engine
+    not_live = wc.formats_of({**_live_info(), "live_status": "was_live"})   # (adaptive ones only for live streams)
+    assert not any(x["dash"] for x in not_live)
+
+
+def test_the_lookup_asks_for_dash_formats_and_resolve_never_gives_one(monkeypatch):
+    seen = []
+
+    def yt(*a, **k):
+        seen.append(a)
+        return types.SimpleNamespace(returncode=0, stdout=json.dumps({"title": "t", **_live_info()}), stderr="")
+    monkeypatch.setattr(wc, "_yt_dlp", yt)
+    wc._resolved.clear()
+    try:
+        url = "https://www.youtube.com/watch?v=abcdefghijk"
+        assert wc.resolve("youtube", url, need_w=9000)[0] == "https://m/1080.m3u8"   # (plain ffmpeg: no DASH)
+        assert "youtube:formats=incomplete" in seen[0]
+    finally:
+        wc._resolved.clear()
+
+
+def test_4k_is_decoded_only_for_crops_that_need_more_than_1080p():
+    f = wc.formats_of(_live_info())
+    assert wc.choose_format(f, [(448, 175, None)], hw=True)["h"] == 720          # full width: plenty in 720p
+    assert wc.choose_format(f, [(448, 175, {"x": 0.3, "y": 0.3, "w": 0.4})], hw=True)["h"] == 1080
+    tight = (448, 175, {"x": 0.4, "y": 0.4, "w": 0.2})                            # 448 / 0.2 x 1.5 = 3360 wide
+    assert wc.choose_format(f, [tight], hw=True)["h"] == 2160
+    assert wc.choose_format(f, [tight], hw=False)["h"] == 1080                    # no video engine: HLS's best
+
+
+def test_whole_pixels_crops_get_a_resolution_they_are_exact_on():
+    f = wc.formats_of(_live_info())
+    k4 = {"x": 0.03, "y": 0.0, "w": round(4 * 448 / 1920, 6), "snap": True}      # 4:1, set on the 1080p
+    got = wc.choose_format(f, [(448, 130, k4)], hw=True)
+    assert got["h"] == 1080 and wc.snap_k(k4, got["w"], got["h"], 448, 130) == 4   # not 720p (not exact there)
+    k3 = {"x": 0.3, "y": 0.3, "w": round(3 * 448 / 3840, 6), "snap": True}       # 3:1, set on the 4K
+    got = wc.choose_format(f, [(448, 130, k3)], hw=True)
+    assert got["dash"] and wc.snap_k(k3, got["w"], got["h"], 448, 130) > 0
+
+
+def test_a_dash_run_reads_stdin_and_crops_and_scales_on_the_video_engine():
+    f = _feed_shell()
+    f.source = {"w": 3840, "h": 2160, "dash": True}
+    f.hi = wc.plan(3840, 2160, [(448, 175, {"x": 0.4, "y": 0.4, "w": 448 / 3840})])
+    args = f._args("https://v/2160.webm?x=1", hi_fd=7, hw=True, dash=True)
+    assert args[args.index("-i") + 1] == "pipe:0" and args[args.index("-f") + 1] == "matroska"
+    assert "pipe" in args[args.index("-protocol_whitelist") + 1].split(",")
+    assert args[args.index("-hwaccel_output_format") + 1] == "vaapi"
+    graph = args[args.index("-filter_complex") + 1]
+    assert f"crop=w={f.hi['w']}:h={f.hi['h']}" in graph
+    assert f"scale_vaapi=w=640:h=360" in graph and f"scale_vaapi=w={f.hi['out_w']}:h={f.hi['out_h']}" in graph
+    assert graph.count("hwdownload") == 2 and "pipe:7" in args
+    f.hi = None
+    lo_only = f._args("https://v/2160.webm?x=1", hw=True, dash=True)
+    assert "-filter_complex" not in lo_only and "scale_vaapi=w=640:h=360" in lo_only[lo_only.index("-vf") + 1]
+
+
+class _FakeProc:
+    def __init__(self, stop_after):
+        self.written, self.stop_after, self.closed = [], stop_after, False
+        self.stdin = self
+
+    def poll(self):
+        return 0 if len(self.written) >= self.stop_after else None
+
+    def write(self, b):
+        self.written.append(b)
+
+    def close(self):
+        self.closed = True
+
+
+def test_segments_go_into_ffmpeg_in_order_from_just_before_the_newest(monkeypatch):
+    heads = iter([10, 10, 11, 12])
+    monkeypatch.setattr(wc, "seg_head", lambda url: next(heads))
+    monkeypatch.setattr(wc, "seg_get", lambda url, n: f"seg{n}".encode())
+    monkeypatch.setattr(wc, "SEG_POLL", 0)
+    f = _feed_shell()
+    f.decoded_t = 0.0
+    p = _FakeProc(stop_after=4)
+    f._fetch_segments(p, "https://v/x")
+    assert p.written == [b"seg9", b"seg10", b"seg11", b"seg12"] and p.closed and f.error == ""
+
+
+def test_a_run_restarted_for_more_detail_starts_at_the_newest_segment(monkeypatch):
+    monkeypatch.setattr(wc, "seg_head", lambda url: 50)
+    monkeypatch.setattr(wc, "seg_get", lambda url, n: f"seg{n}".encode())
+    f = _feed_shell()
+    f.decoded_t = 123.0                                                    # frames were already decoded
+    p = _FakeProc(stop_after=1)
+    f._fetch_segments(p, "https://v/x")
+    assert p.written == [b"seg50"]
+
+
+def test_an_expired_segment_url_ends_the_run(monkeypatch):
+    import urllib.error
+
+    def gone(url, n):
+        raise urllib.error.HTTPError(url, 403, "Forbidden", {}, None)
+    monkeypatch.setattr(wc, "seg_head", lambda url: 5)
+    monkeypatch.setattr(wc, "seg_get", gone)
+    f = _feed_shell()
+    f.decoded_t = 0.0
+    p = _FakeProc(stop_after=99)
+    f._fetch_segments(p, "https://v/x")
+    assert p.closed and p.written == [] and "403" in f.error

@@ -1018,7 +1018,7 @@ const CropEditor = {
         const s = f.source, hi = f.hi;
         // what the wall's frames are cut from: the detail picture when it covers this crop, else the 640-wide one
         const inHi = hi && b.x * s.w >= hi.x - 1 && b.y * s.h >= hi.y - 1 && (b.x + b.w) * s.w <= hi.x + hi.w + 1 && (b.y + b.h) * s.h <= hi.y + hi.h + 1;
-        out.decoding = `${res(s.w, s.h)} ${codec(s.vcodec)} · ${f.hw ? "hardware (video engine)" : "software"}` +
+        out.decoding = `${res(s.w, s.h)} ${codec(s.vcodec)}${s.dash ? " (DASH segments)" : ""} · ${f.hw ? "hardware (video engine)" : "software"}` +
           (hi ? ` · detail picture ${hi.out_w}×${hi.out_h}${hi.w < s.w || hi.h < s.h ? " (the crops' region)" : ""}` : ` · ${loW} px wide`);
         out.used = (b.w * (inHi ? hi.full_w : loW)) / zw;
         out.pending = out.used < Math.min(out.scale, info.value.oversample || 1.5) * 0.85;
