@@ -133,6 +133,10 @@ once (`hold: false`), so the rotation resumes by itself.
   Frames carry their due time (`pack`, BSW2, only when the Pi asks `sync=1`); the Pi shows each when due
   (`Stream._current_in_step`), no buffering or speed correction, so restarts are seamless and nearby cameras line up.
   A detail ("hi") picture serving one crop is cut and scaled by ffmpeg (`plan` "exact"); several: their region.
+- YouTube bot checks ("Sign in to confirm you're not a bot"): the hub pauses lookups `BOT_COOL` and the Overview
+  says so. Signing it in stops them: `python tools/youtube_signin.py` on Scott's PC opens Firefox in a profile of its
+  own, then copies that profile's YouTube cookies over ssh to `~/bigscreen-state/secrets/youtube-cookies.txt`
+  (never git) and calls `POST /api/webcams/youtube/check`. `_yt_dlp` passes a copy of it with `--cookies`.
 - 4K: YouTube's live HLS stops at 1080p; 1440p/4K exist only as DASH (VP9 WebM segments by sequence number). The
   lookup passes `youtube:formats=incomplete` to list them, which needs a current yt-dlp with yt-dlp-ejs and deno
   (`~/.deno/bin/deno` on the server, found by `deno_path`). They're used only when a crop needs more than the HLS

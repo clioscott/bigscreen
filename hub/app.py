@@ -1387,10 +1387,28 @@ def _fetch_wx(points, timeout=8):
 @app.get("/api/webcams/status")
 def webcams_status():
     return {"feeds": webcams.describe(), "zones": _webcam_zones(), "max_feeds": webcams.MAX_FEEDS,
-            "js_runtime": bool(webcams.deno_path()),
+            "js_runtime": bool(webcams.deno_path()), "youtube": webcams.youtube_state(),
             "health": read_json(paths.DATA_DIR / "webcam_health.json", {}) or {},   # hub/jobs/webcam_health.py
             "jp_faces": [{"id": k, "name": n, "sizes": [[h, p.removeprefix("fonts/")] for h, p in sizes]}
                          for k, (n, sizes) in _webcam_caption.JP_FACES.items()]}
+
+
+@app.get("/api/webcams/youtube")
+def webcams_youtube():
+    """Is the hub signed in to YouTube, and is YouTube refusing it now (the Overview's banner)."""
+    return webcams.youtube_state()
+
+
+@app.post("/api/webcams/youtube/check")
+def webcams_youtube_check():
+    """After signing the hub in to YouTube (tools/youtube_signin.py): try a saved webcam's lookup now, instead of
+    waiting out the pause after a bot check."""
+    cams = ((config.load().get("modules") or {}).get("webcams") or {}).get("cams") or {}
+    url = next((c["source"]["url"] for c in cams.values() if isinstance(c, dict)
+                and (c.get("source") or {}).get("type") == "youtube" and (c.get("source") or {}).get("url")), None)
+    if not url:
+        return {"ok": False, "error": "no YouTube webcam saved to try", **webcams.youtube_state()}
+    return webcams.youtube_check(url)
 
 
 _geo_cache: dict = {}

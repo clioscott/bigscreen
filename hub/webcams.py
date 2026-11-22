@@ -209,11 +209,60 @@ def deno_path() -> str:
     return ""
 
 
+def cookies_path():
+    """The YouTube session the hub signs in with (tools/youtube_signin.py puts it there): a cookies.txt in the
+    state's secrets folder, never in git."""
+    from hub import paths
+    return paths.SECRETS_DIR / "youtube-cookies.txt"
+
+
 def _yt_dlp(*args, timeout=60):
+    """yt-dlp, with deno for YouTube's challenges and the signed-in session when there is one (a copy per run:
+    yt-dlp writes the jar back when it ends, and runs overlap)."""
+    import shutil
+    import tempfile
     deno = deno_path()
     js = ["--js-runtimes", f"deno:{deno}"] if deno else []
-    return subprocess.run([sys.executable, "-m", "yt_dlp", "--no-warnings", "--no-playlist", *js, *args],
-                          capture_output=True, text=True, timeout=timeout)
+    jar, tmp = cookies_path(), None
+    try:
+        if jar.is_file():
+            fd, tmp = tempfile.mkstemp(prefix="yt-cookies-", suffix=".txt")
+            os.close(fd)
+            shutil.copyfile(jar, tmp)
+            js += ["--cookies", tmp]
+        return subprocess.run([sys.executable, "-m", "yt_dlp", "--no-warnings", "--no-playlist", *js, *args],
+                              capture_output=True, text=True, timeout=timeout)
+    finally:
+        if tmp:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+
+
+def youtube_state() -> dict:
+    """For the panel: is the hub signed in to YouTube (and since when), and is YouTube refusing it now."""
+    jar = cookies_path()
+    try:
+        at = jar.stat().st_mtime if jar.is_file() else None
+    except OSError:
+        at = None
+    until = _yt_block["until"]
+    return {"signed_in": at is not None, "signed_in_at": at,
+            "blocked_until": until if until > time.time() else None, "blocked_why": _yt_block.get("why", ""),
+            "blocks": _yt_block.get("count", 0)}
+
+
+def youtube_check(url) -> dict:
+    """Try YouTube again now (after signing in): forget the pause after a bot check and look ``url`` up afresh."""
+    _yt_block["until"] = 0.0
+    with _resolve_lock:
+        _lookup_failed.clear()
+    try:
+        info = lookup(url, fresh=True)
+        return {"ok": True, "title": info["title"], "formats": len(info["formats"]), **youtube_state()}
+    except SourceError as e:
+        return {"ok": False, "error": str(e), **youtube_state()}
 
 
 def lookup(url, fresh=False, timeout=60) -> dict:
@@ -281,6 +330,8 @@ def _lookup(url, timeout):
         err = (r.stderr.strip().splitlines() or ["yt-dlp failed"])[-1]
         if is_bot_check(err):
             _yt_block["until"] = time.time() + BOT_COOL
+            _yt_block["why"] = err.replace("ERROR: ", "")[:200]
+            _yt_block["count"] = _yt_block.get("count", 0) + 1
             print(f"[webcams] YouTube bot check: no lookups for {int(BOT_COOL // 60)} min ({err[:120]})", flush=True)
             raise BotCheck(err.replace("ERROR: ", "")[:300])
         raise SourceError(err.replace("ERROR: ", "")[:300])
