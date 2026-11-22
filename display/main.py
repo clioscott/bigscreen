@@ -534,7 +534,9 @@ class App:
         tick = time.time()             # when this frame was due: frames run on a fixed grid of 1/fps
         while not self.restart_requested:
             t0 = time.time()
+            period = 1.0 / max(1, self.cfg.system.get("display", {}).get("fps", 60))
             webcam.CLOCK["tick"] = tick    # video picks its frame by the grid, so each one shows for the same time
+            webcam.CLOCK["period"] = period
             try:
                 self._maybe_reload(t0)
                 self._apply_brightness()
@@ -556,7 +558,6 @@ class App:
                 self.present_ms.append((t2 - t1) * 1000.0)
             self.pushed.append(bool(pushed))
             self.frame_times.append(t2)
-            period = 1.0 / max(1, self.cfg.system.get("display", {}).get("fps", 60))
             # a fixed grid, not "sleep what's left of this frame": a slow frame (a video frame's conversion and the
             # wait for vsync) is made up by the next one instead of pushing every later frame back (which ran the
             # loop at ~53 Hz and showed 30 fps video unevenly)

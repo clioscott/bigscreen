@@ -1,5 +1,9 @@
 """The Webcams list (one rotation entry plays the webcams in the Webcams page's order) and the camera grid."""
 
+import collections
+import itertools
+import threading
+
 import numpy as np
 
 from display.gfx import Canvas
@@ -1240,3 +1244,80 @@ def test_an_unchanged_frame_is_not_pushed_to_the_panels():
     assert out.present(fb) is False and out.matrix.swaps == swaps   # nothing changed: no conversion, no swap
     fb.buf[0, 0] = 255
     assert out.present(fb) and out.matrix.swaps == swaps + 1
+
+
+# --- in step: frames shown when they're due (hub/webcams.py dates them; the same delay for every webcam) ----------
+def _step_stream(fps=30):
+    st = wm.Stream.__new__(wm.Stream)                                   # no reader thread: frames fed by hand
+    st.fps, st.video, st.frame, st.frame_t = fps, True, None, 0.0
+    st._q = collections.deque(maxlen=int(fps * wm.PLAY_MAX_SEC) + 4)
+    st._tq, st._tlock = collections.deque(), threading.Lock()
+    st._shown = None
+    st.shown = st.skipped = st.dry_runs = 0
+    return st
+
+
+def _feed(st, dues, now):
+    for d in dues:
+        fr = np.full((2, 2, 3), 0, np.uint8)
+        fr[0, 0, 0] = int(round((d % 10) * 30)) % 256                    # which frame (by its due time)
+        st._add_due(d, fr, now)
+
+
+def test_in_step_every_frame_shows_for_exactly_two_draws_whatever_the_phase(monkeypatch):
+    monkeypatch.setitem(wm.CLOCK, "period", 1 / 60)
+    for phase in (0.0, 1e-6, 1 / 120, 1 / 60 - 1e-6, 0.004):            # frames landing on a draw, just after, between
+        st = _step_stream()
+        t0 = 1000.0
+        _feed(st, [t0 + phase + k / 30 for k in range(90)], now=t0 - 5)
+        seen = []
+        for j in range(170):
+            tick = t0 + 0.05 + j / 60
+            fr = st.current(tick)
+            seen.append(int(fr[0, 0, 0]))
+        runs = [len(list(g)) for _, g in itertools.groupby(seen)]
+        assert set(runs[1:-1]) == {2}, (phase, runs[:12])                   # never one draw, never three
+
+
+def test_in_step_two_webcams_show_what_was_filmed_at_the_same_moment(monkeypatch):
+    monkeypatch.setitem(wm.CLOCK, "period", 1 / 60)
+    delay = 35.0
+    a, b = _step_stream(), _step_stream()
+    # the same instant filmed: camera A's frames start at a different moment than B's (other segment boundaries)
+    filmed_a = [500.0 + k / 30 for k in range(300)]
+    filmed_b = [500.013 + k / 30 for k in range(300)]
+    _feed(a, [f + delay for f in filmed_a], now=530.0)
+    _feed(b, [f + delay for f in filmed_b], now=530.0)
+    for tick in (537.0, 539.3, 541.77):
+        fa, fb = a.current(tick), b.current(tick)
+        da, db = a._shown_due, b._shown_due
+        assert abs((da - delay) - (db - delay)) < 1 / 30 + 1 / 60          # within a frame of each other
+        assert 0 <= tick - da + 1 / 60 < 1 / 30 + 1 / 60                   # and both what's due now
+
+
+def test_in_step_a_restarted_run_replaces_the_frames_queued_from_its_first_one():
+    st = _step_stream()
+    _feed(st, [100 + k / 30 for k in range(60)], now=95.0)               # 100 .. 102
+    _feed(st, [101 + k / 30 for k in range(3)], now=95.5)                # more detail from 101 on
+    dues = [d for d, _ in st._tq]
+    assert dues == sorted(dues) and dues[-1] < 101.1 and len(dues) == 30 + 3
+
+
+def test_in_step_a_stall_holds_the_picture_without_loading_and_ends_after_a_while(monkeypatch):
+    monkeypatch.setitem(wm.CLOCK, "period", 1 / 60)
+    st = _step_stream()
+    st.black_since, st.started = None, 0.0
+    _feed(st, [100 + k / 30 for k in range(30)], now=95.0)
+    st.frame = st._tq[-1][1]                                             # (the reader keeps the newest here)
+    st.current(100.5)
+    last = st.current(101.5)                                             # past the last frame: held
+    assert last is not None and st.dry_runs == 1 and not st.buffering() and st.showable(101.5)
+    assert not st.down(110.0) and st.down(101 + wm.GIVE_UP_SEC + 1)      # (a long stall: on to the next webcam)
+
+
+def test_in_step_a_prerolled_stream_keeps_only_what_is_still_to_come():
+    st = _step_stream()
+    _feed(st, [100 + k / 30 for k in range(300)], now=95.0)               # 100 .. 110
+    _feed(st, [110 + k / 30 for k in range(3)], now=108.0)                # arrives at 108: older ones are let go
+    assert st._tq[0][0] >= 108.0 - wm.HOLD_LATE_SEC - 1 / 30 and st.ahead(108.0) > 2.0
+    assert st.buffered() is True or st.ahead() >= 0                       # (ready says so once the next second is here)

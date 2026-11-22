@@ -1270,11 +1270,11 @@ def webcams_info(type: str, url: str = "", id: int | None = None):
         raise HTTPException(400, str(e))
     out = {"type": kind, "zones": _webcam_zones(), "hw_available": webcams.hw_decode(), "native": None,
            "formats": [], "feed": None, "oversample": webcams.OVERSAMPLE, "lo_w": webcams.WORK_W,
-           "default_sharpen": webcams.DEFAULT_SHARPEN}
+           "default_sharpen": webcams.DEFAULT_SHARPEN, "delay_sec": webcams.delay_sec()}
     f = next((x for x in webcams.describe() if (x["type"], x["url"]) == (kind, src_url)), None)
     if f:
         out["feed"] = {k: f.get(k) for k in ("state", "source", "hi", "hw", "size", "measured_fps", "consumers",
-                                              "error")}
+                                              "error", "in_step", "delay", "latency")}
         out["native"] = f.get("native")
     if kind == "youtube":
         info = webcams.cached(src_url)          # never a lookup of its own: the editor's feed makes the one it needs
