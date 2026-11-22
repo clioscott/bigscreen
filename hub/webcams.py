@@ -198,6 +198,43 @@ def lookup(url, fresh=False, timeout=60) -> dict:
         hit = _resolved.get(url)
         if hit and not fresh and time.time() - hit["at"] < RESOLVE_TTL:
             return hit
+        failed = _lookup_failed.get(url)
+        if failed and not fresh and time.time() - failed[0] < LOOKUP_RETRY:
+            raise SourceError(failed[1])
+    with _lookup_lock(url):
+        with _resolve_lock:                             # another lookup of it may have just finished
+            hit = _resolved.get(url)
+            if hit and time.time() - hit["at"] < RESOLVE_TTL and (not fresh or time.time() - hit["at"] < 5):
+                return hit
+        try:
+            return _lookup(url, timeout)
+        except SourceError as e:
+            if not isinstance(e, BotCheck):
+                with _resolve_lock:
+                    _lookup_failed[url] = (time.time(), str(e))
+            raise
+
+
+LOOKUP_RETRY = 60.0          # a stream whose lookup failed isn't looked up again for this long
+_lookup_failed: dict = {}    # youtube url -> (when, why)
+_lookup_locks: dict = {}
+
+
+def _lookup_lock(url):
+    with _resolve_lock:
+        if len(_lookup_locks) > 200:
+            _lookup_locks.clear()
+        return _lookup_locks.setdefault(url, threading.Lock())
+
+
+def cached(url):
+    """lookup()'s answer if it's at hand, without asking YouTube (the panel's Picture numbers)."""
+    with _resolve_lock:
+        hit = _resolved.get(url)
+        return hit if hit and time.time() - hit["at"] < RESOLVE_TTL else None
+
+
+def _lookup(url, timeout):
     wait = _yt_block["until"] - time.time()
     if wait > 0:                                        # throttled: asking again only makes it last longer
         raise BotCheck(f"YouTube is limiting the hub (bot check); trying again in {int(wait // 60) + 1} min")
@@ -231,6 +268,7 @@ def lookup(url, fresh=False, timeout=60) -> dict:
         if len(_resolved) > 200:
             _resolved.clear()
         _resolved[url] = out
+        _lookup_failed.pop(url, None)
     return out
 
 
@@ -327,8 +365,12 @@ def plan(src_w, src_h, wants) -> dict | None:
 
     def even(v):
         return int(v) // 2 * 2
+
+    def even_up(v):
+        return -(-int(-(-v // 1)) // 2) * 2
     x, y = even(x0 * src_w), even(y0 * src_h)
-    w, h = even(min(src_w - x, (x1 - x0) * src_w + 1)), even(min(src_h - y, (y1 - y0) * src_h + 1))
+    w, h = min(src_w, even_up(x1 * src_w)) - x, min(src_h, even_up(y1 * src_h)) - y
+    w, h = even(w), even(h)
     out_w = max(2, min(w, even(w * k + 1)))
     out_h = max(2, min(h, even(h * out_w / w + 1)))
     return {"full_w": round(src_w * out_w / w), "x": x, "y": y, "w": w, "h": h, "out_w": out_w, "out_h": out_h}
@@ -394,16 +436,18 @@ class Consumer:
                 return
             self.frames.append((dseq, ver, frame))
 
+    def _index(self, dseq):
+        """Where dseq is (or would go) in frames. Numbers can have gaps (a frame lo never sent, a render that
+        failed), so they're searched, not counted."""
+        import bisect
+        return bisect.bisect_left([f[0] for f in self.frames], dseq)
+
     def after(self, seq):
         """The first frame after dseq ``seq`` still kept: (dseq, frame), or None."""
         with self.lock:
             if not self.frames or self.frames[-1][0] <= seq:
                 return None
-            first = self.frames[0][0]
-            i = max(0, seq + 1 - first)
-            if i >= len(self.frames):
-                return None
-            d, _, fr = self.frames[i]
+            d, _, fr = self.frames[self._index(seq + 1)]
             return d, fr
 
     def oldest(self):
@@ -415,8 +459,8 @@ class Consumer:
         with self.lock:
             if not self.frames:
                 return None
-            i = dseq - self.frames[0][0]
-            if 0 <= i < len(self.frames) and self.frames[i][0] == dseq and self.frames[i][1] == self.ver:
+            i = self._index(dseq)
+            if i < len(self.frames) and self.frames[i][0] == dseq and self.frames[i][1] == self.ver:
                 return self.frames[i][2]
         return None
 
@@ -466,6 +510,7 @@ class Feed:
         self.hw = False                  # decoding on the video engine
         self._run_t = 0.0                # when the current ffmpeg started
         self._run_hi = False             # the current ffmpeg gives a hi picture (its reader renders the consumers)
+        self._hi_broken = False          # a run with a hi picture wouldn't open: this feed sticks to lo
         threading.Thread(target=self._run, name=f"webcam-{urlparse(url).netloc}", daemon=True).start()
         if kind not in STILLS:                              # stills publish directly
             threading.Thread(target=self._pace, name="webcam-pacer", daemon=True).start()
@@ -552,17 +597,19 @@ class Feed:
             out += [c.want() for c in self.consumers.values() if c.settled()]
         return out
 
-    def _render_consumers(self, frame, dseq, hi=None):
+    def _render_consumers(self, frame, dseq, hi=None, run=None):
         """Every consumer's frame for decoded frame dseq: from the hi picture when it covers the consumer, else
-        from lo (``frame``; None: lo hasn't come, so only the ones hi covers)."""
+        from lo (``frame``; None: lo hasn't come, so only the ones hi covers). ``run``: (plan, source) of the
+        ffmpeg run hi came from (a new run may have started meanwhile)."""
         with self._lock:
             todo = list(self.consumers.values())
-        src = self.source or {}
+        p, src = run or (self.hi, self.source)
+        src = src or {}
         for c in todo:
             ver, w, h, crop, colour = c.ver, c.w, c.h, c.crop, c.colour
             try:
-                if hi is not None and covers(self.hi, src.get("w", 0), src.get("h", 0), (w, h, crop)):
-                    out = render_region(hi, self.hi, src["w"], src["h"], w, h, crop, colour)
+                if hi is not None and covers(p, src.get("w", 0), src.get("h", 0), (w, h, crop)):
+                    out = render_region(hi, p, src["w"], src["h"], w, h, crop, colour)
                 elif frame is not None:
                     out = render(frame, w, h, crop, colour)
                 else:
@@ -637,13 +684,13 @@ class Feed:
         else:
             media, title = self.url, ""                      # its size is known once ffmpeg has opened it once
         src = self.source or {}
-        self.hi = plan(src.get("w", 0), src.get("h", 0), wants) if src else None
+        self.hi = plan(src.get("w", 0), src.get("h", 0), wants) if src and not self._hi_broken else None
         return media, title
 
     def _wants_more(self) -> bool:
         """A consumer (or a saved crop) needs more detail, or a region, than the running ffmpeg gives, and the stream
         has it: run again (at most every RAISE_GAP)."""
-        if time.time() - self._run_t < RAISE_GAP or not self.source:
+        if time.time() - self._run_t < RAISE_GAP or not self.source or self._hi_broken:
             return False
         wants = self.wants()
         if not wants:
@@ -759,7 +806,9 @@ class Feed:
             if self.kind == "youtube" or ".m3u8" in media:
                 # HLS arrives a segment (2-5 s) at a time and ffmpeg decodes each as soon as it lands: the pacer
                 # (_pace) evens that out from a buffer. Starting two segments back fills the buffer at once; a run
-                # started for more detail (frames already decoded) starts at the newest, so it doesn't replay.
+                # started for more detail (frames already decoded) starts at the newest segment, which the old run
+                # has usually decoded already: a few seconds replay then (only when a crop asks for more detail
+                # than the saved ones, i.e. while one is being zoomed in the panel).
                 # (Reading with -re instead froze the picture while every next segment downloaded.)
                 args += ["-live_start_index", "-1" if self.decoded_t else "-2"]
                 self._buffer_sec = BUFFER_SEC
@@ -795,11 +844,12 @@ class Feed:
         try:
             proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0,
                                     pass_fds=(hi_w,) if hi_w is not None else ())
-        except FileNotFoundError:
-            for fd in (hi_r, hi_w):
-                if fd is not None:
-                    os.close(fd)
-            raise SourceError("ffmpeg is not installed on the hub")
+        except BaseException as e:
+            if hi_r is not None:
+                os.close(hi_r)
+            if isinstance(e, FileNotFoundError):
+                raise SourceError("ffmpeg is not installed on the hub")
+            raise
         finally:
             if hi_w is not None:
                 os.close(hi_w)                           # the child has its own copy
@@ -822,6 +872,9 @@ class Feed:
                     if hw and any(s in " ".join(tail).lower() for s in ("vaapi", "hwaccel", "hardware device")):
                         _hw["failed"] = True               # the video engine won't open: decode in software
                         print(f"[webcams] no hardware decoding ({msg[:120]}); software from now on", flush=True)
+                        self._restart = True
+                    elif hi_r is not None or self._run_hi:  # the two-picture run didn't open: lo only next time
+                        self._hi_broken = True
                         self._restart = True
                     self.error = msg
                     return False
@@ -885,6 +938,7 @@ class Feed:
     def _read_hi(self, proc, fd, w, h, base):
         """The hi picture's reader: every consumer's frame rendered from it as it's decoded. One buffer, reused:
         hi frames are never kept."""
+        run = (self.hi, self.source)
         n = w * h * 3
         buf = np.empty((h, w, 3), np.uint8)
         view = memoryview(buf).cast("B")
@@ -899,7 +953,7 @@ class Feed:
                             return
                         got += r
                     k += 1
-                    self._render_consumers(self._lo_twin(base + k), base + k, hi=buf)
+                    self._render_consumers(self._lo_twin(base + k), base + k, hi=buf, run=run)
         except Exception as e:
             self.error = f"hi: {type(e).__name__}: {e}"[:300]
 
@@ -1478,7 +1532,11 @@ def render_region(hi, p, src_w, src_h, out_w, out_h, crop=None, colour=None) -> 
     sx, sy = hw / p["w"], hh / p["h"]
     box = (max(0.0, (l - p["x"]) * sx), max(0.0, (t - p["y"]) * sy),
            min(float(hw), (r - p["x"]) * sx), min(float(hh), (b - p["y"]) * sy))
-    img = Image.fromarray(hi).resize((out_w, out_h), Image.BILINEAR, box=box, reducing_gap=2.0)
+    x0, y0 = max(0, int(box[0]) - 2), max(0, int(box[1]) - 2)        # just the box (and the filter's margin)
+    x1, y1 = min(hw, int(box[2]) + 3), min(hh, int(box[3]) + 3)
+    part = np.ascontiguousarray(hi[y0:y1, x0:x1])
+    box = (box[0] - x0, box[1] - y0, box[2] - x0, box[3] - y0)
+    img = Image.fromarray(part).resize((out_w, out_h), Image.BILINEAR, box=box, reducing_gap=2.0)
     return _finish(img, colour)
 
 

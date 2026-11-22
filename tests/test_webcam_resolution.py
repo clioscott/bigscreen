@@ -150,3 +150,40 @@ def test_ffmpeg_gives_lo_and_the_hi_region_on_their_own_pipes():
     f.hi = None
     plain = f._args("https://m/720.m3u8")
     assert "-filter_complex" not in plain and "-hwaccel" not in plain
+
+
+def test_a_consumer_with_gaps_in_its_frames_still_plays_on():
+    c = wc.Consumer(4, 4)
+    for d in (1, 2, 3, 4, 10, 11, 12, 13):                          # 5-9 never rendered (lo late, a failed render)
+        c.add(d, 0, d)
+    seen, d = [], 0
+    while (got := c.after(d)) is not None:
+        d = got[0]
+        seen.append(d)
+    assert seen == [1, 2, 3, 4, 10, 11, 12, 13]
+    assert c.for_dseq(11) == 11 and c.for_dseq(7) is None
+
+
+def test_the_region_covers_a_crop_at_the_frames_edge():
+    want = (448, 175, {"x": 0.83, "y": 0.5, "w": 0.17})
+    p = wc.plan(3840, 2160, [want])
+    assert p["x"] + p["w"] <= 3840 and wc.covers(p, 3840, 2160, want)
+
+
+def test_a_failed_lookup_is_not_repeated_for_a_while(monkeypatch):
+    calls = []
+
+    def dead(*a, **k):
+        calls.append(a)
+        return types.SimpleNamespace(returncode=1, stdout="", stderr="ERROR: This live event has ended.")
+    monkeypatch.setattr(wc, "_yt_dlp", dead)
+    url = "https://www.youtube.com/watch?v=deaddeaddea"
+    wc._resolved.pop(url, None)
+    wc._lookup_failed.pop(url, None)
+    for _ in range(5):
+        try:
+            wc.lookup(url)
+        except wc.SourceError:
+            pass
+    assert len(calls) == 1 and wc.cached(url) is None               # the panel's 4-s poll never asks YouTube
+    wc._lookup_failed.pop(url, None)

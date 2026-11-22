@@ -916,7 +916,7 @@ const CropEditor = {
     onBeforeUnmount(() => clearInterval(infoT));
     const native = computed(() => info.value?.native || null);
     // the tightest crop: one stream pixel per LED (zooming further would only enlarge pixels)
-    const minW = computed(() => native.value?.w ? Math.min(1, props.zone[0] / native.value.w) : 0.05);
+    const minW = computed(() => native.value?.w ? Math.min(1, props.zone[0] / native.value.w) : 0.125);   // (800% until it's known)
     const maxZoom = computed(() => Math.max(100, Math.floor(100 / minW.value)));
     const aspect = computed(() => props.zone[0] / props.zone[1]);
     const fit = () => {
@@ -986,7 +986,7 @@ const CropEditor = {
     const stats = computed(() => {
       const n = native.value, f = info.value?.feed, b = box.value, [zw, zh] = props.zone;
       if (!n) return null;
-      const loW = info.value.lo_w || 640;
+      const loW = f?.size?.[0] || Math.min(info.value.lo_w || 640, n.w);   // the lo picture (narrower sources: theirs)
       const cropW = Math.round(b.w * n.w), cropH = Math.round(b.h * n.h);
       const others = [...new Set((info.value.formats || []).map(([, h]) => h).filter((h) => h !== n.h))].sort((a, c) => c - a).map((h) => h + "p").join(", ");
       const out = { native: `${res(n.w, n.h)}${n.fps ? " · " + Math.round(n.fps) + " fps" : ""}${n.vcodec ? " · " + codec(n.vcodec) : ""}`,
