@@ -80,3 +80,19 @@ def test_the_iss_track_is_where_a_real_orbit_puts_it():
     assert len(tr) > 90 and all(abs(r[1]) <= 52.0 for r in tr)              # 51.6 deg orbit: ~51.8 on the ground
     ev = iss.events(tr)
     assert 1 <= sum(1 for e in ev if e[1] == "sunset") <= 2                  # about one sunset a 92-minute orbit
+
+
+def test_the_iss_file_already_covers_what_the_wall_shows_when_it_lands(monkeypatch, tmp_path):
+    from hub import paths
+    monkeypatch.setattr(paths, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(iss, "elements", lambda: ("l1", "l2"))
+    monkeypatch.setattr(iss, "track", lambda l1, l2, t0, horizon=iss.HORIZON, step=iss.STEP:
+                        [[t0 + i * 10, 0.0, 0.0, 1] for i in range(int(horizon // 10))])
+    monkeypatch.setattr(iss, "Below", lambda: type("B", (), {"name": lambda s, a, b: "Over x", "zone": lambda s, a, b: "UTC"})())
+    monkeypatch.setattr(iss, "crew", lambda: (None, None))
+    import json
+    import time
+    iss.run({"modules": {"webcams": {"cams": {"x": {"space": "iss"}}}}})
+    d = json.loads((tmp_path / "iss.json").read_text())
+    out = space.sections(d, {}, {k: True for k in space.KEYS}, now=time.time())
+    assert out["over"] == "Over x" and out["coords"]                        # (the video is 35 s old)
