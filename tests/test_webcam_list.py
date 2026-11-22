@@ -1378,3 +1378,26 @@ def test_the_panels_get_exactly_the_tiles_that_changed():
         out.canvas.pushed = set()
         out.present(fb)
         assert out.canvas.pushed == want
+
+
+def test_a_webcam_with_hours_plays_only_then_in_its_own_local_time():
+    import datetime
+    from zoneinfo import ZoneInfo
+    cam = {"tz": "Europe/Helsinki", "hours": {"from": "16:00", "to": "08:00"}}      # the night, past midnight
+    at = lambda h, m=0: datetime.datetime(2026, 11, 22, h, m, tzinfo=ZoneInfo("Europe/Helsinki")).timestamp()
+    assert wm.in_hours(cam, at(23)) and wm.in_hours(cam, at(3)) and wm.in_hours(cam, at(16))
+    assert not wm.in_hours(cam, at(8)) and not wm.in_hours(cam, at(12))
+    day = {"wx_city": {"tz": "Europe/Helsinki"}, "hours": {"from": "09:00", "to": "17:30"}}   # (the weather city's zone)
+    assert wm.in_hours(day, at(17, 29)) and not wm.in_hours(day, at(17, 30))
+    assert wm.in_hours({}, at(3)) and wm.in_hours({"hours": {"from": "x", "to": "1"}}, at(3))
+
+
+def test_the_list_passes_over_a_webcam_outside_its_hours(monkeypatch):
+    p = wm.WebcamPanel.__new__(wm.WebcamPanel)
+    p.cams = {"a": {}, "aurora": {"tz": "UTC", "hours": {"from": "20:00", "to": "04:00"}}}
+    p.playlist = [("a", 40), ("aurora", 40)]
+    p._bad, p.data_dir, p.health, p._health_t = {}, None, {}, 0
+    monkeypatch.setattr(p, "_health", lambda now: {})
+    noon = 1_795_348_800.0                                                     # 2026-11-22 12:00 UTC
+    assert p.is_down("aurora", noon) and not p.is_down("aurora", noon + 10 * 3600)
+    assert p._next_up(0, ()) in ("a",) or p.is_down("aurora")

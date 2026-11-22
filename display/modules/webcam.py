@@ -86,6 +86,43 @@ def is_black(frame) -> bool:
     return float((sub.max(axis=-1) > 24).mean()) < 0.001
 
 
+def _minutes(v):
+    """"HH:MM" -> minutes after midnight, or None."""
+    try:
+        h, m = str(v).strip().split(":")
+        h, m = int(h), int(m)
+    except (ValueError, AttributeError):
+        return None
+    return h * 60 + m if 0 <= h <= 24 and 0 <= m < 60 and h * 60 + m <= 1440 else None
+
+
+def cam_tz(cam: dict):
+    """The webcam's own time zone: its tz, its weather city's, or None (the Pi's)."""
+    tz = (cam or {}).get("tz") or ((cam or {}).get("wx_city") or {}).get("tz")
+    if not tz:
+        return None
+    try:
+        from zoneinfo import ZoneInfo
+        return ZoneInfo(str(tz))
+    except Exception:
+        return None
+
+
+def in_hours(cam: dict, now=None) -> bool:
+    """Is it within the webcam's hours (``hours: {"from": "HH:MM", "to": "HH:MM"}`` in its own local time; "to"
+    before "from" runs past midnight, e.g. 16:00-08:00 for the night)? No hours: always."""
+    hours = (cam or {}).get("hours")
+    if not isinstance(hours, dict):
+        return True
+    a, b = _minutes(hours.get("from")), _minutes(hours.get("to"))
+    if a is None or b is None or a == b:
+        return True
+    from datetime import datetime
+    t = datetime.fromtimestamp(now or time.time(), cam_tz(cam))
+    m = t.hour * 60 + t.minute
+    return a <= m < b if a < b else (m >= a or m < b)
+
+
 def playlist_of(s: dict) -> list:
     """The Webcams list in order, as [(cam id, seconds)] of the webcams that are on and exist."""
     cams = s.get("cams") or {}
@@ -564,10 +601,13 @@ class WebcamPanel:
 
     # which webcams are down ---------------------------------------------------------------------------------
     def is_down(self, cid, now=None):
-        """Down by the hub's last check, or found down here while playing (for BAD_SEC). A verdict from a feed (only
-        a play can clear it) is tried again once it's RETRY_DOWN_SEC old, so a webcam that's back gets played; a
-        YouTube bot check is the hub being throttled, never the webcam down."""
+        """Down by the hub's last check, or found down here while playing (for BAD_SEC), or outside its hours (the
+        list passes it over like a webcam that's down). A verdict from a feed (only a play can clear it) is tried again
+        once it's RETRY_DOWN_SEC old, so a webcam that's back gets played; a YouTube bot check is the hub being
+        throttled, never the webcam down."""
         now = now or time.time()
+        if not in_hours(self.cams.get(cid), now):
+            return True
         if now < self._bad.get(cid, 0):
             return True
         h = self._health(now).get(cid)
