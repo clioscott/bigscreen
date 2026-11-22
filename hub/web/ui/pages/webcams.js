@@ -6,6 +6,7 @@ import { store, api, fail, toast, seed, go, clone, dirty, previewOnDisplay, play
 import { GALLERY, CITIES, CATS, snap, thumb } from "./webcam_gallery.js";
 import { CameraMap } from "./cameramap.js";
 import { useSlippyMap } from "./slippymap.js";
+import { CaptionRows } from "./caption_rows.js";
 
 const DEFAULT_SHARPEN = 0.5;          // hub/webcams.py DEFAULT_SHARPEN: a webcam with no Sharpness of its own
 export const SHAPES = {
@@ -16,21 +17,8 @@ export const SHAPES = {
   wall: { label: "Whole wall", panel: "webcam_wall", side: "right", icon: "Maximize", note: "covers the ticker and clock" },
 };
 // caption layouts and sections (display/modules/webcam_caption.py draws them)
-const LAYOUTS = {
-  tag: { label: "Tag", icon: "Tag", note: "A box in a corner with an accent edge" },
-  bar: { label: "Bar", icon: "PanelBottom", note: "Full-width strip, time at the right" },
-  lower_third: { label: "Lower third", icon: "Tv", note: "TV news: name on an accent block, details under it" },
-  split: { label: "Split bar", icon: "Columns2", note: "Name and details left, a big local clock right" },
-  postcard: { label: "Postcard", icon: "Mail", note: "Big centred title with a shadow" },
-  chips: { label: "Chips", icon: "Tags", note: "A rounded chip for each section" },
-  clock: { label: "World clock", icon: "Clock", note: "Local time, big, with the place under it" },
-  signage: { label: "Departure board", icon: "TrainFront", note: "Amber lines on a dark board" },
-  ticker: { label: "Ticker", icon: "ChevronsLeft", note: "Name in a tab, details scrolling past" },
-  stack: { label: "Stack", icon: "List", note: "Each section on its own outlined line" },
-  underline: { label: "Underline", icon: "Underline", note: "Big headline over an accent rule, no box" },
-  custom: { label: "Custom", icon: "LayoutGrid", note: "Your own columns and lines" },
-  outline: { label: "Outlined", icon: "Type", note: "Text with a black edge, no box" },
-  dot: { label: "LIVE dot", icon: "CircleDot", note: "Just a blinking dot and the time" },
+const LAYOUTS = {                     // (the other styles went with rows: display/modules/webcam_caption.py)
+  tag: { label: "Tag", icon: "Tag", note: "A box in a corner with an accent edge, in rows you arrange" },
   none: { label: "None", icon: "EyeOff", note: "No caption" },
 };
 const FONTS = [{ value: "tiny", label: "Tiny" }, { value: "small", label: "Small" }, { value: "medium", label: "Medium" }, { value: "large", label: "Large" },
@@ -1138,93 +1126,9 @@ const WallPreview = {
         a wider place on the wall, or the Custom layout.</span></div>`,
 };
 
-// --- the Custom caption's arrangement: 3 columns × 4 lines, each line a left part and a right end --------------------
-// ov.slots[k] = [column, line] or [column, line, "right"] (webcam_caption.custom_grid / right_kinds); sections sharing a
-// part of a line follow ov.order. Dragging is SortableJS (mouse and touch); the DOM is put back and Vue redraws.
-const CaptionGrid = {
-  props: { ov: Object, hasText: Function },
-  setup(props) {
-    const root = ref(null);
-    const sortables = [];
-    const slotOf = (k) => props.ov.slots?.[k] || DEFAULT_SLOTS[k] || [1, 3];
-    const shown = computed(() => {
-      const o = props.ov.order || [];
-      const outside = shieldOutside(props.ov);
-      return [...o, ...ORDERABLE.filter((k) => !o.includes(k))]
-        .filter((k) => k in DEFAULT_SLOTS && props.ov.show[k] && !(k === "shield" && outside));
-    });
-    const zone = (c, l, side) => shown.value.filter((k) => {
-      const s = slotOf(k);
-      return s[0] === c && s[1] === l && (s[2] === "right" ? "right" : "left") === side;
-    });
-    const filled = (c, l) => zone(c, l, "left").length + zone(c, l, "right").length > 0;
-    const usedCols = computed(() => customCols(props.ov, props.hasText));   // blank chips show here but aren't drawn
-    const lineSize = (c, l) => props.ov.line_sizes?.[`${c}.${l}`] || (c === (usedCols.value[0] || 1) && l === 1 ? "headline" : "detail");
-    const setLineSize = (c, l, v) => { (props.ov.line_sizes || (props.ov.line_sizes = {}))[`${c}.${l}`] = v; };
-    const colAlign = (c) => props.ov.columns?.[c - 1]?.align || (usedCols.value.length > 1 && c === usedCols.value.at(-1) ? "right" : "left");
-    const setColAlign = (c, v) => {
-      const cols = props.ov.columns || (props.ov.columns = []);
-      while (cols.length < c) cols.push({});
-      cols[c - 1] = { ...cols[c - 1], align: v };
-    };
-    // k goes to (c, l, side): before `before` if that's already there, else after the last section there
-    const place = (k, c, l, side, before) => {
-      const slots = props.ov.slots || (props.ov.slots = {});
-      const there = zone(c, l, side).filter((x) => x !== k);
-      slots[k] = side === "right" ? [c, l, "right"] : [c, l];
-      const o = props.ov.order || (props.ov.order = [...ORDERABLE]);
-      for (const x of ORDERABLE) if (!o.includes(x)) o.push(x);
-      const anchor = there.includes(before) ? before : null;
-      if (!anchor && !there.length) return;
-      o.splice(o.indexOf(k), 1);
-      o.splice(anchor ? o.indexOf(anchor) : o.indexOf(there.at(-1)) + 1, 0, k);
-    };
-    onMounted(() => {
-      root.value.querySelectorAll(".cg-zone").forEach((el) => sortables.push(Sortable.create(el, {
-        group: "caption-grid", animation: 140, draggable: ".cg-chip", ghostClass: "sortable-ghost", chosenClass: "sortable-chosen",
-        onEnd(evt) {
-          const { item, from, to, oldIndex, newIndex } = evt;
-          const before = item.nextElementSibling?.dataset?.k || null;
-          if (to !== from || oldIndex !== newIndex) {
-            to.removeChild(item);                             // put the node back where Vue drew it; the data moves it
-            from.insertBefore(item, from.children[oldIndex] || null);
-          }
-          if (from === to && oldIndex === newIndex) return;
-          place(item.dataset.k, +to.dataset.col, +to.dataset.line, to.dataset.side, before);
-        },
-      })));
-    });
-    onBeforeUnmount(() => sortables.forEach((x) => x.destroy()));
-    const label = (k) => (k === "live" ? "LIVE" : k === "shield" ? "Shield " + (props.ov.shield?.route || "") : SECTIONS[k]);
-    const ALIGN_ICONS = { left: "AlignLeft", center: "AlignCenter", right: "AlignRight" };
-    return { root, zone, filled, usedCols, lineSize, setLineSize, colAlign, setColAlign, label, LINE_SIZES, ALIGNS, ALIGN_ICONS };
-  },
-  template: `<div class="cg" ref="root">
-    <div></div>
-    <div v-for="c in 3" :key="'h' + c" class="cg-colhead" :class="{unused: !usedCols.includes(c)}">
-      <span>Column {{ c }}</span>
-      <div class="seg mini" v-if="usedCols.includes(c)"><button v-for="a in ALIGNS" :key="a.value" type="button" :class="{on: colAlign(c) === a.value}"
-        @click="setColAlign(c, a.value)" :title="'Column ' + c + ': ' + a.label.toLowerCase()"><Icon :name="ALIGN_ICONS[a.value]" :size="12"/></button></div></div>
-    <template v-for="l in 4" :key="'l' + l">
-      <div class="cg-linehead">Line {{ l }}</div>
-      <div v-for="c in 3" :key="c + '.' + l" class="cg-cell" :class="{filled: filled(c, l)}">
-        <div class="cg-parts">
-          <div class="cg-zone" :data-col="c" :data-line="l" data-side="left"><span v-for="k in zone(c, l, 'left')" :key="k" :data-k="k"
-            class="cg-chip" :class="{live: k === 'live', shield: k === 'shield', blank: !hasText(k)}" :title="hasText(k) ? 'Drag to move' : 'Nothing to show yet'">{{ label(k) }}</span></div>
-          <div class="cg-zone cg-right" :data-col="c" :data-line="l" data-side="right" title="Sections here sit at the line's right edge"><span
-            v-for="k in zone(c, l, 'right')" :key="k" :data-k="k" class="cg-chip" :class="{live: k === 'live', shield: k === 'shield', blank: !hasText(k)}"
-            :title="hasText(k) ? 'Drag to move' : 'Nothing to show yet'">{{ label(k) }}</span></div>
-        </div>
-        <select v-if="filled(c, l)" class="cg-size" :value="lineSize(c, l)" @change="setLineSize(c, l, $event.target.value)" title="Text size of this line">
-          <option v-for="s in LINE_SIZES" :key="s.value" :value="s.value">{{ s.label }}</option></select>
-      </div>
-    </template>
-  </div>`,
-};
-
 // --- editor -------------------------------------------------------------------------------------------------------
 const WebcamEditor = {
-  components: { CropEditor, WallPreview, CaptionGrid },
+  components: { CropEditor, WallPreview, CaptionRows },
   setup() {
     seedWebcams();
     const id = computed(() => store.route.params[0]);
@@ -1375,7 +1279,9 @@ const WebcamEditor = {
     };
     const hasText = (k) => (SPACE_KEYS.includes(k) ? true : WX_KEYS.includes(k) ? !!wxPoint(cam.value) : { place: !!cam.value.place, credit: !!cam.value.credit,
       custom: !!ov.value.custom_text?.trim(), shield: /\d/.test(String(ov.value.shield?.route ?? "")) }[k] ?? true);
-    const needsLocation = computed(() => !cam.value.space && WX_KEYS.some((k) => ov.value.show[k]) && !wxPoint(cam.value));
+    // is a section in the caption: in one of its rows (before rows: turned on)
+    const inRows = (k) => (Array.isArray(ov.value.rows) ? ov.value.rows.some((r) => (r.items || []).some((i) => i.k === k)) : !!ov.value.show[k]);
+    const needsLocation = computed(() => !cam.value.space && WX_KEYS.some((k) => inRows(k)) && !wxPoint(cam.value));
     // the weather city: search by name, pick one of the places with that name (region and country shown)
     const cityQ = ref("");
     const cityHits = ref(null);
@@ -1450,7 +1356,7 @@ const WebcamEditor = {
       const on = !here || a === b ? null : a < b ? here >= a && here < b : here >= a || here < b;
       return where + (here ? " · it's " + here + " there now: " + (on ? "in the list" : "skipped") : "");
     });
-    return { setSpace, SPACE_GROUPS, toggleHours, hoursNote, id, cam, shape, WEBCAM_SEC, zone, ov, colour, DEFAULT_SHARPEN, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
+    return { inRows, setSpace, SPACE_GROUPS, toggleHours, hoursNote, id, cam, shape, WEBCAM_SEC, zone, ov, colour, DEFAULT_SHARPEN, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
       orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, hasText, customCols, SHIELD_PRESETS, SHIELD_KINDS, SHIELD_PLACES, SHIELD_SIZES, SHIELD_STYLES, shieldSrc, signMissing, presetShown, presetDone,
       CONTAINERS, feedFor, feedPill, healthFor, downPill, local, cityQ, cityHits, citySearching, searchCity, pickCity, clearCity, cityLabel, wxPoint, jpFaces, jpSample, jc, jcSizes, jcSetFace, jcSample, JC_POSITIONS, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
   },
@@ -1591,27 +1497,21 @@ const WebcamEditor = {
               </div>
             </template>
             <template v-if="ov.style !== 'none' && capTab === 'content'">
-              <Field label="Headline" v-if="!['dot', 'custom'].includes(ov.style)"><Seg v-model="ov.headline" :options="HEADLINES"/></Field>
-              <div v-if="ov.style !== 'dot'" class="stack" style="gap:8px">
-                <Field v-for="g in (cam.space ? SPACE_GROUPS : SECTION_GROUPS)" :key="g.label" :label="g.label"><div class="row" style="gap:6px">
-                  <template v-for="k in g.keys" :key="k"><button v-if="k !== 'shield' || ov.style === 'custom'" type="button" class="chip" :class="{off: !ov.show[k]}"
-                    style="height:26px; padding:0 10px" @click="toggleShow(k)">{{ SECTIONS[k] }}</button></template></div></Field></div>
-              <ToggleRow v-if="['tag', 'outline'].includes(ov.style) && ov.show.place && ov.headline !== 'place'" :modelValue="!!ov.place_beside"
-                @update:modelValue="v => ov.place_beside = v" label="Place beside the name"
-                hint="On the name's line, in its own smaller size; everything else stays on its own lines"/>
-              <ToggleRow v-if="cam.space && ov.show.crew" :modelValue="ov.crew_flags !== false" @update:modelValue="v => ov.crew_flags = v"
+              <Field label="Rows" hint="Each row, top to bottom; drag pieces to reorder them, between rows, or to Not shown. Separators come from the palette; every piece has its own size">
+                <CaptionRows :cam="cam" :ov="ov" :labels="SECTIONS" :has-text="hasText"/></Field>
+              <ToggleRow v-if="cam.space && inRows('crew')" :modelValue="ov.crew_flags !== false" @update:modelValue="v => ov.crew_flags = v"
                 label="Flags for the people aboard" hint="7 aboard: 3, 3, 1 with each country's flag after its count; off: just 7 aboard"/>
-              <Field v-if="cam.space && ov.show.coords" label="Coordinates" hint="Updated every frame as the ISS moves">
+              <Field v-if="cam.space && inRows('coords')" label="Coordinates" hint="Updated every frame as the ISS moves">
                 <div class="row" style="gap:8px"><Seg :modelValue="ov.coord_format || 'nsew'" @update:modelValue="v => ov.coord_format = v"
                   :options="[{ value: 'nsew', label: '12.35°S 145.68°W' }, { value: 'signed', label: '-12.35°, -145.68°' }, { value: 'dms', label: '12°21′00″S' }]"/>
                   <Stepper :modelValue="ov.coord_digits ?? 2" @update:modelValue="v => ov.coord_digits = v" :min="0" :max="4" :unit="' decimals'"/></div></Field>
-              <ToggleRow v-if="cam.space && ov.show.mission" :modelValue="!!ov.mission_days" @update:modelValue="v => ov.mission_days = v"
+              <ToggleRow v-if="cam.space && inRows('mission')" :modelValue="!!ov.mission_days" @update:modelValue="v => ov.mission_days = v"
                 label="How long the mission has run" hint="Expedition 75 · day 120"/>
-              <ToggleRow v-if="ov.style !== 'dot' && ov.show.weather" :modelValue="!!ov.temp_icon" @update:modelValue="v => ov.temp_icon = v"
+              <ToggleRow v-if="inRows('weather')" :modelValue="!!ov.temp_icon" @update:modelValue="v => ov.temp_icon = v"
                 label="Weather icon in front of the temperature" hint="Off: just the temperature"/>
             </template>
             <template v-if="ov.style !== 'none' && capTab === 'content'">
-              <Field label="Highway shield" v-if="ov.style === 'custom' && ov.show.shield" hint="Pick a sign, or type a route; inside, the box grows to fit it">
+              <Field label="Highway shield" v-if="inRows('shield')" hint="Pick a sign, or type a route; inside, the box grows to fit it">
                 <div class="stack" style="gap:8px">
                   <div v-for="g in SHIELD_PRESETS" :key="g.group" class="row" style="gap:4px; align-items:center">
                     <span class="faint" style="font-size:11.5px; width:150px">{{ g.group }}</span>
@@ -1633,28 +1533,13 @@ const WebcamEditor = {
                     <div class="seg mini"><button v-for="s in SHIELD_SIZES" :key="s.value" type="button" :class="{on: ov.shield.size === s.value}" @click="ov.shield.size = s.value">{{ s.label }}</button></div></Field>
                   <div class="faint" style="font-size:12px" v-else>The shield takes its line's height; place it in the arrangement below.</div>
                 </div></Field>
-              <template v-if="ov.style === 'custom'">
-                <Field label="Arrangement" hint="Drag sections between columns and lines; drop one in a line's right end (→|) to push it to the right edge">
-                  <CaptionGrid :ov="ov" :has-text="hasText"/></Field>
-                <div class="row" style="gap:16px; align-items:flex-start">
-                  <Field label="Container"><Seg v-model="ov.container" :options="CONTAINERS"/></Field>
-                  <Field label="Divider" v-if="customCols(ov, hasText).length > 1"><Toggle :modelValue="ov.divider !== false" @update:modelValue="v => ov.divider = v"/></Field>
-                </div>
-              </template>
-              <Field label="Image time" v-if="ov.show.age" hint="When the still was taken (DriveBC gives it to the second)">
+              <Field label="Image time" v-if="inRows('age')" hint="When the still was taken (DriveBC gives it to the second)">
                 <Seg :modelValue="ov.taken_format || 'time'" @update:modelValue="v => ov.taken_format = v"
                      :options="[{value:'time', label:'taken 17:05:42'}, {value:'relative', label:'3 min ago'}, {value:'both', label:'Both'}]"/></Field>
-              <Field label="Your text" v-if="ov.show.custom"><input class="input" v-model="ov.custom_text" maxlength="40" placeholder="Scramble Crossing, from the Starbucks"></Field>
+              <Field label="Your text" v-if="inRows('custom')"><input class="input" v-model="ov.custom_text" maxlength="40" placeholder="Scramble Crossing, from the Starbucks"></Field>
               <div class="callout info" v-if="needsLocation" style="font-size:12.5px">
                 <Icon name="MapPin" :size="14"/> The weather sections need this webcam's location (Source → Location).</div>
-              <Field label="Order" hint="The details, top to bottom or left to right; the headline goes first" v-if="!['dot', 'custom'].includes(ov.style) && orderOn.length > 1">
-                <div class="wc-order"><div v-for="(k, i) in orderOn" :key="k" class="wc-order-item">
-                  <span class="mono faint">{{ i + 1 }}</span>{{ SECTIONS[k] }}<span class="spacer"></span>
-                  <button class="btn sm ghost icon-only" @click="moveSection(k, -1)" :disabled="i === 0" title="Earlier"><Icon name="ChevronUp" :size="13"/></button>
-                  <button class="btn sm ghost icon-only" @click="moveSection(k, 1)" :disabled="i === orderOn.length - 1" title="Later"><Icon name="ChevronDown" :size="13"/></button></div></div></Field>
-              <div class="row" style="gap:16px; align-items:flex-start" v-if="ov.style !== 'dot'">
-                <Field label="Details" v-if="ov.style !== 'custom'"><Seg :modelValue="ov.lines === 'wrap' ? 'auto' : ov.lines" @update:modelValue="v => ov.lines = v" :options="LINES"/></Field>
-                <Field label="Separator"><Seg v-model="ov.separator" :options="SEPS"/></Field>
+              <div class="row" style="gap:16px; align-items:flex-start">
                 <Field label="Clock"><Seg v-model="ov.time_format" :options="[{value:'24h', label:'24 h'}, {value:'12h', label:'12 h'}]"/></Field>
               </div>
             </template>
@@ -1697,8 +1582,8 @@ const WebcamEditor = {
                   <Seg :modelValue="jc.corner || 'auto'" @update:modelValue="v => jc.corner = v" :options="JC_POSITIONS"/></Field>
               </template>
             </template>
-            <div class="faint" style="font-size:12px" v-if="capTab === 'content'">When space runs out, sections drop in this order before anything is cut: credit, your text,
-              humidity, wind, high/low, feels like, conditions, sunrise/sunset, time difference, date, temperature, place.</div>
+            <div class="faint" style="font-size:12px" v-if="capTab === 'content'">When a row is too wide, its last pieces are left out (or it continues on the next line, with Wraps);
+              its first piece is never left out, only cut short. A section with nothing to show right now drops out with the separator before it.</div>
           </div></div>
       </div>
     </div>

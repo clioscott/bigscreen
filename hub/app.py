@@ -1408,6 +1408,20 @@ def webcams_status():
                          for k, (n, sizes) in _webcam_caption.JP_FACES.items()]}
 
 
+@app.post("/api/webcams/caption-rows")
+def webcams_caption_rows(payload: dict = Body(...)):
+    """The rows a webcam's caption draws (its own, or those its settings from before rows give: the panel's rows
+    editor starts from them)."""
+    from display.modules import webcam_caption as cap
+    cam = payload.get("cam") if isinstance(payload.get("cam"), dict) else {}
+    ov = cap.overlay_of(cam)
+    try:
+        ct = cap.Content(cam, ov, extra={"space": _iss_data()} if cam.get("space") else None)
+        return {"rows": cap.rows_of(ov, ct)}
+    except Exception as e:
+        raise HTTPException(400, f"caption: {type(e).__name__}: {e}")
+
+
 @app.get("/api/webcams/youtube")
 def webcams_youtube():
     """Is the hub signed in to YouTube, and is YouTube refusing it now (the Overview's banner)."""

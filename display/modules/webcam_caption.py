@@ -1,7 +1,16 @@
-"""Webcam captions: what the overlay says (sections) and how it's laid out (layouts), per webcam.
+"""Webcam captions: what the overlay says (sections) and how it's laid out, per webcam.
+
+The caption is a Tag: a box in a corner with an accent edge, holding ``rows`` of pieces (see "the caption: rows of
+pieces" below). The other styles (bar, ticker, custom…) went with rows (2026-11); a caption set to one draws as tag.
 
 ``overlay`` in a webcam's config (all optional; DEFAULT_OVERLAY fills the gaps):
-    style       a layout from LAYOUTS
+    rows        [{"items": [piece, …], "wrap": bool}, …] (up to MAX_ROWS): each row's pieces in order; a piece is
+                {"k": a section, "name:2".."name:4" (the name's further lines), "live", "shield" or "sep", "size"?
+                (SIZES; none: the name's size for the name, the details' for the rest), "s" (a separator's kind,
+                SEP_KINDS), "pad" (spaces round a separator), "spill" (moves to the next row when its own is full)}.
+                Being in a row is what shows a section. No rows: legacy_rows makes them from the keys below
+                (headline, show, order, lines, separator, place_beside), which only captions from before rows use.
+    style       tag | none
     corner      where it sits: tl tc tr / bl bc br (top or bottom; left, centre or right)
     font        tiny | small | medium | large: the headline's size (details use the small font)
     headline    name | place | custom | time: which section is the big line (the others become details)
@@ -53,8 +62,7 @@ FONTS = {"tiny": "fonts/alert/tom-thumb.bdf", "small": "fonts/alert/5x8.bdf", "m
 BIG = {"tiny": "fonts/alert/6x10.bdf", "small": "fonts/alert/7x13B.bdf", "medium": "fonts/alert/7x13B.bdf",
        "large": "fonts/alert/9x15B.bdf", "xlarge": "fonts/alert/10x20.bdf"}     # clocks and the postcard title
 DETAIL = {"tiny": "fonts/alert/tom-thumb.bdf", "xlarge": "fonts/alert/6x10.bdf"}   # the details' font (else 5x8)
-LAYOUTS = ("tag", "bar", "outline", "dot", "lower_third", "split", "postcard", "chips", "clock", "signage", "ticker",
-           "stack", "underline", "custom", "none")
+LAYOUTS = ("tag", "none")      # the other styles went with rows (2026-11); a caption set to one of them draws as tag
 STYLES = LAYOUTS                             # older name
 # weather extras (from data/webcam_weather.json): feels-like, wind, humidity, today's high/low, the conditions in words
 WX_EXTRAS = ("feels", "wind", "humidity", "hilo", "conditions")
@@ -397,6 +405,8 @@ class Content:
 
     def __init__(self, cam, ov, now_local=None, here=None, wx=None, extra=None):
         sh = ov["show"]
+        if isinstance(ov.get("rows"), list) and ov["rows"]:   # rows: a section shows by being in a row
+            sh = {**sh, **{k: True for k in SECTIONS if k != "daynight"}}
         up = (lambda s: s.upper()) if ov.get("uppercase") else (lambda s: s)
         t = now_local or _local_time(cam.get("tz") or (wx or {}).get("tz"))   # no zone set: the location's own
         self.tz = t.tzinfo
@@ -460,6 +470,8 @@ class Content:
             sec["name"] = " ".join(name_lines)
             self.name_more = []
         self.name_more = [up(s) for s in self.name_more]
+        self.name_lines = [up(s) for s in str(cam.get("label") or "").splitlines() if s.strip()][:NAME_LINES]
+        self.space = bool(cam.get("space"))
         self.headline_kind = head
         self.title = up(sec[head] + (" " + self.ampm if head == "time" and self.ampm else ""))
         order = [k for k in (ov.get("order") or []) if k in ORDER] + [k for k in ORDER if k not in (ov.get("order") or [])]
@@ -575,7 +587,7 @@ def visibility(ov, elapsed):
 # --- drawing ------------------------------------------------------------------------------------------------------
 class Ctx:
     def __init__(self, c, zone, ov, font_for, cjk=False):
-        self.c, self.ov = c, ov
+        self.c, self.ov, self.fl = c, ov, font_for
         self.x, self.y, self.w, self.h = zone
         size = ov.get("font") if ov.get("font") in FONTS else "small"
         self.size = size
@@ -607,6 +619,10 @@ class Ctx:
         self.box_w = "full" if bw == "full" else int(_num(bw, 0, 0, 448)) if bw not in (None, "", "auto") else 0
         ta = ov.get("text_align") if ov.get("text_align") in TEXT_ALIGNS else "auto"
         self.text_align = self.align if ta == "auto" else ta
+
+    def font_at(self, path):
+        """The font at a path (a piece's own size), able to draw Japanese."""
+        return self.fl(path)
 
     def place(self, bw, bh, margin=1):
         """Top-left of a bw×bh box in this caption's position."""
@@ -723,14 +739,12 @@ def draw_caption(c, zone, cam, elapsed, font_for, now_local=None, wx=None, extra
     about once a minute) and each frame only blends that layer over the video in the caption's box. The ticker,
     which scrolls, draws directly."""
     ov = overlay_of(cam)
-    style = ov.get("style", "tag")
-    if style not in LAYOUT_FUNCS:
-        return
+    style = ov.get("style", "tag") if ov.get("style") in LAYOUT_FUNCS else "tag"
     a = visibility(ov, elapsed)
     if a <= 0:
         return
     x, y, w, h = zone
-    if style != "ticker" and now_local is None:              # the same layer for 0.4 s: skip rebuilding the key
+    if now_local is None:              # the same layer for 0.4 s: skip rebuilding the key
         mk = (id(cam), id(font_for), w, h, int(time.time() * 2.5), (wx or {}).get("at"), round((extra or {}).get("taken") or 0))
         parts = _memo.get(mk)
         if parts is None:
@@ -740,13 +754,6 @@ def draw_caption(c, zone, cam, elapsed, font_for, now_local=None, wx=None, extra
         _composite(c, x, y, parts, a)
         return
     content = Content(cam, ov, now_local, wx=wx, extra=extra)
-    if style == "ticker":
-        zc = _Zone(c, zone)
-        before = c.buf[zc.y0:zc.y1, zc.x0:zc.x1].copy() if a < 1 else None
-        LAYOUT_FUNCS[style](Ctx(zc, zone, ov, _font_loader(font_for), has_cjk(content)), content)
-        if before is not None and zc.bbox:
-            _blend_back(c, zc, before, a)
-        return
     _composite(c, x, y, _layer(style, ov, content, w, h, font_for) or (), a)
 
 
@@ -783,9 +790,7 @@ def dropped_sections(cam, zone_size, font_for, wx=None, extra=None):
     """The sections turned on that this caption can't show at this size (the panel lists them)."""
     from display.gfx import Canvas
     ov = overlay_of(cam)
-    style = ov.get("style", "tag")
-    if style not in LAYOUT_FUNCS:
-        return []
+    style = ov.get("style", "tag") if ov.get("style") in LAYOUT_FUNCS else "tag"
     w, h = zone_size
     _rec.dropped = found = set()
     try:
@@ -797,7 +802,6 @@ def dropped_sections(cam, zone_size, font_for, wx=None, extra=None):
 
 
 _layers: dict = {}           # key -> (bbox, alpha, premultiplied colour); a few per webcam
-BLINKING = ("dot", "clock")
 
 
 def _layer(style, ov, ct, w, h, font_for):
@@ -806,8 +810,8 @@ def _layer(style, ov, ct, w, h, font_for):
     rows that has something in it (a badge in the far corner doesn't make the whole zone a blend), or None."""
     import json
     from display.gfx import Canvas
-    blink = int(time.time() * 1.25) % 2 if style in BLINKING else 0
-    key = (style, json.dumps(ov, sort_keys=True, default=str), ct.title, tuple(ct.bits()), ct.icon, ct.night, ct.live,
+    blink = 0
+    key = (style, json.dumps(ov, sort_keys=True, default=str), ct.title, tuple(ct.bits()), tuple(ct.name_lines), ct.icon, ct.night, ct.live,
            ct.ampm, ct.clock(), w, h, blink, id(font_for), ct.side_icon)
     hit = _layers.get(key)
     if hit is not None:
@@ -1059,398 +1063,291 @@ def has_cjk(ct) -> bool:
     return any(ord(ch) >= 0x2E80 for s in (ct.title, *ct.sections.values(), *ct.name_more) for ch in (s or ""))
 
 
-# --- layouts ------------------------------------------------------------------------------------------------------
-def _headline_and_lines(k, ct, room, T=None, with_place=True):
-    """(headline text, [(kind, text)] detail lines), honouring lines=inline (details on the headline row)."""
-    T = T or k.T
-    if k.lines == "inline":                                # whole sections drop before anything is cut
-        sp = _sep(T, k.sep)
-        title = _clip(T, ct.title, room)
-        bits = tuple(ct.bits())
-        if bits and room - _tw(T, title + sp) > 20:
-            kept, rest = _fit(T, bits, room - _tw(T, title + sp), DROP, k.sep)
-            _note_dropped(bits, {kd for kd, _ in kept} if rest else set())
-            return (title + sp + rest) if rest else title, []
-        _note_dropped(bits, set())
-        return title, []
-    return _clip(T, ct.title, room), k.details(ct, room, with_place=with_place)
+# --- the caption: rows of pieces ------------------------------------------------------------------------------------
+# A caption is a box of rows; each row an ordered list of pieces: a section (the webcam's name line by line, the
+# place, the time, the weather…, the LIVE badge) or a separator (overlay "rows"). Every piece can have its own size.
+# A section with nothing to say right now drops out with the separator before it; a row too wide for the zone drops
+# its last pieces (or, with "wrap", continues on further lines). Captions saved before rows existed get rows that
+# draw what they drew (legacy_rows).
+SIZES = {"tiny": "fonts/alert/tom-thumb.bdf", "small": "fonts/alert/5x8.bdf", "medium": "fonts/alert/6x10.bdf",
+         "large": "fonts/alert/7x13B.bdf", "xlarge": "fonts/alert/9x15B.bdf", "huge": "fonts/alert/10x20.bdf"}
+SEP_KINDS = {"space": "  ", "dot": "·", "dash": "-", "en": "–", "em": "—", "pipe": "|", "slash": "/"}
+NAME_LINES = 4               # a webcam's name has up to this many lines, each its own piece ("name", "name:2", …)
+MAX_ROWS = 8
 
 
-def _l_tag(k, ct, outline=False):
-    """A box: LIVE + headline, details underneath; an accent stripe on the inside edge."""
-    c, T, S, pad = k.c, k.T, k.S, k.pad
-    edge = 0 if outline else 1                             # the accent stripe
-    bw = _tw(S, "LIVE") + 4 if ct.live else 0
-    room = k.sized(10 ** 4) - 2 * pad - edge - 5
-    k.title_multi = k.lines != "inline"                    # the name's further lines: headline lines here
-    # the place beside the headline (place_beside): in the details font on the headline's baseline, when it fits whole
-    beside = ""
-    if k.ov.get("place_beside") and k.lines != "inline" and ct.place and ct.headline_kind != "place" and ct.title:
-        sp = _sep(S, k.sep)
-        need = (bw + 3 if bw else 0) + _tw(T, ct.title) + _tw(S, sp + ct.place)
-        if need <= room:
-            beside = sp + ct.place
-    title, lines = _headline_and_lines(k, ct, room - (bw + 3 if bw else 0), with_place=not beside)
-    more = [_clip(T, s, room) for s in ct.name_more] if title and k.title_multi else []
-    if not (title or lines or bw):
-        return
-    head_w = (bw + 3 if bw and title else bw) + (_tw(T, title) if title else 0) + (_tw(S, beside) if beside else 0)
-    more_ws = [_tw(T, s) for s in more]
-    line_ws = [_tw(S, ln) + _icon_w(ct, kd, ln) for kd, ln in lines]
-    box_w = k.sized(pad * 2 + max([head_w] + more_ws + line_ws) + edge)
-    inner = box_w - 2 * pad - edge
-    head_h = max(T.height if title else 0, S.height + 1 if bw else 0)
-    box_h = pad * 2 + head_h + sum(T.height + 1 for _ in more) + sum(S.height + 1 for _ in lines)
-    bx, by = k.place(box_w, box_h)
-    put = _outlined if outline else graphics.DrawText
-    if not outline:
-        _box(c, bx, by, box_w, box_h, k.bg, k.op)
-        c.FillRect(bx if k.align != "right" else bx + box_w - 1, by, 1, box_h, k.accent)
-    x0 = bx + pad + (edge if k.align != "right" else 0)
-    cx, ty = k.line_x(x0, inner, head_w), by + pad
-    if bw:
-        k.badge(cx, ty + max(0, (head_h - S.height - 1) // 2))
-        cx += bw + 3
-    if title:
-        put(c, T, cx, ty + T.baseline, k.text, title)
-        if beside:                                          # its own (details) font, on the headline's baseline
-            put(c, S, cx + _tw(T, title), ty + T.baseline, k.text, beside)
-    ty += head_h + 1
-    for s, mw in zip(more, more_ws):
-        put(c, T, k.line_x(x0, inner, mw), ty + T.baseline, k.text, s)
-        ty += T.height + 1
-    for (kd, ln), lw in zip(lines, line_ws):
-        k.text_with_icon(S, k.line_x(x0, inner, lw), ty, ct, kd, ln, put=put)
-        ty += S.height + 1
+def name_kind(i):
+    return "name" if i <= 1 else f"name:{i}"
 
 
-def _l_outline(k, ct):
-    _l_tag(k, ct, outline=True)
-
-
-def _l_bar(k, ct):
-    """A full-width strip along the top or bottom: LIVE, headline over details, the time at the right."""
-    c, T, S, pad = k.c, k.T, k.S, 2
-    right_time = ct.time and ct.headline_kind != "time"
-    room_guess = k.w - 2 * pad - 40
-    title, lines = _headline_and_lines(k, ct, room_guess)
-    lines = lines[:2]                                      # (height only; the drawn lines come from details() below)
-    head_h = max(T.height if title else 0, S.height + 1 if ct.live else 0)
-    bh = pad * 2 + head_h + sum(S.height + 1 for _ in lines)
-    by = k.y if k.top else k.y + k.h - bh
-    _box(c, k.x, by, k.w, bh, k.bg, k.op)
-    c.FillRect(k.x, by + bh - 1 if k.top else by, k.w, 1, k.accent)
-    cx = k.x + pad
-    if ct.live:
-        cx += k.badge(cx, by + pad) + 3
-    right = k.x + k.w - pad
-    if right_time:
-        tt = ct.clock()
-        right -= _tw(T, tt)
-        graphics.DrawText(c, T, right, by + pad + T.baseline, k.text, tt)
-        right -= 6
-    if title:
-        graphics.DrawText(c, T, cx, by + pad + T.baseline, k.text, _clip(T, title, right - cx))
-    ty = by + pad + head_h + 1
-    for kd, ln in k.details(ct, right - (k.x + pad), with_time=not right_time, max_lines=2) if k.lines != "inline" else []:
-        k.text_with_icon(S, k.x + pad, ty, ct, kd, ln)
-        ty += S.height + 1
-
-
-def _l_dot(k, ct):
-    """Just a blinking LIVE dot (and the time) in a corner."""
-    c, S = k.c, k.S
-    label = " ".join(s for s in ("LIVE" if ct.live else "", ct.clock()) if s)
-    lw = _tw(S, label) + 7 if label else 5
-    bx, by = k.place(lw + 4, 9, margin=1)
-    cx, cy = bx + 3, by + 4
-    if int(time.time() * 1.25) % 2 == 0:
-        c.FillRect(cx - 1, cy - 2, 3, 5, k.accent)
-        c.FillRect(cx - 2, cy - 1, 5, 3, k.accent)
-    if label:
-        _outlined(c, S, cx + 5, cy - S.height // 2 + S.baseline, k.text, label)
-
-
-def _l_lower_third(k, ct):
-    """TV news: the headline on an accent block, a darker strip of details tucked under it, LIVE on the block's end."""
-    c, T, S = k.c, k.T, k.S
-    padx = 4
-    bw = _tw(S, "LIVE") + 4 if ct.live else 0
-    title = _clip(T, ct.title, k.w - 2 * padx - 6 - (bw + 4 if bw else 0))
-    lines = k.details(ct, k.w - 2 * padx - 6)[:3] if k.lines != "inline" else []
-    th = T.height + 4 if title else 0
-    dh = (S.height + 1) * len(lines) + 2 if lines else 0
-    if not (th or dh):
-        return
-    tw = (_tw(T, title) + 2 * padx + (bw + 4 if bw else 0)) if title else 0
-    dw = max([_tw(S, ln) + 2 * padx + _icon_w(ct, kd, ln) for kd, ln in lines], default=0)
-    W = max(tw, dw + (3 if title else 0))
-    bx, by = k.place(W, th + dh, margin=3)
-    tx = bx if k.align != "right" else bx + W - tw
-    if title:
-        _box(c, tx, by, tw, th, _rgb(k.accent), min(1.0, k.op + 0.2))
-        graphics.DrawText(c, T, tx + padx, by + 2 + T.baseline, k.text, title)
-        if bw:
-            k.badge(tx + tw - padx - bw, by + (th - S.height - 1) // 2, inverse=True)
-    if lines:
-        dx = (bx + (3 if title else 0)) if k.align != "right" else bx + W - dw - (3 if title else 0)
-        _box(c, dx, by + th, dw, dh, k.bg, k.op)
-        ty = by + th + 1
-        for kd, ln in lines:
-            k.text_with_icon(S, dx + padx, ty, ct, kd, ln)
-            ty += S.height + 1
-
-
-def _l_split(k, ct):
-    """A full-width strip in two sections: headline and details on the left, a big local clock on the right."""
-    c, T, S, B = k.c, k.T, k.S, k.B
-    pad = 2
-    show_clock = bool(ct.time) and ct.headline_kind != "time"
-    lines = [] if k.lines == "inline" else k.details(ct, k.w // 2, with_time=not show_clock, max_lines=2)
-    left_h = (T.height + 1 if ct.title else 0) + sum(S.height + 1 for _ in lines)
-    bh = pad * 2 + max(left_h, B.height if show_clock else 0, S.height + 1)
-    by = k.y if k.top else k.y + k.h - bh
-    _box(c, k.x, by, k.w, bh, k.bg, k.op)
-    c.FillRect(k.x, by + bh - 1 if k.top else by, k.w, 1, k.accent)
-    right = k.x + k.w - pad - 1
-    if show_clock:
-        if ct.ampm:
-            right -= _tw(S, ct.ampm)
-            graphics.DrawText(c, S, right, by + pad + S.baseline, k.text, ct.ampm)
-            right -= 1
-        right -= _tw(B, ct.time)
-        graphics.DrawText(c, B, right, by + (bh - B.height) // 2 + B.baseline, k.text, ct.time)
-        icon = ct.icon if ct.icon and ct.sections.get("weather") else ("moon" if ct.night else "sun") if ct.night is not None else None
-        stack = [s for s in (ct.sections["weather"], ct.date, ct.offset) if s][:2]
-        if stack:
-            sw = max(_tw(S, s) for s in stack)
-            right -= sw + 4
-            for i, s in enumerate(stack):
-                graphics.DrawText(c, S, right + sw - _tw(S, s), by + pad + i * (S.height + 1) + S.baseline, k.text, s)
-        if icon:
-            right -= 9
-            draw_icon(c, right, by + (bh - 7) // 2, icon)
-        right -= 4
-        c.FillRect(right, by + 2, 1, bh - 4, k.accent)
-        right -= 4
-    cx, ty = k.x + pad + 1, by + pad
-    if ct.live:
-        cx += k.badge(cx, ty) + 3
-    if ct.title:
-        graphics.DrawText(c, T, cx, ty + T.baseline, k.text, _clip(T, ct.title, right - cx))
-        ty += max(T.height, S.height + 1) + 1
-    used = {"weather", "date", "offset"} if show_clock else set()
-    bits = [b for b in ct.bits(with_time=not show_clock) if b[0] not in used]
-    for kd, ln in detail_lines(S, bits, right - (k.x + pad + 1), k.lines if k.lines != "inline" else "auto", k.sep,
-                               max_lines=2):
-        graphics.DrawText(c, S, k.x + pad + 1, ty + S.baseline, k.text, ln)
-        ty += S.height + 1
-
-
-def _l_postcard(k, ct):
-    """A travel-postcard title: the headline centred in big type with a shadow, the details under it."""
-    c, S = k.c, k.S
-    T = k.T if k.size == "tiny" else k.B
-    title = _clip(T, ct.title, k.w - 8)
-    lines = k.details(ct, k.w - 8)[:3] if k.lines != "inline" else []
-    block = (T.height + 2 if title else 0) + sum(S.height + 1 for _ in lines)
-    ty = k.y + 4 if k.top else k.y + k.h - block - 5
-    if title:
-        _shadowed(c, T, k.x + (k.w - _tw(T, title)) // 2, ty + T.baseline, k.text, title)
-        ty += T.height + 2
-    for kd, ln in lines:
-        w_ = _tw(S, ln) + _icon_w(ct, kd, ln)
-        k.text_with_icon(S, k.x + (k.w - w_) // 2, ty, ct, kd, ln, put=_outlined)
-        ty += S.height + 1
-    if ct.live:                                             # LIVE in a top corner away from the text
-        lw = _tw(S, "LIVE") + 4
-        k.badge(k.x + k.w - lw - 2, k.y + 2 if not k.top else k.y + k.h - S.height - 3)
-
-
-def _l_chips(k, ct):
-    """Separate rounded chips in a row (wrapping), starting in the corner: LIVE, headline, then each section."""
-    c, T, S = k.c, k.T, k.S
-    chips = []
-    if ct.live:
-        chips.append(("live", "LIVE", S))
-    if ct.title:
-        chips.append(("name", ct.title, T))
-    for kind, text in ct.bits():
-        chips.append((kind, text, S))
-    rows, row, roww = [], [], 0
-    maxw = k.w - 4
-    for kind, text, f in chips:
-        extra = 9 if (kind == "weather" and ct.icon) or (kind == "time" and ct.night is not None) else 0
-        cw = min(maxw, _tw(f, text) + 6 + extra)
-        if row and roww + cw + 2 > maxw:
-            rows.append(row)
-            row, roww = [], 0
-        row.append((kind, _clip(f, text, cw - 6 - extra), f, cw, extra))
-        roww += cw + 2
-    if row:
-        rows.append(row)
-    rows = rows[:3]
-    heights = [max(f.height for _, _, f, _, _ in r) + 3 for r in rows]
-    total = sum(heights) + 2 * (len(rows) - 1)
-    _, yy = k.place(10, total, margin=2)
-    for r, rh in zip(rows, heights):
-        width = sum(cw for _, _, _, cw, _ in r) + 2 * (len(r) - 1)
-        xx, _ = k.place(width, rh, margin=2)
-        for kind, text, f, cw, extra in r:
-            live = kind == "live"
-            _box(c, xx, yy, cw, rh, _rgb(k.accent) if live else k.bg, 1.0 if live else k.op, round_=True)
-            if extra:
-                draw_icon(c, xx + 3, yy + (rh - 7) // 2,
-                          ct.icon if kind == "weather" else ("moon" if ct.night else "sun"))
-            graphics.DrawText(c, f, xx + 3 + extra, yy + (rh - f.height) // 2 + f.baseline, WHITE if live else k.text, text)
-            xx += cw + 2
-        yy += rh + 2
-
-
-def _l_clock(k, ct):
-    """A world clock: the local time big, the name or place under it, then the other details; LIVE dot."""
-    c, S, B = k.c, k.S, k.B
-    pad = 3
-    big = ct.time or "--:--"
-    icon = (ct.icon if ct.icon else ("moon" if ct.night else "sun") if ct.night is not None else None)
-    if ct.headline_kind == "time":                          # the clock is the headline: name (or place) under it
-        head_kind = "name" if ct.sections.get("name") else "place"
-    else:
-        head_kind = ct.headline_kind
-    head = _clip(S, ct.sections.get(head_kind) or "", k.w - 2 * pad - 2)
-    bits = [b for b in ct.bits(with_time=False) if b[0] != head_kind]
-    lines = detail_lines(S, bits, k.w - 2 * pad - 6, k.lines if k.lines != "inline" else "auto", k.sep)[:3]
-    bw_ = (9 if icon else 0) + _tw(B, big) + (_tw(S, ct.ampm) + 1 if ct.ampm else 0)
-    box_w = min(k.w - 2, max([bw_, _tw(S, head)] + [_tw(S, s) for _, s in lines]) + 2 * pad + 6)
-    box_h = pad * 2 + B.height + (S.height + 1 if head else 0) + len(lines) * (S.height + 1)
-    bx, by = k.place(box_w, box_h, margin=2)
-    _box(c, bx, by, box_w, box_h, k.bg, k.op, round_=True)
-    cx, ty = bx + pad, by + pad
-    if icon:
-        draw_icon(c, cx, ty + (B.height - 7) // 2, icon)
-        cx += 9
-    graphics.DrawText(c, B, cx, ty + B.baseline, k.text, big)
-    if ct.ampm:
-        graphics.DrawText(c, S, cx + _tw(B, big) + 1, ty + S.baseline, k.text, ct.ampm)
-    if ct.live:                                             # a LIVE dot, pulsing
-        on = int(time.time() * 1.25) % 2 == 0
-        c.FillRect(bx + box_w - 6, by + 3, 3, 3, k.accent if on else Color(*(v // 3 for v in _rgb(k.accent))))
-    ty += B.height + 1
-    for s_ in ([head] if head else []) + [t for _, t in lines]:
-        graphics.DrawText(c, S, bx + pad, ty + S.baseline, k.text, s_)
-        ty += S.height + 1
-
-
-def _l_signage(k, ct):
-    """A departure board: a dark box with a thin frame, lines in amber (or the accent), values right-aligned."""
-    c, T, S = k.c, k.T, k.S
-    col = Color(*AMBER) if _rgb(k.accent) == _hex(DEFAULT_OVERLAY["accent"], None) else k.accent
-    pad = 3
-    rows = [(T, ct.title.upper(), ct.clock().upper() if ct.headline_kind != "time" else "")]
-    bits = [b for b in ct.bits(with_time=False)]
-    left = [v.upper() for kd, v in bits if kd in ("place", "custom", "credit")]
-    right = [v.upper() for kd, v in bits if kd not in ("place", "custom", "credit")]
-    for i in range(max(len(left), len(right) and 1, 1 if ct.live else 0)):
-        l = left[i] if i < len(left) else ("LIVE" if i == 0 and ct.live and not left else "")
-        r = " ".join(right) if i == 0 else ""
-        if l or r:
-            rows.append((S, l, r))
-    rows = rows[:4]
-    maxw = k.w - 2 - 2 * pad
-    rows = [(f, l, _clip(f, r, max(0, maxw - min(_tw(f, l), maxw // 2) - 6))) for f, l, r in rows]
-    box_w = min(k.w - 2, max(_tw(f, l) + _tw(f, r) + 10 for f, l, r in rows) + 2 * pad)
-    box_h = pad * 2 + sum(f.height + 1 for f, _, _ in rows) - 1
-    bx, by = k.place(box_w, box_h, margin=2)
-    _box(c, bx, by, box_w, box_h, k.bg, max(k.op, 0.85))
-    dim = Color(*(v // 3 for v in _rgb(col)))
-    c.FillRect(bx, by, box_w, 1, dim)
-    c.FillRect(bx, by + box_h - 1, box_w, 1, dim)
-    ty = by + pad
-    for f, l, r in rows:
-        rw = _tw(f, r)
-        graphics.DrawText(c, f, bx + pad, ty + f.baseline, col, _clip(f, l, box_w - 2 * pad - rw - 6))
-        if r:
-            graphics.DrawText(c, f, bx + box_w - pad - rw, ty + f.baseline, col, r)
-        ty += f.height + 1
-
-
-def _l_ticker(k, ct):
-    """A news ticker: LIVE + headline in an accent tab at one end, the details scrolling along a strip."""
-    c, T, S = k.c, k.T, k.S
-    pad = 2
-    h = max(T.height, S.height + 1) + 2 * pad
-    by = k.y if k.top else k.y + k.h - h
-    tab_text = ct.title
-    tab_w = min(k.w // 2, _tw(T, tab_text) + 2 * pad + (_tw(S, "LIVE") + 7 if ct.live else 0)) if tab_text or ct.live else 0
-    _box(c, k.x, by, k.w, h, k.bg, k.op)
-    sp = _sep(S, k.sep)
-    line = sp.join(v for _, v in ct.bits())
-    if line:
-        line += sp
-        lw = _tw(S, line)
-        speed = 22.0                                        # px/s
-        off = int(time.time() * speed) % max(1, lw)
-        x = k.x + tab_w + 2 - off
-        while x < k.x + k.w:
-            graphics.DrawText(c, S, x, by + (h - S.height) // 2 + S.baseline, k.text, line)
-            x += lw
-    if tab_w:
-        _box(c, k.x, by, tab_w, h, _rgb(k.accent), 1.0)
-        cx = k.x + pad
-        if ct.live:
-            cx += k.badge(cx, by + (h - S.height - 1) // 2, inverse=True) + 3
-        graphics.DrawText(c, T, cx, by + (h - T.height) // 2 + T.baseline, WHITE, _clip(T, tab_text, tab_w - (cx - k.x) - pad))
-
-
-def _l_stack(k, ct):
-    """Every section on its own line, headline on top, outlined over the picture (no box)."""
-    c, T, S = k.c, k.T, k.S
-    lines = [(T, ct.title, None)] if ct.title else []
-    lines += [(S, v, kd) for kd, v in ct.bits()][:5]
-    if ct.live:
-        lines.insert(0, (S, "LIVE", "live"))
-    total = sum(f.height + 1 for f, _, _ in lines)
-    widths = [(_tw(f, t) + _icon_w(ct, kd, t)) for f, t, kd in lines]
-    bx, by = k.place(max(widths, default=10), total, margin=3)
-    ty = by
-    for (f, t, kd), w_ in zip(lines, widths):
-        x = k.line_x(bx, max(widths), w_)
-        if kd == "live":
-            k.badge(x, ty)
+def legacy_rows(ov, ct):
+    """The rows that draw what a caption saved before rows drew: LIVE and the headline (the name's first line, or the
+    section chosen as headline) with the place beside it if asked, the name's further lines, then the details in
+    their order joined by the separator (wrapping), or on the headline's row (inline), or one per row (stacked)."""
+    show = ov.get("show") or {}
+    sep_name = ov.get("separator") if ov.get("separator") in SEPARATORS else "space"
+    sep = {"k": "sep", "s": sep_name, "pad": sep_name != "space"}
+    mode = ov.get("lines") if ov.get("lines") in ("auto", "wrap", "stacked", "inline") else "auto"
+    head = ct.headline_kind
+    size = ov.get("font") if ov.get("font") in FONTS else "small"
+    first = ([{"k": "live"}] if show.get("live") else []) + [{"k": head} if head == "name" else {"k": head, "size": size}]
+    rows = [{"items": first}]
+    beside = bool(ov.get("place_beside")) and mode != "inline" and head != "place" and show.get("place")
+    if beside:                                             # (beside only when it fits; else it leads the details)
+        first += [dict(sep), {"k": "place", "spill": True}]
+    names = len(ct.name_lines)
+    details = []
+    if head == "name":
+        if mode != "inline":
+            rows += [{"items": [{"k": name_kind(i)}]} for i in range(2, names + 1)]
         else:
-            k.text_with_icon(f, x, ty, ct, kd, _clip(f, t, k.w - 8), put=_outlined)
-        ty += f.height + 1
+            details += [{"k": name_kind(i)} for i in range(2, names + 1)]
+    earth_only = ("time", "date", "offset", "weather", "sun", "age") + WX_EXTRAS
+    for k in ct.order:
+        if k == "place" and beside or (k in SPACE if not ct.space else k in earth_only):
+            continue
+        if k == "name":
+            if show.get("name"):
+                details += [{"k": name_kind(i)} for i in range(1, names + 1)]
+            continue
+        if show.get(k):
+            details.append({"k": k})
+    if mode == "inline":
+        for d in details:
+            first += [dict(sep), {**d, "size": size}]
+    elif mode == "stacked":
+        rows += [{"items": [d]} for d in details[:4]]
+    elif details:
+        items = []
+        for d in details:
+            items += ([dict(sep)] if items else []) + [d]
+        rows.append({"items": items, "wrap": True})
+    return rows
 
 
-def _l_underline(k, ct):
-    """A big headline with an accent rule under it and the details below, shadowed over the picture (no box)."""
-    c, B, S = k.c, k.B, k.S
-    room = k.w - 8
-    title = _clip(B, ct.title, room) if ct.title else ""
-    lines = k.details(ct, room)
-    bw = _tw(S, "LIVE") + 4 if ct.live else 0
-    if not (title or lines):
+def rows_of(ov, ct):
+    """The caption's rows: its own ("rows"), or those of its older settings."""
+    rows = ov.get("rows")
+    if isinstance(rows, list) and rows:
+        out = []
+        for r in rows[:MAX_ROWS]:
+            items = r.get("items") if isinstance(r, dict) else r
+            if isinstance(items, list):
+                out.append({"items": [i for i in items if isinstance(i, dict) and i.get("k")],
+                            "wrap": bool(r.get("wrap")) if isinstance(r, dict) else False})
+        return out
+    return legacy_rows(ov, ct)
+
+
+def _text(ct, kind):
+    """A section's text now ("" when it has none)."""
+    if kind == "name" or kind.startswith("name:"):
+        i = 1 if kind == "name" else int(kind.split(":")[1])
+        return ct.name_lines[i - 1] if 0 < i <= len(ct.name_lines) else ""
+    if kind == "time":
+        return ct.clock()
+    if kind == ct.headline_kind and kind != "name":
+        return ct.title
+    return ct.sections.get(kind) or ""
+
+
+def _sep_text(f, item):
+    g = SEP_KINDS.get(item.get("s"), "  ")
+    if len(g) == 1 and ord(g) not in getattr(f, "glyphs", {ord(g): 1}):
+        g = "-"                                            # (a font without the dash: a hyphen)
+    return g if g.strip() == "" or not item.get("pad") else f" {g} "
+
+
+class _Piece:
+    __slots__ = ("kind", "text", "f", "w", "badge", "sep", "icon", "spill", "sh")
+
+    def __init__(self, kind, text, f, w, badge=False, sep=False, icon=False, spill=False):
+        self.kind, self.text, self.f, self.w, self.badge, self.sep, self.icon = kind, text, f, w, badge, sep, icon
+        self.spill = spill                                 # too wide for its row: moves to the start of the next
+        self.sh = None                                     # a highway shield: its height (drawn, not text)
+
+
+def _font_of(k, item, kind):
+    """A piece's font: its own size, else the name's size for name lines (and a section chosen as headline), else the
+    details' size."""
+    size = item.get("size")
+    if size in SIZES:
+        return k.font_at(SIZES[size])
+    if kind == "name" or kind.startswith("name:") or (kind == k.head_kind and kind != "name"):
+        return k.T
+    return k.S
+
+
+def _pieces(k, ct, row):
+    """The row's pieces now: empty sections left out, with the separator that led to them; no separator first, last
+    or twice in a row."""
+    out, pending = [], None
+    for item in row["items"]:
+        kind = str(item.get("k"))
+        if kind == "sep":
+            if out and pending is None:
+                pending = item
+            continue
+        if kind == "live":
+            if not ct.live:
+                continue
+            f = k.font_at(SIZES[item["size"]]) if item.get("size") in SIZES else k.S
+            p = _Piece("live", "LIVE", f, _tw(f, "LIVE") + 4, badge=True)
+        elif kind == "shield":                             # the highway's sign, as tall as LIVE (or its own size)
+            route = ct.sections.get("shield") or ""
+            if not route:
+                continue
+            f = k.font_at(SIZES[item["size"]]) if item.get("size") in SIZES else k.S
+            skind = shield_spec(k.ov)[0]
+            h = max(SHIELD_MIN, f.height + 1)
+            p = _Piece("shield", route, f, _shield_dims(route, h, skind, shield_style(k.ov))[0], badge=True)
+            p.sh = h
+        else:
+            text = _text(ct, kind)
+            if not text:
+                continue
+            f = _font_of(k, item, kind)
+            icon = kind == "weather" and bool(ct.icon)
+            p = _Piece(kind, text, f, _tw(f, text) + (9 if icon else 0), icon=icon, spill=bool(item.get("spill")))
+        if pending is not None and out:
+            sf = k.font_at(SIZES[pending["size"]]) if pending.get("size") in SIZES else k.S
+            st = _sep_text(sf, pending)
+            out.append(_Piece("sep", st, sf, _tw(sf, st), sep=True))
+        pending = None
+        out.append(p)
+    return out
+
+
+def _gap(prev):
+    return 3 if prev is not None and prev.badge else 0     # LIVE keeps a little room from what follows it
+
+
+def _width(pieces):
+    w, prev = 0, None
+    for p in pieces:
+        w += _gap(prev) + p.w
+        prev = p
+    return w
+
+
+def _fit_row(pieces, room, wrap):
+    """[lines]: the row as it fits ``room`` px. Too wide: its last pieces drop (with the separator before them); with
+    wrap it continues on up to FIT_LINES lines first (a separator at a break is left out). A single piece too wide is
+    cut to fit."""
+    if not pieces:
+        return []
+    lines = []
+    if wrap:
+        cur = []
+        for p in pieces:
+            if cur and not p.sep and _width(cur + [p]) > room:
+                while cur and cur[-1].sep:
+                    cur.pop()
+                lines.append(cur)
+                cur = []
+                if len(lines) >= FIT_LINES:
+                    break
+            if p.sep and not cur:
+                continue
+            cur.append(p)
+        else:
+            if cur:
+                lines.append(cur)
+    else:
+        lines = [list(pieces)]
+    out = []
+    for ln in lines[:FIT_LINES if wrap else 1]:
+        ln = _shrink(ln, room)
+        if ln:
+            out.append(ln)
+    return out
+
+
+def _shrink(ln, room):
+    """The line within room: its last pieces drop until one text is left (separators go with what they led to), and
+    that one is cut to fit."""
+    ln = list(ln)
+    while ln and _width(ln) > room:
+        texts = [i for i, p in enumerate(ln) if not p.sep and not p.badge]
+        if len(texts) > 1 or (not texts and len(ln) > 1) or (texts and texts[-1] < len(ln) - 1):
+            ln.pop()
+            while ln and ln[-1].sep:
+                ln.pop()
+            continue
+        if not texts:
+            break
+        i = texts[-1]
+        p = ln[i]
+        avail = room - _width(ln[:i]) - _gap(ln[i - 1] if i else None) - (9 if p.icon else 0)
+        t = _clip(p.f, p.text, max(0, avail))
+        ln[i:] = [_Piece(p.kind, t, p.f, _tw(p.f, t) + (9 if p.icon else 0), icon=p.icon)] if t else []
+        break
+    return ln
+
+
+def _line_metrics(line):
+    """(height, baseline) of a line: its texts share a baseline; the LIVE badge is centred."""
+    base = max([p.f.baseline for p in line if not p.badge] or [0])
+    h = max([base - p.f.baseline + p.f.height for p in line if not p.badge] +
+            [p.sh or p.f.height + 1 for p in line if p.badge])
+    return h, base
+
+
+def _l_tag(k, ct):
+    """A box of rows (rows_of); an accent stripe on the inside edge."""
+    c, pad = k.c, k.pad
+    k.head_kind = ct.headline_kind
+    edge = 1
+    room = k.sized(10 ** 4) - 2 * pad - edge - 5
+    lines, carry, everything = [], [], []
+    for row in rows_of(k.ov, ct):
+        ps = _pieces(k, ct, row)
+        if carry:                                          # what didn't fit the row above (spill) leads this one
+            ps = carry + ps if not ps else carry + [carry_sep] + ps if carry_sep else carry + ps
+            carry = []
+        everything += ps
+        got = _fit_row(ps, room, row.get("wrap"))
+        kept = {id(p) for ln in got for p in ln}
+        for i, p in enumerate(ps):
+            if p.spill and id(p) not in kept:
+                carry.append(p)
+                carry_sep = ps[i - 1] if i and ps[i - 1].sep else None
+        lines += got
+    if carry:                                              # nothing below: a line of its own
+        lines += _fit_row(carry, room, False)
+    shown = {p.kind for ln in lines for p in ln}
+    _note_dropped([(p.kind, p.text) for p in everything if not p.sep], shown)
+    if not lines:
         return
-    head_w = (bw + 4 if bw else 0) + _tw(B, title)
-    widths = [head_w] + [_tw(S, ln) + _icon_w(ct, kd, ln) for kd, ln in lines]
-    w = max(widths)
-    h = B.height + 3 + sum(S.height + 1 for _ in lines)
-    bx, by = k.place(w, h, margin=4)
-    hx = k.line_x(bx, w, head_w)
-    if bw:
-        k.badge(hx, by + (B.height - S.height) // 2)
-        hx += bw + 4
-    if title:
-        _shadowed(c, B, hx, by + B.baseline, k.text, title)
-    rule_w = max(12, min(w, head_w))
-    c.FillRect(k.line_x(bx, w, rule_w), by + B.height + 1, rule_w, 1, k.accent)
-    ty = by + B.height + 3
-    for (kd, ln), lw in zip(lines, widths[1:]):
-        k.text_with_icon(S, k.line_x(bx, w, lw), ty, ct, kd, ln, put=_shadowed)
-        ty += S.height + 1
+    widths = [_width(ln) for ln in lines]
+    metrics = [_line_metrics(ln) for ln in lines]
+    box_w = k.sized(pad * 2 + max(widths) + edge)
+    inner = box_w - 2 * pad - edge
+    box_h = pad * 2 + sum(h for h, _ in metrics) + len(lines) - 1
+    bx, by = k.place(box_w, box_h)
+    _box(c, bx, by, box_w, box_h, k.bg, k.op)
+    c.FillRect(bx if k.align != "right" else bx + box_w - 1, by, 1, box_h, k.accent)
+    x0 = bx + pad + (edge if k.align != "right" else 0)
+    ty = by + pad
+    for ln, lw, (lh, base) in zip(lines, widths, metrics):
+        x, prev = k.line_x(x0, inner, lw), None
+        for p in ln:
+            x += _gap(prev)
+            if p.sh:
+                _put_shield(c, x, ty + (lh - p.sh) // 2, p.text, p.sh, shield_spec(k.ov)[0], shield_style(k.ov))
+            elif p.badge:
+                k.badge(x, ty + (lh - p.f.height - 1) // 2, font=p.f)
+            else:
+                tx = x
+                if p.icon:
+                    draw_icon(c, tx, ty + base - p.f.baseline + (p.f.height - 7) // 2, ct.icon)
+                    tx += 9
+                graphics.DrawText(c, p.f, tx, ty + base, k.text, p.text)
+            x += p.w
+            prev = p
+        ty += lh + 1
 
 
-# --- custom: your own columns and lines ----------------------------------------------------------------------------
 FIELDS = ("shield", "live", "name", "place", "time", "age", "weather", "date", "offset", "sun", "custom", "credit") \
     + WX_EXTRAS
 DEFAULT_SLOTS = {"shield": [1, 1], "live": [1, 1], "name": [1, 1], "place": [1, 2], "time": [1, 2], "age": [1, 2], "weather": [1, 3], "date": [1, 3],
@@ -1547,284 +1444,4 @@ def _put_shield(c, x, y, route, h, kind=None, style="pixel"):
     return sw
 
 
-def custom_grid(ct, ov):
-    """{column: {line: [kind, …]}} for the sections that are on and have text, in the chosen order."""
-    slots = ov.get("slots") if isinstance(ov.get("slots"), dict) else {}
-    order = [k for k in (ov.get("order") or []) if k in FIELDS]
-    if "live" not in order:                                # older orders don't list LIVE: it leads, as on the page
-        order.insert(0, "live")
-    if "shield" not in order:                              # nor the shield, which leads its line
-        order.insert(0, "shield")
-    order += [k for k in FIELDS if k not in order]
-    grid = {}
-    for kind in order:
-        if kind == "live":
-            if not ct.live:
-                continue
-        elif not (ct.clock() if kind == "time" else ct.sections.get(kind)):
-            continue
-        slot = slots.get(kind, DEFAULT_SLOTS.get(kind, [1, 3]))
-        try:
-            col, line = max(1, min(3, int(slot[0]))), max(1, min(4, int(slot[1])))
-        except (TypeError, ValueError, IndexError):
-            col, line = DEFAULT_SLOTS.get(kind, [1, 3])
-        grid.setdefault(col, {}).setdefault(line, []).append(kind)
-    return grid
-
-
-def right_kinds(ov):
-    """The sections pushed to the right end of their line (a slot's optional third value, "right")."""
-    slots = ov.get("slots") if isinstance(ov.get("slots"), dict) else {}
-    return {k for k, v in slots.items() if isinstance(v, list) and len(v) > 2 and v[2] == "right"}
-
-
-def _l_custom(k, ct):
-    """Your arrangement: up to 3 columns × 4 lines, sections in the order you set; each line's size and each column's
-    alignment chosen per webcam. Container: box (in the chosen position), strip (full width), outline, or board."""
-    c, ov = k.c, k.ov
-    grid = custom_grid(ct, ov)
-    if not grid:
-        return
-    sizes = ov.get("line_sizes") if isinstance(ov.get("line_sizes"), dict) else {}
-    cols_cfg = ov.get("columns") if isinstance(ov.get("columns"), list) else []
-    container = ov.get("container") if ov.get("container") in ("box", "strip", "outline", "board") else "box"
-    divider = bool(ov.get("divider", True))
-    board = container == "board"
-    color = Color(*AMBER) if board and _rgb(k.accent) == _hex(DEFAULT_OVERLAY["accent"], None) else \
-        (k.accent if board else k.text)
-    put = _outlined if container == "outline" else graphics.DrawText
-    pad, gap = 3, 9
-    sp_name = k.sep
-    pushed = right_kinds(ov)
-    split_gap = 6                                          # the least space between a line's left and right parts
-
-    def sides(kinds):
-        return [kd for kd in kinds if kd not in pushed], [kd for kd in kinds if kd in pushed]
-
-    # the shield: a piece of its line ("line"); inside the box in front of its column's text, the box growing to fit
-    # ("inside"); or beside the box, outside it ("left" / "right"; a strip spans the zone, so it goes inside)
-    sh_kind, sh_place, sh_size = shield_spec(ov)
-    sh_style = shield_style(ov)
-    if container == "strip" and sh_place in ("left", "right"):
-        sh_place = "inside"
-    route = ct.sections.get("shield", "")
-    emblem = outside = None                                # the column an inside shield leads; "left"/"right"
-    if route and sh_place != "line":
-        for col in list(grid):
-            for ln in list(grid[col]):
-                if "shield" in grid[col][ln]:
-                    if sh_place == "inside":
-                        emblem = col
-                    else:
-                        outside = sh_place
-                    grid[col][ln].remove("shield")
-                    if not grid[col][ln]:
-                        del grid[col][ln]
-            if not grid[col] and col != emblem:
-                del grid[col]
-        if emblem is not None:
-            grid.setdefault(emblem, {})
-        if not grid:
-            grid[1] = {}                                   # a shield alone: an empty box beside it
-    # the headline and the right-hugging last column are picked among columns with text (not a shield's own)
-    text_cols = sorted(col for col in grid if grid[col]) or sorted(grid)
-
-    def align_of(col):
-        return _col_align(cols_cfg, col, text_cols.index(col) if col in text_cols else 0, len(text_cols))
-
-    def shield_h(f):
-        return max(SHIELD_MIN, f.height)
-
-    def line_h(f, kinds):
-        return max(f.height, _shield_dims(route, shield_h(f), sh_kind, sh_style)[1]) if "shield" in kinds else f.height
-
-    def font_of(col, line):
-        sz = sizes.get(f"{col}.{line}") or ("headline" if (col, line) == (text_cols[0], 1) else "detail")
-        return {"headline": k.T, "big": k.B}.get(sz, k.S)
-
-    def piece_width(f, kind):
-        if kind == "live":
-            return _tw(k.S, "LIVE") + 4
-        if kind == "shield":
-            return _shield_dims(route, shield_h(f), sh_kind, sh_style)[0]
-        w_ = _tw(f, _text(ct, kind))
-        return w_ + (9 if kind == "weather" and ct.icon else 0)
-
-    def run_width(f, kinds):
-        return sum(piece_width(f, kd) for kd in kinds) + sum(_joint(f, a, b) for a, b in zip(kinds, kinds[1:]))
-
-    def line_width(f, kinds):
-        left, right = sides(kinds)
-        return run_width(f, left) + run_width(f, right) + (split_gap if left and right else 0)
-
-    def _joint(f, a, b):                                   # a separator between sections; a gap beside LIVE or a shield
-        return 3 if {"live", "shield"} & {a, b} else _tw(f, _sep(f, sp_name))
-
-    # the box's height comes from the lines; an emblem is sized from it (or set in px)
-    cols = sorted(grid)
-    text_h = max([sum(line_h(font_of(col, ln), grid[col][ln]) + 1 for ln in grid[col]) - 1 for col in cols if grid[col]]
-                 or [k.S.height])
-    ew, sw, eh, want = {}, 0, 0, 0                         # inside shield's width (with its gap) per column; its size
-    if emblem is not None or outside:
-        want = (text_h + 2 * pad - (2 if emblem is not None else 0)) if sh_size == "box" else sh_size
-        want = max(SHIELD_MIN, min(want, k.h - 4))         # never taller than the zone
-        sw, eh = _shield_dims(route, want, sh_kind, sh_style)
-        if emblem is not None:
-            ew[emblem] = sw + (4 if grid[emblem] else 0)
-    out_w = sw + 2 if outside else 0                       # an outside shield and its gap to the box
-
-    # measure: every column at its natural width; if they don't all fit, the widest give way first
-    avail = k.w - 2 * pad - 2 - gap * (len(cols) - 1) - sum(ew.values()) - out_w
-    if (ew or out_w) and avail < 30 and any(grid[col] for col in cols):   # too narrow: the text before the shield
-        _note_dropped([("shield", "")], set())
-        if emblem is not None and not grid[emblem]:
-            del grid[emblem]
-            cols = sorted(grid)
-        emblem = outside = None
-        ew, sw, eh, out_w = {}, 0, 0, 0
-        avail = k.w - 2 * pad - 2 - gap * (len(cols) - 1)
-    natural = {col: max([line_width(font_of(col, ln), grid[col][ln]) for ln in grid[col]] or [0]) for col in cols}
-    room = dict(natural)
-    while sum(room.values()) > avail:                      # the widest gives way, down to the next widest…
-        widest = max(room, key=room.get)
-        excess = sum(room.values()) - avail
-        second = max([v for c_, v in room.items() if c_ != widest], default=0)
-        target = max(second, room[widest] - excess)
-        if target >= room[widest]:                         # …and when they're level, all share the space evenly
-            share = max(1, avail // len(room))
-            room = {c_: min(v, share) for c_, v in room.items()}
-            break
-        room[widest] = target
-    layout = []                                            # [(col, [(font, [kinds], width)], col_width)]
-    for col in cols:
-        lines = []
-        for ln in sorted(grid[col]):
-            f = font_of(col, ln)
-            kinds = list(grid[col][ln])
-            while kinds and line_width(f, kinds) > room[col]:
-                drop = next((d for d in DROP if d in kinds), None)
-                if drop is None or len(kinds) == 1:
-                    break
-                kinds.remove(drop)
-                _note_dropped([(drop, "")], set())
-            lines.append((f, kinds, min(line_width(f, kinds), room[col])))
-        layout.append((col, lines, max([w_ for _, _, w_ in lines] or [0])))
-    total_w = sum(cw + ew.get(col, 0) for col, _, cw in layout) + gap * (len(layout) - 1)
-    box_w, box_h = total_w + 2 * pad + (1 if container == "box" else 0), text_h + 2 * pad
-    if emblem is not None:
-        box_h = max(box_h, eh + 2)                         # inside: the box grows to the shield (text centred in it)
-
-    if container == "strip":
-        bx, by = k.x, (k.y if k.top else k.y + k.h - box_h)
-        _box(c, bx, by, k.w, box_h, k.bg, k.op)
-        c.FillRect(k.x, by + box_h - 1 if k.top else by, k.w, 1, k.accent)
-        # left-aligned columns flow from the left edge, right-aligned ones from the right
-        xs, left_x, right_x = {}, bx + pad + 1, bx + k.w - pad - 1
-        for i, (col, lines, cw) in enumerate(layout):
-            if align_of(col) == "right":
-                continue
-            xs[col] = left_x
-            left_x += cw + ew.get(col, 0) + gap
-        for i, (col, lines, cw) in reversed(list(enumerate(layout))):
-            if col in xs:
-                continue
-            right_x -= cw + ew.get(col, 0)
-            xs[col] = max(right_x, left_x)                 # never over a left-flowing column
-            right_x -= gap
-    else:
-        bx, by = k.place(min(box_w, k.w - 2 - out_w) + out_w, box_h, margin=2)     # the box and an outside shield
-        if outside:
-            bw_ = min(box_w, k.w - 2 - out_w)
-            sx = bx if outside == "left" else bx + bw_ + 2
-            if outside == "left":
-                bx += out_w
-            sy = by + (box_h - eh) // 2 if eh <= box_h else (by if k.top else by + box_h - eh)
-            _put_shield(c, sx, sy, route, max(SHIELD_MIN, want), sh_kind, sh_style)
-        box_w = min(box_w, k.w - 2 - out_w)
-        if container == "box":
-            _box(c, bx, by, min(box_w, k.w - 2), box_h, k.bg, k.op)
-            c.FillRect(bx if k.align != "right" else bx + min(box_w, k.w - 2) - 1, by, 1, box_h, k.accent)
-        elif board:
-            _box(c, bx, by, min(box_w, k.w - 2), box_h, k.bg, max(k.op, 0.85))
-            dim = Color(*(v // 3 for v in _rgb(color)))
-            c.FillRect(bx, by, min(box_w, k.w - 2), 1, dim)
-            c.FillRect(bx, by + box_h - 1, min(box_w, k.w - 2), 1, dim)
-        xs, x = {}, bx + pad + (1 if container == "box" and k.align != "right" else 0)
-        for col, lines, cw in layout:
-            xs[col] = x
-            x += cw + ew.get(col, 0) + gap
-
-    for i, (col, lines, cw) in enumerate(layout):
-        x0 = xs[col]
-        if divider and i > 0 and layout[i - 1][1] and container != "outline":   # not after a shield-only column
-            c.FillRect(x0 - (gap + 1) // 2, by + 2, 1, box_h - 4, k.accent if not board else Color(*(v // 3 for v in _rgb(color))))
-        if col == emblem:                                  # centred in the box, which grew to fit it
-            _put_shield(c, x0, by + (box_h - eh) // 2, route, want, sh_kind, sh_style)
-            x0 += ew[col]
-        align = align_of(col)
-        ty = by + (box_h - text_h) // 2                    # = by + pad unless a shield made the box taller
-        for f, kinds, w_ in lines:
-            lh = line_h(f, kinds)
-            left, right = sides(kinds)
-            if right:                                      # a split line spans the column: right part flush right
-                rw = min(run_width(f, right), cw)
-                if left:
-                    _draw_line(k, ct, f, x0, ty, left, max(0, cw - rw - split_gap), color, put, lh, sh_kind, sh_style)
-                _draw_line(k, ct, f, x0 + cw - rw, ty, right, rw, color, put, lh, sh_kind, sh_style)
-            else:
-                x = x0 + (cw - w_ if align == "right" else (cw - w_) // 2 if align == "center" else 0)
-                _draw_line(k, ct, f, x, ty, kinds, w_, color, put, lh, sh_kind, sh_style)
-            ty += lh + 1
-
-
-def _col_align(cols_cfg, col, index, count):
-    try:
-        a = cols_cfg[col - 1].get("align")
-    except (IndexError, AttributeError, TypeError):
-        a = None
-    if a in ("left", "center", "right"):
-        return a
-    return "right" if count > 1 and index == count - 1 else "left"   # a last column hugs the right by default
-
-
-def _text(ct, kind):
-    return ct.clock() if kind == "time" else ct.sections.get(kind, "")
-
-
-def _draw_line(k, ct, f, x, y_top, kinds, room, color, put, lh=None, sh_kind=None, sh_style="pixel"):
-    """One line of pieces: LIVE badges, shields, a weather icon before the weather, separators between; clipped to
-    room. lh: the line's height when a shield makes it taller than the font (text is centred in it)."""
-    end = x + room
-    sp = _sep(f, k.sep)
-    lh = lh or f.height
-    y_top += (lh - f.height) // 2
-    for i, kind in enumerate(kinds):
-        if i:
-            if {"live", "shield"} & {kind, kinds[i - 1]}:
-                x += 3
-            elif x + _tw(f, sp) + 4 <= end:                # no separator unless some of the next piece fits after it
-                x += put(k.c, f, x, y_top + f.baseline, color, sp)
-            else:
-                break
-        if x >= end:
-            break
-        if kind == "live":
-            x += k.badge(x, y_top + max(0, (f.height - k.S.height - 1) // 2))
-            continue
-        if kind == "shield":
-            route = ct.sections.get("shield", "")
-            sw, sh = _shield_dims(route, max(SHIELD_MIN, f.height), sh_kind, sh_style)
-            if x + sw <= end:
-                _put_shield(k.c, x, y_top + (f.height - sh) // 2, route, max(SHIELD_MIN, f.height), sh_kind, sh_style)
-            x += sw
-            continue
-        if kind == "weather" and ct.icon:
-            draw_icon(k.c, x, y_top + (f.height - 7) // 2, ct.icon)
-            x += 9
-        x += put(k.c, f, x, y_top + f.baseline, color, _clip(f, _text(ct, kind), max(0, end - x)))
-
-
-LAYOUT_FUNCS = {"custom": _l_custom, "underline": _l_underline, "tag": _l_tag, "outline": _l_outline, "bar": _l_bar, "dot": _l_dot, "lower_third": _l_lower_third,
-                "split": _l_split, "postcard": _l_postcard, "chips": _l_chips, "clock": _l_clock,
-                "signage": _l_signage, "ticker": _l_ticker, "stack": _l_stack,
-                "none": lambda k, ct: None}                # no caption (the Japanese one can still show)
+LAYOUT_FUNCS = {"tag": _l_tag, "none": lambda k, ct: None}    # none: no caption (the Japanese one can still show)
