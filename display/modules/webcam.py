@@ -53,6 +53,7 @@ PLAY_MAX_SEC = 15.0          # kept at most (only a far worse stall than seen dr
 FILL_AVG_SEC = 20.0          # the speed follows the buffer's depth averaged over this long …
 DRIFT_MAX = 0.02             # … by at most this much (2 %: not something anyone sees)
 WARM_EVERY = 10.0            # while a webcam is next in the rotation, ask the hub to keep its feed going this often
+WEBCAM_SEC = 40.0            # how long a webcam in the list shows when it doesn't say (the panel's default for a new one)
 GIVE_UP_SEC = 25.0           # no picture this long after the play started: skip to the next screen
 PREROLL_SEC = 30.0           # the hub starts the next webcam's feed this long before it's due (~5-10 s from cold)
 STREAM_AHEAD_SEC = 12.0      # … and the Pi opens its own stream this long before: its buffer is full when it's due
@@ -91,7 +92,7 @@ def playlist_of(s: dict) -> list:
     for it in raw:
         if isinstance(it, dict) and it.get("on", True) is not False and it.get("cam") in cams:
             try:
-                sec = max(5.0, min(3600.0, float(it.get("sec") or 60)))
+                sec = max(5.0, min(3600.0, float(it.get("sec") or WEBCAM_SEC)))
             except (TypeError, ValueError):
                 sec = 60.0
             out.append((it["cam"], sec))
@@ -635,7 +636,7 @@ class WebcamPanel:
         t["cam"], t["t0"], t["new"], t["next"], t["wait0"] = cid, now, True, None, None
 
     def _sec(self, cid):
-        return next((sec for k, sec in self.playlist if k == cid), 60.0)
+        return next((sec for k, sec in self.playlist if k == cid), WEBCAM_SEC)
 
     def _draw_cam(self, c, zone, entry, transition, black_skips=False):
         """One webcam. black_skips (the list): a picture gone black ends it; a webcam played on its own stays."""

@@ -35,8 +35,8 @@ class _Ready:
 def test_playlist_keeps_order_and_skips_off_and_missing():
     s = {"cams": {"a": {}, "b": {}, "c": {}},
          "playlist": [{"cam": "c", "sec": 20}, {"cam": "a", "on": False}, {"cam": "gone"}, {"cam": "b"}]}
-    assert wm.playlist_of(s) == [("c", 20.0), ("b", 60.0)]
-    assert wm.playlist_of({"cams": {"x": {}, "y": {}}}) == [("x", 60.0), ("y", 60.0)]   # no list yet: every webcam
+    assert wm.playlist_of(s) == [("c", 20.0), ("b", wm.WEBCAM_SEC)]   # no time of its own: the default
+    assert wm.playlist_of({"cams": {"x": {}, "y": {}}}) == [("x", wm.WEBCAM_SEC), ("y", wm.WEBCAM_SEC)]   # no list yet: every webcam
 
 
 def test_each_turn_plays_the_next_webcams_then_ends(monkeypatch):
