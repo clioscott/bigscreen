@@ -49,6 +49,10 @@ jobs:
             node --check "$tmp/check.mjs" || { echo "::error file=$f::syntax error"; status=1; }
           done
           exit $status
+      - name: Vue templates compile (a broken one blanks its page)
+        run: |
+          npm install --no-save --no-audit --no-fund @vue/compiler-dom@3.5.13
+          node tools/check_templates.cjs $(git ls-files 'hub/web/ui/*.js' 'hub/web/ui/**/*.js')
 
   readme:
     name: README generated sections

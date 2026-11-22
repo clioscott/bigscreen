@@ -1603,7 +1603,7 @@ const WebcamEditor = {
                 label="Flags for the people aboard" hint="7 aboard: 3, 3, 1 with each country's flag after its count; off: just 7 aboard"/>
               <Field v-if="cam.space && ov.show.coords" label="Coordinates" hint="Updated every frame as the ISS moves">
                 <div class="row" style="gap:8px"><Seg :modelValue="ov.coord_format || 'nsew'" @update:modelValue="v => ov.coord_format = v"
-                  :options="[{ value: 'nsew', label: '12.35°S 145.68°W' }, { value: 'signed', label: '-12.35°, -145.68°' }, { value: 'dms', label: '12°21'00&quot;S' }]"/>
+                  :options="[{ value: 'nsew', label: '12.35°S 145.68°W' }, { value: 'signed', label: '-12.35°, -145.68°' }, { value: 'dms', label: '12°21′00″S' }]"/>
                   <Stepper :modelValue="ov.coord_digits ?? 2" @update:modelValue="v => ov.coord_digits = v" :min="0" :max="4" :unit="' decimals'"/></div></Field>
               <ToggleRow v-if="cam.space && ov.show.mission" :modelValue="!!ov.mission_days" @update:modelValue="v => ov.mission_days = v"
                 label="How long the mission has run" hint="Expedition 75 · day 120"/>
