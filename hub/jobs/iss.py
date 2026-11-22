@@ -25,6 +25,7 @@ from pathlib import Path
 
 import requests
 
+from common.orbit import gmst, julian, sun_dir  # noqa: F401  (shared with the display's ISS maps)
 from hub import paths
 from hub.jobs import _harness
 
@@ -36,7 +37,7 @@ NE = {  # Natural Earth (public domain): countries, and named seas and oceans
 }
 UA = {"User-Agent": "BigScreen/2 (home LED wall; ISS webcam caption)"}
 HORIZON = 3 * 3600           # computed this far ahead (the job runs every 10 min)
-BACK = 300                   # … and from this long before now
+BACK = 95 * 60               # … and from this long before now (the maps' trail: the last 90 min, as filmed)
 STEP = 10                    # track resolution (s)
 OVER_STEP = 60               # what it's over / the zone below, this often (the ISS covers ~460 km a minute)
 TLE_TTL = 6 * 3600
@@ -75,26 +76,6 @@ def elements():
     l1 = next(l for l in lines if l.startswith("1 "))
     l2 = next(l for l in lines if l.startswith("2 "))
     return l1, l2
-
-
-def julian(t):
-    return t / 86400.0 + 2440587.5
-
-
-def gmst(jd):
-    """Greenwich mean sidereal time (rad)."""
-    d = jd - 2451545.0
-    return math.radians((280.46061837 + 360.98564736629 * d) % 360.0)
-
-
-def sun_dir(jd):
-    """Unit vector to the Sun in the equatorial frame (low precision: well under 0.1 degree)."""
-    n = jd - 2451545.0
-    L = math.radians((280.460 + 0.9856474 * n) % 360)
-    g = math.radians((357.528 + 0.9856003 * n) % 360)
-    lam = L + math.radians(1.915) * math.sin(g) + math.radians(0.020) * math.sin(2 * g)
-    eps = math.radians(23.439 - 0.0000004 * n)
-    return (math.cos(lam), math.cos(eps) * math.sin(lam), math.sin(eps) * math.sin(lam))
 
 
 def sunlit(r, s) -> bool:
@@ -234,7 +215,7 @@ def run(cfg):
     tr = track(l1, l2, now - BACK, horizon=HORIZON + BACK)
     below = Below()
     over, tz = [], []
-    for row in tr[::max(1, OVER_STEP // STEP)]:
+    for row in [r for r in tr if r[0] >= now - 300][::max(1, OVER_STEP // STEP)]:   # (the past is only the trail)
         over.append([row[0], below.name(row[1], row[2])])
         tz.append([row[0], below.zone(row[1], row[2])])
     c, m = crew()

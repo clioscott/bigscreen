@@ -81,11 +81,13 @@ and `assets/data`. Attribution is shown on screen where the provider asks for it
 - Boundaries: Statistics Canada, BC Data Catalogue, City of Vancouver Open Data and [Represent](https://represent.opennorth.ca)
   (Open North) — open government licences.
 - Maps: [Natural Earth](https://www.naturalearthdata.com) (public domain) and © [OpenStreetMap](https://www.openstreetmap.org/copyright)
+  contributors (ODbL) via Overpass; basemap tiles © [Esri](https://www.esri.com) and © [CARTO](https://carto.com/attributions).
 - The ISS (webcams in space): orbital elements from [CelesTrak](https://celestrak.org), the crew and expedition from
   [corquaid/international-space-station-APIs](https://github.com/corquaid/international-space-station-APIs), the time
   zone below from [timezonefinder](https://github.com/jannikmi/timezonefinder) (MIT; data © timezone-boundary-builder,
-  ODbL), the orbit computed with [sgp4](https://pypi.org/project/sgp4/) (MIT). Pixel flags are drawn in code.
-  contributors (ODbL) via Overpass; basemap tiles © [Esri](https://www.esri.com) and © [CARTO](https://carto.com/attributions).
+  ODbL), the orbit computed with [sgp4](https://pypi.org/project/sgp4/) (MIT). Pixel flags are drawn in code. The ISS maps'
+  coastlines and borders: `assets/maps/world_110m.json`, Natural Earth 1:110m (public domain), built by
+  `tools/build_world_lines.py`; ground station and TDRS positions are public, the links between them simulated.
 - Time zone map: rules from the [IANA tz database](https://www.iana.org/time-zones) (public domain, via the
   [tzdata](https://pypi.org/project/tzdata/) package) and zone boundaries from
   [timezone-boundary-builder](https://github.com/evansiroky/timezone-boundary-builder) by Evan Siroky, built from

@@ -1804,7 +1804,7 @@ def webcams_preview_set(payload: dict = Body(...)):
         raise HTTPException(400, "bad token")
     wx = _webcam_wx(payload.get("id"), cam) if _wants_wx(cam) else None
     _webcam_previews[token] = {"cam": cam, "id": str(payload.get("id") or ""), "wx": wx, "shape": shape, "zone": zones[shape],
-                               "until": now + 3600,
+                               "until": now + 3600, "show_map": bool(payload.get("show_map")),
                                "since": _webcam_previews.get(token, {}).get("since", now)}
     from display.modules import webcam as wc
     try:
@@ -1855,7 +1855,8 @@ async def webcams_preview(token: str):
         extra = {"taken": round(_feed.image_t)} if getattr(_feed, "image_t", None) else None
         if cam_now.get("space"):                             # in space: the ISS's orbit, crew and mission
             extra = {**(extra or {}), "space": _iss_data()}
-        img = wc.render_preview(cam_now, frame, (w, h), time.time() - t0, wx=wx, extra=extra)
+        img = wc.render_preview(cam_now, frame, (w, h), time.time() - t0, wx=wx, extra=extra,
+                                show_map=bool(cur.get("show_map")))
         out = io.BytesIO()
         Image.fromarray(img).save(out, "PNG", compress_level=1)
         return _part(out.getvalue(), b"image/png")

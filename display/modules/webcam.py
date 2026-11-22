@@ -60,6 +60,7 @@ STREAM_AHEAD_SEC = 12.0      # … and the Pi opens its own stream this long bef
 HOLD_MAX_SEC = 15.0          # the current webcam stays up at most this much longer while the next one isn't buffered
 LOOKAHEAD = 3                # the list prepares this many webcams ahead, each by how soon its turn is (short turns:
 PREROLL_STREAMS = 2          # several at once); at most this many of them also have the Pi's stream open (buffering)
+STALL_SEC = 4.0              # a mapped webcam (the ISS) whose feed sends nothing new this long shows its map
 BLACK_SEC = 4.0              # a picture black for this long: the feed is down
 BAD_SEC = 600.0              # a webcam found down while playing sits out this long (the hub's checks may clear it)
 RETRY_DOWN_SEC = 1800.0      # a feed's "down" this old: try it again (only a play can say it's back)
@@ -259,6 +260,7 @@ class Stream:
         self._holding = False                  # the newest frame is overdue: holding it until more come
         self.late = 0                          # frames that came after they were due (passed over)
         self.black_since = None                # when the picture went black, or plain (None: it isn't)
+        self._marks = collections.deque(maxlen=64)   # in step: (due, blank) once a second, for what's on screen
         self.skip_plain = bool(self.query.get("flat"))   # a plain screen counts as black (skips_plain)
         self._black_checked = 0.0
         self.last_use = time.time()
@@ -393,12 +395,29 @@ class Stream:
 
     _last_sub = None
 
-    def check_blank(self, frame, t):
-        """Note whether the video is down while still sending (blank), from when."""
-        if not self.blank(frame):
+    def check_blank(self, frame, t, due=None):
+        """Note whether the video is down while still sending (blank), from when; in step also by when that frame is
+        on screen (due)."""
+        b = self.blank(frame)
+        if due is not None:
+            self._marks.append((due, b))
+        if not b:
             self.black_since = None
         elif self.black_since is None:
             self.black_since = t
+
+    def blank_on_screen(self, now=None, hold=BLACK_SEC):
+        """The picture on screen now has been blank (black; plain or frozen for skip_plain) for ``hold`` seconds. In
+        step, by when the checked frames are due (they arrive seconds early); else since they came."""
+        now = now or time.time()
+        if not self.in_step or not self._marks:
+            return self.black_since is not None and now - self.black_since >= hold
+        since = None
+        for due, b in list(self._marks):
+            if due > now:
+                break
+            since = (due if since is None else since) if b else None
+        return since is not None and now - since >= hold
 
     def blank(self, frame) -> bool:
         """Down while still sending: black, or for a webcam that asks (skip_plain) a plain screen or a frozen picture.
@@ -526,7 +545,8 @@ class Stream:
                 self._q.append(self.frame)
             if not placeholder and self.frame_t - self._black_checked >= 1.0:   # on the reader's core, once a second
                 self._black_checked = self.frame_t              # (the hub's still while a feed starts says nothing
-                self.check_blank(self.frame, self.frame_t)      # about the video: it isn't checked)
+                self.check_blank(self.frame, self.frame_t,      # about the video: it isn't checked)
+                                 None if due is None else due + self.shift)
             self.age = age
             self.error = ""
 
@@ -649,6 +669,8 @@ class WebcamPanel:
         now = now or time.time()
         if not in_hours(self.cams.get(cid), now):
             return True
+        if self._mapped(cid):                                  # the ISS: its map plays when the video can't
+            return False
         if not self._daylit(cid, now):                         # in space, on the night side: nothing to see
             return True
         if now < self._bad.get(cid, 0):
@@ -672,7 +694,25 @@ class WebcamPanel:
         lit = space.in_daylight(self._space(now), t0, t0 + self._sec(cid))
         return lit is not False
 
+    def _mapped(self, cid):
+        """A webcam in space whose map plays while its video is unusable (``map.when_down``, on unless turned off):
+        never down, never skipped."""
+        cam = self.cams.get(cid) or {}
+        return bool(cam.get("space")) and (cam.get("map") or {}).get("when_down", True) is not False
+
+    @staticmethod
+    def _unusable(st, now):
+        """A mapped webcam's video can't be shown now: no picture yet, loading, blank on screen (black, the
+        loss-of-signal card, frozen), or the feed stalled (nothing new for STALL_SEC)."""
+        if not st.showable(now) or st.buffering() or st.blank_on_screen(now):
+            return True
+        if st.in_step:
+            return st.overdue(now) > STALL_SEC
+        return now - st.frame_t > STALL_SEC
+
     def _mark_bad(self, cid, why=""):
+        if self._mapped(cid):                                 # (never down: its map plays instead)
+            return
         self._bad[cid] = time.time() + BAD_SEC
         print(f"[webcam] {cid} is down{': ' + why if why else ''}; skipping it for {int(BAD_SEC // 60)} min")
 
@@ -776,7 +816,7 @@ class WebcamPanel:
                 if not t.get("wait0"):
                     t["wait0"] = now                          # when this one became due to come up
                 wait0 = t["wait0"]
-                if st is not None and st.ready():
+                if st is not None and (st.ready() or self._mapped(nxt)):
                     t["shown"] += 1
                     self._switch(t, nxt, now)
                 elif now - wait0 >= HOLD_MAX_SEC:
@@ -828,7 +868,7 @@ class WebcamPanel:
                 if lead <= STREAM_AHEAD_SEC and streams < PREROLL_STREAMS:
                     st = self._preroll(cid, shape, zone)
                     streams += 1
-                    if i == 0 and st is not None and st.down(now):
+                    if i == 0 and st is not None and st.down(now) and not self._mapped(cid):
                         bad = (cid, st)
                         break
                 elif lead <= PREROLL_SEC:
@@ -861,11 +901,25 @@ class WebcamPanel:
         if not cam:
             self._centre(c, zone, f"No webcam '{entry.get('cam')}'", self.dim)
             return "skip" if now - started > 4 else None
-        st = self._stream(cam, self.shape_for(entry, zone), w, h)
-        if black_skips and st.black_since is not None and now - st.black_since >= BLACK_SEC:
+        mapped = self._mapped(entry.get("cam"))
+        if mapped:                                            # the ISS: its map while the video is unusable
+            from display.modules import issmap, space
+            data, t = self._space(now), now - space.LAG
+            dark = cam.get("daylight_only", True) and (lambda a: space.in_daylight(data, a, a) is False)
+            night = bool(dark) and dark(t)
+            st = None
+            if not (night and dark(t + STREAM_AHEAD_SEC)):    # the stream only from shortly before sunrise
+                st = self._stream(cam, self.shape_for(entry, zone), w, h)
+            if night or st is None or self._unusable(st, now):
+                issmap.draw_full(c, zone, data, t, fixed=bool((cam.get("map") or {}).get("fixed")))
+                draw_caption(c, zone, cam, now - started, self.font, extra={"space": data})
+                return None
+        else:
+            st = self._stream(cam, self.shape_for(entry, zone), w, h)
+        if not mapped and black_skips and st.black_since is not None and now - st.black_since >= BLACK_SEC:
             self._mark_bad(entry.get("cam"), "black")         # down but still sending: on to the next screen
             return "skip"
-        if st.in_step and st.overdue(now) > GIVE_UP_SEC:     # in step, nothing new for this long: it's gone
+        if not mapped and st.in_step and st.overdue(now) > GIVE_UP_SEC:   # in step, nothing new this long: gone
             self._mark_bad(entry.get("cam"), st.error or "stopped")
             return "skip"
         if st.showable(now):
@@ -891,7 +945,8 @@ class WebcamPanel:
         extra = {"taken": round(st.frame_t - st.age)} if still and st.age is not None else None   # capture time (s)
         if cam.get("space"):                                  # in space: the ISS's orbit, crew and mission
             extra = {**(extra or {}), "space": self._space(now)}
-        draw_caption(c, zone, cam, now - started, self.font, wx=wx, extra=extra)
+        box = draw_caption(c, zone, cam, now - started, self.font, wx=wx, extra=extra)
+        draw_small_map(c, zone, cam, (extra or {}).get("space"), now, box)
         return None
 
     def _space(self, now):
@@ -1219,12 +1274,29 @@ def caption_dropped(cam: dict, shape_zone, wx=None, extra=None) -> list:
     return dropped_sections(cam, shape_zone, _preview_font, wx, extra)
 
 
-def render_preview(cam: dict, frame, shape_zone, elapsed=0.0, wx=None, extra=None) -> np.ndarray:
-    """The wall's pixels for one zone: a frame already cropped to the zone, plus the caption (control panel)."""
+def draw_small_map(c, zone, cam, data, now, caption_box=None):
+    """The small ISS map in its corner of a webcam in space (``overlay.minimap``: on, corner), off the caption."""
+    mm = overlay_of(cam).get("minimap")
+    if not cam.get("space") or not isinstance(mm, dict) or not mm.get("on"):
+        return
+    from display.modules import issmap, space
+    issmap.draw_small(c, zone, data, now - space.LAG, mm.get("corner") or "tr", caption_box)
+
+
+def render_preview(cam: dict, frame, shape_zone, elapsed=0.0, wx=None, extra=None, show_map=False) -> np.ndarray:
+    """The wall's pixels for one zone: a frame already cropped to the zone, plus the caption (control panel). A webcam
+    in space: its small map too, or with show_map (or no frame) the full map its turn shows when the video can't."""
     from display.gfx import Canvas
     w, h = shape_zone
     c = Canvas(w, h)
-    if frame is not None:
+    space_data = (extra or {}).get("space")
+    full_map = bool(cam.get("space")) and (show_map or frame is None) \
+        and (cam.get("map") or {}).get("when_down", True) is not False
+    if full_map:
+        from display.modules import issmap, space
+        c.Blit(issmap.render(w, h, space_data, time.time() - space.LAG, True,
+                             bool((cam.get("map") or {}).get("fixed"))), 0, 0)
+    elif frame is not None:
         c.Blit(frame, 0, 0)
     fonts = {}
 
@@ -1235,5 +1307,7 @@ def render_preview(cam: dict, frame, shape_zone, elapsed=0.0, wx=None, extra=Non
             f.LoadFont(FONTS.get(size, size))
         return f
 
-    draw_caption(c, (0, 0, w, h), cam, elapsed, font_for, wx=wx, extra=extra)
+    box = draw_caption(c, (0, 0, w, h), cam, elapsed, font_for, wx=wx, extra=extra)
+    if not full_map:
+        draw_small_map(c, (0, 0, w, h), cam, space_data, time.time(), box)
     return c.buf.copy()
