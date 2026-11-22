@@ -127,6 +127,12 @@ once (`hold: false`), so the rotation resumes by itself.
   `rotation.WARM_AHEAD` s from its end (or on its last pass) and the next entry is a webcam, it calls
   `/api/webcams/warm` every `WARM_EVERY` s, and the screen then opens on a picture.
   Each viewer gets its own crop/scale/colour. At most `MAX_FEEDS` at once.
+- In step (YouTube, live): the hub fetches the segments itself (`Feed._feed_segments`), dates each from the HLS
+  playlist's EXT-X-PROGRAM-DATE-TIME and feeds it to ffmpeg `FEED_LEAD` s before it's due, so every frame plays
+  `modules.webcams.delay_sec` (35) after it was filmed, the same for every webcam (one lagging more plays later).
+  Frames carry their due time (`pack`, BSW2, only when the Pi asks `sync=1`); the Pi shows each when due
+  (`Stream._current_in_step`), no buffering or speed correction, so restarts are seamless and nearby cameras line up.
+  A detail ("hi") picture serving one crop is cut and scaled by ffmpeg (`plan` "exact"); several: their region.
 - 4K: YouTube's live HLS stops at 1080p; 1440p/4K exist only as DASH (VP9 WebM segments by sequence number). The
   lookup passes `youtube:formats=incomplete` to list them, which needs a current yt-dlp with yt-dlp-ejs and deno
   (`~/.deno/bin/deno` on the server, found by `deno_path`). They're used only when a crop needs more than the HLS

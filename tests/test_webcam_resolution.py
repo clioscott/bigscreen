@@ -55,10 +55,20 @@ def test_a_crop_that_lo_covers_needs_no_hi_picture():
     assert wc.plan(1920, 1080, [(448, 175, None), (224, 134, None)]) is None
 
 
-def test_a_zoomed_crop_gets_the_whole_frame_at_the_detail_it_needs():
-    p = wc.plan(1920, 1080, [(448, 175, {"x": 0.2, "y": 0.2, "w": 0.5})])
-    assert (p["x"], p["y"], p["w"], p["h"]) == (0, 0, 1920, 1080)          # the whole frame
-    assert abs(p["full_w"] - 448 / 0.5 * wc.OVERSAMPLE) < 4                 # 1.5 stream pixels per LED
+def test_a_zoomed_crop_gets_its_region_at_the_detail_it_needs():
+    crop = {"x": 0.2, "y": 0.2, "w": 0.5}
+    one = wc.plan(1920, 1080, [(448, 175, crop)])                         # one crop: cut and scaled by ffmpeg
+    assert one["exact"] and (one["out_w"], one["out_h"]) == (448, 175)
+    assert wc.covers(one, 1920, 1080, (448, 175, crop)) and not wc.covers(one, 1920, 1080, (448, 175, None))
+    other = (224, 134, {"x": 0.25, "y": 0.25, "w": 0.3})
+    p = wc.plan(1920, 1080, [(448, 175, crop), other])                    # two: their region, scaled here
+    l, t, r, b = wc.crop_box(1920, 1080, 448, 175, crop)
+    assert p["x"] <= l and p["y"] <= t and p["x"] + p["w"] >= r and p["y"] + p["h"] >= b   # the crop, and a margin
+    assert p["w"] * p["h"] < 0.5 * 1920 * 1080                             # not the whole frame (each pixel costs)
+    whole = wc.plan(1920, 1080, [(448, 175, crop), (448, 175, {"x": 0.0, "y": 0.0, "w": 0.6}),
+                                 (448, 175, {"x": 0.4, "y": 0.5, "w": 0.6})])
+    assert (whole["x"], whole["y"], whole["w"], whole["h"]) == (0, 0, 1920, 1080)   # crops all over: the frame
+    assert abs(p["full_w"] - 448 / 0.5 * wc.OVERSAMPLE) < 4 or p["full_w"] >= 224 / 0.3 * wc.OVERSAMPLE - 4
     assert p["out_w"] <= 1920 and p["out_w"] * p["out_h"] <= wc.HI_BUDGET
 
 
@@ -203,15 +213,18 @@ def test_whole_pixels_makes_the_crop_exactly_k_times_the_viewport():
     assert wc.snap_k(snap, 640, 360, 448, 175) == 0                      # the 640-wide picture: cut as usual
     assert wc.need_of(1920, 1080, 448, 175, snap) >= 1920                  # the stream's own pixels, unscaled
     p = wc.plan(1920, 1080, [(448, 175, snap)])
-    assert p["full_w"] == 1920 and p["out_w"] == p["w"] and wc.covers(p, 1920, 1080, (448, 175, snap))
+    assert p["exact"] and (p["x"], p["y"], p["w"], p["h"]) == (600, 300, 896, 350) and p["out_w"] == 448
+    assert wc.covers(p, 1920, 1080, (448, 175, snap))
 
 
 def test_whole_pixels_is_the_plain_average_of_each_k_by_k_block():
     rng = np.random.default_rng(9)
     src = rng.integers(0, 255, (1080, 1920, 3), np.uint8)
     snap = {"x": 300 / 1920, "y": 300 / 1080, "w": round(3 * 448 / 1920, 6), "snap": True}
-    p = wc.plan(1920, 1080, [(448, 175, snap)])
-    out = wc.render_region(src, p, 1920, 1080, 448, 175, snap, {"sharpen": 0}).astype(int)
+    p = wc.plan(1920, 1080, [(448, 175, snap), (224, 134, {**snap, "x": 0.6})])   # two crops: averaged here
+    hi = np.ascontiguousarray(src[p["y"]:p["y"] + p["h"], p["x"]:p["x"] + p["w"]])   # its region, unscaled
+    assert (p["out_w"], p["out_h"]) == (p["w"], p["h"])
+    out = wc.render_region(hi, p, 1920, 1080, 448, 175, snap, {"sharpen": 0}).astype(int)
     block = src[300:300 + 525, 300:300 + 1344].reshape(175, 3, 448, 3, 3).mean(axis=(1, 3))
     assert np.abs(out - block).max() <= 1                                # each LED: its 3 x 3 pixels averaged
 

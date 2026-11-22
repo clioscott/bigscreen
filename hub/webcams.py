@@ -520,7 +520,8 @@ def need_of(src_w, src_h, out_w, out_h, crop=None) -> float:
 def plan(src_w, src_h, wants) -> dict | None:
     """The hi picture for these consumers [(out_w, out_h, crop)] of a src_w x src_h stream: None when the lo picture
     is enough, else {"full_w": the whole frame's width at this detail, "x", "y", "w", "h": the region in source
-    pixels (the whole frame unless that's over HI_BUDGET), "out_w", "out_h": the hi picture's size}. Never more
+    pixels (the crops' region, or the whole frame when that's most of it), "out_w", "out_h": the hi
+    picture's size}. Never more
     pixels than the source has."""
     if src_w < 16 or src_h < 16:
         return None
@@ -530,16 +531,27 @@ def plan(src_w, src_h, wants) -> dict | None:
     full_w = min(float(src_w), max(need_of(src_w, src_h, *w) for w in wants))
     if full_w <= WORK_W * 1.1:
         return None
+    # one crop needs it (the usual case: a webcam's crop above the clock): ffmpeg cuts it from the stream's own
+    # pixels and scales it straight to the zone ("exact": the consumer's frame then needs no scaling here). A Whole
+    # pixels crop cost ~1 core as a full-size region converted to RGB and averaged in Python; this, ~0.35.
+    cut = {(ow, oh, crop_box(src_w, src_h, ow, oh, c)) for ow, oh, c in wants}
+    if len(cut) == 1:
+        (ow, oh, (l, t, r, b)), = cut
+        if r - l >= ow and b - t >= oh:                  # (never scaled up)
+            return {"full_w": src_w, "x": l, "y": t, "w": r - l, "h": b - t, "out_w": ow, "out_h": oh, "exact": True}
     k = full_w / src_w                                   # hi pixels per source pixel (<= 1: never upscaled)
-    x0, y0, x1, y1 = 0.0, 0.0, 1.0, 1.0
-    if src_w * k * src_h * k > HI_BUDGET:                # the whole frame is too big at this detail: just the crops
-        boxes = [crop_frac(src_w, src_h, *w) for w in wants]
-        m = 0.04
-        x0, y0 = max(0.0, min(b[0] for b in boxes) - m), max(0.0, min(b[1] for b in boxes) - m)
-        x1, y1 = min(1.0, max(b[0] + b[2] for b in boxes) + m), min(1.0, max(b[1] + b[3] for b in boxes) + m)
-        area = (x1 - x0) * src_w * k * (y1 - y0) * src_h * k
-        if area > HI_BUDGET:                             # crops far apart: a little less detail
-            k *= (HI_BUDGET / area) ** 0.5
+    # just the crops' region (and a margin): every hi pixel costs a colour conversion in ffmpeg and a copy here, and
+    # a Whole pixels crop above the clock made the whole 1080p frame the hi picture (~1 core per webcam; the region:
+    # ~0.6). The whole frame only when the region is most of it anyway.
+    boxes = [crop_frac(src_w, src_h, *w) for w in wants]
+    m = 0.04
+    x0, y0 = max(0.0, min(b[0] for b in boxes) - m), max(0.0, min(b[1] for b in boxes) - m)
+    x1, y1 = min(1.0, max(b[0] + b[2] for b in boxes) + m), min(1.0, max(b[1] + b[3] for b in boxes) + m)
+    if (x1 - x0) * (y1 - y0) > 0.85:
+        x0, y0, x1, y1 = 0.0, 0.0, 1.0, 1.0
+    area = (x1 - x0) * src_w * k * (y1 - y0) * src_h * k
+    if area > HI_BUDGET:                                 # too big at this detail: a little less detail
+        k *= (HI_BUDGET / area) ** 0.5
 
     def even(v):
         return int(v) // 2 * 2
@@ -558,6 +570,8 @@ def covers(p, src_w, src_h, want) -> bool:
     """Does hi plan p give this consumer [(out_w, out_h, crop)] what it needs: inside the region, enough detail?"""
     if p is None:
         return False
+    if p.get("exact"):                                   # cut and scaled for one zone and crop: just that one
+        return (want[0], want[1]) == (p["out_w"], p["out_h"]) and             crop_box(src_w, src_h, *want) == (p["x"], p["y"], p["x"] + p["w"], p["y"] + p["h"])
     fx, fy, fw, fh = crop_frac(src_w, src_h, *want)
     inside = fx * src_w >= p["x"] - 1 and fy * src_h >= p["y"] - 1 and (fx + fw) * src_w <= p["x"] + p["w"] + 1 \
         and (fy + fh) * src_h <= p["y"] + p["h"] + 1
@@ -1949,7 +1963,10 @@ def render(frame, out_w, out_h, crop=None, colour=None) -> np.ndarray:
 
 def render_region(hi, p, src_w, src_h, out_w, out_h, crop=None, colour=None) -> np.ndarray:
     """One output frame from a hi picture: ``hi`` is plan ``p``'s region of a src_w x src_h stream. The crop is cut
-    exactly as render() would from the whole frame; at one source pixel per LED it's a straight copy (no blur)."""
+    exactly as render() would from the whole frame; at one source pixel per LED it's a straight copy (no blur). An
+    "exact" plan's hi picture is already this frame (cut and scaled by ffmpeg)."""
+    if p.get("exact") and hi.shape[:2] == (out_h, out_w):
+        return _finish(Image.fromarray(np.array(hi)), colour)      # (a copy: the hi reader reuses its buffer)
     l, t, r, b = crop_box(src_w, src_h, out_w, out_h, crop)
     hh, hw = hi.shape[:2]
     sx, sy = hw / p["w"], hh / p["h"]
