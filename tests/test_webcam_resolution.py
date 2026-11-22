@@ -286,7 +286,7 @@ def test_a_dash_run_reads_stdin_and_crops_and_scales_on_the_video_engine():
     f = _feed_shell()
     f.source = {"w": 3840, "h": 2160, "dash": True}
     f.hi = wc.plan(3840, 2160, [(448, 175, {"x": 0.4, "y": 0.4, "w": 448 / 3840})])
-    args = f._args("https://v/2160.webm?x=1", hi_fd=7, hw=True, dash=True)
+    args = f._args("https://v/2160.webm?x=1", hi_fd=7, hw=True, piped="dash")
     assert args[args.index("-i") + 1] == "pipe:0" and args[args.index("-f") + 1] == "matroska"
     assert "pipe" in args[args.index("-protocol_whitelist") + 1].split(",")
     assert args[args.index("-hwaccel_output_format") + 1] == "vaapi"
@@ -295,7 +295,7 @@ def test_a_dash_run_reads_stdin_and_crops_and_scales_on_the_video_engine():
     assert f"scale_vaapi=w=640:h=360" in graph and f"scale_vaapi=w={f.hi['out_w']}:h={f.hi['out_h']}" in graph
     assert graph.count("hwdownload") == 2 and "pipe:7" in args
     f.hi = None
-    lo_only = f._args("https://v/2160.webm?x=1", hw=True, dash=True)
+    lo_only = f._args("https://v/2160.webm?x=1", hw=True, piped="dash")
     assert "-filter_complex" not in lo_only and "scale_vaapi=w=640:h=360" in lo_only[lo_only.index("-vf") + 1]
 
 
@@ -305,46 +305,210 @@ class _FakeProc:
         self.stdin = self
 
     def poll(self):
-        return 0 if len(self.written) >= self.stop_after else None
+        done = [w for w in self.written if w.endswith(b"|")]
+        return 0 if len(done) >= self.stop_after else None
 
-    def write(self, b):
-        self.written.append(b)
+    def write(self, b):                                                   # a raw pipe: takes 3 bytes at most
+        b = bytes(b)
+        if not self.written or self.written[-1].endswith(b"|"):
+            self.written.append(b"")
+        self.written[-1] += b[:3]
+        return min(3, len(b))
 
     def close(self):
         self.closed = True
 
 
-def test_segments_go_into_ffmpeg_in_order_from_just_before_the_newest(monkeypatch):
-    heads = iter([10, 10, 11, 12])
-    monkeypatch.setattr(wc, "seg_head", lambda url: next(heads))
-    monkeypatch.setattr(wc, "seg_get", lambda url, n: f"seg{n}".encode())
-    monkeypatch.setattr(wc, "SEG_POLL", 0)
+class _Clock:
+    """A fake time module for the segment feeder: sleep() moves the clock on."""
+    def __init__(self, t):
+        self.t = t
+
+    def time(self):
+        return self.t
+
+    def sleep(self, s):
+        self.t += max(s, 0.01)
+
+
+def _playlist(first_seq, t0, n, dur=5.0):
+    return [wc.Seg((first_seq + i, t0 + i * dur, dur, f"https://h/{first_seq + i}.ts", False)) for i in range(n)]
+
+
+def _feeder(monkeypatch, segs, now, seg=None, delay=35.0, get=None):
+    """A feed shell with a fake clock, playlist and segment fetch; returns (feed, run, clock)."""
+    clock = _Clock(now)
+    monkeypatch.setattr(wc, "time", clock)
+    monkeypatch.setattr(wc, "get_playlist", lambda url: segs)
+
+    def seg_get(url, n=None):
+        if get:
+            return get(url, n)
+        return (f"d{n}" if n is not None else url.rsplit("/", 1)[1]).encode() + b"|"
+    monkeypatch.setattr(wc, "seg_get", seg_get)
+    monkeypatch.setattr(wc, "config_delay", lambda: delay)
     f = _feed_shell()
-    f.decoded_t = 0.0
-    p = _FakeProc(stop_after=4)
-    f._fetch_segments(p, "https://v/x")
-    assert p.written == [b"seg9", b"seg10", b"seg11", b"seg12"] and p.closed and f.error == ""
+    f._seg = seg or {"timing": "https://h/index.m3u8", "dash": None}
+    f._next_seq = f.delay = f.latency = None
+    f._restart = f._expired = f._sync_broken = f._dash_broken = False
+    f._fed, f._seg_error = False, ""
+    run = {"base": 0, "anchor": None, "fps": 30, "delay": None}
+    f._runs = collections.deque([run])
+    return f, run, clock
 
 
-def test_a_run_restarted_for_more_detail_starts_at_the_newest_segment(monkeypatch):
-    monkeypatch.setattr(wc, "seg_head", lambda url: 50)
-    monkeypatch.setattr(wc, "seg_get", lambda url, n: f"seg{n}".encode())
-    f = _feed_shell()
-    f.decoded_t = 123.0                                                    # frames were already decoded
-    p = _FakeProc(stop_after=1)
-    f._fetch_segments(p, "https://v/x")
-    assert p.written == [b"seg50"]
+def _timed_proc(clock, stop_after):
+    """A _FakeProc that notes the time each segment starts going in."""
+    p = _FakeProc(stop_after)
+    p.times = []
+    orig = p.write
+
+    def timed(b):
+        if not p.written or p.written[-1].endswith(b"|"):
+            p.times.append(clock.t)
+        return orig(b)
+    p.write = timed
+    return p
 
 
-def test_an_expired_segment_url_ends_the_run(monkeypatch):
+def test_in_step_a_feed_starts_at_once_on_what_is_due_now_and_feeds_each_segment_when_due(monkeypatch):
+    now = 1_000_000.0
+    f, run, clock = _feeder(monkeypatch, _playlist(100, now - 60, 12), now)   # the last minute of the stream
+    p = _timed_proc(clock, 3)
+    f._feed_segments(p, run)
+    assert run["delay"] == 35.0 and f.latency == 0.0
+    # due now + 1.5 = filmed now - 33.5: segment 105 (filmed now - 35 .. now - 30)
+    assert p.written == [b"105.ts|", b"106.ts|", b"107.ts|"] and run["anchor"] == now - 35
+    assert p.times[0] == now                                              # at once: no waiting to buffer
+    assert p.times[1] == now                                              # (due in 5 s: under FEED_LEAD away)
+    assert abs(p.times[2] - (now - 25 + 35 - wc.FEED_LEAD)) < 0.6         # then each FEED_LEAD before it's due
+    assert f.due_of(1) == now and abs(f.due_of(31) - (now + 1)) < 1e-6   # frame k: filmed + delay
+    assert f._fed and f._next_seq == 108
+
+
+def test_a_stream_lagging_more_than_the_delay_plays_later_than_the_rest(monkeypatch):
+    now = 1_000_000.0
+    f, run, clock = _feeder(monkeypatch, _playlist(100, now - 30 - 60, 12), now)   # its newest ends 30 s ago
+    f._feed_segments(_FakeProc(1), run)
+    assert f.latency == 30.0 and run["delay"] == 30.0 + 5.0 + wc.DELAY_MARGIN
+
+
+def test_a_break_in_the_streams_timeline_starts_a_new_run_on_it(monkeypatch):
+    now = 1_000_000.0
+    segs = _playlist(100, now - 60, 12)
+    segs[6] = wc.Seg((106, now - 20, 5.0, "https://h/106.ts", True))     # the encoder restarted: a new timeline
+    f, run, clock = _feeder(monkeypatch, segs, now)
+    p = _FakeProc(9)
+    f._feed_segments(p, run)
+    assert p.written == [b"105.ts|"] and f._restart and f._next_seq == 106
+
+
+def test_segments_too_late_for_the_wall_are_passed_over(monkeypatch):
+    now = 1_000_000.0
+    f, run, clock = _feeder(monkeypatch, _playlist(100, now - 60, 12), now)
+    f._next_seq = 101                                                     # resuming after a long pause
+    p = _FakeProc(1)
+    f._feed_segments(p, run)
+    assert p.written == [b"104.ts|"]                                      # 101-103 ended before now - 35
+
+
+def test_an_expired_url_ends_the_run_and_looks_the_stream_up_again(monkeypatch):
     import urllib.error
 
     def gone(url, n):
         raise urllib.error.HTTPError(url, 403, "Forbidden", {}, None)
-    monkeypatch.setattr(wc, "seg_head", lambda url: 5)
-    monkeypatch.setattr(wc, "seg_get", gone)
-    f = _feed_shell()
-    f.decoded_t = 0.0
-    p = _FakeProc(stop_after=99)
-    f._fetch_segments(p, "https://v/x")
-    assert p.closed and p.written == [] and "403" in f.error
+    now = 1_000_000.0
+    f, run, clock = _feeder(monkeypatch, _playlist(100, now - 60, 12), now, get=gone)
+    p = _FakeProc(99)
+    f._feed_segments(p, run)
+    assert p.closed and p.written == [] and f._expired and f._restart and not f._fed
+
+
+def test_a_stream_without_dated_segments_is_not_in_step(monkeypatch):
+    now = 1_000_000.0
+    undated = [wc.Seg((s.seq, None, s.dur, s.url, False)) for s in _playlist(100, now - 60, 12)]
+    f, run, clock = _feeder(monkeypatch, undated, now)
+    p = _FakeProc(1)
+    f._feed_segments(p, run)
+    assert f._sync_broken and f._restart and p.written == []
+
+
+def test_dash_segments_are_fetched_by_number_and_checked_against_the_hls_numbering(monkeypatch):
+    now = 1_000_000.0
+    monkeypatch.setattr(wc, "seg_head", lambda url: 112)
+    f, run, clock = _feeder(monkeypatch, _playlist(100, now - 60, 12), now,
+                            seg={"timing": "t", "dash": "https://v/2160?x=1"})
+    p = _FakeProc(1)
+    f._feed_segments(p, run)
+    assert p.written == [b"d105|"]
+    monkeypatch.setattr(wc, "seg_head", lambda url: 400)                  # numbered differently: HLS instead
+    f._next_seq, f._restart = None, False
+    run2 = {"base": 0, "anchor": None, "fps": 30, "delay": None}
+    p2 = _FakeProc(1)
+    f._feed_segments(p2, run2)
+    assert f._dash_broken and f._restart and p2.written == []
+
+
+PLAYLIST = """#EXTM3U
+#EXT-X-TARGETDURATION:5
+#EXT-X-MEDIA-SEQUENCE:217038
+#EXT-X-PROGRAM-DATE-TIME:2026-11-22T06:11:15.132+00:00
+#EXTINF:5.0,
+a.ts
+#EXTINF:4.5,
+https://x/b.ts
+#EXT-X-DISCONTINUITY
+#EXT-X-PROGRAM-DATE-TIME:2026-11-22T06:12:00.000+00:00
+#EXTINF:5.0,
+c.ts
+"""
+
+
+def test_the_playlist_dates_every_segment():
+    import datetime
+    segs = wc.parse_playlist(PLAYLIST, "https://m/hls/index.m3u8")
+    t0 = datetime.datetime(2026, 11, 22, 6, 11, 15, 132000, tzinfo=datetime.timezone.utc).timestamp()
+    assert [s.seq for s in segs] == [217038, 217039, 217040]
+    assert segs[0].url == "https://m/hls/a.ts" and segs[1].url == "https://x/b.ts"
+    assert abs(segs[1].pdt - (t0 + 5.0)) < 1e-6 and segs[1].dur == 4.5
+    assert segs[2].disc and abs(segs[2].pdt - (t0 + 44.868)) < 1e-3
+
+
+def test_frames_in_step_carry_when_they_are_due():
+    arr = np.zeros((2, 3, 3), np.uint8)
+    b = wc.pack(arr, 0, due=1_795_331_517.25)
+    assert b[:4] == b"BSW2" and int.from_bytes(b[12:20], "big") == 1_795_331_517_250 and len(b) == 20 + 18
+    assert wc.pack(arr)[:4] == b"BSWC" and len(wc.pack(arr)) == 12 + 18
+
+
+def test_a_blip_is_retried_but_an_answer_is_not(monkeypatch):
+    import urllib.error
+    monkeypatch.setattr(wc.time, "sleep", lambda s: None)
+    calls = []
+
+    def flaky():
+        calls.append(1)
+        if len(calls) < 3:
+            raise urllib.error.URLError("connection reset")
+        return b"ok"
+    assert wc._retrying(flaky) == b"ok" and len(calls) == 3
+    calls.clear()
+
+    def busy():
+        calls.append(1)
+        raise urllib.error.HTTPError("u", 503, "busy", {}, None)
+    try:
+        wc._retrying(busy)
+    except urllib.error.HTTPError:
+        pass
+    assert len(calls) == wc.SEG_TRIES                                     # 5xx: tried again (then given up)
+    calls.clear()
+
+    def expired():
+        calls.append(1)
+        raise urllib.error.HTTPError("u", 403, "Forbidden", {}, None)
+    try:
+        wc._retrying(expired)
+    except urllib.error.HTTPError:
+        pass
+    assert len(calls) == 1                                                # 403 is an answer: no retry
