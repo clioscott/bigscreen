@@ -146,6 +146,8 @@ def stream_query(cam: dict, shape: str, w: int, h: int) -> dict:
     for k, key in (("b", "brightness"), ("c", "contrast"), ("s", "saturation")):
         if col.get(key) not in (None, 1, 1.0):
             q[k] = float(col[key])
+    if col.get("sharpen") is not None:                 # none: the hub's default (hub/webcams.py DEFAULT_SHARPEN)
+        q["sh"] = float(col["sharpen"])
     return q
 
 
