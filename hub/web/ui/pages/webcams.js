@@ -74,6 +74,7 @@ const DEFAULT_OVERLAY = { style: "tag", corner: "bl", when: "always", font: "sma
 // name, place (beside the name) and LIVE; local time and the time difference; the temperature (icon in front) and
 // conditions; 12 h clock, medium text, 30 fps
 const NEW_ORDER = ["shield", "live", "name", "place", "time", "offset", "weather", "conditions"];
+export const WEBCAM_SEC = 40;          // how long a webcam shows in the Webcams list by default (display/modules/webcam.py WEBCAM_SEC)
 const NEW_WEBCAM = { fps: 30,
   overlay: { font: "medium", time_format: "12h", place_beside: true, temp_icon: true,
     order: [...NEW_ORDER, ...ORDERABLE.filter((k) => !NEW_ORDER.includes(k))],
@@ -114,7 +115,7 @@ const TIMEZONES = ["America/Vancouver", "America/Los_Angeles", "America/Denver",
 const slug = (s) => (s || "webcam").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 32) || "webcam";
 const host = (u) => { try { return new URL(u).host.replace(/^www\./, ""); } catch { return u || ""; } };
 const qs = (o) => Object.entries(o).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
-export const camEntry = (id, shape) => ({ panel: SHAPES[shape].panel, cam: id, rules: [], dwell_sec: 60 });
+export const camEntry = (id, shape) => ({ panel: SHAPES[shape].panel, cam: id, rules: [], dwell_sec: WEBCAM_SEC });
 
 // where a webcam's weather comes from: its weather city (picked by name), else its own coordinates
 const wxPoint = (c) => (c?.wx_city && Number.isFinite(c.wx_city.lat) ? c.wx_city
@@ -491,7 +492,7 @@ const LiveGallery = {
 // every webcam, in the order the display already plays them without one
 function seedWebcams() {
   const wc = seed(["modules", "webcams"], { cams: {} });
-  seed(["modules", "webcams", "playlist"], Object.keys(wc.cams || {}).map((cam) => ({ cam, sec: 60, on: true })));
+  seed(["modules", "webcams", "playlist"], Object.keys(wc.cams || {}).map((cam) => ({ cam, sec: WEBCAM_SEC, on: true })));
   seed(["modules", "webcams", "grid"], { cams: [], interval_ms: 200, hold_sec: 3, labels: true });
   seed(["modules", "webcams", "grid", "label"], { lines: [["street1"], ["street2"]], dir: "tag", at: "bottom" });
   seed(["modules", "webcams", "grid", "near"], { on: false, radius: 1, unit: "km", kinds: "city" });
@@ -573,7 +574,7 @@ const PlaylistTab = {
       const order = [...new Set(single.value.map((u) => u.e.cam))];
       const rest = wc.playlist.filter((x) => !order.includes(x.cam));
       wc.playlist = [...order.map((cam) => ({ ...(wc.playlist.find((x) => x.cam === cam) || { cam }), on: true,
-        sec: single.value.find((u) => u.e.cam === cam).e.dwell_sec || 60 })), ...rest.map((x) => ({ ...x, on: false }))];
+        sec: single.value.find((u) => u.e.cam === cam).e.dwell_sec || WEBCAM_SEC })), ...rest.map((x) => ({ ...x, on: false }))];
       for (const side of ["left", "right"]) lc[side] = (lc[side] || []).filter((e) => !(e.panel?.startsWith("webcam") && !e.panel.startsWith("webcam_grid") && e.cam));
       if (!found.value.length) {
         const entry = { panel: first.e.panel, rules: first.e.rules || [], advance: "cycles", cycles: 1, max_sec: 3600, ...(first.e.variants ? { variants: first.e.variants } : {}) };
@@ -582,11 +583,11 @@ const PlaylistTab = {
       toast(`${order.length} webcams combined into the list, with one Webcams entry in the rotation. Save to keep it.`);
     };
     const on = computed(() => list.value.filter((x) => x.on !== false && cams.value[x.cam]));
-    const total = computed(() => on.value.reduce((n, x) => n + (x.sec || 60), 0));
+    const total = computed(() => on.value.reduce((n, x) => n + (x.sec || WEBCAM_SEC), 0));
     const srcHost = (s) => (s?.type === "drivebc" ? `DriveBC camera ${s.id}` : host(s?.url));
     const kindOf = (s) => (STILL.includes(s?.type) ? "Still" : "Live");
     const mins = (s) => (s >= 90 ? `${Math.round(s / 6) / 10} min` : `${s} s`);
-    return { LIST_SHAPES, wc, cams, list, on, total, found, single, combine, feedFor, feedPill, healthFor, downPill, fetchAll, fetching, fetchState, fetchResult, srcHost, kindOf, hasSource, mins, go };
+    return { LIST_SHAPES, WEBCAM_SEC, wc, cams, list, on, total, found, single, combine, feedFor, feedPill, healthFor, downPill, fetchAll, fetching, fetchState, fetchResult, srcHost, kindOf, hasSource, mins, go };
   },
   template: `<div class="stack">
     <div class="card"><div class="card-body stack" style="gap:10px">
@@ -626,7 +627,7 @@ const PlaylistTab = {
           <span v-if="fetchResult(it.cam)" class="pill" :class="fetchResult(it.cam).ok ? 'ok' : 'bad'" :title="fetchResult(it.cam).msg">{{ fetchResult(it.cam).ok ? 'fetched' : 'fetch failed' }}</span>
           <span v-if="downPill(healthFor(it.cam))" class="pill bad" :title="downPill(healthFor(it.cam)).title">{{ downPill(healthFor(it.cam)).text }}</span>
           <span v-else class="pill" :class="feedPill(feedFor(cams[it.cam])).cls">{{ feedPill(feedFor(cams[it.cam])).text }}</span>
-          <Stepper :modelValue="it.sec || 60" @update:modelValue="v => it.sec = v" :min="5" :max="3600" :step="5" unit=" s" title="How long it shows"/>
+          <Stepper :modelValue="it.sec || WEBCAM_SEC" @update:modelValue="v => it.sec = v" :min="5" :max="3600" :step="5" unit=" s" title="How long it shows"/>
           <Toggle :modelValue="it.on !== false" @update:modelValue="v => it.on = v" title="In the rotation"/>
           <button class="btn sm ghost icon-only" title="Crop, colour and caption" @click="go('webcams/' + it.cam)"><Icon name="Pencil" :size="14"/></button>
         </div>
@@ -855,7 +856,7 @@ const WebcamList = {
       const overlay = newOverlay();
       if (STILL.includes(f.source?.type)) Object.assign(overlay.show, { age: true, live: false });   // a still isn't LIVE
       all[id] = { fps: NEW_WEBCAM.fps, ...base, overlay, crops: {} };
-      store.draft.modules.webcams.playlist.push({ cam: id, sec: 60, on: true });
+      store.draft.modules.webcams.playlist.push({ cam: id, sec: WEBCAM_SEC, on: true });
       if (!base.tz && Number.isFinite(base.lat) && Number.isFinite(base.lon))      // its local time: the location's zone
         localOf(base.lat, base.lon).then((r) => { if (r.tz && all[id] && !all[id].tz) all[id].tz = r.tz; }).catch(() => {});
       if (open) go(`webcams/${id}`);
@@ -1205,8 +1206,8 @@ const WebcamEditor = {
     const listPos = computed(() => (store.draft.modules.webcams.playlist || []).findIndex((x) => x.cam === id.value) + 1);
     const addToList = () => {
       const wc = store.draft.modules.webcams;
-      if (!Array.isArray(wc.playlist)) wc.playlist = Object.keys(wc.cams).filter((k) => k !== id.value).map((cam) => ({ cam, sec: 60, on: true }));
-      wc.playlist.push({ cam: id.value, sec: 60, on: true });
+      if (!Array.isArray(wc.playlist)) wc.playlist = Object.keys(wc.cams).filter((k) => k !== id.value).map((cam) => ({ cam, sec: WEBCAM_SEC, on: true }));
+      wc.playlist.push({ cam: id.value, sec: WEBCAM_SEC, on: true });
     };
     const capTab = ref("theme");
     const copyCrop = () => {
@@ -1307,7 +1308,7 @@ const WebcamEditor = {
       [o[a], o[b]] = [o[b], o[a]];
     };
     const customCrop = (s) => !!cam.value.crops?.[s];
-    return { id, cam, shape, zone, ov, colour, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
+    return { id, cam, shape, WEBCAM_SEC, zone, ov, colour, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
       orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, hasText, customCols, SHIELD_PRESETS, SHIELD_KINDS, SHIELD_PLACES, SHIELD_SIZES, SHIELD_STYLES, shieldSrc, signMissing, presetShown, presetDone,
       CONTAINERS, feedFor, feedPill, healthFor, downPill, local, cityQ, cityHits, citySearching, searchCity, pickCity, clearCity, cityLabel, wxPoint, jpFaces, jpSample, jc, jcSizes, jcSetFace, jcSample, JC_POSITIONS, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
   },
@@ -1393,7 +1394,7 @@ const WebcamEditor = {
             </div>
             <div class="wc-rot" v-if="inList">
               <Icon name="ListOrdered" :size="15"/><span>No. {{ listPos }} in the <a href="#/webcams">Webcams list</a></span><span class="spacer"></span>
-              <span class="faint">shows for</span><Stepper :modelValue="inList.sec || 60" @update:modelValue="v => inList.sec = v" :min="5" :max="3600" :step="5" unit=" s"/>
+              <span class="faint">shows for</span><Stepper :modelValue="inList.sec || WEBCAM_SEC" @update:modelValue="v => inList.sec = v" :min="5" :max="3600" :step="5" unit=" s"/>
               <Toggle :modelValue="inList.on !== false" @update:modelValue="v => inList.on = v" title="In the rotation"/></div>
             <div class="wc-rot" v-else><Icon name="ListOrdered" :size="15"/><span>Not in the Webcams list.</span><span class="spacer"></span>
               <button class="btn sm primary" @click="addToList"><Icon name="ListPlus" :size="14"/>Add to the list</button></div>
