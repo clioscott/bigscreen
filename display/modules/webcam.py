@@ -66,6 +66,8 @@ RETRY_DOWN_SEC = 1800.0      # a feed's "down" this old: try it again (only a pl
 MAGIC = b"BSWC"
 MAGIC_DUE = b"BSW2"          # hub/webcams.py pack: a frame in step, its header followed by when it's due (epoch ms u64)
 HOLD_LATE_SEC = 0.5          # in step: frames due longer ago than this are let go (one is always kept to show)
+LATE_SHIFT_MAX = 10.0        # in step: a webcam whose frames start coming late plays up to this much later instead of
+                             # freezing (out of step with the rest until it's shown again)
 PLACEHOLDER_AGE = 0xFFFFFFFF  # hub/webcams.py: a frame with this age is the still sent while a feed starts
 GRID_MAGIC = b"BSG2"
 GRID_ROWS = 2                # the camera grid's rows by default; its columns fit the frame
@@ -167,6 +169,8 @@ class Stream:
     late = 0
     _holding = False
     _shown_due = None
+    shift = 0.0                                # in step: how much later than its due times this stream plays
+    _on_time = False                           # in step: a frame has come well before it was due
 
     def __init__(self, hub_url: str, query: dict):
         self.hub = urlparse(hub_url)
@@ -259,6 +263,13 @@ class Stream:
         """The reader's side: queue a frame by when it's due. A frame due no later than ones already queued comes
         from a restarted run on the hub (more detail, a new URL): it replaces them from there on."""
         self.in_step = True
+        if due >= now + 1.0:
+            self._on_time = True
+        elif self._on_time and due + self.shift < now - 0.05:
+            # it was coming on time and now isn't (a busy hub): play it later, smoothly, rather than freeze and skip.
+            # (The first frames of a stream are always a little late: those don't count.)
+            self.shift = min(LATE_SHIFT_MAX, max(self.shift, now - due + 1.0))
+        due += self.shift
         with self._tlock:
             q = self._tq
             while q and q[-1][0] >= due:
@@ -326,7 +337,8 @@ class Stream:
              "shown": self.shown, "skipped": self.skipped, "dry_runs": self.dry_runs, "error": self.error,
              "in_step": self.in_step}
         if self.in_step:
-            d.update(playing=not self._holding, buffered_sec=round(self.ahead(), 1), late=self.late)
+            d.update(playing=not self._holding, buffered_sec=round(self.ahead(), 1), late=self.late,
+                     shift=round(self.shift, 1))
         return d
 
     def buffering(self):

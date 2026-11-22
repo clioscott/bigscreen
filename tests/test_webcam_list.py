@@ -1321,3 +1321,24 @@ def test_in_step_a_prerolled_stream_keeps_only_what_is_still_to_come():
     _feed(st, [110 + k / 30 for k in range(3)], now=108.0)                # arrives at 108: older ones are let go
     assert st._tq[0][0] >= 108.0 - wm.HOLD_LATE_SEC - 1 / 30 and st.ahead(108.0) > 2.0
     assert st.buffered() is True or st.ahead() >= 0                       # (ready says so once the next second is here)
+
+
+def test_in_step_frames_that_start_coming_late_play_a_little_later_instead_of_freezing(monkeypatch):
+    monkeypatch.setitem(wm.CLOCK, "period", 1 / 60)
+    st = _step_stream()
+    _feed(st, [100 + k / 30 for k in range(30)], now=97.0)                # first frames: a little late is fine
+    assert st.shift == 0.0
+    st2 = _step_stream()
+    _feed(st2, [95 + k / 30 for k in range(30)], now=96.5)                # the start of a stream, late: no shift
+    assert st2.shift == 0.0
+    _feed(st, [101 + k / 30 for k in range(150)], now=103.0)              # on time before, now 2 s late: shifted
+    assert 2.9 <= st.shift <= 3.1
+    seen = {int(st.current(104.2 + j / 60)[0, 0, 0]) for j in range(60)}
+    assert len(seen) > 20                                                 # playing, not holding
+
+
+def test_in_step_a_shift_never_goes_past_the_limit():
+    st = _step_stream()
+    _feed(st, [100 + k / 30 for k in range(3)], now=90.0)
+    _feed(st, [101.0], now=150.0)
+    assert st.shift == wm.LATE_SHIFT_MAX

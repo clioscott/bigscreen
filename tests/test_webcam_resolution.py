@@ -585,3 +585,13 @@ def test_the_detail_picture_is_cut_for_the_zone_playing_not_every_saved_one(monk
     assert live == [c.want()]
     p = wc.plan(2560, 1440, live, force=True)
     assert p["exact"] and (p["w"], p["h"], p["out_w"], p["out_h"]) == (2240, 875, 448, 175)   # 5 x 5, exactly
+
+
+def test_the_wall_gets_the_exact_cut_and_a_preview_of_another_crop_comes_from_lo():
+    f = _feed_shell()
+    wall = f.consumer(448, 175, {"x": 0.0, "y": 0.28, "w": 0.875, "snap": True})
+    draft = f.consumer(448, 175, {"x": 0.0, "y": 0.30, "w": 0.875, "snap": True}, key=("preview", "t"), draft=True)
+    draft.changed -= 10                                                   # held still
+    assert f.live_wants() == [wall.want()]
+    f.release(wall)
+    assert f.live_wants() == [draft.want()]                               # not on the wall: the preview's turn

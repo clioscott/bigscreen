@@ -79,7 +79,8 @@ DELAY_SEC = 35.0             # modules.webcams.delay_sec when unset: more than a
                              # a segment (up to 5 s) and fetching
 DELAY_RANGE = (10.0, 120.0)
 DELAY_MARGIN = 3.0           # a stream lagging more than (delay - segment - this) plays later than the rest
-FEED_LEAD = 6.0              # a segment goes into ffmpeg this long before its first frame is due on the wall
+FEED_LEAD = 8.0              # a segment goes into ffmpeg this long before its first frame is due on the wall
+                             # (slack for a busy hub: frames later than this arrive after they're due)
 FETCH_LEAD = 12.0            # … and is downloaded up to this long before that
 START_AHEAD = 1.5            # a run starts with the segment holding what's due this long from now
 PLAYLIST_EVERY = 10.0        # the playlist is read again this often (sooner when the next segment isn't on it yet)
@@ -890,7 +891,11 @@ class Feed:
         hi picture is cut for. Planning it for every saved zone instead made it the whole frame, scaled down to fit:
         no Whole pixels crop was exact any more."""
         with self._lock:
-            got = [c.want() for c in self.consumers.values() if c.settled()]
+            wall = [c.want() for c in self.consumers.values() if not c.draft]
+            drafts = [c.want() for c in self.consumers.values() if c.draft and c.settled()]
+        # the wall's zones when it plays this feed: a panel preview of another crop then comes out of lo (cutting one
+        # region for both and scaling it here for each took ~1 core of the hub's and starved the other feeds)
+        got = wall or drafts
         out, seen = [], set()
         for w in got:
             key = _key_of(w[0], w[1], w[2], None)
