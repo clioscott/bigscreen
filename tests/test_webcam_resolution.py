@@ -305,10 +305,15 @@ class _FakeProc:
         self.stdin = self
 
     def poll(self):
-        return 0 if len(self.written) >= self.stop_after else None
+        done = [w for w in self.written if w.endswith(b"|")]
+        return 0 if len(done) >= self.stop_after else None
 
-    def write(self, b):
-        self.written.append(b)
+    def write(self, b):                                                   # a raw pipe: takes 3 bytes at most
+        b = bytes(b)
+        if not self.written or self.written[-1].endswith(b"|"):
+            self.written.append(b"")
+        self.written[-1] += b[:3]
+        return min(3, len(b))
 
     def close(self):
         self.closed = True
@@ -317,23 +322,23 @@ class _FakeProc:
 def test_segments_go_into_ffmpeg_in_order_from_just_before_the_newest(monkeypatch):
     heads = iter([10, 10, 11, 12])
     monkeypatch.setattr(wc, "seg_head", lambda url: next(heads))
-    monkeypatch.setattr(wc, "seg_get", lambda url, n: f"seg{n}".encode())
+    monkeypatch.setattr(wc, "seg_get", lambda url, n: f"seg{n}|".encode())
     monkeypatch.setattr(wc, "SEG_POLL", 0)
     f = _feed_shell()
     f.decoded_t = 0.0
     p = _FakeProc(stop_after=4)
     f._fetch_segments(p, "https://v/x")
-    assert p.written == [b"seg9", b"seg10", b"seg11", b"seg12"] and p.closed and f.error == ""
+    assert p.written == [b"seg9|", b"seg10|", b"seg11|", b"seg12|"] and p.closed and f.error == ""   # whole
 
 
 def test_a_run_restarted_for_more_detail_starts_at_the_newest_segment(monkeypatch):
     monkeypatch.setattr(wc, "seg_head", lambda url: 50)
-    monkeypatch.setattr(wc, "seg_get", lambda url, n: f"seg{n}".encode())
+    monkeypatch.setattr(wc, "seg_get", lambda url, n: f"seg{n}|".encode())
     f = _feed_shell()
     f.decoded_t = 123.0                                                    # frames were already decoded
     p = _FakeProc(stop_after=1)
     f._fetch_segments(p, "https://v/x")
-    assert p.written == [b"seg50"]
+    assert p.written == [b"seg50|"]
 
 
 def test_an_expired_segment_url_ends_the_run(monkeypatch):
@@ -348,3 +353,36 @@ def test_an_expired_segment_url_ends_the_run(monkeypatch):
     p = _FakeProc(stop_after=99)
     f._fetch_segments(p, "https://v/x")
     assert p.closed and p.written == [] and "403" in f.error
+
+
+def test_a_blip_is_retried_but_an_answer_is_not(monkeypatch):
+    import urllib.error
+    monkeypatch.setattr(wc.time, "sleep", lambda s: None)
+    calls = []
+
+    def flaky():
+        calls.append(1)
+        if len(calls) < 3:
+            raise urllib.error.URLError("connection reset")
+        return b"ok"
+    assert wc._retrying(flaky) == b"ok" and len(calls) == 3
+    calls.clear()
+
+    def busy():
+        calls.append(1)
+        raise urllib.error.HTTPError("u", 503, "busy", {}, None)
+    try:
+        wc._retrying(busy)
+    except urllib.error.HTTPError:
+        pass
+    assert len(calls) == wc.SEG_TRIES                                     # 5xx: tried again (then given up)
+    calls.clear()
+
+    def expired():
+        calls.append(1)
+        raise urllib.error.HTTPError("u", 403, "Forbidden", {}, None)
+    try:
+        wc._retrying(expired)
+    except urllib.error.HTTPError:
+        pass
+    assert len(calls) == 1                                                # 403 is an answer: no retry

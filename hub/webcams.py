@@ -327,7 +327,7 @@ def playable(formats, hw=None) -> list:
 
 def native_of(formats):
     """The biggest of a stream's formats (its own resolution), or None."""
-    return max(formats, key=lambda f: (f["h"], f["w"], f["fps"], -f["audio"])) if formats else None
+    return max(formats, key=lambda f: (f["h"], f["w"], f["fps"], -f.get("audio", False))) if formats else None
 
 
 def pick_format(formats, need_w=0.0, min_h=MIN_SOURCE_H, snaps=()):
@@ -378,28 +378,59 @@ def hw_decode() -> bool:
 
 
 # --- DASH segments (a live stream's 1440p and 4K) -------------------------------------------------------------
-def seg_head(url, tries=3) -> int:
-    """The newest segment's number (YouTube's X-Head-Seqnum, from a HEAD of the format's URL); a couple of retries
-    a second apart (a blip shouldn't end the run)."""
+SEG_TRIES = 3                # a segment request is tried this often (1 s, then 2 s apart) before the run gives up
+
+
+def _retrying(fn, tries=SEG_TRIES):
+    """fn() again after a blip: a timeout, a dropped connection, a cut-short read, 429 or 5xx. Other HTTP errors (403:
+    the URL expired; 404: no such segment) are answers, raised at once."""
+    import http.client
     for i in range(tries):
         try:
-            req = urllib.request.Request(url, method="HEAD", headers=UA)
-            with urllib.request.urlopen(req, timeout=SEG_TIMEOUT) as r:
-                return int(r.headers["X-Head-Seqnum"])
-        except urllib.error.HTTPError:
-            raise                                       # 403: the URL expired (looked up again); no use retrying
-        except Exception:
+            return fn()
+        except urllib.error.HTTPError as e:
+            if e.code != 429 and e.code < 500 or i == tries - 1:
+                raise
+        except (urllib.error.URLError, TimeoutError, ConnectionError, http.client.IncompleteRead,
+                http.client.RemoteDisconnected):
             if i == tries - 1:
                 raise
-            time.sleep(1.0)
+        time.sleep(1.0 + i)
+
+
+def seg_head(url) -> int:
+    """The newest segment's number (YouTube's X-Head-Seqnum, from a HEAD of the format's URL)."""
+    def ask():
+        req = urllib.request.Request(url, method="HEAD", headers=UA)
+        with urllib.request.urlopen(req, timeout=SEG_TIMEOUT) as r:
+            v = r.headers.get("X-Head-Seqnum")
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            raise SourceError(f"YouTube gave no segment number ({v!r})")
+    return _retrying(ask)
 
 
 def seg_get(url, n) -> bytes:
     """Segment n (a whole WebM file, ~5 s)."""
     sep = "&" if "?" in url else "?"
-    with urllib.request.urlopen(urllib.request.Request(url + sep + urlencode({"sq": n}), headers=UA),
-                                timeout=SEG_TIMEOUT) as r:
-        return r.read()
+
+    def get():
+        with urllib.request.urlopen(urllib.request.Request(url + sep + urlencode({"sq": n}), headers=UA),
+                                    timeout=SEG_TIMEOUT) as r:
+            return r.read()
+    return _retrying(get)
+
+
+def write_all(sink, data) -> None:
+    """All of data into a raw (unbuffered) pipe: one write() may take only part of it."""
+    view = memoryview(data)
+    while view:
+        n = sink.write(view)
+        if n is None:                                   # (non-blocking only; not for these pipes)
+            time.sleep(0.01)
+            continue
+        view = view[n:]
 
 
 # --- how much detail a crop needs -------------------------------------------------------------------------------
@@ -590,6 +621,8 @@ class Feed:
         self._run_hi = False             # the current ffmpeg gives a hi picture (its reader renders the consumers)
         self._hi_broken = False          # a run with a hi picture wouldn't open: this feed sticks to lo
         self._dash_broken = False        # a DASH run wouldn't open: this feed sticks to HLS
+        self._fed = False                # this run's fetcher got a segment into ffmpeg
+        self._seg_error = ""             # … or why it couldn't
         threading.Thread(target=self._run, name=f"webcam-{urlparse(url).netloc}", daemon=True).start()
         if kind not in STILLS:                              # stills publish directly
             threading.Thread(target=self._pace, name="webcam-pacer", daemon=True).start()
@@ -965,12 +998,14 @@ class Feed:
                         n = head
                         continue
                     raise
-                sink.write(data)
+                try:
+                    write_all(sink, data)
+                except (BrokenPipeError, ValueError):               # ffmpeg ended (or was stopped)
+                    return
+                self._fed = True
                 n += 1
-        except (BrokenPipeError, ValueError):                       # ffmpeg ended (or was stopped)
-            pass
         except Exception as e:
-            self.error = f"segments: {type(e).__name__}: {e}"[:300]
+            self._seg_error = self.error = f"segments: {type(e).__name__}: {e}"[:300]
         finally:
             try:
                 sink.close()
@@ -984,6 +1019,7 @@ class Feed:
         if dash and not hw:                              # the video engine went away since this run was chosen
             self._restart = True
             return False
+        self._fed, self._seg_error = False, ""
         hi_r = hi_w = None
         if self.hi is not None:
             hi_r, hi_w = os.pipe()
@@ -1020,6 +1056,11 @@ class Feed:
             while 0 not in size_box or (hi_r is not None and 1 not in size_box):   # sizes: in ffmpeg's banner
                 if proc.poll() is not None or time.time() - t0 > 45:
                     msg = (tail[-1] if tail else "ffmpeg could not open the stream")[:300]
+                    if self._restart:                      # stopped on purpose (more frames or detail wanted)
+                        return False
+                    if dash and not self._fed:             # no segment reached ffmpeg: the fetching failed (a
+                        self.error = self._seg_error or msg   # network blip, an expired URL), not the DASH run
+                        return False
                     if dash:                               # the DASH run didn't open: HLS (up to 1080p) from now on
                         self._dash_broken = True           # (first: its errors name vaapi, but the HLS run will
                         self._restart = True               # tell whether the video engine itself works)
