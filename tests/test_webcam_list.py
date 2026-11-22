@@ -1401,3 +1401,43 @@ def test_the_list_passes_over_a_webcam_outside_its_hours(monkeypatch):
     noon = 1_795_348_800.0                                                     # 2026-11-22 12:00 UTC
     assert p.is_down("aurora", noon) and not p.is_down("aurora", noon + 10 * 3600)
     assert p._next_up(0, ()) in ("a",) or p.is_down("aurora")
+
+
+def test_the_hubs_placeholder_while_a_feed_starts_never_counts_as_a_black_picture():
+    import io
+
+    class Resp:
+        def __init__(self, frames):
+            self.buf = io.BytesIO(b"".join(frames))
+            self.status = 200
+
+        def read(self, n):
+            return self.buf.read(n)
+
+    def pack(arr, age):
+        h, w = arr.shape[:2]
+        return wm.MAGIC + w.to_bytes(2, "big") + h.to_bytes(2, "big") + age.to_bytes(4, "big") + arr.tobytes()
+
+    dark = np.zeros((8, 8, 3), np.uint8)                                  # the hub's still can be anything, even dark
+    st = wm.Stream.__new__(wm.Stream)
+    st.w = st.h = 8
+    st.fps, st.video, st.alive, st.last_use = 30, True, True, 1e18
+    st.frame, st.frame_t, st._black_checked, st.black_since, st.skip_plain = None, 0.0, 0.0, None, False
+    st._q, st.error = collections.deque(maxlen=10), ""
+    frames = [pack(dark, wm.PLACEHOLDER_AGE)]
+    conn = type("C", (), {"connect": lambda s: None, "request": lambda s, *a, **k: None,
+                          "getresponse": lambda s: Resp(frames), "sock": None})()
+    import http.client
+    orig = http.client.HTTPConnection
+    http.client.HTTPConnection = lambda *a, **k: conn
+    try:
+        st.hub, st.path, st.query = type("U", (), {"hostname": "h", "port": 1})(), "/", {}
+        try:
+            st._read()
+        except RuntimeError:                                              # (the stream ends after the still)
+            pass
+    finally:
+        http.client.HTTPConnection = orig
+    assert st.frame is not None and st.black_since is None                # shown, but never counted as black
+    st.check_blank(dark, 5.0)
+    assert st.black_since == 5.0                                          # a real black frame still counts

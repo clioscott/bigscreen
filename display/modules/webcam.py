@@ -393,6 +393,13 @@ class Stream:
 
     _last_sub = None
 
+    def check_blank(self, frame, t):
+        """Note whether the video is down while still sending (blank), from when."""
+        if not self.blank(frame):
+            self.black_since = None
+        elif self.black_since is None:
+            self.black_since = t
+
     def blank(self, frame) -> bool:
         """Down while still sending: black, or for a webcam that asks (skip_plain) a plain screen or a frozen picture.
         Checked once a second; BLACK_SEC of it and the webcam is passed over (or left, mid-turn)."""
@@ -517,12 +524,9 @@ class Stream:
                 self._add_due(due, self.frame, self.frame_t)
             elif self.video and not placeholder:                # the placeholder shows while loading, never in the video
                 self._q.append(self.frame)
-            if self.frame_t - self._black_checked >= 1.0:       # on the reader's core, once a second
-                self._black_checked = self.frame_t
-                if not placeholder and not self.blank(self.frame):
-                    self.black_since = None
-                elif self.black_since is None:
-                    self.black_since = self.frame_t
+            if not placeholder and self.frame_t - self._black_checked >= 1.0:   # on the reader's core, once a second
+                self._black_checked = self.frame_t              # (the hub's still while a feed starts says nothing
+                self.check_blank(self.frame, self.frame_t)      # about the video: it isn't checked)
             self.age = age
             self.error = ""
 
