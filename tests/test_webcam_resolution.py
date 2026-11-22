@@ -187,3 +187,11 @@ def test_a_failed_lookup_is_not_repeated_for_a_while(monkeypatch):
             pass
     assert len(calls) == 1 and wc.cached(url) is None               # the panel's 4-s poll never asks YouTube
     wc._lookup_failed.pop(url, None)
+
+
+def test_30fps_is_picked_over_60_at_the_same_size():
+    f = wc.formats_of({"formats": [
+        {"url": "https://m/1080p60", "vcodec": "avc1", "acodec": "none", "width": 1920, "height": 1080, "fps": 60},
+        {"url": "https://m/1080p30", "vcodec": "avc1", "acodec": "none", "width": 1920, "height": 1080, "fps": 30}]})
+    assert wc.pick_format(f, 1500)["url"] == "https://m/1080p30"
+    assert wc.native_of(f)["fps"] == 60                                  # (the panel still says what it has)

@@ -273,8 +273,8 @@ def _lookup(url, timeout):
 
 
 def formats_of(info) -> list:
-    """The video streams in yt-dlp's info, smallest first (video-only before muxed, and H.264 before VP9/AV1 at the
-    same size: cheaper to decode without the video engine)."""
+    """The video streams in yt-dlp's info, smallest first (video-only before muxed, 30 fps before 60, and H.264
+    before VP9/AV1 at the same size: cheaper to decode without the video engine)."""
     out = []
     for f in info.get("formats") or []:
         try:
@@ -290,7 +290,9 @@ def formats_of(info) -> list:
         out.append({"url": u, "w": w, "h": h, "fps": fps, "vcodec": vcodec.split(".")[0], "tbr": tbr,
                     "audio": str(f.get("acodec") or "none") != "none"})
     pref = {"avc1": 0, "h264": 0, "vp09": 1, "vp9": 1, "av01": 2}
-    out.sort(key=lambda f: (f["h"], f["audio"], pref.get(f["vcodec"], 3), -f["fps"], f["tbr"]))
+    # 30 fps before 60 at the same size: the wall plays 30 (the panels' 60 Hz shows each frame twice), so a 60 fps
+    # stream would be decoded only to drop every other frame
+    out.sort(key=lambda f: (f["h"], f["audio"], f["fps"] > 31, pref.get(f["vcodec"], 3), -f["fps"], f["tbr"]))
     return out
 
 
