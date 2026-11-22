@@ -36,6 +36,7 @@ NE = {  # Natural Earth (public domain): countries, and named seas and oceans
 }
 UA = {"User-Agent": "BigScreen/2 (home LED wall; ISS webcam caption)"}
 HORIZON = 3 * 3600           # computed this far ahead (the job runs every 10 min)
+BACK = 300                   # … and from this long before now
 STEP = 10                    # track resolution (s)
 OVER_STEP = 60               # what it's over / the zone below, this often (the ISS covers ~460 km a minute)
 TLE_TTL = 6 * 3600
@@ -228,7 +229,9 @@ def run(cfg):
         return {"ok": True, "skipped": "no webcam is in space"}
     now = time.time()
     l1, l2 = elements()
-    tr = track(l1, l2, now)
+    # from BACK before now: the wall shows video from 35 s ago (and more for a webcam that lags), so the track must
+    # already cover then the moment the file lands (starting at now blanked the sections for 35 s after every run)
+    tr = track(l1, l2, now - BACK, horizon=HORIZON + BACK)
     below = Below()
     over, tz = [], []
     for row in tr[::max(1, OVER_STEP // STEP)]:
