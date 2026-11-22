@@ -525,3 +525,32 @@ def test_a_blip_is_retried_but_an_answer_is_not(monkeypatch):
     except urllib.error.HTTPError:
         pass
     assert len(calls) == 1                                                # 403 is an answer: no retry
+
+
+def test_a_webcam_can_ask_for_4k_whatever_its_crops_need():
+    f = wc.formats_of(_live_info())
+    full = [(448, 175, None)]
+    assert wc.choose_format(f, full, hw=True)["h"] == 720                         # auto: what the crop needs
+    assert wc.choose_format(f, full, hw=True, quality="max")["h"] == 2160
+    assert wc.choose_format(f, full, hw=True, quality=1440)["h"] == 1440
+    assert wc.choose_format(f, full, hw=True, quality=1080)["h"] == 1080
+    assert wc.choose_format(f, full, hw=False, quality="max")["h"] == 1080        # no video engine: HLS's best
+    assert wc.quality_of(["auto", 1080, "auto"]) == 1080 and wc.quality_of(["auto", 1440, "max"]) == "max"
+    assert wc.quality_of(["auto"]) is None
+
+
+def test_a_chosen_quality_cuts_every_crop_from_the_streams_own_pixels():
+    assert wc.plan(3840, 2160, [(448, 175, None)]) is None                       # auto: the 640 px picture is plenty
+    p = wc.plan(3840, 2160, [(448, 175, None)], force=True)
+    assert p["exact"] and p["full_w"] == 3840 and (p["out_w"], p["out_h"]) == (448, 175)
+
+
+def test_quality_is_checked_in_the_config():
+    import pytest
+    from hub import config
+    base = {"source": {"type": "youtube", "url": "https://www.youtube.com/watch?v=abcdefghijk"}}
+    for bad in ("4k", 0, True, 99999):
+        with pytest.raises(config.ConfigError):
+            config._validate_webcams({"cams": {"a": {**base, "quality": bad}}})
+    for good in ("auto", "max", 2160, 1080):
+        config._validate_webcams({"cams": {"a": {**base, "quality": good}}})

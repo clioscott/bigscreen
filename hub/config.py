@@ -431,6 +431,9 @@ def _validate_webcams(wc):
             fps_ok = False
         if not fps_ok:
             raise ConfigError(f"webcam {name}: frame rate must be 1–30")
+        q = cam.get("quality", "auto")
+        if q not in ("auto", "max") and not (isinstance(q, int) and not isinstance(q, bool) and 144 <= q <= 4320):
+            raise ConfigError(f'webcam {name}: quality must be "auto", "max" or a height (720, 1080, 2160…)')
         refresh = (cam.get("source") or {}).get("refresh_sec")
         if refresh not in (None, ""):
             try:

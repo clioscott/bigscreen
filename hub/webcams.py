@@ -361,17 +361,35 @@ def is_snap(crop) -> bool:
     return isinstance(crop, dict) and bool(crop.get("snap")) and bool(crop.get("w"))
 
 
-def choose_format(formats, wants, hw=None):
+def choose_format(formats, wants, hw=None, quality=None):
     """The format a feed should decode for these consumers [(out_w, out_h, crop)]: the smallest playable one giving
     each crop OVERSAMPLE pixels per LED, on which every Whole pixels crop is still exact (4K and 1080p both are for
-    a crop made on either: 4K is 2 x 2 of 1080p)."""
+    a crop made on either: 4K is 2 x 2 of 1080p). ``quality`` (the webcam's own choice, quality_of): at least that
+    tall ("max": the biggest there is), whatever the crops need."""
     fs = playable(formats, hw)
     if not fs:
         return None
     top = native_of(fs)
     need = max([need_of(top["w"], top["h"], ow, oh, {k: v for k, v in c.items() if k != "snap"}
                         if is_snap(c) else c) for ow, oh, c in wants] or [0.0])
-    return pick_format(fs, need, snaps=[w for w in wants if is_snap(w[2])])
+    min_h = MIN_SOURCE_H
+    if quality == "max":
+        min_h = top["h"]
+    elif isinstance(quality, int) and not isinstance(quality, bool):
+        min_h = max(min_h, quality)
+    return pick_format(fs, need, min_h, snaps=[w for w in wants if is_snap(w[2])])
+
+
+def quality_of(values):
+    """The quality asked of a stream by every saved webcam showing it ("auto", "max" or a height): the most of
+    them, or None (auto: by the crops)."""
+    best = None
+    for q in values:
+        if q == "max":
+            return "max"
+        if isinstance(q, int) and not isinstance(q, bool) and (best is None or q > best):
+            best = q
+    return best
 
 
 def resolve(kind, url, fresh=False, timeout=60, need_w=0.0, min_h=MIN_SOURCE_H) -> tuple[str, str]:
@@ -517,7 +535,7 @@ def need_of(src_w, src_h, out_w, out_h, crop=None) -> float:
     return out_w / max(1e-3, crop_frac(src_w, src_h, out_w, out_h, crop)[2]) * OVERSAMPLE
 
 
-def plan(src_w, src_h, wants) -> dict | None:
+def plan(src_w, src_h, wants, force=False) -> dict | None:
     """The hi picture for these consumers [(out_w, out_h, crop)] of a src_w x src_h stream: None when the lo picture
     is enough, else {"full_w": the whole frame's width at this detail, "x", "y", "w", "h": the region in source
     pixels (the crops' region, or the whole frame when that's most of it), "out_w", "out_h": the hi
@@ -525,11 +543,14 @@ def plan(src_w, src_h, wants) -> dict | None:
     pixels than the source has."""
     if src_w < 16 or src_h < 16:
         return None
-    wants = [w for w in wants if need_of(src_w, src_h, *w) > WORK_W * 1.1]    # the rest come out of lo
-    if not wants:
-        return None
-    full_w = min(float(src_w), max(need_of(src_w, src_h, *w) for w in wants))
-    if full_w <= WORK_W * 1.1:
+    if force:                                            # a quality chosen for the webcam: every crop from the stream's
+        full_w = float(src_w)                            # own pixels (else a full-frame crop of 4K came from lo)
+    else:
+        wants = [w for w in wants if need_of(src_w, src_h, *w) > WORK_W * 1.1]    # the rest come out of lo
+        if not wants:
+            return None
+        full_w = min(float(src_w), max(need_of(src_w, src_h, *w) for w in wants))
+    if not wants or full_w <= WORK_W * 1.1:
         return None
     # one crop needs it (the usual case: a webcam's crop above the clock): ffmpeg cuts it from the stream's own
     # pixels and scales it straight to the zone ("exact": the consumer's frame then needs no scaling here). A Whole
@@ -581,6 +602,14 @@ def covers(p, src_w, src_h, want) -> bool:
 config_needs = None          # hub/app.py: (type, url) -> [(out_w, out_h, crop)], every place the saved webcams with
                              # this source play: a feed starts with the detail they need (no restart once on screen)
 config_delay = None          # hub/app.py: () -> modules.webcams.delay_sec
+config_quality = None        # hub/app.py: (type, url) -> the stream quality its saved webcams ask for (quality_of)
+
+
+def quality_for(kind, url):
+    try:
+        return config_quality(kind, url) if callable(config_quality) else None
+    except Exception:
+        return None
 
 
 def delay_sec() -> float:
@@ -912,7 +941,8 @@ class Feed:
             self.formats = self._playable(info["formats"])
             top = native_of(self.formats)
             self.native = {k: top[k] for k in ("w", "h", "fps", "vcodec")}
-            fmt = choose_format(self.formats, wants, hw=True)          # (already only what this hub can play)
+            fmt = choose_format(self.formats, wants, hw=True,          # (already only what this hub can play)
+                                quality=quality_for(self.kind, self.url))
             self.source = {k: fmt[k] for k in ("w", "h", "fps", "vcodec", "dash")}
             media, title = fmt["url"], info["title"]
             hls = [f for f in self.formats if not f.get("dash") and is_hls(f["url"])]
@@ -923,7 +953,8 @@ class Feed:
         else:
             media, title = self.url, ""                      # its size is known once ffmpeg has opened it once
         src = self.source or {}
-        self.hi = plan(src.get("w", 0), src.get("h", 0), wants) if src and not self._hi_broken else None
+        force = self.kind == "youtube" and quality_for(self.kind, self.url) is not None
+        self.hi = plan(src.get("w", 0), src.get("h", 0), wants, force) if src and not self._hi_broken else None
         return media, title
 
     def _wants_more(self) -> bool:
@@ -935,15 +966,17 @@ class Feed:
         if not wants:
             return False
         src = self.source
+        quality = quality_for(self.kind, self.url) if self.kind == "youtube" else None
         if self.formats:                                      # a bigger stream would give more
-            fmt = choose_format(self.formats, wants, hw=True)
-            if fmt and fmt["w"] > src["w"]:
-                return True
-        lacking = [w for w in wants if need_of(src["w"], src["h"], *w) > WORK_W * 1.1
+            fmt = choose_format(self.formats, wants, hw=True, quality=quality)
+            if fmt and (fmt["w"] > src["w"] or (quality is not None and fmt["w"] != src["w"])):
+                return True                                   # (a quality chosen lower: down to it too)
+        force = quality is not None
+        lacking = [w for w in wants if (force or need_of(src["w"], src["h"], *w) > WORK_W * 1.1)
                    and not covers(self.hi, src["w"], src["h"], w)]
         if not lacking:
             return False
-        better = plan(src["w"], src["h"], wants)
+        better = plan(src["w"], src["h"], wants, force)
         return better is not None and better != self.hi
 
     def _run(self):

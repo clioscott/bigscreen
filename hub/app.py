@@ -1245,6 +1245,35 @@ def _saved_needs(kind, url):
 
 _needs_cache: dict = {}             # (type, url) -> (config mtime, _saved_needs)
 webcams.config_needs = _saved_needs
+
+
+def _saved_quality(kind, url):
+    """The stream quality the saved webcams with this source ask for (cams.<id>.quality), kept until the config
+    changes."""
+    try:
+        mtime = paths.CONFIG_PATH.stat().st_mtime
+    except OSError:
+        mtime = None
+    hit = _quality_cache.get((kind, url))
+    if hit and hit[0] == mtime:
+        return hit[1]
+    cams = (((config.load().get("modules") or {}).get("webcams") or {}).get("cams") or {})
+    asks = []
+    for cam in cams.values():
+        try:
+            if isinstance(cam, dict) and webcams.check_source(cam.get("source")) == (kind, url):
+                asks.append(cam.get("quality", "auto"))
+        except webcams.SourceError:
+            continue
+    out = webcams.quality_of(asks)
+    if len(_quality_cache) > 200:
+        _quality_cache.clear()
+    _quality_cache[(kind, url)] = (mtime, out)
+    return out
+
+
+_quality_cache: dict = {}
+webcams.config_quality = _saved_quality
 webcams.config_delay = lambda: ((config.load().get("modules") or {}).get("webcams") or {}).get(
     "delay_sec", webcams.DELAY_SEC)
 
