@@ -86,6 +86,26 @@ def is_black(frame) -> bool:
     return float((sub.max(axis=-1) > 24).mean()) < 0.001
 
 
+def is_flat(frame) -> bool:
+    """A plain screen: nearly all one colour (NASA's blue "loss of signal" slate, a camera's "offline" card). Only for
+    webcams that ask (a foggy harbour can be nearly flat too): ``skip_plain``, on for webcams in space."""
+    sub = frame[::4, ::4].reshape(-1, 3).astype(np.int16)
+    med = np.median(sub, axis=0)
+    return float((np.abs(sub - med).max(axis=1) <= 14).mean()) >= 0.9
+
+
+def is_frozen(sub, last) -> bool:
+    """Two samples (every 4th pixel) a second apart with almost nothing changed: a slate standing in for the video
+    (NASA's "temporarily suspended … loss-of-signal" card is a still with text). Live video from the ISS always moves."""
+    if last is None or sub.shape != last.shape:
+        return False
+    return float((np.abs(sub - last).max(axis=-1) > 6).mean()) < 0.002
+
+
+def skips_plain(cam: dict) -> bool:
+    return bool((cam or {}).get("skip_plain", bool((cam or {}).get("space"))))
+
+
 def _minutes(v):
     """"HH:MM" -> minutes after midnight, or None."""
     try:
@@ -177,6 +197,8 @@ def stream_query(cam: dict, shape: str, w: int, h: int) -> dict:
         q["id"] = int(src.get("id") or 0)
     if src.get("type") == "youtube":
         q["sync"] = 1                                  # in step: frames say when they're due (hub/webcams.py)
+    if skips_plain(cam):
+        q["flat"] = 1                                  # a plain screen (a "loss of signal" slate) counts as down
     try:
         if src.get("refresh_sec"):
             q["refresh"] = int(float(src["refresh_sec"]))
@@ -236,7 +258,8 @@ class Stream:
         self._shown_due = None
         self._holding = False                  # the newest frame is overdue: holding it until more come
         self.late = 0                          # frames that came after they were due (passed over)
-        self.black_since = None                # when the picture went black (None: it isn't)
+        self.black_since = None                # when the picture went black, or plain (None: it isn't)
+        self.skip_plain = bool(self.query.get("flat"))   # a plain screen counts as black (skips_plain)
         self._black_checked = 0.0
         self.last_use = time.time()
         self.alive = True
@@ -368,6 +391,20 @@ class Stream:
             return self._shown is not None or bool(self._tq)
         return self.frame is not None and now - self.frame_t < 10
 
+    _last_sub = None
+
+    def blank(self, frame) -> bool:
+        """Down while still sending: black, or for a webcam that asks (skip_plain) a plain screen or a frozen picture.
+        Checked once a second; BLACK_SEC of it and the webcam is passed over (or left, mid-turn)."""
+        if is_black(frame):
+            return True
+        if not self.skip_plain:
+            return False
+        sub = frame[::4, ::4].astype(np.int16)
+        frozen = is_frozen(sub, self._last_sub)
+        self._last_sub = sub
+        return frozen or is_flat(frame)
+
     def describe(self):
         d = {"w": self.w, "h": self.h, "fps": self.fps, "url": self.query.get("url") or self.query.get("id"),
              "playing": self._play_t0 is not None, "buffered_sec": round(len(self._q) / self.fps, 1),
@@ -482,7 +519,7 @@ class Stream:
                 self._q.append(self.frame)
             if self.frame_t - self._black_checked >= 1.0:       # on the reader's core, once a second
                 self._black_checked = self.frame_t
-                if not is_black(self.frame):
+                if not placeholder and not self.blank(self.frame):
                     self.black_since = None
                 elif self.black_since is None:
                     self.black_since = self.frame_t

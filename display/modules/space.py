@@ -49,15 +49,37 @@ def position(track, t):
     return la0 + f * (la1 - la0), lon
 
 
-def coords(lat, lon) -> str:
-    """'12.35°S 145.68°W'."""
-    return f"{abs(lat):.2f}°{'N' if lat >= 0 else 'S'} {abs(lon):.2f}°{'E' if lon >= 0 else 'W'}"
+COORD_FORMATS = ("nsew", "signed", "dms")
 
 
-def _mins(sec) -> str:
-    """A countdown that ticks every second: '13:42'."""
+def coords(lat, lon, fmt="nsew", digits=2) -> str:
+    """The position as the caption writes it: "nsew" 12.35°S 145.68°W, "signed" -12.35°, -145.68°, "dms"
+    12°21'00"S 145°40'48"W. ``digits``: decimal places (of the degrees, or of the seconds for dms)."""
+    d = max(0, min(4, int(digits)))
+    if fmt == "signed":
+        return f"{lat:.{d}f}°, {lon:.{d}f}°"
+    if fmt == "dms":
+        def dms(v, pos, neg):
+            v_, sec_d = abs(v), min(d, 2)
+            deg = int(v_)
+            mins = int((v_ - deg) * 60)
+            sec = round(((v_ - deg) * 60 - mins) * 60, sec_d)
+            if sec >= 60:
+                sec, mins = 0.0, mins + 1
+            if mins >= 60:
+                mins, deg = 0, deg + 1
+            s = f"{sec:0{3 + sec_d if sec_d else 2}.{sec_d}f}"
+            return f"{deg}°{mins:02d}'{s}\"{pos if v >= 0 else neg}"
+        return f"{dms(lat, 'N', 'S')} {dms(lon, 'E', 'W')}"
+    return f"{abs(lat):.{d}f}°{'N' if lat >= 0 else 'S'} {abs(lon):.{d}f}°{'E' if lon >= 0 else 'W'}"
+
+
+def countdown(sec) -> str:
+    """'18m10s'; an hour or more: '1h07m'."""
     sec = max(0, int(sec))
-    return f"{sec // 60}:{sec % 60:02d}"
+    if sec >= 3600:
+        return f"{sec // 3600}h{sec % 3600 // 60:02d}m"
+    return f"{sec // 60}m{sec % 60:02d}s"
 
 
 def sections(data, ov, show, now=None, lag=LAG) -> dict:
@@ -74,12 +96,11 @@ def sections(data, ov, show, now=None, lag=LAG) -> dict:
         out["over"] = row[1] if row else ""
     if show.get("coords"):
         p = position(track, t)
-        out["coords"] = coords(*p) if p else ""
+        out["coords"] = coords(*p, ov.get("coord_format", "nsew"), ov.get("coord_digits", 2)) if p else ""
     if show.get("orbit"):
-        here = _at(track, t)
         nxt = next((e for e in data.get("events") or [] if e[0] > t), None)
-        if here and nxt:
-            out["orbit"] = ("Daylight" if here[3] else "Night") + f" · {nxt[1]} in {_mins(nxt[0] - t)}"
+        if nxt:
+            out["orbit"] = f"{nxt[1].capitalize()} in {countdown(nxt[0] - t)}"
     if show.get("below"):
         row = _at(data.get("tz"), t)
         if row:

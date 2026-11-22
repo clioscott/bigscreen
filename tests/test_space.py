@@ -27,7 +27,7 @@ def test_a_webcam_in_space_says_what_its_over_its_next_sunset_the_time_below_and
     show = {k: True for k in space.KEYS}
     out = space.sections(d, {"time_format": "24h", "crew_flags": True, "mission_days": True}, show, now=t0 + 100 + space.LAG)
     assert out["over"] == "Over the South Pacific"
-    assert out["orbit"] == "Daylight · sunset in 3:20"                     # the shadow at t0 + 300, seen at t0 + 100
+    assert out["orbit"] == "Sunset in 3m20s"                               # the shadow at t0 + 300, seen at t0 + 100
     assert out["below"].endswith(" below") and len(out["below"]) == len("00:00 below")
     assert out["crew"] == f"7 aboard: 3{flag_char('ru')} 3{flag_char('us')} 1{flag_char('ca')}"
     assert out["mission"] == "Expedition 75 · day 120"
@@ -96,3 +96,28 @@ def test_the_iss_file_already_covers_what_the_wall_shows_when_it_lands(monkeypat
     d = json.loads((tmp_path / "iss.json").read_text())
     out = space.sections(d, {}, {k: True for k in space.KEYS}, now=time.time())
     assert out["over"] == "Over x" and out["coords"]                        # (the video is 35 s old)
+
+
+def test_the_countdown_and_the_coordinates_are_written_as_chosen():
+    assert space.countdown(1090) == "18m10s" and space.countdown(4020) == "1h07m" and space.countdown(-5) == "0m00s"
+    assert space.coords(-12.3456, -145.6789) == "12.35°S 145.68°W"
+    assert space.coords(-12.3456, -145.6789, "signed", 3) == "-12.346°, -145.679°"
+    assert space.coords(12.35, 145.68, "dms", 0) == "12°21'00\"N 145°40'48\"E"
+    assert space.coords(12.35, 145.68, "nsew", 0) == "12°N 146°E"
+
+
+def test_a_frozen_or_plain_picture_counts_as_down_for_webcams_that_ask():
+    from display.modules import webcam as wm
+    rng = np.random.default_rng(4)
+    slate = rng.integers(0, 255, (134, 448, 3), np.uint8)                 # a still (NASA's loss-of-signal card)
+    live = np.roll(slate, 3, axis=1)                                      # the picture moving
+    sub = lambda f: f[::4, ::4].astype(np.int16)
+    assert wm.is_frozen(sub(slate), sub(slate)) and not wm.is_frozen(sub(live), sub(slate))
+    assert wm.is_flat(np.full((134, 448, 3), (20, 40, 160), np.uint8)) and not wm.is_flat(slate)
+    assert wm.skips_plain({"space": "iss"}) and not wm.skips_plain({}) and not wm.skips_plain({"space": "iss", "skip_plain": False})
+    st = wm.Stream.__new__(wm.Stream)
+    st.skip_plain = True
+    assert st.blank(slate) is False and st.blank(slate) is True             # a second later, unchanged: frozen
+    st.skip_plain = False
+    st._last_sub = None
+    assert st.blank(slate) is False and st.blank(slate) is False            # (only for webcams that ask)

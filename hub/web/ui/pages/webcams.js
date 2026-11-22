@@ -1548,6 +1548,10 @@ const WebcamEditor = {
               <template v-if="cam.hours"><input class="input" type="time" style="width:auto" v-model="cam.hours.from">
                 <span>and</span><input class="input" type="time" style="width:auto" v-model="cam.hours.to"></template>
               <span class="faint" style="font-size:12px">{{ hoursNote }}</span></div>
+            <div class="wc-rot"><Icon name="MonitorOff" :size="15"/>
+              <Toggle :modelValue="cam.skip_plain ?? !!cam.space" @update:modelValue="v => cam.skip_plain = v" title="Skip a stand-in picture"/>
+              <span>Skip it when the picture is frozen or one plain colour</span>
+              <span class="faint" style="font-size:12px">a "loss of signal" card instead of the video (NASA's ISS stream has one); passed over like a black picture</span></div>
             <div class="faint" style="font-size:12px" v-if="used.length">Also its own rotation entry ({{ used.map(u => u.side).join(', ') }}):
               <a href="#/webcams">combine it into the list</a> on the Webcams page.</div>
           </div></div>
@@ -1597,6 +1601,10 @@ const WebcamEditor = {
                 hint="On the name's line, in its own smaller size; everything else stays on its own lines"/>
               <ToggleRow v-if="cam.space && ov.show.crew" :modelValue="ov.crew_flags !== false" @update:modelValue="v => ov.crew_flags = v"
                 label="Flags for the people aboard" hint="7 aboard: 3, 3, 1 with each country's flag after its count; off: just 7 aboard"/>
+              <Field v-if="cam.space && ov.show.coords" label="Coordinates" hint="Updated every frame as the ISS moves">
+                <div class="row" style="gap:8px"><Seg :modelValue="ov.coord_format || 'nsew'" @update:modelValue="v => ov.coord_format = v"
+                  :options="[{ value: 'nsew', label: '12.35°S 145.68°W' }, { value: 'signed', label: '-12.35°, -145.68°' }, { value: 'dms', label: '12°21'00&quot;S' }]"/>
+                  <Stepper :modelValue="ov.coord_digits ?? 2" @update:modelValue="v => ov.coord_digits = v" :min="0" :max="4" :unit="' decimals'"/></div></Field>
               <ToggleRow v-if="cam.space && ov.show.mission" :modelValue="!!ov.mission_days" @update:modelValue="v => ov.mission_days = v"
                 label="How long the mission has run" hint="Expedition 75 · day 120"/>
               <ToggleRow v-if="ov.style !== 'dot' && ov.show.weather" :modelValue="!!ov.temp_icon" @update:modelValue="v => ov.temp_icon = v"
