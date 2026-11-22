@@ -273,6 +273,10 @@ def _validate_overlay(name, ov):
                 ok = False
             if not ok:
                 raise ConfigError(f"webcam {name}: caption {key} must be between {lo} and {hi}")
+    mm = ov.get("minimap")
+    if mm is not None and not (isinstance(mm, dict) and isinstance(mm.get("on", False), bool)
+                               and mm.get("corner", "tr") in ("tl", "tr", "bl", "br")):
+        raise ConfigError(f"webcam {name}: the small map needs on (true or false) and a corner (tl, tr, bl, br)")
     jc = ov.get("jp_caption")
     if jc is not None:                                     # the separate Japanese caption
         corners = ("auto", "tl", "tc", "tr", "bl", "bc", "br")
@@ -445,6 +449,10 @@ def _validate_webcams(wc):
             raise ConfigError(f"webcam {name}: daylight_only must be true or false")
         if cam.get("space") not in (None, "iss"):
             raise ConfigError(f'webcam {name}: space must be "iss" (the only place in space with webcams)')
+        mp = cam.get("map")                                # the ISS map (display/modules/issmap.py)
+        if mp is not None and not (isinstance(mp, dict) and set(mp) <= {"when_down", "fixed"}
+                                   and all(isinstance(v, bool) for v in mp.values())):
+            raise ConfigError(f"webcam {name}: map takes when_down and fixed, each true or false")
         q = cam.get("quality", "auto")
         if q not in ("auto", "max") and not (isinstance(q, int) and not isinstance(q, bool) and 144 <= q <= 4320):
             raise ConfigError(f'webcam {name}: quality must be "auto", "max" or a height (720, 1080, 2160…)')

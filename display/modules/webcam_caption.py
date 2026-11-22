@@ -733,7 +733,8 @@ class _Zone:
 
 
 def draw_caption(c, zone, cam, elapsed, font_for, now_local=None, wx=None, extra=None):
-    """Draw the webcam's caption over the frame in zone. font_for(path or size) -> a loaded Font.
+    """Draw the webcam's caption over the frame in zone. font_for(path or size) -> a loaded Font. Returns its box in
+    the zone (x0, y0, x1, y1), or None when nothing is drawn (the small ISS map keeps clear of it).
 
     The caption is rendered once into a transparent layer (cached until its text, settings or blink phase change,
     about once a minute) and each frame only blends that layer over the video in the caption's box. The ticker,
@@ -742,7 +743,7 @@ def draw_caption(c, zone, cam, elapsed, font_for, now_local=None, wx=None, extra
     style = ov.get("style", "tag") if ov.get("style") in LAYOUT_FUNCS else "tag"
     a = visibility(ov, elapsed)
     if a <= 0:
-        return
+        return None
     x, y, w, h = zone
     if now_local is None:              # the same layer for 0.4 s: skip rebuilding the key
         mk = (id(cam), id(font_for), w, h, int(time.time() * 2.5), (wx or {}).get("at"), round((extra or {}).get("taken") or 0))
@@ -751,10 +752,18 @@ def draw_caption(c, zone, cam, elapsed, font_for, now_local=None, wx=None, extra
             if len(_memo) > 32:
                 _memo.clear()
             parts = _memo[mk] = _layer(style, ov, Content(cam, ov, None, wx=wx, extra=extra), w, h, font_for) or ()
-        _composite(c, x, y, parts, a)
-        return
-    content = Content(cam, ov, now_local, wx=wx, extra=extra)
-    _composite(c, x, y, _layer(style, ov, content, w, h, font_for) or (), a)
+    else:
+        parts = _layer(style, ov, Content(cam, ov, now_local, wx=wx, extra=extra), w, h, font_for) or ()
+    _composite(c, x, y, parts, a)
+    return _box_of(parts)
+
+
+def _box_of(parts):
+    """The caption's box in the zone (x0, y0, x1, y1) round all its parts, or None."""
+    if not parts:
+        return None
+    bs = [b for b, _a, _p in parts]
+    return (min(b[0] for b in bs), min(b[1] for b in bs), max(b[2] for b in bs), max(b[3] for b in bs))
 
 
 _memo: dict = {}

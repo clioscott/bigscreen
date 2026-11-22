@@ -1090,7 +1090,7 @@ const CropEditor = {
 
 // --- the wall preview: the hub renders exactly what the display would draw, caption included ------------------------
 const WallPreview = {
-  props: { cam: Object, shape: String, camId: String },
+  props: { cam: Object, shape: String, camId: String, showMap: Boolean },
   setup(props) {
     const token = ref("");
     const zone = ref([448, 130]);
@@ -1104,7 +1104,7 @@ const WallPreview = {
       const fresh = srcKey !== lastSrc;
       lastSrc = srcKey;
       try {
-        const r = await api("/api/webcams/preview", { json: { token: fresh ? undefined : token.value || undefined, cam: clone(props.cam), shape: props.shape, id: props.camId } });
+        const r = await api("/api/webcams/preview", { json: { token: fresh ? undefined : token.value || undefined, cam: clone(props.cam), shape: props.shape, id: props.camId, show_map: props.showMap } });
         zone.value = r.zone;
         dropped.value = r.dropped || [];
         if (r.token !== token.value) token.value = r.token;
@@ -1112,7 +1112,7 @@ const WallPreview = {
       } catch (e) { err.value = e.message; }
     };
     const queue = () => { if (!timer) timer = setTimeout(send, 150); };
-    watch(() => [props.cam, props.shape], queue, { deep: true, immediate: true });
+    watch(() => [props.cam, props.shape, props.showMap], queue, { deep: true, immediate: true });
     const img = ref(null);
     onBeforeUnmount(() => { clearTimeout(timer); if (img.value) img.value.src = ""; });
     const src = computed(() => token.value ? `/api/webcams/preview/${token.value}.mjpeg` : "");
@@ -1277,6 +1277,10 @@ const WebcamEditor = {
         for (const k of ["coords", "mission"]) if (sh[k] === undefined) sh[k] = false;
       } else delete cam.value.space;
     };
+    // the ISS map (display/modules/issmap.py): cam.map {when_down, fixed}; the small one in the caption: overlay.minimap
+    const previewMap = ref(false);
+    const setMap = (k, v) => { cam.value.map = { ...(cam.value.map || {}), [k]: v }; };
+    const setMinimap = (k, v) => { ov.value.minimap = { corner: "tr", ...(ov.value.minimap || {}), [k]: v }; };
     const hasText = (k) => (SPACE_KEYS.includes(k) ? true : WX_KEYS.includes(k) ? !!wxPoint(cam.value) : { place: !!cam.value.place, credit: !!cam.value.credit,
       custom: !!ov.value.custom_text?.trim(), shield: /\d/.test(String(ov.value.shield?.route ?? "")) }[k] ?? true);
     // is a section in the caption: in one of its rows (before rows: turned on)
@@ -1356,7 +1360,7 @@ const WebcamEditor = {
       const on = !here || a === b ? null : a < b ? here >= a && here < b : here >= a || here < b;
       return where + (here ? " · it's " + here + " there now: " + (on ? "in the list" : "skipped") : "");
     });
-    return { inRows, setSpace, SPACE_GROUPS, toggleHours, hoursNote, id, cam, shape, WEBCAM_SEC, zone, ov, colour, DEFAULT_SHARPEN, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
+    return { inRows, setSpace, previewMap, setMap, setMinimap, SPACE_GROUPS, toggleHours, hoursNote, id, cam, shape, WEBCAM_SEC, zone, ov, colour, DEFAULT_SHARPEN, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
       orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, hasText, customCols, SHIELD_PRESETS, SHIELD_KINDS, SHIELD_PLACES, SHIELD_SIZES, SHIELD_STYLES, shieldSrc, signMissing, presetShown, presetDone,
       CONTAINERS, feedFor, feedPill, healthFor, downPill, local, cityQ, cityHits, citySearching, searchCity, pickCity, clearCity, cityLabel, wxPoint, jpFaces, jpSample, jc, jcSizes, jcSetFace, jcSample, JC_POSITIONS, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
   },
@@ -1432,7 +1436,9 @@ const WebcamEditor = {
       <div class="stack sticky">
         <div class="card"><div class="card-head"><span class="live">LIVE</span><h3>On the wall · {{ SHAPES[shape].label.toLowerCase() }} ({{ zone[0] }}×{{ zone[1] }})</h3></div>
           <div class="card-body stack">
-            <WallPreview :cam="cam" :shape="shape" :cam-id="id"/>
+            <div v-if="cam.space && cam.map?.when_down !== false" class="row" style="gap:8px; align-items:center"><span class="faint" style="font-size:12px">Preview</span>
+              <Seg :modelValue="previewMap ? 'map' : 'video'" @update:modelValue="v => previewMap = v === 'map'" :options="[{ value: 'video', label: 'Video' }, { value: 'map', label: 'Map (video unusable)' }]"/></div>
+            <WallPreview :cam="cam" :shape="shape" :cam-id="id" :show-map="!!cam.space && previewMap && cam.map?.when_down !== false"/>
             <div v-if="needsLocation" class="callout" style="font-size:12.5px"><Icon name="MapPin" :size="14"/>
               <span>Weather and sunrise/sunset need this webcam's location.
                 <button v-if="galleryLoc" class="btn sm" style="margin-left:6px" @click="useGalleryLoc">Use {{ galleryLoc.label }}'s location</button>
@@ -1457,7 +1463,15 @@ const WebcamEditor = {
             <div class="wc-rot" v-if="cam.space"><Icon name="Sun" :size="15"/>
               <Toggle :modelValue="cam.daylight_only ?? true" @update:modelValue="v => cam.daylight_only = v" title="Only in orbital daylight"/>
               <span>Only while the ISS is in daylight</span>
-              <span class="faint" style="font-size:12px">skipped on the night side of the orbit: its whole turn must be in sunlight</span></div>
+              <span class="faint" style="font-size:12px">{{ cam.map?.when_down !== false ? 'the map instead on the night side of the orbit' : 'skipped on the night side of the orbit: its whole turn must be in sunlight' }}</span></div>
+            <div class="wc-rot" v-if="cam.space"><Icon name="Map" :size="15"/>
+              <Toggle :modelValue="cam.map?.when_down !== false" @update:modelValue="v => setMap('when_down', v)" title="The map when the video is unusable"/>
+              <span>A world map when the video is unusable</span>
+              <span class="faint" style="font-size:12px">night side, loss of signal, feed down: the ISS keeps its turn with where it is, its orbit and who it's talking to</span></div>
+            <div class="wc-rot" v-if="cam.space && cam.map?.when_down !== false"><Icon name="LocateFixed" :size="15"/>
+              <Seg :modelValue="cam.map?.fixed ? 'fixed' : 'follow'" @update:modelValue="v => setMap('fixed', v === 'fixed')"
+                :options="[{ value: 'follow', label: 'Follow the ISS' }, { value: 'fixed', label: 'Fixed world' }]"/>
+              <span class="faint" style="font-size:12px">{{ cam.map?.fixed ? 'the world stays put and the ISS crosses it' : 'the ISS stays in the middle and the world turns under it' }}</span></div>
             <div class="wc-rot"><Icon name="MonitorOff" :size="15"/>
               <Toggle :modelValue="cam.skip_plain ?? !!cam.space" @update:modelValue="v => cam.skip_plain = v" title="Skip a stand-in picture"/>
               <span>Skip it when the picture is frozen or one plain colour</span>
@@ -1478,6 +1492,9 @@ const WebcamEditor = {
                 <Field label="Position"><div class="wc-corners wc-six">
                   <button v-for="c in POSITIONS" :key="c" type="button" :class="{on: ov.corner === c}" @click="ov.corner = c" :title="c"></button></div></Field>
                 <Field label="Text size" v-if="ov.style !== 'dot'"><Seg v-model="ov.font" :options="FONTS"/></Field>
+                <Field v-if="cam.space" label="Small world map" hint="Coastlines, the ISS and its last 90 minutes; above or below the caption when they share a corner">
+                  <div class="row nowrap" style="gap:8px"><Toggle :modelValue="!!ov.minimap?.on" @update:modelValue="v => setMinimap('on', v)" title="Small world map"/>
+                    <div v-if="ov.minimap?.on" class="wc-corners"><button v-for="c in ['tl', 'tr', 'bl', 'br']" :key="c" type="button" :class="{on: (ov.minimap?.corner || 'tr') === c}" @click="setMinimap('corner', c)" :title="c"></button></div></div></Field>
                 <Field label="Japanese text size" hint="Kana and kanji only; the English keeps the text size" v-if="ov.style !== 'dot'">
                   <Seg :modelValue="ov.jp_font || 'auto'" @update:modelValue="v => ov.jp_font = v" :options="[{ value: 'auto', label: 'Same as text' }, ...FONTS]"/></Field>
               </div>

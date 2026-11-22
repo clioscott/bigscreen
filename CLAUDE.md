@@ -143,6 +143,12 @@ once (`hold: false`), so the rotation resumes by itself.
   (timezonefinder), and the crew and expedition (corquaid's people-in-space list) → `data/iss.json`.
   `display/modules/space.py` makes the caption sections for the moment the video shows (35 s ago), interpolating the
   coordinates every frame. Flags are colour glyphs (`display/modules/flags.py`, `gfx.COLOR_GLYPHS`) drawn by DrawText.
+- ISS maps (`display/modules/issmap.py`): the full map plays in the ISS's turn while its video is unusable (night side
+  with `daylight_only`, a blank/plain/frozen picture by when it's on screen — `Stream.blank_on_screen` — or no picture);
+  `cams.<id>.map = {when_down (default on: never down/skipped), fixed (off: centred on the ISS)}`. Small map:
+  `overlay.minimap = {on, corner}`, moved above/below the caption box (`draw_caption` returns it) when they'd overlap.
+  Coastlines/borders: `assets/maps/world_110m.json` (`tools/build_world_lines.py`); sun maths in `common/orbit.py`
+  (shared with the job, which keeps 95 min of past track for the trail). Lines wrap the short way (`_unwrap`).
 - 4K: YouTube's live HLS stops at 1080p; 1440p/4K exist only as DASH (VP9 WebM segments by sequence number). The
   lookup passes `youtube:formats=incomplete` to list them, which needs a current yt-dlp with yt-dlp-ejs and deno
   (`~/.deno/bin/deno` on the server, found by `deno_path`). They're used only when a crop needs more than the HLS
