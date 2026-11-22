@@ -561,7 +561,7 @@ class App:
             # wait for vsync) is made up by the next one instead of pushing every later frame back (which ran the
             # loop at ~53 Hz and showed 30 fps video unevenly)
             tick += period
-            if t2 - tick > period:          # a whole frame behind (a stall): start the grid again from now
+            if t2 - tick > period or tick - t2 > period:   # a stall, or the clock stepped back: start again
                 tick = t2
             elif tick - t2 > 0.002:
                 time.sleep(tick - t2)
