@@ -1342,3 +1342,39 @@ def test_in_step_a_shift_never_goes_past_the_limit():
     _feed(st, [100 + k / 30 for k in range(3)], now=90.0)
     _feed(st, [101.0], now=150.0)
     assert st.shift == wm.LATE_SHIFT_MAX
+
+
+def test_the_panels_get_exactly_the_tiles_that_changed():
+    from display import main as dm
+    rng = np.random.default_rng(3)
+
+    class Canvas:
+        def __init__(self):
+            self.pushed = set()
+
+        def SetBuffer(self, buf, x=0, y=0):
+            for ty in range(buf.shape[0] // dm.TILE_H):
+                for tx in range(buf.shape[1] // dm.TILE_W):
+                    self.pushed.add(((y // dm.TILE_H) + ty, (x // dm.TILE_W) + tx))
+
+    class Matrix:
+        def SwapOnVSync(self, c):
+            return c
+
+    out = dm.HardwareOutput.__new__(dm.HardwareOutput)
+    out.matrix, out.canvas, out.last, out.parity = Matrix(), Canvas(), [None, None], 0
+    fb = type("FB", (), {"buf": rng.integers(0, 255, (192, 448, 3), np.uint8)})()
+    out.present(fb)
+    fb.buf[0, 0, 0] ^= 0xFF
+    out.present(fb)                                                     # (both canvases hold a frame now)
+    for _ in range(20):
+        before = fb.buf.copy()
+        for _ in range(rng.integers(1, 6)):                             # a few single bytes, anywhere
+            y, x, c = rng.integers(0, 192), rng.integers(0, 448), rng.integers(0, 3)
+            fb.buf[y, x, c] ^= 0xFF
+        last = out.last[out.parity].copy()
+        want = {(int(ty), int(tx)) for ty, tx in zip(*np.nonzero(
+            (fb.buf != last).any(axis=2).reshape(12, 16, 7, 64).any(axis=(1, 3))))}
+        out.canvas.pushed = set()
+        out.present(fb)
+        assert out.canvas.pushed == want
