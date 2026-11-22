@@ -1504,7 +1504,7 @@ const WebcamEditor = {
               <Field label="Rows" hint="Each row, top to bottom; drag pieces to reorder them, between rows, or to Not shown. Separators come from the palette; every piece has its own size">
                 <CaptionRows :cam="cam" :ov="ov" :labels="SECTIONS" :has-text="hasText"/></Field>
               <ToggleRow v-if="cam.space && inRows('crew')" :modelValue="ov.crew_flags !== false" @update:modelValue="v => ov.crew_flags = v"
-                label="Flags for the people aboard" hint="7 aboard: 3, 3, 1 with each country's flag after its count; off: just 7 aboard"/>
+                label="Flags for the people aboard" hint="Each country's count with its flag (3, 3, 1); off: 7 aboard"/>
               <Field v-if="cam.space && inRows('coords')" label="Coordinates" hint="Updated every frame as the ISS moves">
                 <div class="row" style="gap:8px"><Seg :modelValue="ov.coord_format || 'nsew'" @update:modelValue="v => ov.coord_format = v"
                   :options="[{ value: 'nsew', label: '12.35°S 145.68°W' }, { value: 'signed', label: '-12.35°, -145.68°' }, { value: 'dms', label: '12°21′00″S' }]"/>
