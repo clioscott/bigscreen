@@ -70,6 +70,8 @@ GRID_MAX_ROWS, GRID_MAX_COLS = 4, 10
 GRID_VIEW_MS = 1000          # an intersection's tile shows each of its views this long, round and round
 GRID_ASPECT = 1.1           # auto columns keep each tile about this much wider than tall (6 across full width)
 _list_pos = {"i": -1}        # where the Webcams list is (survives config reloads, which rebuild the panel)
+CLOCK = {"tick": None}       # when the frame being drawn is due (display/main.py's fixed grid): video goes by this, so
+                             # at 60 Hz each 30 fps frame shows for exactly two frames whatever the drawing costs
 
 
 def is_black(frame) -> bool:
@@ -151,6 +153,9 @@ def stream_query(cam: dict, shape: str, w: int, h: int) -> dict:
 
 class Stream:
     """Reads one frame stream from the hub on its own thread; ``frame`` is the newest (h, w, 3) uint8."""
+    dry_runs = 0                               # times playback ran out of frames (a freeze while it refills)
+    skipped = 0                                # frames passed over (two due in one draw: a late frame)
+    shown = 0
 
     def __init__(self, hub_url: str, query: dict):
         self.hub = urlparse(hub_url)
@@ -201,7 +206,8 @@ class Stream:
                 return self._shown if self._shown is not None else self.frame
             while len(q) > target:                             # a prerolled backlog: start at the buffer's depth
                 q.popleft()
-            self._play_t0, self._play_k, self._play_pos, self._play_last = now, 0, 0.0, now
+            # a quarter frame in: on the 60 Hz grid the frame changes halfway between two draws, never on one
+            self._play_t0, self._play_k, self._play_pos, self._play_last = now, 0, 0.25, now
             self._played = True
             self._fill_avg = None
         dt = min(0.25, max(0.0, now - self._play_last))
@@ -214,13 +220,23 @@ class Stream:
         rate = min(1.0 + DRIFT_MAX, max(1.0 - DRIFT_MAX, 1.0 + 0.1 * (self._fill_avg / target - 1.0)))
         self._play_pos += dt * self.fps * rate
         due = int(self._play_pos)
+        step = 0
         while self._play_k < due and q:
             self._shown = q.popleft()
             self._play_k += 1
+            step += 1
+        self.shown += step
+        self.skipped += max(0, step - 1)
         if self._play_k < due:                                 # ran dry: hold the picture, fill up again
             self._play_t0 = None
             self._buffer_since = now
+            self.dry_runs += 1
         return self._shown
+
+    def describe(self):
+        return {"w": self.w, "h": self.h, "fps": self.fps, "url": self.query.get("url") or self.query.get("id"),
+                "playing": self._play_t0 is not None, "buffered_sec": round(len(self._q) / self.fps, 1),
+                "shown": self.shown, "skipped": self.skipped, "dry_runs": self.dry_runs, "error": self.error}
 
     def buffering(self):
         """Video that isn't playing yet (filling its buffer, or filling again after running dry)."""
@@ -347,6 +363,10 @@ class WebcamPanel:
         self.dim = Color(150, 150, 150)
 
     # streams ----------------------------------------------------------------------------------------------
+    def describe(self):
+        """The open streams and how their playback is going (the display's /status)."""
+        return [st.describe() for st in list(self.streams.values())]
+
     def _stream(self, cam, shape, w, h, hold=0.0):
         q = stream_query(cam, shape, w, h)
         key = tuple(sorted(q.items()))
@@ -632,7 +652,7 @@ class WebcamPanel:
             self._mark_bad(entry.get("cam"), "black")         # down but still sending: on to the next screen
             return "skip"
         if st.frame is not None and now - st.frame_t < 10:
-            c.Blit(st.current(now), x, y)
+            c.Blit(st.current(CLOCK["tick"] or now), x, y)
             if st.buffering():                                 # not prepared ahead (played by hand): load, then play
                 _shade(c, x, y, w, h, 0.6)
                 self._centre(c, zone, "Loading webcam feeds" + "." * (1 + int(now * 2) % 3), Color(225, 225, 225))
