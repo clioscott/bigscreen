@@ -1384,6 +1384,21 @@ def _fetch_wx(points, timeout=8):
             _wx_cache[pt] = got[pt]
 
 
+_iss_cache = {"mtime": None, "data": None}
+
+
+def _iss_data():
+    """data/iss.json (hub/jobs/iss.py), re-read when it changes."""
+    p = paths.DATA_DIR / "iss.json"
+    try:
+        mt = p.stat().st_mtime
+    except OSError:
+        return None
+    if mt != _iss_cache["mtime"]:
+        _iss_cache.update(mtime=mt, data=read_json(p, None))
+    return _iss_cache["data"]
+
+
 @app.get("/api/webcams/status")
 def webcams_status():
     return {"feeds": webcams.describe(), "zones": _webcam_zones(), "max_feeds": webcams.MAX_FEEDS,
@@ -1780,7 +1795,10 @@ def webcams_preview_set(payload: dict = Body(...)):
     from display.modules import webcam as wc
     try:
         still = (cam.get("source") or {}).get("type") in webcams.STILLS
-        dropped = wc.caption_dropped(cam, tuple(zones[shape]), wx, {"taken": time.time()} if still else None)
+        extra = {"taken": time.time()} if still else None
+        if cam.get("space"):
+            extra = {**(extra or {}), "space": _iss_data()}
+        dropped = wc.caption_dropped(cam, tuple(zones[shape]), wx, extra)
     except Exception:
         dropped = []
     return {"token": token, "zone": zones[shape], "dropped": dropped, "has_weather": bool(wx)}
@@ -1821,6 +1839,8 @@ async def webcams_preview(token: str):
             cur["wx"], cur["wx_at"] = _webcam_wx(cur.get("id"), cam_now), time.time()
         wx = cur.get("wx")
         extra = {"taken": round(_feed.image_t)} if getattr(_feed, "image_t", None) else None
+        if cam_now.get("space"):                             # in space: the ISS's orbit, crew and mission
+            extra = {**(extra or {}), "space": _iss_data()}
         img = wc.render_preview(cam_now, frame, (w, h), time.time() - t0, wx=wx, extra=extra)
         out = io.BytesIO()
         Image.fromarray(img).save(out, "PNG", compress_level=1)

@@ -58,12 +58,15 @@ LAYOUTS = ("tag", "bar", "outline", "dot", "lower_third", "split", "postcard", "
 STYLES = LAYOUTS                             # older name
 # weather extras (from data/webcam_weather.json): feels-like, wind, humidity, today's high/low, the conditions in words
 WX_EXTRAS = ("feels", "wind", "humidity", "hilo", "conditions")
+# a webcam in space (cams.<id>.space, display/modules/space.py): what it's over (in the place's slot), its next orbital
+# sunrise or sunset, the local time below, who's aboard, the mission
+SPACE = ("coords", "orbit", "below", "crew", "mission")
 SECTIONS = ("name", "place", "time", "date", "offset", "daynight", "weather", "sun", "age", "live", "credit", "custom",
-            "shield") + WX_EXTRAS
+            "shield", "over") + WX_EXTRAS + SPACE
 ORDER = ("name", "place", "time", "age", "weather", "conditions", "feels", "hilo", "wind", "humidity", "date", "offset",
-         "sun", "custom", "credit")    # default order
-DROP = ("credit", "custom", "humidity", "wind", "hilo", "feels", "conditions", "sun", "offset", "date", "weather", "age",
-        "place", "shield", "name")    # dropped first → last
+         "sun", "custom", "credit") + SPACE    # default order
+DROP = ("credit", "custom", "mission", "humidity", "wind", "hilo", "feels", "conditions", "sun", "offset", "date", "coords",
+        "below", "crew", "weather", "age", "orbit", "place", "shield", "name")    # dropped first → last
 TEXT_ALIGNS = ("auto", "left", "center", "right")
 SEPARATORS = {"dot": " · ", "slash": " / ", "pipe": " | ", "dash": " - ", "space": "  "}   # space: just a gap
 DEFAULT_OVERLAY = {"style": "tag", "corner": "bl", "when": "always", "font": "small", "accent": "#e8202a",
@@ -74,8 +77,9 @@ DEFAULT_OVERLAY = {"style": "tag", "corner": "bl", "when": "always", "font": "sm
                    "jp_caption": {"on": False, "text": "", "face": "k8x12", "size": 12, "corner": "auto"},
                    "show": {"name": True, "place": True, "time": True, "date": False, "offset": False,
                             "daynight": False, "weather": True, "sun": False, "age": False, "live": True,
-                            "credit": False, "custom": False, "shield": False,
-                            **{k: False for k in WX_EXTRAS}}}
+                            "credit": False, "custom": False, "shield": False, "over": True,
+                            **{k: False for k in WX_EXTRAS}, **{k: k in ("orbit", "below", "crew") for k in SPACE}},
+                   "crew_flags": True, "mission_days": False}
 WHITE, BLACK = Color(255, 255, 255), Color(0, 0, 0)
 WX_MAX_AGE = 2 * 3600       # weather older than this isn't shown
 FIT_LINES = 3               # "fit" wraps onto up to this many lines before dropping sections
@@ -434,6 +438,17 @@ class Content:
         sec.update(self._extras(wx, sh))
         taken = (extra or {}).get("taken")                  # when a still image was taken (epoch), from the hub
         sec["age"] = taken_text(taken, t.tzinfo, ov.get("taken_format"), twelve) if sh.get("age") and taken else ""
+        for k in SPACE:
+            sec[k] = ""
+        if cam.get("space"):                                # in space: the ISS's sections instead of the Earth's
+            from display.modules.space import sections as space_sections
+            sp = space_sections((extra or {}).get("space"), ov, {**sh, "over": sh.get("over", True)})
+            sec["place"] = sp["over"]
+            sec.update({k: sp[k] for k in SPACE})
+            for k in ("time", "date", "offset", "weather", "sun", "age") + WX_EXTRAS:
+                sec[k] = ""
+            self.icon = self.side_icon = None
+            self.ampm = ""
         self.night = None
         if sh.get("daynight"):
             self.night = (not wx["is_day"]) if "is_day" in wx else (t.hour < 6 or t.hour >= 19)

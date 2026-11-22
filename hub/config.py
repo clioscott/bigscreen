@@ -438,6 +438,8 @@ def _validate_webcams(wc):
                 r"([01]?\d|2[0-3]):[0-5]\d|24:00", hours[k]) for k in ("from", "to"))
             if not ok:
                 raise ConfigError(f'webcam {name}: hours must be {{"from": "HH:MM", "to": "HH:MM"}}')
+        if cam.get("space") not in (None, "iss"):
+            raise ConfigError(f'webcam {name}: space must be "iss" (the only place in space with webcams)')
         q = cam.get("quality", "auto")
         if q not in ("auto", "max") and not (isinstance(q, int) and not isinstance(q, bool) and 144 <= q <= 4320):
             raise ConfigError(f'webcam {name}: quality must be "auto", "max" or a height (720, 1080, 2160…)')

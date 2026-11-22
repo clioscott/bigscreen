@@ -137,6 +137,12 @@ once (`hold: false`), so the rotation resumes by itself.
   says so. Signing it in stops them: `python tools/youtube_signin.py` on Scott's PC opens Firefox in a profile of its
   own, then copies that profile's YouTube cookies over ssh to `~/bigscreen-state/secrets/youtube-cookies.txt`
   (never git) and calls `POST /api/webcams/youtube/check`. `_yt_dlp` passes a copy of it with `--cookies`.
+- Webcams in space (`cams.<id>.space: "iss"`, the panel's Location → Space): `hub/jobs/iss.py` (every 10 min)
+  propagates CelesTrak's ISS elements with sgp4 for 3 h (track every 10 s with sunlit/shadow, orbital
+  sunrises/sunsets), names what's below (Natural Earth countries and seas, downloaded once to the cache), the zone below
+  (timezonefinder), and the crew and expedition (corquaid's people-in-space list) → `data/iss.json`.
+  `display/modules/space.py` makes the caption sections for the moment the video shows (35 s ago), interpolating the
+  coordinates every frame. Flags are colour glyphs (`display/modules/flags.py`, `gfx.COLOR_GLYPHS`) drawn by DrawText.
 - 4K: YouTube's live HLS stops at 1080p; 1440p/4K exist only as DASH (VP9 WebM segments by sequence number). The
   lookup passes `youtube:formats=incomplete` to list them, which needs a current yt-dlp with yt-dlp-ejs and deno
   (`~/.deno/bin/deno` on the server, found by `deno_path`). They're used only when a crop needs more than the HLS

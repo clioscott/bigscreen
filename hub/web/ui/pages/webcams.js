@@ -37,17 +37,24 @@ const FONTS = [{ value: "tiny", label: "Tiny" }, { value: "small", label: "Small
   { value: "xlarge", label: "Extra large" }];
 const SECTIONS = { name: "Name", place: "Place", time: "Local time", age: "Image time", weather: "Temperature", sun: "Sunrise / sunset", date: "Date",
   offset: "Time difference", daynight: "Day / night icon", live: "LIVE badge", credit: "Credit", custom: "Your text",
-  shield: "Highway shield", conditions: "Conditions", feels: "Feels like", hilo: "High / low", wind: "Wind", humidity: "Humidity" };
+  shield: "Highway shield", conditions: "Conditions", feels: "Feels like", hilo: "High / low", wind: "Wind", humidity: "Humidity",
+  over: "What it's over", coords: "Coordinates (live)", orbit: "Next sunrise / sunset", below: "Local time below", crew: "People aboard",
+  mission: "Mission" };
+// a webcam in space (location: Space): the ISS's sections instead of the time and weather (display/modules/space.py)
+const SPACE_KEYS = ["over", "coords", "orbit", "below", "crew", "mission"];
+const SPACE_GROUPS = [{ label: "About the webcam", keys: ["name", "credit", "custom", "live"] },
+  { label: "In space", keys: SPACE_KEYS }];
 // the section chips, grouped (weather ones need the webcam's location)
 const SECTION_GROUPS = [{ label: "About the webcam", keys: ["name", "place", "credit", "custom", "live", "shield"] },
   { label: "Time", keys: ["time", "date", "offset", "age", "daynight"] },
   { label: "Weather there", keys: ["weather", "conditions", "feels", "hilo", "wind", "humidity", "sun"] }];
 const WX_KEYS = ["weather", "sun", "conditions", "feels", "hilo", "wind", "humidity"];
 const ORDERABLE = ["shield", "live", "name", "place", "time", "age", "weather", "conditions", "feels", "hilo", "wind", "humidity", "date", "offset", "sun",
-  "custom", "credit"];
+  "custom", "credit", "coords", "orbit", "below", "crew", "mission"];
 // the Custom layout: where each section goes (column, line) to start with; mirrors webcam_caption.DEFAULT_SLOTS
 const DEFAULT_SLOTS = { shield: [1, 1], live: [1, 1], name: [1, 1], place: [1, 2], time: [1, 2], age: [1, 2], weather: [1, 3], date: [1, 3], offset: [1, 3],
-  sun: [1, 3], custom: [1, 3], credit: [1, 3], conditions: [1, 3], feels: [1, 3], hilo: [1, 3], wind: [1, 4], humidity: [1, 4] };
+  sun: [1, 3], custom: [1, 3], credit: [1, 3], conditions: [1, 3], feels: [1, 3], hilo: [1, 3], wind: [1, 4], humidity: [1, 4],
+  coords: [1, 3], orbit: [1, 3], below: [1, 3], crew: [1, 4], mission: [1, 4] };
 const TEXT_ALIGNS = [{ value: "auto", label: "Auto" }, { value: "left", label: "Left", icon: "AlignLeft" }, { value: "center", label: "Centre", icon: "AlignCenter" },
   { value: "right", label: "Right", icon: "AlignRight" }];
 const CONTAINERS = [{ value: "box", label: "Box" }, { value: "strip", label: "Full-width strip" }, { value: "outline", label: "Outlined" }, { value: "board", label: "Board" }];
@@ -1357,9 +1364,18 @@ const WebcamEditor = {
     watch(() => ov.value?.shield?.style, () => { presetsLoaded.value = 1; });
     const presetShown = (r) => ov.value.shield.style !== "real" || SHIELD_PRESET_ROUTES.indexOf(r) < presetsLoaded.value;
     const presetDone = () => { presetsLoaded.value++; };
-    const hasText = (k) => (WX_KEYS.includes(k) ? !!wxPoint(cam.value) : { place: !!cam.value.place, credit: !!cam.value.credit,
+    // On Earth or in space (the ISS): in space the caption's sections come from the ISS's orbit, crew and mission
+    const setSpace = (v) => {
+      if (v === "space") {
+        cam.value.space = "iss";
+        const sh = ov.value.show;
+        for (const k of ["over", "orbit", "below", "crew"]) if (sh[k] === undefined) sh[k] = true;
+        for (const k of ["coords", "mission"]) if (sh[k] === undefined) sh[k] = false;
+      } else delete cam.value.space;
+    };
+    const hasText = (k) => (SPACE_KEYS.includes(k) ? true : WX_KEYS.includes(k) ? !!wxPoint(cam.value) : { place: !!cam.value.place, credit: !!cam.value.credit,
       custom: !!ov.value.custom_text?.trim(), shield: /\d/.test(String(ov.value.shield?.route ?? "")) }[k] ?? true);
-    const needsLocation = computed(() => WX_KEYS.some((k) => ov.value.show[k]) && !wxPoint(cam.value));
+    const needsLocation = computed(() => !cam.value.space && WX_KEYS.some((k) => ov.value.show[k]) && !wxPoint(cam.value));
     // the weather city: search by name, pick one of the places with that name (region and country shown)
     const cityQ = ref("");
     const cityHits = ref(null);
@@ -1434,7 +1450,7 @@ const WebcamEditor = {
       const on = !here || a === b ? null : a < b ? here >= a && here < b : here >= a || here < b;
       return where + (here ? " · it's " + here + " there now: " + (on ? "in the list" : "skipped") : "");
     });
-    return { toggleHours, hoursNote, id, cam, shape, WEBCAM_SEC, zone, ov, colour, DEFAULT_SHARPEN, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
+    return { setSpace, SPACE_GROUPS, toggleHours, hoursNote, id, cam, shape, WEBCAM_SEC, zone, ov, colour, DEFAULT_SHARPEN, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
       orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, hasText, customCols, SHIELD_PRESETS, SHIELD_KINDS, SHIELD_PLACES, SHIELD_SIZES, SHIELD_STYLES, shieldSrc, signMissing, presetShown, presetDone,
       CONTAINERS, feedFor, feedPill, healthFor, downPill, local, cityQ, cityHits, citySearching, searchCity, pickCity, clearCity, cityLabel, wxPoint, jpFaces, jpSample, jc, jcSizes, jcSetFace, jcSample, JC_POSITIONS, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
   },
@@ -1471,11 +1487,12 @@ const WebcamEditor = {
               <Field label="Frame rate" hint="Smoother costs the hub more" v-if="!STILL.includes(cam.source.type)"><Stepper v-model="cam.fps" :min="1" :max="30" unit=" fps"/></Field>
               <Field label="Fetch every" hint="How often the image is fetched again" v-if="cam.source.type === 'image'">
                 <Stepper :modelValue="cam.source.refresh_sec || 60" @update:modelValue="v => cam.source.refresh_sec = v" :min="20" :max="3600" :step="10" unit=" s"/></Field>
-              <Field label="Location" hint="Latitude, longitude: for the caption's weather and sunrise/sunset">
-                <div class="row nowrap" style="gap:6px"><input class="input" style="width:50%" :value="cam.lat ?? ''" @change="setCoord('lat', $event, 90)" placeholder="49.2888">
-                  <input class="input" style="width:50%" :value="cam.lon ?? ''" @change="setCoord('lon', $event, 180)" placeholder="-123.1111"></div></Field>
+              <Field label="Location" :hint="cam.space ? 'In space: the caption can say what the ISS is over, its sunrises and sunsets, who is aboard' : 'Latitude, longitude: for the caption’s weather and sunrise/sunset'">
+                <div class="stack" style="gap:6px"><Seg :modelValue="cam.space ? 'space' : 'earth'" @update:modelValue="setSpace" :options="[{ value: 'earth', label: 'On Earth' }, { value: 'space', label: 'Space (ISS)' }]"/>
+                <div v-if="!cam.space" class="row nowrap" style="gap:6px"><input class="input" style="width:50%" :value="cam.lat ?? ''" @change="setCoord('lat', $event, 90)" placeholder="49.2888">
+                  <input class="input" style="width:50%" :value="cam.lon ?? ''" @change="setCoord('lon', $event, 180)" placeholder="-123.1111"></div></div></Field>
             </div>
-            <Field label="Weather from a city" hint="Instead of the coordinates: pick the city (its region and country are shown, as several places share a name)">
+            <Field v-if="!cam.space" label="Weather from a city" hint="Instead of the coordinates: pick the city (its region and country are shown, as several places share a name)">
               <div v-if="cam.wx_city" class="row nowrap" style="gap:8px"><span class="pill accent"><Icon name="CloudSun" :size="13"/> {{ cityLabel(cam.wx_city) }}</span>
                 <button class="btn sm ghost" @click="clearCity"><Icon name="X" :size="13"/>Use the coordinates</button></div>
               <div v-else class="stack" style="gap:6px">
@@ -1572,12 +1589,16 @@ const WebcamEditor = {
             <template v-if="ov.style !== 'none' && capTab === 'content'">
               <Field label="Headline" v-if="!['dot', 'custom'].includes(ov.style)"><Seg v-model="ov.headline" :options="HEADLINES"/></Field>
               <div v-if="ov.style !== 'dot'" class="stack" style="gap:8px">
-                <Field v-for="g in SECTION_GROUPS" :key="g.label" :label="g.label"><div class="row" style="gap:6px">
+                <Field v-for="g in (cam.space ? SPACE_GROUPS : SECTION_GROUPS)" :key="g.label" :label="g.label"><div class="row" style="gap:6px">
                   <template v-for="k in g.keys" :key="k"><button v-if="k !== 'shield' || ov.style === 'custom'" type="button" class="chip" :class="{off: !ov.show[k]}"
                     style="height:26px; padding:0 10px" @click="toggleShow(k)">{{ SECTIONS[k] }}</button></template></div></Field></div>
               <ToggleRow v-if="['tag', 'outline'].includes(ov.style) && ov.show.place && ov.headline !== 'place'" :modelValue="!!ov.place_beside"
                 @update:modelValue="v => ov.place_beside = v" label="Place beside the name"
                 hint="On the name's line, in its own smaller size; everything else stays on its own lines"/>
+              <ToggleRow v-if="cam.space && ov.show.crew" :modelValue="ov.crew_flags !== false" @update:modelValue="v => ov.crew_flags = v"
+                label="Flags for the people aboard" hint="7 aboard: 3, 3, 1 with each country's flag after its count; off: just 7 aboard"/>
+              <ToggleRow v-if="cam.space && ov.show.mission" :modelValue="!!ov.mission_days" @update:modelValue="v => ov.mission_days = v"
+                label="How long the mission has run" hint="Expedition 75 · day 120"/>
               <ToggleRow v-if="ov.style !== 'dot' && ov.show.weather" :modelValue="!!ov.temp_icon" @update:modelValue="v => ov.temp_icon = v"
                 label="Weather icon in front of the temperature" hint="Off: just the temperature"/>
             </template>

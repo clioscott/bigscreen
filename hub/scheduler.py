@@ -33,6 +33,7 @@ JOBS = {
     "webcam_weather": ("modules.webcams.weather_interval_sec", 900, 60, "Webcam weather"),
     "webcam_health": ("modules.webcams.health_interval_sec", 300, 240, "Webcam health"),
     "shield_signs": ("modules.webcams.signs_interval_sec", 3600, 120, "Webcam highway signs"),
+    "iss":      ("modules.webcams.iss_interval_sec", 600, 240, "ISS (webcams in space)"),
     "quakes":   ("modules.bc_quakes.refresh_interval_sec", 60, 120, "Earthquakes"),
     "tsunami":  ("modules.tsunami.refresh_interval_sec", 120, 120, "Tsunami"),
     "wildfire": ("modules.wildfire.refresh_interval_sec", 600, 300, "Wildfire"),
