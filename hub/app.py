@@ -1215,6 +1215,76 @@ def _webcam_feed(src, fps):
         raise HTTPException(503 if "already decoding" in str(e) else 400, str(e))
 
 
+def _saved_needs(kind, url):
+    """Every place the saved webcams with this source play: (zone w, zone h, crop). A feed starts with the detail
+    these need (hub/webcams.py config_needs), so it doesn't restart once it's on the wall. Asked every second per
+    feed: kept until the config changes."""
+    from display.modules import webcam as wc
+    try:
+        mtime = paths.CONFIG_PATH.stat().st_mtime
+    except OSError:
+        mtime = None
+    hit = _needs_cache.get((kind, url))
+    if hit and hit[0] == mtime:
+        return hit[1]
+    cams = (((config.load().get("modules") or {}).get("webcams") or {}).get("cams") or {})
+    out = []
+    for cam in cams.values():
+        try:
+            if not isinstance(cam, dict) or webcams.check_source(cam.get("source")) != (kind, url):
+                continue
+        except webcams.SourceError:
+            continue
+        for shape, (w, h) in _webcam_zones().items():
+            out.append((w, h, wc.crop_for(cam, shape, w, h)))
+    if len(_needs_cache) > 200:
+        _needs_cache.clear()
+    _needs_cache[(kind, url)] = (mtime, out)
+    return out
+
+
+_needs_cache: dict = {}             # (type, url) -> (config mtime, _saved_needs)
+webcams.config_needs = _saved_needs
+
+
+def _consumer_args(cw, x, y, b, c, s, sh, px=0):
+    crop = {"x": x or 0, "y": y or 0, "w": cw} if cw else None
+    if crop and px:
+        crop["snap"] = True                                  # Whole pixels (hub/webcams.py crop_box)
+    colour = {"brightness": _num(b, 1, 0.2, 3), "contrast": _num(c, 1, 0.2, 3), "saturation": _num(s, 1, 0, 3)}
+    if sh is not None:
+        colour["sharpen"] = _num(sh, webcams.DEFAULT_SHARPEN, 0, 2)
+    return crop, colour
+
+
+@app.get("/api/webcams/info")
+def webcams_info(type: str, url: str = "", id: int | None = None):
+    """What the Picture panel shows: the stream's own resolution and the ones it has (YouTube), what the hub is
+    decoding now and how (hardware or not), the hi picture, and the zones. Never starts a feed or asks YouTube:
+    what's known from the lookup the editor's feed made (native is null until then)."""
+    try:
+        kind, src_url = webcams.check_source({"type": type, "url": url, "id": id})
+    except webcams.SourceError as e:
+        raise HTTPException(400, str(e))
+    out = {"type": kind, "zones": _webcam_zones(), "hw_available": webcams.hw_decode(), "native": None,
+           "formats": [], "feed": None, "oversample": webcams.OVERSAMPLE, "lo_w": webcams.WORK_W,
+           "default_sharpen": webcams.DEFAULT_SHARPEN}
+    f = next((x for x in webcams.describe() if (x["type"], x["url"]) == (kind, src_url)), None)
+    if f:
+        out["feed"] = {k: f.get(k) for k in ("state", "source", "hi", "hw", "size", "measured_fps", "consumers",
+                                              "error")}
+        out["native"] = f.get("native")
+    if kind == "youtube":
+        info = webcams.cached(src_url)          # never a lookup of its own: the editor's feed makes the one it needs
+        if info:
+            top = webcams.native_of(info["formats"])
+            out["native"] = {k: top[k] for k in ("w", "h", "fps", "vcodec")}
+            out["formats"] = sorted({(fm["w"], fm["h"], fm["fps"]) for fm in info["formats"]})
+    elif kind in webcams.STILLS and f and f.get("size"):
+        out["native"] = {"w": f["size"][0], "h": f["size"][1], "fps": 0, "vcodec": "jpeg"}
+    return out
+
+
 _wx_cache: dict = {}                 # (lat, lon) -> weather fetched for previews of unsaved locations
 _wx_failed: dict = {}                # (lat, lon) -> when a fetch failed (not retried for a minute)
 _wx_latest: dict = {}                # webcam id -> the location last asked about (typing fetches only the last)
@@ -1483,18 +1553,59 @@ def _num(v, default, lo, hi):
         return default
 
 
+async def _webcam_consumer_frames(f, take, fps, still=None, make_still=None):
+    """The wall's stream from a consumer (hub/webcams.py Feed.consumer): every frame as soon as it's decoded and
+    rendered (from the hi picture when the crop needs it), starting with the few seconds already decoded; the Pi
+    plays them evenly from its own buffer. still(): a picture to send first while the feed has none yet."""
+    loop = asyncio.get_running_loop()
+    ev = asyncio.Event()
+    f.attach()
+    f.add_waiter(loop, ev)
+    c = None
+    try:
+        c = await asyncio.to_thread(take)              # here, not before the response: released in finally
+        t0 = time.time()
+        if still is not None and f.frame is None and c.oldest() is None:
+            arr = await asyncio.to_thread(still)
+            if arr is not None and f.frame is None:
+                yield await asyncio.to_thread(make_still, arr, f)
+        dseq = None
+        while True:
+            ev.clear()
+            step = max(1, round(max(1, f.fps) / fps)) if fps else 1
+            if dseq is None:
+                dseq = c.oldest()
+            got = c.after(dseq + step - 1) if dseq is not None else None
+            if got is not None:
+                dseq, frame = got
+                yield webcams.pack(frame, 0)
+                continue
+            if f.state == "stopped":
+                return
+            if dseq is None and time.time() - t0 > 60:
+                return
+            try:
+                await asyncio.wait_for(ev.wait(), 1.0)
+            except asyncio.TimeoutError:
+                pass
+    finally:
+        f.remove_waiter(loop, ev)
+        f.detach()
+        if c is not None:
+            f.release(c)
+
+
 @app.get("/api/webcams/frames")
 async def webcams_frames(type: str, w: int, h: int, url: str = "", id: int | None = None, refresh: int | None = None,
                          fps: int = 15, x: float | None = None,
                          y: float | None = None, cw: float | None = None, b: float = 1.0, c: float = 1.0,
-                         s: float = 1.0):
+                         s: float = 1.0, sh: float | None = None, px: int = 0):
     """The Pi's feed: raw RGB frames already cropped and scaled to its zone (display/modules/webcam.py reads
     them), each behind a 12-byte header (hub/webcams.py pack)."""
     if not (8 <= w <= 448 and 8 <= h <= 192):
         raise HTTPException(400, "w/h out of range")
     f = _webcam_feed({"type": type, "url": url, "id": id, "refresh_sec": refresh}, fps)
-    crop = {"x": x or 0, "y": y or 0, "w": cw} if cw else None
-    colour = {"brightness": _num(b, 1, 0.2, 3), "contrast": _num(c, 1, 0.2, 3), "saturation": _num(s, 1, 0, 3)}
+    crop, colour = _consumer_args(cw, x, y, b, c, s, sh, px)
 
     def make(frame, feed):
         age = time.time() - (feed.image_t or feed.frame_t)      # stills: the image's age, for the caption
@@ -1505,6 +1616,11 @@ async def webcams_frames(type: str, w: int, h: int, url: str = "", id: int | Non
 
     fps = max(1, min(30, fps))                                # the feed may decode faster for another viewer
     src = {"type": type, "url": url, "id": id}
+    if f.kind not in webcams.STILLS and hasattr(f, "consumer"):
+        return StreamingResponse(_webcam_consumer_frames(f, lambda: f.consumer(w, h, crop, colour), fps,
+                                                         still=lambda: webcams.still_for(src),
+                                                         make_still=make_still),
+                                 media_type="application/octet-stream", headers={"Cache-Control": "no-store"})
     return StreamingResponse(_webcam_frames(f, make, fps=fps, still=lambda: webcams.still_for(src), direct=True,
                                             make_still=make_still),
                              media_type="application/octet-stream",
@@ -1627,27 +1743,47 @@ async def webcams_preview(token: str):
     cam = p["cam"]
     f = _webcam_feed(cam.get("source"), cam.get("fps", 15))
     t0 = time.time()
+    held = {"draft": None}                                   # the preview's consumer, taken once the stream starts
 
-    def make(frame, _feed):
+    def spec():
         cur = _webcam_previews.get(token) or p
         cam_now, (w, h) = cur["cam"], cur["zone"]
         q = wc.stream_query(cam_now, cur["shape"], w, h)
-        crop = {"x": q.get("x", 0), "y": q.get("y", 0), "w": q["cw"]} if "cw" in q else None
-        colour = {"brightness": q.get("b", 1), "contrast": q.get("c", 1), "saturation": q.get("s", 1)}
+        crop, colour = _consumer_args(q.get("cw"), q.get("x"), q.get("y"), q.get("b", 1), q.get("c", 1),
+                                      q.get("s", 1), q.get("sh"), q.get("px", 0))
+        return cur, cam_now, w, h, crop, colour
+
+    def make(frame, _feed):
+        cur, cam_now, w, h, crop, colour = spec()
         if (cam_now.get("source") or {}) != (cam.get("source") or {}):
             frame = None                                     # source changed: the panel reopens the stream
+        elif frame is not None:
+            out, draft = None, held["draft"]
+            if draft is not None:                            # the hi render of this frame, when it's for this draft
+                draft.set(w, h, crop, colour)
+                out = draft.for_dseq(getattr(frame, "dseq", -1))
+            frame = out if out is not None else webcams.render(frame, w, h, crop, colour)
         if time.time() - cur.get("wx_at", 0) > 20 and _wants_wx(cam_now):   # pick up fetched / newer weather
             cur["wx"], cur["wx_at"] = _webcam_wx(cur.get("id"), cam_now), time.time()
         wx = cur.get("wx")
         extra = {"taken": round(_feed.image_t)} if getattr(_feed, "image_t", None) else None
-        img = wc.render_preview(cam_now, None if frame is None else webcams.render(frame, w, h, crop, colour),
-                                (w, h), time.time() - t0, wx=wx, extra=extra)
+        img = wc.render_preview(cam_now, frame, (w, h), time.time() - t0, wx=wx, extra=extra)
         out = io.BytesIO()
         Image.fromarray(img).save(out, "PNG", compress_level=1)
         return _part(out.getvalue(), b"image/png")
 
-    return StreamingResponse(_webcam_frames(f, make, fps=10), media_type=MJPEG,
-                             headers={"Cache-Control": "no-store"})
+    async def frames():
+        try:
+            if f.kind not in webcams.STILLS and hasattr(f, "consumer"):
+                _, _, w0, h0, crop0, colour0 = spec()
+                held["draft"] = f.consumer(w0, h0, crop0, colour0, key=("preview", token), draft=True)
+            async for part in _webcam_frames(f, make, fps=10):
+                yield part
+        finally:
+            if held["draft"] is not None:
+                f.release(held["draft"])
+
+    return StreamingResponse(frames(), media_type=MJPEG, headers={"Cache-Control": "no-store"})
 
 
 # --- bridges now (DriveBC stills, hub/jobs/bridges.py) ---------------------------------------------------------

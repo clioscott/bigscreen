@@ -143,10 +143,14 @@ def stream_query(cam: dict, shape: str, w: int, h: int) -> dict:
     if isinstance(crop, dict) and crop.get("w"):
         q.update(x=round(float(crop.get("x", 0)), 5), y=round(float(crop.get("y", 0)), 5),
                  cw=round(float(crop["w"]), 5))
+        if crop.get("snap"):                           # Whole pixels: k x k stream pixels per LED, averaged
+            q["px"] = 1
     col = cam.get("colour") or {}
     for k, key in (("b", "brightness"), ("c", "contrast"), ("s", "saturation")):
         if col.get(key) not in (None, 1, 1.0):
             q[k] = float(col[key])
+    if col.get("sharpen") is not None:                 # none: the hub's default (hub/webcams.py DEFAULT_SHARPEN)
+        q["sh"] = float(col["sharpen"])
     return q
 
 

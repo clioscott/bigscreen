@@ -384,6 +384,13 @@ select.input { appearance: none; padding-right: 30px; background-image: url("dat
 .wc-src .placeholder { aspect-ratio: 16 / 9; display: grid; place-items: center; color: var(--text-3); font-size: 13px; padding: 20px; text-align: center; }
 .wc-crop { position: absolute; border: 2px solid var(--accent); box-shadow: 0 0 0 9999px rgba(0, 0, 0, .55); cursor: move; border-radius: 2px; }
 .wc-crop span { position: absolute; left: 4px; top: 3px; font: 11px var(--mono); color: #fff; background: rgba(0, 0, 0, .6); padding: 0 4px; border-radius: 4px; }
+/* the Picture card's numbers: stream resolution, crop, viewport, scaling (webcams.js CropEditor) */
+.wc-stats { display: grid; gap: 4px; font-size: 12.5px; border: 1px solid var(--line-2); border-radius: 8px; padding: 8px 10px; }
+.wc-stats > div { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.wc-stats span { color: var(--text-2); min-width: 92px; }
+.wc-stats b { font: 500 12.5px var(--mono); }
+.wc-stats b.warn { color: var(--warn); }
+.wc-stats i { font-style: normal; color: var(--text-3); font-size: 12px; }
 .wc-corners { display: grid; grid-template-columns: 22px 22px; gap: 4px; padding: 4px; border-radius: 9px; background: var(--bg-2); border: 1px solid var(--line-2); width: max-content; }
 .wc-corners button { width: 22px; height: 16px; border-radius: 4px; border: 1px solid var(--line-2); background: var(--surface-2); cursor: pointer; padding: 0; }
 .wc-corners button.on { background: var(--accent); border-color: var(--accent); }

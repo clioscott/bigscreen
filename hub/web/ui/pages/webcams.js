@@ -7,6 +7,7 @@ import { GALLERY, CITIES, CATS, snap, thumb } from "./webcam_gallery.js";
 import { CameraMap } from "./cameramap.js";
 import { useSlippyMap } from "./slippymap.js";
 
+const DEFAULT_SHARPEN = 0.5;          // hub/webcams.py DEFAULT_SHARPEN: a webcam with no Sharpness of its own
 export const SHAPES = {
   left: { label: "Left side", panel: "webcam", side: "left", icon: "PanelLeft" },
   right: { label: "Right side", panel: "webcam", side: "right", icon: "PanelRight" },
@@ -903,7 +904,21 @@ const CropEditor = {
     onMounted(() => { t = setInterval(() => { const i = img.value; if (i?.naturalWidth) nat.value = [i.naturalWidth, i.naturalHeight]; }, 500); });
     onBeforeUnmount(() => { clearInterval(t); if (img.value) img.value.src = ""; });   // end the stream (frees the hub's viewer)
     const src = computed(() => hasSource(props.cam.source) ? `/api/webcams/source.mjpeg?${qs({ ...srcParams(props.cam.source), fps: props.cam.fps || 15 })}` : "");
-    watch(src, () => { err.value = false; });
+    // the stream's own resolution and what the hub decodes (hub/app.py /api/webcams/info)
+    const info = ref(null);
+    let infoT;
+    const loadInfo = async () => {
+      if (!hasSource(props.cam.source)) return;
+      const want = JSON.stringify(props.cam.source);
+      try { const i = await api(`/api/webcams/info?${qs(srcParams(props.cam.source))}`); if (want === JSON.stringify(props.cam.source)) info.value = i; } catch {}
+    };
+    watch(src, () => { err.value = false; info.value = null; loadInfo(); });
+    onMounted(() => { loadInfo(); infoT = setInterval(loadInfo, 4000); });
+    onBeforeUnmount(() => clearInterval(infoT));
+    const native = computed(() => info.value?.native || null);
+    // the tightest crop: one stream pixel per LED (zooming further would only enlarge pixels)
+    const minW = computed(() => native.value?.w ? Math.min(1, props.zone[0] / native.value.w) : 0.125);   // (800% until it's known)
+    const maxZoom = computed(() => Math.max(100, Math.floor(100 / minW.value)));
     const aspect = computed(() => props.zone[0] / props.zone[1]);
     const fit = () => {
       const [sw, sh] = nat.value;
@@ -933,13 +948,24 @@ const CropEditor = {
       const h = (w * sw) / aspect.value / sh;
       return { x: Math.min(Math.max(0, c.x), 1 - w), y: Math.min(Math.max(0, c.y), 1 - h), w, h };
     });
-    const set = (c) => {
+    // Whole pixels: the crop is exactly k × the viewport in the stream's own pixels (k = 1, 2, 3…), on whole pixels,
+    // so the hub scales it down by plain averaging, k × k pixels into each LED (hub/webcams.py crop_box)
+    const snap = computed(() => !!props.cam.crops?.[props.shape]?.snap);
+    const kMax = computed(() => { const n = native.value, [zw, zh] = props.zone; return n?.w ? Math.max(1, Math.floor(Math.min(n.w / zw, n.h / zh))) : 0; });
+    const kOf = (w) => Math.round((w * native.value.w) / props.zone[0]);
+    const set = (c, wantSnap = snap.value) => {
       const [sw, sh] = nat.value;
-      const w = Math.max(0.05, Math.min(c.w, 1, (sh * aspect.value) / sw));
+      let w = Math.max(minW.value, Math.min(c.w, 1, (sh * aspect.value) / sw));
+      const n = native.value, on = wantSnap && kMax.value > 0;
+      if (on) w = (Math.min(kMax.value, Math.max(1, kOf(w))) * props.zone[0]) / n.w;
       const h = (w * sw) / aspect.value / sh;
-      const out = { x: +Math.min(Math.max(0, c.x), 1 - w).toFixed(5), y: +Math.min(Math.max(0, c.y), 1 - h).toFixed(5), w: +w.toFixed(5) };
+      let x = Math.min(Math.max(0, c.x), 1 - w), y = Math.min(Math.max(0, c.y), 1 - h);
+      if (on) { x = Math.round(x * n.w) / n.w; y = Math.round(y * n.h) / n.h; }
+      const out = { x: +x.toFixed(6), y: +y.toFixed(6), w: +w.toFixed(6) };
+      if (on) out.snap = true;
       (props.cam.crops || (props.cam.crops = {}))[props.shape] = out;
     };
+    const toggleSnap = (on) => set({ ...box.value }, on);
     let drag = null;
     const down = (ev) => {
       const r = ev.currentTarget.parentElement.getBoundingClientRect();
@@ -953,7 +979,7 @@ const CropEditor = {
     const up = () => { drag = null; };
     const zoomBy = (k) => {
       const b = box.value;
-      const w = Math.max(0.05, Math.min(1, b.w * k));
+      const w = Math.max(minW.value, Math.min(1, b.w * k));
       const [sw, sh] = nat.value;
       const h = (w * sw) / aspect.value / sh;
       set({ x: b.x + (b.w - w) / 2, y: b.y + (b.h - h) / 2, w });
@@ -961,11 +987,46 @@ const CropEditor = {
     const wheel = (ev) => {                  // Ctrl + wheel zooms; a plain wheel still scrolls the page
       if (!ev.ctrlKey && !ev.metaKey) return;
       ev.preventDefault();
+      if (snap.value && kMax.value) {        // Whole pixels: one step of k each notch
+        const k = Math.min(kMax.value, Math.max(1, kOf(box.value.w) + (ev.deltaY > 0 ? 1 : -1)));
+        return zoomBy((k * props.zone[0]) / native.value.w / box.value.w);
+      }
       zoomBy(ev.deltaY > 0 ? 1.08 : 1 / 1.08);
     };
     const zoom = computed({ get: () => Math.round(100 / box.value.w), set: (v) => zoomBy(100 / v / box.value.w) });
-    const reset = () => { if (props.cam.crops) delete props.cam.crops[props.shape]; };
-    return { img, src, err, box, down, move, up, wheel, zoom, reset, nat };
+    const reset = () => {
+      if (snap.value && kMax.value) {        // Whole pixels: the largest whole-pixel crop, centred
+        const [sw, sh] = nat.value, w = (kMax.value * props.zone[0]) / native.value.w, h = (w * sw) / aspect.value / sh;
+        return set({ x: (1 - w) / 2, y: Math.max(0, (1 - h) / 2), w });
+      }
+      if (props.cam.crops) delete props.cam.crops[props.shape];
+    };
+    const oneToOne = () => zoomBy(minW.value / box.value.w);
+    const res = (w, h) => (h >= 2000 ? "4K " : h >= 1400 ? "1440p " : h >= 1000 ? "1080p " : h >= 700 ? "720p " : h ? h + "p " : "") + `${w}×${h}`;
+    const codec = (c) => ({ avc1: "H.264", h264: "H.264", vp09: "VP9", vp9: "VP9", av01: "AV1", hevc: "HEVC", jpeg: "still" })[c] || c || "";
+    // the numbers under the picture: what the stream has, what this crop takes of it, and what the wall gets
+    const stats = computed(() => {
+      const n = native.value, f = info.value?.feed, b = box.value, [zw, zh] = props.zone;
+      if (!n) return null;
+      const loW = f?.size?.[0] || Math.min(info.value.lo_w || 640, n.w);   // the lo picture (narrower sources: theirs)
+      const cropW = Math.round(b.w * n.w), cropH = Math.round(b.h * n.h);
+      const others = [...new Set((info.value.formats || []).map(([, h]) => h).filter((h) => h !== n.h))].sort((a, c) => c - a).map((h) => h + "p").join(", ");
+      const out = { native: `${res(n.w, n.h)}${n.fps ? " · " + Math.round(n.fps) + " fps" : ""}${n.vcodec ? " · " + codec(n.vcodec) : ""}`,
+        crop: `${cropW}×${cropH} px`, zone: `${zw}×${zh} LEDs`, scale: cropW / zw, others,
+        k: snap.value ? kOf(b.w) : 0 };
+      if (f?.source) {
+        const s = f.source, hi = f.hi;
+        // what the wall's frames are cut from: the detail picture when it covers this crop, else the 640-wide one
+        const inHi = hi && b.x * s.w >= hi.x - 1 && b.y * s.h >= hi.y - 1 && (b.x + b.w) * s.w <= hi.x + hi.w + 1 && (b.y + b.h) * s.h <= hi.y + hi.h + 1;
+        out.decoding = `${res(s.w, s.h)} ${codec(s.vcodec)} · ${f.hw ? "hardware (video engine)" : "software"}` +
+          (hi ? ` · detail picture ${hi.out_w}×${hi.out_h}${hi.w < s.w || hi.h < s.h ? " (the crops' region)" : ""}` : ` · ${loW} px wide`);
+        out.used = (b.w * (inHi ? hi.full_w : loW)) / zw;
+        out.pending = out.used < Math.min(out.scale, info.value.oversample || 1.5) * 0.85;
+      }
+      return out;
+    });
+    const fmt = (v) => (v >= 10 ? v.toFixed(0) : v.toFixed(1));
+    return { img, src, err, box, down, move, up, wheel, zoom, reset, nat, maxZoom, oneToOne, stats, fmt, snap, toggleSnap, kMax };
   },
   template: `<div class="stack">
     <div class="wc-src" @wheel="wheel">
@@ -975,12 +1036,30 @@ const CropEditor = {
         @pointerdown.prevent="down" @pointermove="move" @pointerup="up" @pointercancel="up"><span>{{ zone[0] }}×{{ zone[1] }}</span></div>
     </div>
     <div class="row">
-      <span class="faint">Zoom</span><div style="flex:1; min-width:160px"><Slider v-model="zoom" :min="100" :max="800" :step="5" unit="%"/></div>
+      <span class="faint">Zoom</span><div style="flex:1; min-width:160px"><Slider v-model="zoom" :min="100" :max="maxZoom" :step="5" unit="%"/></div>
       <button class="btn sm" @click="reset" title="The largest centred crop"><Icon name="Scan" :size="14"/>Fit</button>
+      <button class="btn sm" @click="oneToOne" :disabled="!stats" title="Zoom in until one pixel of the stream is one LED (the most detail there is)"><Icon name="ZoomIn" :size="14"/>1:1</button>
       <slot/>
     </div>
-    <div class="hint faint" style="font-size:12px">Drag the box to choose what shows; Ctrl + scroll on the picture zooms. Each place on the wall keeps its own crop.
-      Source {{ nat[0] }}×{{ nat[1] }} (decoded at 640 px wide).</div>
+    <div class="row" :title="kMax ? '' : 'Needs the stream\'s resolution (shown once it has been fetched)'">
+      <Toggle :modelValue="snap" @update:modelValue="toggleSnap" :disabled="!kMax"/>
+      <span>Whole pixels</span>
+      <span class="faint" style="font-size:12px">zoom only in exact steps (1:1, 2:1, 3:1…): each LED is the plain average of a k × k block of the stream's own pixels, with no in-between blur</span>
+    </div>
+    <div v-if="stats" class="wc-stats">
+      <div><span>Livestream</span><b>{{ stats.native }}</b><i v-if="stats.others">also {{ stats.others }}</i></div>
+      <div v-if="stats.decoding"><span>Hub decodes</span><b>{{ stats.decoding }}</b></div>
+      <div><span>Cropped area</span><b>{{ stats.crop }}</b><i>of the stream</i></div>
+      <div><span>Viewport</span><b>{{ stats.zone }}</b></div>
+      <div v-if="stats.k"><span>Scaling</span><b>exactly {{ stats.k }}:1</b>
+        <i>{{ stats.k === 1 ? "every LED is one stream pixel" : "each LED averages " + stats.k + " × " + stats.k + " stream pixels" }} · whole pixels, steps 1:1 to {{ kMax }}:1</i></div>
+      <div v-else><span>Scaling</span><b>{{ fmt(stats.scale) }} stream px per LED</b>
+        <i>{{ stats.scale <= 1.02 ? "1:1, the most detail there is" : "scaled down " + fmt(stats.scale) + "×" }} · zoom up to {{ maxZoom }}% (1:1)</i></div>
+      <div v-if="stats.used != null"><span>Wall gets</span><b :class="{warn: stats.pending}">{{ fmt(stats.used) }} px per LED</b>
+        <i>{{ stats.pending ? "more detail comes once the crop is held still for a moment (or saved)" : "full detail for this crop" }}</i></div>
+    </div>
+    <div v-else-if="src && !err" class="hint faint" style="font-size:12px">Finding the stream's resolution…</div>
+    <div class="hint faint" style="font-size:12px">Drag the box to choose what shows; Ctrl + scroll on the picture zooms; 1:1 zooms until one stream pixel is one LED. Each place on the wall keeps its own crop.</div>
   </div>`,
 };
 
@@ -1308,7 +1387,7 @@ const WebcamEditor = {
       [o[a], o[b]] = [o[b], o[a]];
     };
     const customCrop = (s) => !!cam.value.crops?.[s];
-    return { id, cam, shape, WEBCAM_SEC, zone, ov, colour, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
+    return { id, cam, shape, WEBCAM_SEC, zone, ov, colour, DEFAULT_SHARPEN, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
       orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, hasText, customCols, SHIELD_PRESETS, SHIELD_KINDS, SHIELD_PLACES, SHIELD_SIZES, SHIELD_STYLES, shieldSrc, signMissing, presetShown, presetDone,
       CONTAINERS, feedFor, feedPill, healthFor, downPill, local, cityQ, cityHits, citySearching, searchCity, pickCity, clearCity, cityLabel, wxPoint, jpFaces, jpSample, jc, jcSizes, jcSetFace, jcSample, JC_POSITIONS, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
   },
@@ -1375,6 +1454,7 @@ const WebcamEditor = {
               <Field label="Brightness"><Slider :modelValue="colour.brightness ?? 1" @update:modelValue="v => colour.brightness = v" :min="0.4" :max="2" :step="0.05" :format="v => Math.round(v * 100) + '%'"/></Field>
               <Field label="Contrast"><Slider :modelValue="colour.contrast ?? 1" @update:modelValue="v => colour.contrast = v" :min="0.5" :max="2" :step="0.05" :format="v => Math.round(v * 100) + '%'"/></Field>
               <Field label="Saturation"><Slider :modelValue="colour.saturation ?? 1" @update:modelValue="v => colour.saturation = v" :min="0" :max="2" :step="0.05" :format="v => Math.round(v * 100) + '%'"/></Field>
+              <Field label="Sharpness"><Slider :modelValue="colour.sharpen ?? DEFAULT_SHARPEN" @update:modelValue="v => colour.sharpen = v" :min="0" :max="2" :step="0.05" :format="v => Math.round(v * 100) + '%'"/></Field>
             </div>
           </div></div>
       </div>
