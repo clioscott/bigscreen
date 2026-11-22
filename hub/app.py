@@ -1277,9 +1277,12 @@ def webcams_info(type: str, url: str = "", id: int | None = None):
     if kind == "youtube":
         info = webcams.cached(src_url)          # never a lookup of its own: the editor's feed makes the one it needs
         if info:
-            top = webcams.native_of(info["formats"])
-            out["native"] = {k: top[k] for k in ("w", "h", "fps", "vcodec")}
-            out["formats"] = sorted({(fm["w"], fm["h"], fm["fps"]) for fm in info["formats"]})
+            # a running feed's own list (it knows when DASH failed for it), else what this hub can play
+            fms = f["formats"] if f and f.get("formats") else webcams.playable(info["formats"])
+            top = webcams.native_of(fms)
+            if top and not out["native"]:               # (a running feed's own: it knows when DASH failed)
+                out["native"] = {k: top[k] for k in ("w", "h", "fps", "vcodec")}
+            out["formats"] = sorted({(fm["w"], fm["h"], fm["fps"]) for fm in fms})
     elif kind in webcams.STILLS and f and f.get("size"):
         out["native"] = {"w": f["size"][0], "h": f["size"][1], "fps": 0, "vcodec": "jpeg"}
     return out

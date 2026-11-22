@@ -127,6 +127,11 @@ once (`hold: false`), so the rotation resumes by itself.
   `rotation.WARM_AHEAD` s from its end (or on its last pass) and the next entry is a webcam, it calls
   `/api/webcams/warm` every `WARM_EVERY` s, and the screen then opens on a picture.
   Each viewer gets its own crop/scale/colour. At most `MAX_FEEDS` at once.
+- 4K: YouTube's live HLS stops at 1080p; 1440p/4K exist only as DASH (VP9 WebM segments by sequence number). The
+  lookup passes `youtube:formats=incomplete` to list them, which needs a current yt-dlp with yt-dlp-ejs and deno
+  (`~/.deno/bin/deno` on the server, found by `deno_path`). They're used only when a crop needs more than the HLS
+  has, only with the video engine (`_dash_args`: crop/scale with `scale_vaapi`, NV12 back to memory), fed into
+  ffmpeg's stdin by `Feed._fetch_segments`.
 - API (`hub/app.py`): `/api/webcams/frames` (raw RGB for the Pi, 12-byte header per frame), `source.mjpeg` (crop
   editor), `preview` + `preview/{token}.mjpeg` (exact wall render incl. caption), `probe`, `status`.
 - Display: `display/modules/webcam.py`, panels `webcam` (a side), `webcam_full`, `webcam_wall`; entry field `cam`.
