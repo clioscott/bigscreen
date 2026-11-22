@@ -387,15 +387,6 @@ def test_uppercase_twelve_hour_and_separator():
     assert " / " in cap.fit_detail(f, [("a", "x"), ("b", "y")], 200, sep="slash")
 
 
-def test_inline_drops_sections_instead_of_cutting_them():
-    from display.gfx import Canvas
-    cam = {**CAM, "overlay": {"style": "outline", "lines": "inline", "show": EVERYTHING}}
-    k = cap.Ctx(Canvas(152, 130), (0, 0, 152, 130), cap.overlay_of(cam), lambda p: _font(p))
-    title, lines = cap._headline_and_lines(k, cap.Content(CAM, k.ov, wx=WX), 140)
-    assert not lines and cap._tw(k.T, title) <= 140
-    assert all(piece.strip() for piece in title.split("·"))           # no dangling half-section
-
-
 def _font(path):
     from display.gfx import graphics
     f = graphics.Font()
@@ -418,7 +409,6 @@ def test_webcam_location_validation():
     for bad in ({"lat": 100}, {"lon": "east"}):
         with pytest.raises(config.ConfigError):
             config.validate(_cfg({"cams": {"a": {**CAM, **bad}}}))
-
 
 
 # --- PR #13 review regressions ---------------------------------------------------------------------------------
@@ -460,30 +450,6 @@ def test_periodic_longer_than_the_gap_just_stays_up():
     assert all(cap.visibility(ov, t) == 1.0 for t in (59.9, 60.0, 60.3, 60.7, 125))
 
 
-def test_clock_shows_the_name_and_never_the_time_twice():
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
-    t = datetime(2026, 10, 19, 5, 41, tzinfo=ZoneInfo("Asia/Tokyo"))
-    drawn = []
-    real = cap.graphics.DrawText
-
-    def spy(c, f, x, y, col, s):
-        drawn.append(s)
-        return real(c, f, x, y, col, s)
-    cap.graphics.DrawText = spy
-    try:
-        for head in ("time", "name"):
-            drawn.clear()
-            cam = {**CAM, "overlay": {"style": "clock", "headline": head}}
-            from display.gfx import Canvas
-            ov = cap.overlay_of(cam)                        # one render of the layout (draw_caption caches two)
-            cap._l_clock(cap.Ctx(Canvas(223, 134), (0, 0, 223, 134), ov, _font), cap.Content(CAM, ov, now_local=t))
-            text = " ".join(drawn)
-            assert text.count("05:41") == 1 and "Shibuya Crossing" in text
-    finally:
-        cap.graphics.DrawText = real
-
-
 def test_stale_weather_is_not_shown():
     ov = cap.overlay_of({"overlay": {"show": {"weather": True}}})
     assert dict(cap.Content(CAM, ov, wx={**WX, "at": time.time() - 3 * 3600}).bits()).get("weather") is None
@@ -523,64 +489,10 @@ def test_fit_wraps_before_dropping_and_reports_what_did_not_fit():
     assert gone and set(gone) <= set(cap.SECTIONS)                # a narrow bar can't fit them all: they're named
 
 
-def test_custom_layout_columns_lines_and_order():
-    from display.gfx import Canvas
-    ov = {"style": "custom", "show": {"weather": True, "date": True},
-          "slots": {"name": [1, 1], "live": [1, 1], "place": [1, 2], "time": [2, 1], "weather": [2, 2], "date": [1, 2]},
-          "order": ["date", "place"], "line_sizes": {"2.1": "big"}, "columns": [{}, {"align": "right"}]}
-    cam = {**CAM, "overlay": ov}
-    ct = cap.Content(CAM, cap.overlay_of(cam), wx=WX)
-    grid = cap.custom_grid(ct, cap.overlay_of(cam))
-    assert grid[1][1] == ["live", "name"] and grid[1][2] == ["date", "place"]   # your order within the line
-    assert grid[2] == {1: ["time"], 2: ["weather"]}
-    for container in ("box", "strip", "outline", "board"):
-        for zone in ((223, 134), (448, 192)):
-            c2 = {**cam, "overlay": {**ov, "container": container}}
-            frame = webcams.render(FRAME, *zone)
-            img = wc.render_preview(c2, frame, zone, 1.0, wx=WX)
-            assert not np.array_equal(img, frame)
-
-
-def test_custom_layout_validation():
-    from hub import config
-    good = {"style": "custom", "container": "strip", "slots": {"name": [1, 1], "time": [2, 1]},
-            "line_sizes": {"2.1": "big"}, "columns": [{}, {"align": "right"}]}
-    config.validate(_cfg({"cams": {"a": {**CAM, "overlay": good}}}))
-    for bad in ({"container": "bubble"}, {"slots": {"name": [4, 1]}}, {"slots": {"mood": [1, 1]}}, {"slots": {"name": "1,1"}},
-                {"line_sizes": {"1.1": "huge"}}, {"columns": [{"align": "up"}]}):
-        with pytest.raises(config.ConfigError):
-            config.validate(_cfg({"cams": {"a": {**CAM, "overlay": {**good, **bad}}}}))
-
-
 def test_preview_reports_sections_that_do_not_fit():
     narrow = {**CAM, "overlay": {"style": "bar", "show": {k: True for k in cap.SECTIONS}, "custom_text": "x" * 30}}
     assert wc.caption_dropped(narrow, (152, 130), WX)
     assert wc.caption_dropped({**CAM, "overlay": {"style": "tag"}}, (448, 134), WX) == []
-
-
-def test_custom_layout_never_clips_text_that_fits():
-    """Measure and draw agree: with room to spare, the name isn't cut (it was, by a pixel after LIVE)."""
-    ov = cap.overlay_of({**CAM, "overlay": {"style": "custom", "slots": {"live": [1, 1], "name": [1, 1], "time": [2, 1]}}})
-    drawn = []
-    real = cap.graphics.DrawText
-
-    def spy(c, f, x, y, col, s):
-        drawn.append(s)
-        return real(c, f, x, y, col, s)
-    cap.graphics.DrawText = spy
-    try:
-        from display.gfx import Canvas
-        cap._l_custom(cap.Ctx(Canvas(448, 134), (0, 0, 448, 134), ov, _font), cap.Content(CAM, ov, wx=WX))
-    finally:
-        cap.graphics.DrawText = real
-    assert "Shibuya Crossing" in drawn
-
-
-# --- PR #14 review regressions ---------------------------------------------------------------------------------
-def test_bar_reports_what_its_two_lines_cannot_hold():
-    cam = {**CAM, "overlay": {"style": "bar", "show": {k: True for k in cap.SECTIONS},
-                              "custom_text": "Scramble crossing, from the station"}}
-    assert {"custom", "credit"} & set(wc.caption_dropped(cam, (223, 134), WX))   # needs a third line: named, not lost
 
 
 def test_dropped_sections_is_safe_across_threads():
@@ -617,14 +529,6 @@ def test_one_per_line_shows_four_sections():
     assert len(k.details(cap.Content(CAM, ov), 300)) == 4
 
 
-def test_slot_and_line_size_validation_edges():
-    from hub import config
-    for bad in ({"slots": {"name": [True, 1]}}, {"line_sizes": {"top": "big"}}):
-        with pytest.raises(config.ConfigError):
-            config.validate(_cfg({"cams": {"a": {**CAM, "overlay": {"style": "custom", **bad}}}}))
-
-
-# --- weather for previews of unsaved locations ------------------------------------------------------------------
 def _wx_env(monkeypatch, saved, fetch):
     import json
     from hub import app as hub_app, paths
@@ -697,37 +601,6 @@ def test_wall_preview_batches_weather_and_skips_webcams_without_it(monkeypatch):
 
 
 # --- custom layout: a section pushed to its line's right end ----------------------------------------------------
-def test_custom_right_end_puts_the_time_in_the_corner():
-    """A slot's third value "right" draws the section flush with the column's right edge, the rest still at the left."""
-    from display.gfx import Canvas
-    slots = {"live": [1, 1], "name": [1, 1], "place": [1, 2], "time": [1, 2, "right"]}
-    ov = cap.overlay_of({"overlay": {"style": "custom", "slots": slots}})
-    assert cap.right_kinds(ov) == {"time"}
-    spots = {}
-    real = cap.graphics.DrawText
-
-    def spy(c, f, x, y, col, s):
-        spots[s] = (x, x + cap._tw(f, s))
-        return real(c, f, x, y, col, s)
-    cap.graphics.DrawText = spy
-    try:
-        cap._l_custom(cap.Ctx(Canvas(448, 134), (0, 0, 448, 134), ov, _font), cap.Content(CAM, ov, wx=WX))
-    finally:
-        cap.graphics.DrawText = real
-    clock = cap.Content(CAM, ov).clock()
-    assert spots[clock][1] == spots[CAM["label"]][1]          # the time ends where the headline (the widest line) ends
-    assert spots[CAM["place"]][0] < spots[clock][0]           # the place stays at the left
-
-
-def test_custom_right_slot_validation():
-    from hub import config
-    config.validate(_cfg({"cams": {"a": {**CAM, "overlay": {"style": "custom", "slots": {"time": [1, 2, "right"]}}}}}))
-    for bad in ({"time": [1, 2, "middle"]}, {"time": [1, 2, "right", 4]}):
-        with pytest.raises(config.ConfigError):
-            config.validate(_cfg({"cams": {"a": {**CAM, "overlay": {"style": "custom", "slots": bad}}}}))
-
-
-# --- custom layout: a highway shield ----------------------------------------------------------------------------
 def _shield_box(place, size, corner="bl"):
     """(the caption box's mask, the shield's mask) for a Custom caption with a BC 99 shield."""
     from display.gfx import Canvas
@@ -762,38 +635,6 @@ def _extent(m):
     return ys.min(), ys.max(), xs.min(), xs.max()
 
 
-def test_shield_inside_grows_the_box_to_fit():
-    box_small, _ = _shield_box("inside", "box")
-    box_big, shield = _shield_box("inside", 40)
-    by0, by1, bx0, bx1 = _extent(box_big)
-    sy0, sy1, sx0, sx1 = _extent(shield)
-    assert sy1 - sy0 + 1 >= 38 and by1 - by0 > _extent(box_small)[1] - _extent(box_small)[0]
-    assert by0 <= sy0 and sy1 <= by1 and bx0 <= sx0 and sx1 <= bx1  # inside the box
-
-
-def test_shield_outside_sits_beside_the_box():
-    for place in ("left", "right"):
-        box, shield = _shield_box(place, 40)
-        by0, by1, bx0, bx1 = _extent(box)
-        sy0, sy1, sx0, sx1 = _extent(shield)
-        assert (sx1 < bx0) if place == "left" else (sx0 > bx1)
-        assert sy1 == by1                                      # bottom corner: lined up with the box's bottom edge
-    box, shield = _shield_box("right", 40, corner="tr")
-    assert _extent(shield)[0] == _extent(box)[0]              # top corner: with its top edge
-
-
-def test_shield_in_its_line_and_validation():
-    from hub import config
-    box, shield = _shield_box("line", "box")
-    assert shield.any() and _extent(shield)[1] - _extent(shield)[0] < 14
-    good = {"style": "custom", "show": {"shield": True}, "shield": {"route": "US 97", "kind": "us", "place": "left", "size": 32}}
-    config.validate(_cfg({"cams": {"a": {**CAM, "overlay": good}}}))
-    for bad in ({"place": "above"}, {"size": 80}, {"size": "line"}, {"kind": "autobahn"}, {"route": "123456789"}):
-        with pytest.raises(config.ConfigError):
-            config.validate(_cfg({"cams": {"a": {**CAM, "overlay": {**good, "shield": {**good["shield"], **bad}}}}}))
-
-
-# --- real highway signs and the second review's fixes -------------------------------------------------------------
 def test_real_sign_files_by_route():
     from display.modules import shields
     assert [shields.sign_file(r) for r in ("99", "1", "I-5", "US 97", "SR 543", "17A")] == \
@@ -817,51 +658,6 @@ def test_real_sign_is_scaled_and_blended(tmp_path, monkeypatch):
     w = cap._put_shield(c, 2, 2, "99", 24, None, "real")
     assert w == 20 and c.buf[14, 12].tolist() == [255, 255, 255] and c.buf[2, 2].max() < 255
     assert cap._shield_dims("5", 24, None, "real") == cap._shield_dims("5", 24)   # no file: the pixel art
-
-
-def test_route_without_a_number_draws_the_blank_sign():
-    from display.gfx import Canvas
-    from display.modules import shields
-    for r in ("US", "US-", "I-", "SR", "WA"):
-        assert shields.draw(Canvas(40, 30), 0, 0, r, h=24) > 0 and not shields.has_number(r)
-    ov = cap.overlay_of({"overlay": {"style": "custom", "show": {"shield": True}, "shield": {"route": "US", "place": "line"}}})
-    cap._l_custom(cap.Ctx(Canvas(448, 134), (0, 0, 448, 134), ov, _font), cap.Content(CAM, ov, wx=WX))
-
-
-def test_shield_only_column_leaves_headline_and_alignment_to_the_text():
-    from display.gfx import Canvas
-    ov = cap.overlay_of({"overlay": {"style": "custom", "font": "large", "show": {"shield": True, "weather": False},
-                                     "shield": {"route": "99", "place": "inside"},
-                                     "slots": {"shield": [1, 1], "live": [2, 1], "name": [2, 1], "place": [2, 2],
-                                               "time": [2, 2, "right"]}}})
-    fonts = {}
-    real = cap.graphics.DrawText
-
-    def spy(c, f, x, y, col, s):
-        fonts[s] = f.height
-        return real(c, f, x, y, col, s)
-    cap.graphics.DrawText = spy
-    try:
-        cap._l_custom(cap.Ctx(Canvas(448, 134), (0, 0, 448, 134), ov, _font), cap.Content(CAM, ov, wx=WX))
-    finally:
-        cap.graphics.DrawText = real
-    assert fonts[CAM["label"]] > fonts[CAM["place"]]          # the name is still the headline
-
-
-def test_fixed_shield_never_taller_than_the_zone():
-    for place in ("inside", "left"):
-        from display.gfx import Canvas
-        ov = cap.overlay_of({"overlay": {"style": "custom", "show": {"shield": True},
-                                         "shield": {"route": "99", "place": place, "size": 64}}})
-        drawn = []
-        real = cap._put_shield
-        cap._put_shield = lambda c, x, y, route, h, kind=None, style="pixel": drawn.append((y, h)) or real(c, x, y, route, h, kind, style)
-        try:
-            cap._l_custom(cap.Ctx(Canvas(150, 40), (0, 0, 150, 40), ov, _font), cap.Content(CAM, ov, wx=WX))
-        finally:
-            cap._put_shield = real
-        (y, h), = drawn
-        assert y >= 0 and h <= 36
 
 
 def test_shield_sign_job_and_validation():

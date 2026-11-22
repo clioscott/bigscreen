@@ -153,11 +153,12 @@ once (`hold: false`), so the rotation resumes by itself.
 - Display: `display/modules/webcam.py`, panels `webcam` (a side), `webcam_full`, `webcam_wall`; entry field `cam`.
   The Pi's reader thread runs on cores 0–1 and hangs up `IDLE_SEC` after the screen stops drawing it; a stream with no
   picture after `GIVE_UP_SEC` returns `"skip"` (display/rotation.py ends the screen at once).
-- Captions: `display/modules/webcam_caption.py` (its docstring lists every `overlay` key). Sections (`Content`) are
-  formatted once, then a layout (`LAYOUT_FUNCS`: tag, bar, lower_third, split, postcard, chips, clock, signage, ticker,
-  stack, outline, dot, custom) places them. Detail lines "fit" by wrapping onto up to `FIT_LINES` before sections drop
-  in `DROP` order; `dropped_sections()` tells the panel what didn't fit. Custom: `slots` {section: [column, line]},
-  `line_sizes`, `columns` (align), `container`, `divider`. Captions render into a cached transparent layer (`_layer`). Weather and sunrise/sunset come from
+- Captions: `display/modules/webcam_caption.py` (its docstring lists every `overlay` key): one style, Tag, drawing
+  `overlay.rows` (rows of pieces, a size per piece, separators as pieces; edited in `hub/web/ui/pages/caption_rows.js`). Sections (`Content`) are
+  formatted once, then `_l_tag` draws the rows: an empty section drops with the separator before it; a row too wide
+  drops its last pieces (its first is only cut), or wraps (`wrap`, up to `FIT_LINES`); a `spill` piece moves to the
+  next row instead. Captions without rows get `legacy_rows` (the old headline/details settings, drawn as before);
+  `POST /api/webcams/caption-rows` gives the editor those. `dropped_sections()` tells the panel what didn't fit. Captions render into a cached transparent layer (`_layer`). Weather and sunrise/sunset come from
   `hub/jobs/webcam_weather.py` (Open-Meteo, every 15 min, webcams with lat/lon) → `data/webcam_weather.json`.
   Re-render every layout after changes: `tests/test_webcams.py` renders them all; look at real frames before shipping.
 - Config `modules.webcams`: `hub_url` (default `http://192.168.1.111:8800`), `cams.<id>` = label, place, credit, tz,

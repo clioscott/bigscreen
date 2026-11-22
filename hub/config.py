@@ -225,6 +225,24 @@ def _validate_timezones(tz):
                 raise ConfigError(f"city {c['name']}: latitude and longitude please")
 
 
+def _validate_rows(name, rows):
+    """overlay "rows": [{"items": [{"k": section | "name:N" | "live" | "shield" | "sep", "size"?, "s"? (a separator's
+    kind), "pad"?, "spill"?}, …], "wrap"?}, …] (display/modules/webcam_caption.py rows_of)."""
+    if rows is None:
+        return
+    from display.modules.webcam_caption import MAX_ROWS, NAME_LINES, SECTIONS, SEP_KINDS, SIZES
+    bad = f"webcam {name}: caption rows must be up to {MAX_ROWS} rows of pieces"
+    if not isinstance(rows, list) or len(rows) > MAX_ROWS:
+        raise ConfigError(bad)
+    kinds = set(SECTIONS) | {"sep", "live", "shield"} | {f"name:{i}" for i in range(2, NAME_LINES + 1)}
+    for r in rows:
+        if not isinstance(r, dict) or not isinstance(r.get("items"), list) or len(r["items"]) > 40                 or not isinstance(r.get("wrap", False), bool):
+            raise ConfigError(bad)
+        for it in r["items"]:
+            if not isinstance(it, dict) or it.get("k") not in kinds or it.get("size", "small") not in SIZES                     or (it.get("k") == "sep" and it.get("s") not in SEP_KINDS)                     or not all(isinstance(it.get(f, False), bool) for f in ("pad", "spill")):
+                raise ConfigError(f"webcam {name}: caption piece {str(it)[:60]} isn't one the caption knows")
+
+
 def _validate_overlay(name, ov):
     """A webcam's caption settings (display/modules/webcam_caption.py); the display also parses them defensively."""
     if ov is None:
@@ -232,7 +250,9 @@ def _validate_overlay(name, ov):
     if not isinstance(ov, dict):
         raise ConfigError(f"webcam {name}: overlay must be an object")
     from display.modules.webcam_caption import FONTS, JP_FACES, LAYOUTS, SECTIONS, SEPARATORS
-    choices = {"style": LAYOUTS, "corner": ("tl", "tc", "tr", "bl", "bc", "br"), "font": tuple(FONTS),
+    old_styles = ("bar", "outline", "dot", "lower_third", "split", "postcard", "chips", "clock", "signage", "ticker",
+                  "stack", "underline", "custom")   # retired with rows (2026-11): still accepted, drawn as tag
+    choices = {"style": LAYOUTS + old_styles, "corner": ("tl", "tc", "tr", "bl", "bc", "br"), "font": tuple(FONTS),
                "headline": ("name", "place", "custom", "time"), "lines": ("auto", "wrap", "stacked", "inline"),
                "separator": tuple(SEPARATORS), "when": ("always", "intro", "periodic"), "time_format": ("24h", "12h"),
                "container": ("box", "strip", "outline", "board"), "taken_format": ("time", "relative", "both"),
@@ -268,20 +288,7 @@ def _validate_overlay(name, ov):
     order = ov.get("order", [])
     if not isinstance(order, list):
         raise ConfigError(f"webcam {name}: caption order must be a list")
-    from display.modules.webcam_caption import FIELDS, LINE_SIZES
-    slots = ov.get("slots", {})
-    if not isinstance(slots, dict):
-        raise ConfigError(f"webcam {name}: caption slots must be an object")
-    for kind, slot in slots.items():
-        ok = kind in FIELDS and isinstance(slot, list) and len(slot) in (2, 3) \
-            and all(isinstance(v, int) and not isinstance(v, bool) for v in slot[:2]) \
-            and 1 <= slot[0] <= 3 and 1 <= slot[1] <= 4 and (len(slot) == 2 or slot[2] in ("left", "right"))
-        if not ok:
-            raise ConfigError(f"webcam {name}: caption slot for {kind} must be [column 1-3, line 1-4, left|right]")
-    sizes = ov.get("line_sizes", {})
-    if not isinstance(sizes, dict) or any(v not in LINE_SIZES or not re.fullmatch(r"[1-3]\.[1-4]", str(key))
-                                          for key, v in sizes.items()):
-        raise ConfigError(f"webcam {name}: caption line sizes must be headline, detail or big")
+    _validate_rows(name, ov.get("rows"))
     shield = ov.get("shield", {})
     from display.modules.webcam_caption import SHIELD_KINDS, SHIELD_MAX, SHIELD_MIN, SHIELD_PLACES, SHIELD_STYLES
     size = shield.get("size", "box") if isinstance(shield, dict) else None
@@ -294,10 +301,6 @@ def _validate_overlay(name, ov):
         raise ConfigError(f"webcam {name}: caption shield must be "
                           f"{{route, kind, style: pixel|real, place: inside|left|right|line, "
                           f"size: box|{SHIELD_MIN}-{SHIELD_MAX}}}")
-    cols = ov.get("columns", [])
-    if not isinstance(cols, list) or any(not isinstance(c, dict) or c.get("align", "left") not in ("left", "center", "right")
-                                         for c in cols):
-        raise ConfigError(f"webcam {name}: caption columns must be [{{align: left|center|right}}, …]")
 
 
 def _validate_bridges(br):
