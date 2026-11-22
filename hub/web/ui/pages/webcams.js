@@ -947,13 +947,24 @@ const CropEditor = {
       const h = (w * sw) / aspect.value / sh;
       return { x: Math.min(Math.max(0, c.x), 1 - w), y: Math.min(Math.max(0, c.y), 1 - h), w, h };
     });
-    const set = (c) => {
+    // Whole pixels: the crop is exactly k × the viewport in the stream's own pixels (k = 1, 2, 3…), on whole pixels,
+    // so the hub scales it down by plain averaging, k × k pixels into each LED (hub/webcams.py crop_box)
+    const snap = computed(() => !!props.cam.crops?.[props.shape]?.snap);
+    const kMax = computed(() => { const n = native.value, [zw, zh] = props.zone; return n?.w ? Math.max(1, Math.floor(Math.min(n.w / zw, n.h / zh))) : 0; });
+    const kOf = (w) => Math.round((w * native.value.w) / props.zone[0]);
+    const set = (c, wantSnap = snap.value) => {
       const [sw, sh] = nat.value;
-      const w = Math.max(minW.value, Math.min(c.w, 1, (sh * aspect.value) / sw));
+      let w = Math.max(minW.value, Math.min(c.w, 1, (sh * aspect.value) / sw));
+      const n = native.value, on = wantSnap && kMax.value > 0;
+      if (on) w = (Math.min(kMax.value, Math.max(1, kOf(w))) * props.zone[0]) / n.w;
       const h = (w * sw) / aspect.value / sh;
-      const out = { x: +Math.min(Math.max(0, c.x), 1 - w).toFixed(5), y: +Math.min(Math.max(0, c.y), 1 - h).toFixed(5), w: +w.toFixed(5) };
+      let x = Math.min(Math.max(0, c.x), 1 - w), y = Math.min(Math.max(0, c.y), 1 - h);
+      if (on) { x = Math.round(x * n.w) / n.w; y = Math.round(y * n.h) / n.h; }
+      const out = { x: +x.toFixed(6), y: +y.toFixed(6), w: +w.toFixed(6) };
+      if (on) out.snap = true;
       (props.cam.crops || (props.cam.crops = {}))[props.shape] = out;
     };
+    const toggleSnap = (on) => set({ ...box.value }, on);
     let drag = null;
     const down = (ev) => {
       const r = ev.currentTarget.parentElement.getBoundingClientRect();
@@ -975,10 +986,20 @@ const CropEditor = {
     const wheel = (ev) => {                  // Ctrl + wheel zooms; a plain wheel still scrolls the page
       if (!ev.ctrlKey && !ev.metaKey) return;
       ev.preventDefault();
+      if (snap.value && kMax.value) {        // Whole pixels: one step of k each notch
+        const k = Math.min(kMax.value, Math.max(1, kOf(box.value.w) + (ev.deltaY > 0 ? 1 : -1)));
+        return zoomBy((k * props.zone[0]) / native.value.w / box.value.w);
+      }
       zoomBy(ev.deltaY > 0 ? 1.08 : 1 / 1.08);
     };
     const zoom = computed({ get: () => Math.round(100 / box.value.w), set: (v) => zoomBy(100 / v / box.value.w) });
-    const reset = () => { if (props.cam.crops) delete props.cam.crops[props.shape]; };
+    const reset = () => {
+      if (snap.value && kMax.value) {        // Whole pixels: the largest whole-pixel crop, centred
+        const [sw, sh] = nat.value, w = (kMax.value * props.zone[0]) / native.value.w, h = (w * sw) / aspect.value / sh;
+        return set({ x: (1 - w) / 2, y: Math.max(0, (1 - h) / 2), w });
+      }
+      if (props.cam.crops) delete props.cam.crops[props.shape];
+    };
     const oneToOne = () => zoomBy(minW.value / box.value.w);
     const res = (w, h) => (h >= 2000 ? "4K " : h >= 1400 ? "1440p " : h >= 1000 ? "1080p " : h >= 700 ? "720p " : h ? h + "p " : "") + `${w}×${h}`;
     const codec = (c) => ({ avc1: "H.264", h264: "H.264", vp09: "VP9", vp9: "VP9", av01: "AV1", hevc: "HEVC", jpeg: "still" })[c] || c || "";
@@ -990,7 +1011,8 @@ const CropEditor = {
       const cropW = Math.round(b.w * n.w), cropH = Math.round(b.h * n.h);
       const others = [...new Set((info.value.formats || []).map(([, h]) => h).filter((h) => h !== n.h))].sort((a, c) => c - a).map((h) => h + "p").join(", ");
       const out = { native: `${res(n.w, n.h)}${n.fps ? " · " + Math.round(n.fps) + " fps" : ""}${n.vcodec ? " · " + codec(n.vcodec) : ""}`,
-        crop: `${cropW}×${cropH} px`, zone: `${zw}×${zh} LEDs`, scale: cropW / zw, others };
+        crop: `${cropW}×${cropH} px`, zone: `${zw}×${zh} LEDs`, scale: cropW / zw, others,
+        k: snap.value ? kOf(b.w) : 0 };
       if (f?.source) {
         const s = f.source, hi = f.hi;
         // what the wall's frames are cut from: the detail picture when it covers this crop, else the 640-wide one
@@ -1003,7 +1025,7 @@ const CropEditor = {
       return out;
     });
     const fmt = (v) => (v >= 10 ? v.toFixed(0) : v.toFixed(1));
-    return { img, src, err, box, down, move, up, wheel, zoom, reset, nat, maxZoom, oneToOne, stats, fmt };
+    return { img, src, err, box, down, move, up, wheel, zoom, reset, nat, maxZoom, oneToOne, stats, fmt, snap, toggleSnap, kMax };
   },
   template: `<div class="stack">
     <div class="wc-src" @wheel="wheel">
@@ -1018,12 +1040,19 @@ const CropEditor = {
       <button class="btn sm" @click="oneToOne" :disabled="!stats" title="Zoom in until one pixel of the stream is one LED (the most detail there is)"><Icon name="ZoomIn" :size="14"/>1:1</button>
       <slot/>
     </div>
+    <div class="row" :title="kMax ? '' : 'Needs the stream\'s resolution (shown once it has been fetched)'">
+      <Toggle :modelValue="snap" @update:modelValue="toggleSnap" :disabled="!kMax"/>
+      <span>Whole pixels</span>
+      <span class="faint" style="font-size:12px">zoom only in exact steps (1:1, 2:1, 3:1…): each LED is the plain average of a k × k block of the stream's own pixels, with no in-between blur</span>
+    </div>
     <div v-if="stats" class="wc-stats">
       <div><span>Livestream</span><b>{{ stats.native }}</b><i v-if="stats.others">also {{ stats.others }}</i></div>
       <div v-if="stats.decoding"><span>Hub decodes</span><b>{{ stats.decoding }}</b></div>
       <div><span>Cropped area</span><b>{{ stats.crop }}</b><i>of the stream</i></div>
       <div><span>Viewport</span><b>{{ stats.zone }}</b></div>
-      <div><span>Scaling</span><b>{{ fmt(stats.scale) }} stream px per LED</b>
+      <div v-if="stats.k"><span>Scaling</span><b>exactly {{ stats.k }}:1</b>
+        <i>{{ stats.k === 1 ? "every LED is one stream pixel" : "each LED averages " + stats.k + " × " + stats.k + " stream pixels" }} · whole pixels, steps 1:1 to {{ kMax }}:1</i></div>
+      <div v-else><span>Scaling</span><b>{{ fmt(stats.scale) }} stream px per LED</b>
         <i>{{ stats.scale <= 1.02 ? "1:1, the most detail there is" : "scaled down " + fmt(stats.scale) + "×" }} · zoom up to {{ maxZoom }}% (1:1)</i></div>
       <div v-if="stats.used != null"><span>Wall gets</span><b :class="{warn: stats.pending}">{{ fmt(stats.used) }} px per LED</b>
         <i>{{ stats.pending ? "more detail comes once the crop is held still for a moment (or saved)" : "full detail for this crop" }}</i></div>
