@@ -51,10 +51,22 @@ export const Overview = {
     const code = computed(() => store.status?.code || {});
     const deploy = computed(() => code.value.last_deploy || {});
     const repo = "https://github.com/clioscott/bigscreen";
-    return { store, jobs, disp, showing, health, runJob, ago, dur, every, now, JOB_ICONS, go, code, deploy, repo };
+    // YouTube refusing the hub ("confirm you are not a bot"): webcams wait it out; signing the hub in ends it
+    const yt = ref(null);
+    let ytTimer = null;
+    const pollYt = async () => { try { yt.value = await api("/api/webcams/youtube"); } catch {} };
+    onMounted(() => { pollYt(); ytTimer = setInterval(pollYt, 30000); });
+    onBeforeUnmount(() => clearInterval(ytTimer));
+    const clock = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return { store, jobs, disp, showing, health, runJob, ago, dur, every, now, JOB_ICONS, go, code, deploy, repo, yt, clock };
   },
   template: `<div class="page">
     <div class="page-head"><div class="grow"><h1>Overview</h1><p>What's on the display right now and how every data feed is doing.</p></div></div>
+
+    <div v-if="yt && yt.blocked_until" class="callout" style="font-size:13px"><Icon name="ShieldAlert" :size="16"/>
+      <span><b>YouTube is refusing the hub</b> (it asks it to confirm it is not a bot), so YouTube webcams are skipped until {{ clock(yt.blocked_until) }}.
+        {{ yt.signed_in ? 'The hub is signed in, but YouTube wants a fresh sign-in:' : 'Signing the hub in to YouTube stops this:' }}
+        on your PC, run <code>python tools/youtube_signin.py</code> in the repo folder, sign in in the window it opens, and close it.</span></div>
 
     <div class="card">
       <div class="card-head"><span class="live">LIVE</span><h3></h3>
