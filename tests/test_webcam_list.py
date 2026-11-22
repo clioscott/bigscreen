@@ -1192,3 +1192,51 @@ def test_grid_tiles_are_made_in_worker_processes(monkeypatch):
     assert webcams.grid_tile_work({"type": "image", "url": "https://x.example/a.jpg"}, None, 40, 30) is not None
     monkeypatch.setattr(webcams, "fetch_still", lambda kind, url, meta=True: (np.zeros((90, 160, 3), np.uint8), None))
     assert webcams.grid_tile_work({"type": "image", "url": "https://x.example/b.jpg"}, None, 40, 30) is None   # black
+
+
+def test_30fps_video_on_the_60hz_grid_shows_every_frame_for_two_draws():
+    # display/main.py draws on a fixed 1/60 s grid and the webcam takes its time from it (webcam.CLOCK): each frame
+    # of 30 fps video is on screen for exactly two draws, never one then three
+    import collections
+    st = wm.Stream.__new__(wm.Stream)
+    st.fps, st.video, st.frame, st.frame_t = 30, True, None, 0.0
+    frames = [np.full((2, 2, 3), i % 256, np.uint8) for i in range(1200)]
+    st._q = collections.deque(frames[:180], maxlen=700)                 # a full buffer, then a live feed's 30 fps
+    st._play_t0, st._play_k, st._play_pos, st._play_last, st._shown = None, 0, 0.0, 0.0, None
+    st._played, st._buffer_since, st._fill_avg = False, 0.0, None
+    runs, last, fed = [], None, 180
+    for k in range(1200):
+        if k % 2 == 0:
+            st._q.append(frames[fed]); fed += 1
+        fr = st.current(100.0 + k / 60.0)
+        if last is not None and fr is last:
+            runs[-1] += 1
+        else:
+            runs.append(1)
+        last = fr
+    assert set(runs[1:-1]) == {2} and st.skipped == 0 and st.dry_runs == 0
+
+
+def test_an_unchanged_frame_is_not_pushed_to_the_panels():
+    from display import main as dm
+
+    class Canvas:
+        def __init__(self):
+            self.sets = 0
+
+        def SetBuffer(self, *a):
+            self.sets += 1
+
+    class Matrix:
+        def SwapOnVSync(self, c):
+            self.swaps = getattr(self, "swaps", 0) + 1
+            return c
+
+    out = dm.HardwareOutput.__new__(dm.HardwareOutput)
+    out.matrix, out.canvas, out.last, out.parity = Matrix(), Canvas(), [None, None], 0
+    fb = type("FB", (), {"buf": np.zeros((192, 448, 3), np.uint8)})()
+    assert out.present(fb)
+    swaps = out.matrix.swaps
+    assert out.present(fb) is False and out.matrix.swaps == swaps   # nothing changed: no conversion, no swap
+    fb.buf[0, 0] = 255
+    assert out.present(fb) and out.matrix.swaps == swaps + 1

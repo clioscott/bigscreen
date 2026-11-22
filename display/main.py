@@ -71,8 +71,16 @@ class HardwareOutput:
         Converting a pixel into PWM bit-planes costs ~120 ns in the library, so a full 448x192
         frame is ~10 ms. The panels are double-buffered: the canvas we draw into was last
         filled two frames ago, so diff against that.
+
+        A frame identical to the one on the panels now is not pushed at all: no conversion, no swap. Without this,
+        30 fps video on the 60 Hz loop was converted twice per video frame (once into each canvas, ~9 ms each at
+        448x175), which overran the loop's 16.7 ms and showed video frames for uneven times. Returns whether it
+        pushed.
         """
         buf = fb.buf
+        front = self.last[self.parity ^ 1]
+        if front is not None and np.array_equal(buf, front):
+            return False
         last = self.last[self.parity]
         h, w = buf.shape[:2]
         if last is None or h % TILE_H or w % TILE_W:
@@ -96,6 +104,7 @@ class HardwareOutput:
             np.copyto(last, buf)
         self.canvas = self.matrix.SwapOnVSync(self.canvas)
         self.parity ^= 1
+        return True
 
     def set_brightness(self, value):
         self.matrix.brightness = max(1, min(100, int(value)))
@@ -106,7 +115,7 @@ class EmulatorOutput:
     hw_keys = None
 
     def present(self, fb):
-        pass
+        return True
 
     def set_brightness(self, value):
         pass
@@ -470,6 +479,8 @@ class App:
         self.mirror_until = 0.0
         self.frame_ms = deque(maxlen=300)
         self.frame_times = deque(maxlen=300)
+        self.present_ms = deque(maxlen=300)    # pushing a frame to the panels (conversion + wait for vsync)
+        self.pushed = deque(maxlen=300)        # whether each frame was pushed (an unchanged one isn't)
         self.started = time.time()
         self.brightness = None
         self.errors = deque(maxlen=20)
@@ -519,8 +530,11 @@ class App:
                 os.sched_setaffinity(0, {2})
             except Exception as e:
                 print(f"[display] could not pin to core 2: {e}")
+        from display.modules import webcam
+        tick = time.time()             # when this frame was due: frames run on a fixed grid of 1/fps
         while not self.restart_requested:
             t0 = time.time()
+            webcam.CLOCK["tick"] = tick    # video picks its frame by the grid, so each one shows for the same time
             try:
                 self._maybe_reload(t0)
                 self._apply_brightness()
@@ -535,13 +549,22 @@ class App:
                 with self.frame_lock:
                     self.last_frame = self.fb.buf.copy()
                     self.frame_seq += 1
-            self.output.present(self.fb)
+            pushed = self.output.present(self.fb)
+            t2 = time.time()
             self.frame_ms.append((t1 - t0) * 1000.0)
-            self.frame_times.append(time.time())
-            fps = self.cfg.system.get("display", {}).get("fps", 60)
-            spare = (1.0 / fps) - (time.time() - t0)
-            if spare > 0.002:
-                time.sleep(spare)
+            if pushed:
+                self.present_ms.append((t2 - t1) * 1000.0)
+            self.pushed.append(bool(pushed))
+            self.frame_times.append(t2)
+            period = 1.0 / max(1, self.cfg.system.get("display", {}).get("fps", 60))
+            # a fixed grid, not "sleep what's left of this frame": a slow frame (a video frame's conversion and the
+            # wait for vsync) is made up by the next one instead of pushing every later frame back (which ran the
+            # loop at ~53 Hz and showed 30 fps video unevenly)
+            tick += period
+            if t2 - tick > period:          # a whole frame behind (a stall): start the grid again from now
+                tick = t2
+            elif tick - t2 > 0.002:
+                time.sleep(tick - t2)
         sys.exit(3)       # systemd restarts us with the new panel settings
 
     def snapshot_frame(self):
@@ -557,6 +580,7 @@ class App:
 
     def stats(self):
         ms = sorted(self.frame_ms)
+        pm = sorted(self.present_ms)
         ft = list(self.frame_times)
         fps = (len(ft) - 1) / (ft[-1] - ft[0]) if len(ft) > 2 and ft[-1] > ft[0] else 0.0
         return {
@@ -564,6 +588,10 @@ class App:
             "draw_ms_avg": round(sum(ms) / len(ms), 2) if ms else None,
             "draw_ms_p95": round(ms[int(len(ms) * 0.95) - 1], 2) if ms else None,
             "draw_ms_max": round(ms[-1], 2) if ms else None,
+            "present_ms_avg": round(sum(pm) / len(pm), 2) if pm else None,
+            "present_ms_p95": round(pm[int(len(pm) * 0.95) - 1], 2) if pm else None,
+            "pushed_pct": round(100 * sum(self.pushed) / len(self.pushed)) if self.pushed else None,
+            "webcams": self.screen.webcam.describe() if hasattr(self.screen, "webcam") else [],
             "uptime_s": int(time.time() - self.started),
             "config_revision": self.cfg.revision,
             "preview": self.source.preview_info(time.time()),
