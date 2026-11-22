@@ -1247,8 +1247,10 @@ _needs_cache: dict = {}             # (type, url) -> (config mtime, _saved_needs
 webcams.config_needs = _saved_needs
 
 
-def _consumer_args(cw, x, y, b, c, s, sh):
+def _consumer_args(cw, x, y, b, c, s, sh, px=0):
     crop = {"x": x or 0, "y": y or 0, "w": cw} if cw else None
+    if crop and px:
+        crop["snap"] = True                                  # Whole pixels (hub/webcams.py crop_box)
     colour = {"brightness": _num(b, 1, 0.2, 3), "contrast": _num(c, 1, 0.2, 3), "saturation": _num(s, 1, 0, 3)}
     if sh is not None:
         colour["sharpen"] = _num(sh, webcams.DEFAULT_SHARPEN, 0, 2)
@@ -1597,13 +1599,13 @@ async def _webcam_consumer_frames(f, take, fps, still=None, make_still=None):
 async def webcams_frames(type: str, w: int, h: int, url: str = "", id: int | None = None, refresh: int | None = None,
                          fps: int = 15, x: float | None = None,
                          y: float | None = None, cw: float | None = None, b: float = 1.0, c: float = 1.0,
-                         s: float = 1.0, sh: float | None = None):
+                         s: float = 1.0, sh: float | None = None, px: int = 0):
     """The Pi's feed: raw RGB frames already cropped and scaled to its zone (display/modules/webcam.py reads
     them), each behind a 12-byte header (hub/webcams.py pack)."""
     if not (8 <= w <= 448 and 8 <= h <= 192):
         raise HTTPException(400, "w/h out of range")
     f = _webcam_feed({"type": type, "url": url, "id": id, "refresh_sec": refresh}, fps)
-    crop, colour = _consumer_args(cw, x, y, b, c, s, sh)
+    crop, colour = _consumer_args(cw, x, y, b, c, s, sh, px)
 
     def make(frame, feed):
         age = time.time() - (feed.image_t or feed.frame_t)      # stills: the image's age, for the caption
@@ -1748,7 +1750,7 @@ async def webcams_preview(token: str):
         cam_now, (w, h) = cur["cam"], cur["zone"]
         q = wc.stream_query(cam_now, cur["shape"], w, h)
         crop, colour = _consumer_args(q.get("cw"), q.get("x"), q.get("y"), q.get("b", 1), q.get("c", 1),
-                                      q.get("s", 1), q.get("sh"))
+                                      q.get("s", 1), q.get("sh"), q.get("px", 0))
         return cur, cam_now, w, h, crop, colour
 
     def make(frame, _feed):

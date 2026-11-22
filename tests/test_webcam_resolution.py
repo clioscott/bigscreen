@@ -195,3 +195,27 @@ def test_30fps_is_picked_over_60_at_the_same_size():
         {"url": "https://m/1080p30", "vcodec": "avc1", "acodec": "none", "width": 1920, "height": 1080, "fps": 30}]})
     assert wc.pick_format(f, 1500)["url"] == "https://m/1080p30"
     assert wc.native_of(f)["fps"] == 60                                  # (the panel still says what it has)
+
+
+def test_whole_pixels_makes_the_crop_exactly_k_times_the_viewport():
+    snap = {"x": 600 / 1920, "y": 300 / 1080, "w": round(2 * 448 / 1920, 6), "snap": True}
+    assert wc.crop_box(1920, 1080, 448, 175, snap) == (600, 300, 600 + 896, 300 + 350)
+    assert wc.snap_k(snap, 640, 360, 448, 175) == 0                      # the 640-wide picture: cut as usual
+    assert wc.need_of(1920, 1080, 448, 175, snap) >= 1920                  # the stream's own pixels, unscaled
+    p = wc.plan(1920, 1080, [(448, 175, snap)])
+    assert p["full_w"] == 1920 and p["out_w"] == p["w"] and wc.covers(p, 1920, 1080, (448, 175, snap))
+
+
+def test_whole_pixels_is_the_plain_average_of_each_k_by_k_block():
+    rng = np.random.default_rng(9)
+    src = rng.integers(0, 255, (1080, 1920, 3), np.uint8)
+    snap = {"x": 300 / 1920, "y": 300 / 1080, "w": round(3 * 448 / 1920, 6), "snap": True}
+    p = wc.plan(1920, 1080, [(448, 175, snap)])
+    out = wc.render_region(src, p, 1920, 1080, 448, 175, snap, {"sharpen": 0}).astype(int)
+    block = src[300:300 + 525, 300:300 + 1344].reshape(175, 3, 448, 3, 3).mean(axis=(1, 3))
+    assert np.abs(out - block).max() <= 1                                # each LED: its 3 x 3 pixels averaged
+
+
+def test_a_snapped_crop_is_its_own_consumer():
+    crop = {"x": 0.1, "y": 0.1, "w": 0.5}
+    assert wc._key_of(448, 175, crop, {}) != wc._key_of(448, 175, {**crop, "snap": True}, {})

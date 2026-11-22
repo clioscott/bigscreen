@@ -337,7 +337,10 @@ def crop_frac(src_w, src_h, out_w, out_h, crop=None):
 
 
 def need_of(src_w, src_h, out_w, out_h, crop=None) -> float:
-    """How wide the whole frame must be decoded for this crop to get OVERSAMPLE source pixels per LED pixel."""
+    """How wide the whole frame must be decoded for this crop to get OVERSAMPLE source pixels per LED pixel. A
+    "snap" crop needs the stream's own pixels, unscaled (its whole multiples are of those)."""
+    if isinstance(crop, dict) and crop.get("snap") and crop.get("w"):
+        return 1e6
     return out_w / max(1e-3, crop_frac(src_w, src_h, out_w, out_h, crop)[2]) * OVERSAMPLE
 
 
@@ -401,7 +404,7 @@ class Frame(np.ndarray):
 def _key_of(w, h, crop, colour):
     c = crop if isinstance(crop, dict) and crop.get("w") else None
     return (int(w), int(h), None if c is None else (round(float(c.get("x", 0)), 5), round(float(c.get("y", 0)), 5),
-                                                     round(float(c["w"]), 5)),
+                                                     round(float(c["w"]), 5), bool(c.get("snap"))),
             tuple(sorted((k, round(float(v), 3)) for k, v in (colour or {}).items())))
 
 
@@ -1469,14 +1472,45 @@ def fit_crop(src_w, src_h, out_w, out_h) -> dict:
 
 
 def crop_box(src_w, src_h, out_w, out_h, crop=None) -> tuple[int, int, int, int]:
-    """Pixel box (l, t, r, b) for a crop dict, clamped inside the frame, keeping the output's shape."""
+    """Pixel box (l, t, r, b) for a crop dict, clamped inside the frame, keeping the output's shape. A crop with
+    "snap" (Whole pixels in the panel) that comes out within a pixel or two of k times the output is made exactly that
+    (k x k stream pixels per LED, on whole pixels), so it scales down by plain averaging; from a smaller picture (the
+    640-wide one) it's cut as usual."""
     c = crop if isinstance(crop, dict) and crop.get("w") else fit_crop(src_w, src_h, out_w, out_h)
     aspect = out_w / out_h
     w = max(8.0, min(float(c["w"]) * src_w, float(src_w), src_h * aspect))
+    k = snap_k(c, src_w, src_h, out_w, out_h)
+    if k:
+        w, h = float(k * out_w), float(k * out_h)
+        x = min(max(0, round(float(c.get("x", 0)) * src_w)), src_w - k * out_w)
+        y = min(max(0, round(float(c.get("y", 0)) * src_h)), src_h - k * out_h)
+        return int(x), int(y), int(x + w), int(y + h)
     h = w / aspect
     x = min(max(0.0, float(c.get("x", 0)) * src_w), src_w - w)
     y = min(max(0.0, float(c.get("y", 0)) * src_h), src_h - h)
     return int(round(x)), int(round(y)), int(round(x + w)), int(round(y + h))
+
+
+def snap_k(crop, src_w, src_h, out_w, out_h) -> int:
+    """For a "snap" crop: the whole number of stream pixels per LED it was set to on this picture, or 0 (not a snap
+    crop, or this picture isn't the one it was set on: the 640-wide one, another resolution)."""
+    if not (isinstance(crop, dict) and crop.get("snap") and crop.get("w")):
+        return 0
+    want = float(crop["w"]) * src_w
+    k = round(want / out_w)
+    if k < 1 or abs(k * out_w - want) > max(2.0, 0.004 * want) or k * out_w > src_w or k * out_h > src_h:
+        return 0
+    return k
+
+
+def _resample(box, out_w, out_h):
+    """Plain averaging (BOX) for a box exactly k times the output on whole pixels; bilinear otherwise."""
+    bw, bh = box[2] - box[0], box[3] - box[1]
+    k = round(bw / out_w)
+    whole = all(abs(v - round(v)) < 1e-6 for v in box)
+    if k >= 1 and whole and abs(bw - k * out_w) < 1e-6 and abs(bh - k * out_h) < 1e-6:
+        return Image.BOX
+    return Image.BILINEAR
 
 
 def adjust(arr, brightness=1.0, contrast=1.0, saturation=1.0):
@@ -1521,7 +1555,9 @@ def render(frame, out_w, out_h, crop=None, colour=None) -> np.ndarray:
     """One output frame: (out_h, out_w, 3) uint8."""
     h, w = frame.shape[:2]
     box = crop_box(w, h, out_w, out_h, crop)
-    img = Image.fromarray(np.asarray(frame)).resize((out_w, out_h), Image.BILINEAR, box=box, reducing_gap=2.0)
+    img = Image.fromarray(np.asarray(frame)).resize((out_w, out_h), _resample(box, out_w, out_h), box=box,
+                                                    reducing_gap=None if _resample(box, out_w, out_h) == Image.BOX
+                                                    else 2.0)
     # (Lanczos: twice the time, no visible difference at the wall's size; this runs for every frame of every webcam)
     return _finish(img, colour)
 
@@ -1538,7 +1574,8 @@ def render_region(hi, p, src_w, src_h, out_w, out_h, crop=None, colour=None) -> 
     x1, y1 = min(hw, int(box[2]) + 3), min(hh, int(box[3]) + 3)
     part = np.ascontiguousarray(hi[y0:y1, x0:x1])
     box = (box[0] - x0, box[1] - y0, box[2] - x0, box[3] - y0)
-    img = Image.fromarray(part).resize((out_w, out_h), Image.BILINEAR, box=box, reducing_gap=2.0)
+    rs = _resample(box, out_w, out_h)
+    img = Image.fromarray(part).resize((out_w, out_h), rs, box=box, reducing_gap=None if rs == Image.BOX else 2.0)
     return _finish(img, colour)
 
 
