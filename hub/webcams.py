@@ -404,8 +404,14 @@ def pick_format(formats, need_w=0.0, min_h=MIN_SOURCE_H, snaps=()):
     top = native_of(formats)
     floor = min(min_h, top["h"])
     ok = [f for f in formats if f["w"] >= need_w and f["h"] >= floor]
-    exact = [f for f in ok if all(snap_k(c, f["w"], f["h"], ow, oh) for ow, oh, c in snaps)]
-    return exact[0] if exact else ok[0] if ok else top
+    if snaps and ok:
+        # the smallest on which the most of them are exact; none: the most detail (crop_box then snaps each to the
+        # nearest whole multiple there), never the smallest (a 5:1 crop on 720p is 2.5 pixels per LED)
+        best = max(sum(1 for ow, oh, c in snaps if snap_k(c, f["w"], f["h"], ow, oh)) for f in ok)
+        if best:
+            return next(f for f in ok if sum(1 for ow, oh, c in snaps if snap_k(c, f["w"], f["h"], ow, oh)) == best)
+        return ok[-1]
+    return ok[0] if ok else top
 
 
 def is_snap(crop) -> bool:
@@ -879,9 +885,23 @@ class Feed:
                     if v is c:
                         del self.consumers[k]
 
+    def live_wants(self):
+        """The zones playing this feed now (the wall's, a preview's draft once it's held still), each once: what the
+        hi picture is cut for. Planning it for every saved zone instead made it the whole frame, scaled down to fit:
+        no Whole pixels crop was exact any more."""
+        with self._lock:
+            got = [c.want() for c in self.consumers.values() if c.settled()]
+        out, seen = [], set()
+        for w in got:
+            key = _key_of(w[0], w[1], w[2], None)
+            if key not in seen:
+                seen.add(key)
+                out.append(w)
+        return out
+
     def wants(self):
-        """What the hi picture must serve: every saved place this source plays (config_needs) and every consumer
-        now (a preview's draft once it's held still)."""
+        """What the stream's resolution must serve: every saved place this source plays (config_needs) and every
+        consumer now (a preview's draft once it's held still)."""
         out = []
         if callable(config_needs):
             try:
@@ -1005,7 +1025,8 @@ class Feed:
             media, title = self.url, ""                      # its size is known once ffmpeg has opened it once
         src = self.source or {}
         force = self.kind == "youtube" and quality_for(self.kind, self.url) is not None
-        self.hi = plan(src.get("w", 0), src.get("h", 0), wants, force) if src and not self._hi_broken else None
+        live = self.live_wants()
+        self.hi = plan(src.get("w", 0), src.get("h", 0), live, force) if src and live and not self._hi_broken             else None
         return media, title
 
     def _wants_more(self) -> bool:
@@ -1023,11 +1044,12 @@ class Feed:
             if fmt and (fmt["w"] > src["w"] or (quality is not None and fmt["w"] != src["w"])):
                 return True                                   # (a quality chosen lower: down to it too)
         force = quality is not None
-        lacking = [w for w in wants if (force or need_of(src["w"], src["h"], *w) > WORK_W * 1.1)
+        live = self.live_wants()                              # the hi picture: for the zones playing now
+        lacking = [w for w in live if (force or need_of(src["w"], src["h"], *w) > WORK_W * 1.1)
                    and not covers(self.hi, src["w"], src["h"], w)]
         if not lacking:
             return False
-        better = plan(src["w"], src["h"], wants, force)
+        better = plan(src["w"], src["h"], live, force)
         return better is not None and better != self.hi
 
     def _run(self):
@@ -1955,22 +1977,43 @@ def crop_box(src_w, src_h, out_w, out_h, crop=None) -> tuple[int, int, int, int]
         x = min(max(0, round(float(c.get("x", 0)) * src_w)), src_w - k * out_w)
         y = min(max(0, round(float(c.get("y", 0)) * src_h)), src_h - k * out_h)
         return int(x), int(y), int(x + w), int(y + h)
+    k = snap_k(c, src_w, src_h, out_w, out_h, loose=True)
+    if k:                                                # set on another resolution: the nearest whole multiple on
+        cw = float(c["w"]) * src_w                       # this one, about the same centre (a 4:1 crop of 1080p is
+        ch = cw / aspect                                 # 5.33:1 on 1440p: 5:1 there)
+        cx = float(c.get("x", 0)) * src_w + cw / 2
+        cy = float(c.get("y", 0)) * src_h + ch / 2
+        x = min(max(0, round(cx - k * out_w / 2)), src_w - k * out_w)
+        y = min(max(0, round(cy - k * out_h / 2)), src_h - k * out_h)
+        return int(x), int(y), int(x + k * out_w), int(y + k * out_h)
     h = w / aspect
     x = min(max(0.0, float(c.get("x", 0)) * src_w), src_w - w)
     y = min(max(0.0, float(c.get("y", 0)) * src_h), src_h - h)
     return int(round(x)), int(round(y)), int(round(x + w)), int(round(y + h))
 
 
-def snap_k(crop, src_w, src_h, out_w, out_h) -> int:
+def snap_k(crop, src_w, src_h, out_w, out_h, loose=False) -> int:
     """For a "snap" crop: the whole number of stream pixels per LED it was set to on this picture, or 0 (not a snap
-    crop, or this picture isn't the one it was set on: the 640-wide one, another resolution)."""
+    crop, or this picture isn't the one it was set on: the 640-wide one, another resolution). ``loose``: the nearest
+    whole multiple on this stream for a crop set on another resolution, when that's within SNAP_LOOSE of its width
+    (never on the 640-wide picture, whose crops must keep their framing)."""
     if not (isinstance(crop, dict) and crop.get("snap") and crop.get("w")):
         return 0
     want = float(crop["w"]) * src_w
     k = round(want / out_w)
+    if loose:
+        if src_w <= WORK_W:
+            return 0
+        while k > 1 and (k * out_w > src_w or k * out_h > src_h):
+            k -= 1
+        ok = k >= 1 and k * out_w <= src_w and k * out_h <= src_h and abs(k * out_w - want) <= SNAP_LOOSE * want
+        return k if ok else 0
     if k < 1 or abs(k * out_w - want) > max(2.0, 0.004 * want) or k * out_w > src_w or k * out_h > src_h:
         return 0
     return k
+
+
+SNAP_LOOSE = 0.15            # a Whole pixels crop moves to another resolution's nearest whole multiple within this
 
 
 def _resample(box, out_w, out_h):

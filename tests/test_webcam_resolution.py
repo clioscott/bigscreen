@@ -554,3 +554,34 @@ def test_quality_is_checked_in_the_config():
             config._validate_webcams({"cams": {"a": {**base, "quality": bad}}})
     for good in ("auto", "max", 2160, 1080):
         config._validate_webcams({"cams": {"a": {**base, "quality": good}}})
+
+
+def test_whole_pixels_set_on_1080p_is_the_nearest_whole_multiple_on_1440p():
+    k4 = {"x": 0.0, "y": 0.3, "w": round(4 * 448 / 1920, 6), "snap": True}         # 4:1, set on 1080p
+    l, t, r, b = wc.crop_box(2560, 1440, 448, 175, k4)
+    assert (r - l, b - t) == (5 * 448, 5 * 175)                                     # 5:1 on 1440p (it'd be 5.33)
+    assert abs((l + r) / 2 - (0.0 + k4["w"] / 2) * 2560) <= 1                       # about the same centre
+    assert wc.crop_box(640, 360, 448, 175, k4) != (0, 0, 448, 175)                  # the 640 picture: framing kept
+    assert wc.snap_k(k4, 640, 360, 448, 175, loose=True) == 0
+
+
+def test_whole_pixels_crops_that_disagree_get_the_most_detail_not_the_least():
+    f = wc.formats_of(_live_info())
+    on1080 = (448, 175, {"x": 0.0, "y": 0.3, "w": round(4 * 448 / 1920, 6), "snap": True})
+    on1440 = (448, 175, {"x": 0.0, "y": 0.3, "w": round(5 * 448 / 2560, 6), "snap": True})
+    got = wc.choose_format(f, [on1080, on1440], hw=True)
+    assert got["h"] >= 1080                                                          # (was 720p: 2.5 px per LED)
+
+
+def test_the_detail_picture_is_cut_for_the_zone_playing_not_every_saved_one(monkeypatch):
+    f = _feed_shell()
+    f.source = {"w": 2560, "h": 1440, "fps": 30, "vcodec": "vp9", "dash": True}
+    saved = [(448, 134, None), (224, 134, {"x": 0, "y": 0, "w": 0.94}), (448, 192, None),
+             (448, 175, {"x": 0.0, "y": 0.28, "w": 0.875, "snap": True})]
+    monkeypatch.setattr(wc, "config_needs", lambda kind, url: saved)
+    monkeypatch.setattr(wc, "config_quality", lambda kind, url: "max")
+    c = f.consumer(448, 175, {"x": 0.0, "y": 0.28, "w": 0.875, "snap": True})
+    live = f.live_wants()
+    assert live == [c.want()]
+    p = wc.plan(2560, 1440, live, force=True)
+    assert p["exact"] and (p["w"], p["h"], p["out_w"], p["out_h"]) == (2240, 875, 448, 175)   # 5 x 5, exactly

@@ -1028,6 +1028,10 @@ const CropEditor = {
         else if (f.state === "live" && s.w) out.timing = { off: true };
         out.used = (b.w * (inHi ? hi.full_w : loW)) / zw;
         out.pending = out.used < Math.min(out.scale, info.value.oversample || 1.5) * 0.85;
+        if (out.k) {                                   // Whole pixels: exact only when cut from the stream's own pixels
+          out.kNow = Math.round((b.w * s.w) / zw);     // its whole multiple on the stream decoded now
+          out.pending = !(inHi && hi.full_w >= s.w - 1) || Math.abs(out.used - out.kNow) > 0.05;
+        }
       }
       return out;
     });
@@ -1082,7 +1086,7 @@ const CropEditor = {
       <div v-else><span>Scaling</span><b>{{ fmt(stats.scale) }} stream px per LED</b>
         <i>{{ stats.scale <= 1.02 ? "1:1, the most detail there is" : "scaled down " + fmt(stats.scale) + "×" }} · zoom up to {{ maxZoom }}% (1:1)</i></div>
       <div v-if="stats.used != null"><span>Wall gets</span><b :class="{warn: stats.pending}">{{ fmt(stats.used) }} px per LED</b>
-        <i>{{ stats.pending ? "more detail comes once the crop is held still for a moment (or saved)" : "full detail for this crop" }}</i></div>
+        <i>{{ stats.k ? (stats.pending ? "not exact yet: comes once the crop is held still for a moment (or saved)" : "exactly " + stats.kNow + " x " + stats.kNow + " stream pixels averaged per LED") : stats.pending ? "more detail comes once the crop is held still for a moment (or saved)" : "full detail for this crop" }}</i></div>
     </div>
     <div v-else-if="src && !err" class="hint faint" style="font-size:12px">Finding the stream's resolution…</div>
     <div class="hint faint" style="font-size:12px">Drag the box to choose what shows; Ctrl + scroll on the picture zooms; 1:1 zooms until one stream pixel is one LED. Each place on the wall keeps its own crop.</div>
