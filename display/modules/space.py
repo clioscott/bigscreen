@@ -125,10 +125,10 @@ def sections(data, ov, show, now=None, lag=LAG) -> dict:
                 pass
     c = data.get("crew")
     if show.get("crew") and isinstance(c, dict) and c.get("count"):
-        s = f"{c['count']} aboard"
-        if ov.get("crew_flags", True) and c.get("by"):
-            s += ": " + " ".join(f"{n}{flag_char(code) or ' ' + str(code).upper()}" for code, n in c["by"])
-        out["crew"] = s
+        if ov.get("crew_flags", True) and c.get("by"):        # just the counts and flags: 3(ru) 3(us) 1(ca)
+            out["crew"] = " ".join(f"{n}{flag_char(code) or ' ' + str(code).upper()}" for code, n in c["by"])
+        else:
+            out["crew"] = f"{c['count']} aboard"
     m = data.get("mission")
     if show.get("mission") and isinstance(m, dict) and m.get("name"):
         s = m["name"]

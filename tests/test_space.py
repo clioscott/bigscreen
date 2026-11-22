@@ -29,7 +29,7 @@ def test_a_webcam_in_space_says_what_its_over_its_next_sunset_the_time_below_and
     assert out["over"] == "Over the South Pacific"
     assert out["orbit"] == "Sunset in 3m20s"                               # the shadow at t0 + 300, seen at t0 + 100
     assert out["below"].endswith(" below") and len(out["below"]) == len("00:00 below")
-    assert out["crew"] == f"7 aboard: 3{flag_char('ru')} 3{flag_char('us')} 1{flag_char('ca')}"
+    assert out["crew"] == f"3{flag_char('ru')} 3{flag_char('us')} 1{flag_char('ca')}"   # just the counts and flags
     assert out["mission"] == "Expedition 75 · day 120"
     lat, lon = space.position(d["track"], t0 + 105)
     assert abs(lat - (-17.0 + 10.5 * 0.5)) < 1e-9 and abs(lon - (100.0 + 10.5 * 0.5)) < 1e-9
