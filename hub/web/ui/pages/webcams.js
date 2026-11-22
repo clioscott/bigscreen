@@ -1041,7 +1041,7 @@ const CropEditor = {
       <button class="btn sm" @click="oneToOne" :disabled="!stats" title="Zoom in until one pixel of the stream is one LED (the most detail there is)"><Icon name="ZoomIn" :size="14"/>1:1</button>
       <slot/>
     </div>
-    <div class="row" :title="kMax ? '' : 'Needs the stream\'s resolution (shown once it has been fetched)'">
+    <div class="row" :title="kMax ? '' : 'Needs the resolution of the stream (shown once it has been fetched)'">
       <Toggle :modelValue="snap" @update:modelValue="toggleSnap" :disabled="!kMax"/>
       <span>Whole pixels</span>
       <span class="faint" style="font-size:12px">zoom only in exact steps (1:1, 2:1, 3:1…): each LED is the plain average of a k × k block of the stream's own pixels, with no in-between blur</span>
