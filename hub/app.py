@@ -1247,6 +1247,37 @@ _needs_cache: dict = {}             # (type, url) -> (config mtime, _saved_needs
 webcams.config_needs = _saved_needs
 
 
+def _saved_quality(kind, url):
+    """The stream quality the saved webcams with this source ask for (cams.<id>.quality), kept until the config
+    changes."""
+    try:
+        mtime = paths.CONFIG_PATH.stat().st_mtime
+    except OSError:
+        mtime = None
+    hit = _quality_cache.get((kind, url))
+    if hit and hit[0] == mtime:
+        return hit[1]
+    cams = (((config.load().get("modules") or {}).get("webcams") or {}).get("cams") or {})
+    asks = []
+    for cam in cams.values():
+        try:
+            if isinstance(cam, dict) and webcams.check_source(cam.get("source")) == (kind, url):
+                asks.append(cam.get("quality", "auto"))
+        except webcams.SourceError:
+            continue
+    out = webcams.quality_of(asks)
+    if len(_quality_cache) > 200:
+        _quality_cache.clear()
+    _quality_cache[(kind, url)] = (mtime, out)
+    return out
+
+
+_quality_cache: dict = {}
+webcams.config_quality = _saved_quality
+webcams.config_delay = lambda: ((config.load().get("modules") or {}).get("webcams") or {}).get(
+    "delay_sec", webcams.DELAY_SEC)
+
+
 def _consumer_args(cw, x, y, b, c, s, sh, px=0):
     crop = {"x": x or 0, "y": y or 0, "w": cw} if cw else None
     if crop and px:
@@ -1268,11 +1299,11 @@ def webcams_info(type: str, url: str = "", id: int | None = None):
         raise HTTPException(400, str(e))
     out = {"type": kind, "zones": _webcam_zones(), "hw_available": webcams.hw_decode(), "native": None,
            "formats": [], "feed": None, "oversample": webcams.OVERSAMPLE, "lo_w": webcams.WORK_W,
-           "default_sharpen": webcams.DEFAULT_SHARPEN}
+           "default_sharpen": webcams.DEFAULT_SHARPEN, "delay_sec": webcams.delay_sec()}
     f = next((x for x in webcams.describe() if (x["type"], x["url"]) == (kind, src_url)), None)
     if f:
         out["feed"] = {k: f.get(k) for k in ("state", "source", "hi", "hw", "size", "measured_fps", "consumers",
-                                              "error")}
+                                              "error", "in_step", "delay", "latency")}
         out["native"] = f.get("native")
     if kind == "youtube":
         info = webcams.cached(src_url)          # never a lookup of its own: the editor's feed makes the one it needs
@@ -1556,10 +1587,11 @@ def _num(v, default, lo, hi):
         return default
 
 
-async def _webcam_consumer_frames(f, take, fps, still=None, make_still=None):
+async def _webcam_consumer_frames(f, take, fps, still=None, make_still=None, sync=False):
     """The wall's stream from a consumer (hub/webcams.py Feed.consumer): every frame as soon as it's decoded and
     rendered (from the hi picture when the crop needs it), starting with the few seconds already decoded; the Pi
-    plays them evenly from its own buffer. still(): a picture to send first while the feed has none yet."""
+    plays them evenly from its own buffer. still(): a picture to send first while the feed has none yet. ``sync``:
+    each frame in step says when it's due on the wall (Feed.due_of); the Pi shows it then."""
     loop = asyncio.get_running_loop()
     ev = asyncio.Event()
     f.attach()
@@ -1581,7 +1613,7 @@ async def _webcam_consumer_frames(f, take, fps, still=None, make_still=None):
             got = c.after(dseq + step - 1) if dseq is not None else None
             if got is not None:
                 dseq, frame = got
-                yield webcams.pack(frame, 0)
+                yield webcams.pack(frame, 0, f.due_of(dseq) if sync else None)
                 continue
             if f.state == "stopped":
                 return
@@ -1602,9 +1634,10 @@ async def _webcam_consumer_frames(f, take, fps, still=None, make_still=None):
 async def webcams_frames(type: str, w: int, h: int, url: str = "", id: int | None = None, refresh: int | None = None,
                          fps: int = 15, x: float | None = None,
                          y: float | None = None, cw: float | None = None, b: float = 1.0, c: float = 1.0,
-                         s: float = 1.0, sh: float | None = None, px: int = 0):
+                         s: float = 1.0, sh: float | None = None, px: int = 0, sync: int = 0):
     """The Pi's feed: raw RGB frames already cropped and scaled to its zone (display/modules/webcam.py reads
-    them), each behind a 12-byte header (hub/webcams.py pack)."""
+    them), each behind a 12-byte header (hub/webcams.py pack); with ``sync``, frames in step behind a 20-byte one
+    that says when each is due on the wall."""
     if not (8 <= w <= 448 and 8 <= h <= 192):
         raise HTTPException(400, "w/h out of range")
     f = _webcam_feed({"type": type, "url": url, "id": id, "refresh_sec": refresh}, fps)
@@ -1622,7 +1655,7 @@ async def webcams_frames(type: str, w: int, h: int, url: str = "", id: int | Non
     if f.kind not in webcams.STILLS and hasattr(f, "consumer"):
         return StreamingResponse(_webcam_consumer_frames(f, lambda: f.consumer(w, h, crop, colour), fps,
                                                          still=lambda: webcams.still_for(src),
-                                                         make_still=make_still),
+                                                         make_still=make_still, sync=bool(sync)),
                                  media_type="application/octet-stream", headers={"Cache-Control": "no-store"})
     return StreamingResponse(_webcam_frames(f, make, fps=fps, still=lambda: webcams.still_for(src), direct=True,
                                             make_still=make_still),
