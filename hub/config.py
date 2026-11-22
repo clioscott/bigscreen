@@ -431,6 +431,13 @@ def _validate_webcams(wc):
             fps_ok = False
         if not fps_ok:
             raise ConfigError(f"webcam {name}: frame rate must be 1–30")
+        hours = cam.get("hours")
+        if hours is not None:
+            import re as _re
+            ok = isinstance(hours, dict) and all(isinstance(hours.get(k), str) and _re.fullmatch(
+                r"([01]?\d|2[0-3]):[0-5]\d|24:00", hours[k]) for k in ("from", "to"))
+            if not ok:
+                raise ConfigError(f'webcam {name}: hours must be {{"from": "HH:MM", "to": "HH:MM"}}')
         q = cam.get("quality", "auto")
         if q not in ("auto", "max") and not (isinstance(q, int) and not isinstance(q, bool) and 144 <= q <= 4320):
             raise ConfigError(f'webcam {name}: quality must be "auto", "max" or a height (720, 1080, 2160…)')

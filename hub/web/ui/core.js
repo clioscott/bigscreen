@@ -238,7 +238,7 @@ export const RULES = {
   precip: { label: "it's raining or snowing", icon: "CloudRain", make: () => ({ within_h: 0, pop: 40 }) },
   dark: { label: "the sun is down", icon: "Moon", make: () => ({}) },
   night_mode: { label: "it's night-mode hours", icon: "MoonStar", make: () => ({}) },
-  hours: { label: "it's between certain hours", icon: "Clock", make: () => ({ from: "07:00", to: "22:00" }) },
+  hours: { label: "it's between certain hours (your time, here)", icon: "House", make: () => ({ from: "07:00", to: "22:00" }) },
   days: { label: "it's certain days", icon: "CalendarRange", make: () => ({ days: [0, 1, 2, 3, 4] }) },
   fresh: { label: "its data is fresh", icon: "RefreshCw", make: () => ({ max_age_min: 30 }) },
   naad: { label: "an Alert Ready alert is in effect", icon: "Megaphone", make: () => ({}) },
@@ -262,7 +262,7 @@ export function ruleText(r) {
     if (r.home) bits.push("for home");
     s = bits.length ? `a ${bits.join(", ")} alert is in effect` : s;
   } else if (r.if === "precip") s = r.within_h > 0 ? `rain or snow is likely within ${r.within_h} h (${r.pop ?? 40}%+)` : s;
-  else if (r.if === "hours") s = `it's ${r.from}–${r.to}`;
+  else if (r.if === "hours") s = `it's ${r.from}–${r.to} here (your time)`;
   else if (r.if === "days") s = `it's ${(r.days || []).map((d) => DAYS[d]).join(", ") || "no day"}`;
   else if (r.if === "fresh") s = `its data is under ${r.max_age_min ?? 30} min old`;
   else if (r.if === "timechange" && r.days_after > 0) s = `the clocks are about to change or changed in the last ${r.days_after === 1 ? "day" : r.days_after + " days"}`;

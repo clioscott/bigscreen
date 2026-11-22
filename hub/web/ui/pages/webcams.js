@@ -1417,7 +1417,24 @@ const WebcamEditor = {
       [o[a], o[b]] = [o[b], o[a]];
     };
     const customCrop = (s) => !!cam.value.crops?.[s];
-    return { id, cam, shape, WEBCAM_SEC, zone, ov, colour, DEFAULT_SHARPEN, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
+    // hours: the list passes the webcam over outside them (its own local time; display/modules/webcam.py in_hours)
+    const toggleHours = (on) => {
+      if (on) cam.value.hours = { from: "18:00", to: "07:00" };
+      else delete cam.value.hours;
+    };
+    const hoursNote = computed(() => {
+      const tz = cam.value.tz || cam.value.wx_city?.tz;
+      let here = "";
+      try {
+        here = new Intl.DateTimeFormat([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23", ...(tz ? { timeZone: tz } : {}) }).format(new Date());
+      } catch {}
+      const where = tz ? "in " + tz + ", not your time" : "no time zone for this webcam yet (set its location), so your time for now";
+      if (!cam.value.hours) return "every hour of the day";
+      const [a, b] = [cam.value.hours.from, cam.value.hours.to];
+      const on = !here || a === b ? null : a < b ? here >= a && here < b : here >= a || here < b;
+      return where + (here ? " · it's " + here + " there now: " + (on ? "in the list" : "skipped") : "");
+    });
+    return { toggleHours, hoursNote, id, cam, shape, WEBCAM_SEC, zone, ov, colour, DEFAULT_SHARPEN, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
       orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, hasText, customCols, SHIELD_PRESETS, SHIELD_KINDS, SHIELD_PLACES, SHIELD_SIZES, SHIELD_STYLES, shieldSrc, signMissing, presetShown, presetDone,
       CONTAINERS, feedFor, feedPill, healthFor, downPill, local, cityQ, cityHits, citySearching, searchCity, pickCity, clearCity, cityLabel, wxPoint, jpFaces, jpSample, jc, jcSizes, jcSetFace, jcSample, JC_POSITIONS, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
   },
@@ -1508,6 +1525,12 @@ const WebcamEditor = {
               <Toggle :modelValue="inList.on !== false" @update:modelValue="v => inList.on = v" title="In the rotation"/></div>
             <div class="wc-rot" v-else><Icon name="ListOrdered" :size="15"/><span>Not in the Webcams list.</span><span class="spacer"></span>
               <button class="btn sm primary" @click="addToList"><Icon name="ListPlus" :size="14"/>Add to the list</button></div>
+            <div class="wc-rot"><Icon name="Globe" :size="15"/>
+              <Toggle :modelValue="!!cam.hours" @update:modelValue="toggleHours" title="Only at certain hours of the webcam's own day"/>
+              <span>Only between, <b>webcam's local time</b>:</span>
+              <template v-if="cam.hours"><input class="input" type="time" style="width:auto" v-model="cam.hours.from">
+                <span>and</span><input class="input" type="time" style="width:auto" v-model="cam.hours.to"></template>
+              <span class="faint" style="font-size:12px">{{ hoursNote }}</span></div>
             <div class="faint" style="font-size:12px" v-if="used.length">Also its own rotation entry ({{ used.map(u => u.side).join(', ') }}):
               <a href="#/webcams">combine it into the list</a> on the Webcams page.</div>
           </div></div>

@@ -595,3 +595,13 @@ def test_the_wall_gets_the_exact_cut_and_a_preview_of_another_crop_comes_from_lo
     assert f.live_wants() == [wall.want()]
     f.release(wall)
     assert f.live_wants() == [draft.want()]                               # not on the wall: the preview's turn
+
+
+def test_hours_are_checked_in_the_config():
+    import pytest
+    from hub import config
+    base = {"source": {"type": "youtube", "url": "https://www.youtube.com/watch?v=abcdefghijk"}}
+    config._validate_webcams({"cams": {"a": {**base, "hours": {"from": "16:00", "to": "08:00"}}}})
+    for bad in ({"from": "25:00", "to": "08:00"}, {"from": "16:00"}, "night"):
+        with pytest.raises(config.ConfigError):
+            config._validate_webcams({"cams": {"a": {**base, "hours": bad}}})
