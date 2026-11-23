@@ -64,6 +64,7 @@ const DEFAULT_OVERLAY = { style: "tag", corner: "bl", when: "always", font: "sma
   bg: "#000000", opacity: 0.7, time_format: "24h", fade: true, show_sec: 12, every_min: 3, custom_text: "", headline: "name",
   lines: "auto", separator: "space", uppercase: false, order: [...ORDERABLE], jp_font: "auto", jp_face: "auto", place_beside: false, wx_beside: false, wx_beside_box: false, temp_icon: false,
   jp_caption: { on: false, text: "", face: "k8x12", size: 12, corner: "auto" },
+  flags: { on: true, ids: null, corner: "auto", size: "auto" },
   show: { name: true, place: true, time: true, date: false, offset: false, daynight: false, weather: true, sun: false,
     age: false, live: true, credit: false, custom: false, shield: false, conditions: false, feels: false, hilo: false, wind: false, humidity: false },
   shield: { route: "99", kind: "auto", style: "pixel", place: "inside", size: "box" } };
@@ -1210,6 +1211,65 @@ const WebcamEditor = {
       const text = (jc.value.text || "").split("\n").map((s) => s.trim()).filter(Boolean).join("  ") || "歌舞伎町一番街";
       return `/api/fonts/preview.png?${qs({ path, text: " ", jp: text.slice(0, 120), scale: 2, width: 300 })}`;
     });
+    // the row of flags (display/modules/caption_flags.py): the set on the hub, what "automatic" picks for this webcam
+    const flagSet = ref(null);
+    api("/api/flags").then((r) => { flagSet.value = r; }).catch(() => { flagSet.value = { flags: [], have: false }; });
+    const fl = computed(() => ov.value?.flags || {});
+    const flagAuto = ref(null);
+    let flagTimer = null;
+    watch(() => [id.value, cam.value?.place, cam.value?.tz, cam.value?.lat, cam.value?.lon, cam.value?.country, cam.value?.region, cam.value?.space], () => {
+      clearTimeout(flagTimer);
+      const c = cam.value;
+      if (!c) return;
+      flagTimer = setTimeout(async () => {
+        try {
+          const r = await api("/api/webcams/flags_auto", { json: { place: c.place, tz: c.tz, lat: c.lat, lon: c.lon,
+            country: c.country, region: c.region, space: c.space } });
+          if (cam.value === c) flagAuto.value = r;
+        } catch {}
+      }, 300);
+    }, { immediate: true });
+    onBeforeUnmount(() => clearTimeout(flagTimer));
+    const FLAG_GROUPS = [{ value: "all", label: "All" }, { value: "country", label: "Countries" }, { value: "province", label: "Provinces" },
+      { value: "state", label: "States" }, { value: "prefecture", label: "Prefectures" }, { value: "city", label: "Cities" },
+      { value: "emblem", label: "Emblems" }, { value: "symbol", label: "Symbols" }];
+    const FLAG_POSITIONS = [{ value: "auto", label: "On the caption" }, { value: "tl", label: "Top left" }, { value: "tc", label: "Top" },
+      { value: "tr", label: "Top right" }, { value: "bl", label: "Bottom left" }, { value: "bc", label: "Bottom" }, { value: "br", label: "Bottom right" }];
+    const FLAG_SIZES = [{ value: "auto", label: "Auto" }, { value: 18, label: "18 px" }, { value: 23, label: "23 px" }];
+    const flagQ = ref("");
+    const flagGroup = ref("all");
+    const flagById = computed(() => Object.fromEntries((flagSet.value?.flags || []).map((f) => [f.id, f])));
+    const flagIds = computed(() => (Array.isArray(fl.value.ids) ? fl.value.ids : flagAuto.value?.ids || []));
+    const flagHits = computed(() => {
+      const q = flagQ.value.trim().toLowerCase();
+      return (flagSet.value?.flags || []).filter((f) => (flagGroup.value === "all" || f.group === flagGroup.value)
+        && (!q || f.name.toLowerCase().includes(q) || f.id.includes(q))).slice(0, 80);
+    });
+    const flagSrc = (fid, size = "auto") => `/api/flags/img/${fid}/${size}`;
+    const flagName = (fid) => flagById.value[fid]?.name || fid;
+    // the codes are only stored once they're whole (a half-typed one would stop the save), prefectures as two digits
+    const setCountry = (v) => {
+      v = v.trim().toLowerCase();
+      if (!v) delete cam.value.country;
+      else if (/^[a-z]{2}$/.test(v)) cam.value.country = v;
+    };
+    const setRegion = (v) => {
+      v = v.trim().toUpperCase();
+      if (!v) delete cam.value.region;
+      else if (/^[A-Z]{2}$/.test(v)) cam.value.region = v;
+      else if (/^\d{1,2}$/.test(v)) cam.value.region = v.padStart(2, "0");
+    };
+    const setFlagMode = (m) => { fl.value.ids = m === "auto" ? null : [...flagIds.value]; };
+    const addFlag = (fid) => {
+      const ids = Array.isArray(fl.value.ids) ? fl.value.ids : (fl.value.ids = [...flagIds.value]);
+      if (!ids.includes(fid) && ids.length < 6) ids.push(fid);
+    };
+    const removeFlag = (i) => { fl.value.ids.splice(i, 1); };
+    const moveFlag = (i, d) => {
+      const a = fl.value.ids, j = i + d;
+      if (j < 0 || j >= a.length) return;
+      [a[i], a[j]] = [a[j], a[i]];
+    };
     const JC_POSITIONS = [{ value: "auto", label: "Next to the caption" }, { value: "tl", label: "Top left" }, { value: "tc", label: "Top" },
       { value: "tr", label: "Top right" }, { value: "bl", label: "Bottom left" }, { value: "bc", label: "Bottom" }, { value: "br", label: "Bottom right" }];
     const jpSample = computed(() => {
@@ -1258,6 +1318,7 @@ const WebcamEditor = {
         if (!ord.includes("shield")) ord.unshift("shield");  // nor the shield
         c.overlay.shield = { ...DEFAULT_OVERLAY.shield, ...(c.overlay.shield || {}) };
         c.overlay.jp_caption = { ...DEFAULT_OVERLAY.jp_caption, ...(c.overlay.jp_caption || {}) };
+        c.overlay.flags = { ...DEFAULT_OVERLAY.flags, ...(c.overlay.flags || {}) };
         c.overlay.order = [...ord, ...ORDERABLE.filter((k) => !ord.includes(k))];
         c.colour = c.colour || {};
         c.crops = c.crops || {};
@@ -1314,7 +1375,12 @@ const WebcamEditor = {
       go("webcams");
     };
     const captionToAll = () => {
-      for (const c of Object.values(store.draft.modules.webcams.cams)) if (c !== cam.value) c.overlay = clone(ov.value);
+      for (const c of Object.values(store.draft.modules.webcams.cams)) {
+        if (c === cam.value) continue;
+        const ids = c.overlay?.flags?.ids ?? null;           // each webcam keeps its own flags (where it is)
+        c.overlay = clone(ov.value);
+        c.overlay.flags = { ...c.overlay.flags, ids };
+      }
       toast("Every webcam now uses this caption (save to keep it)");
     };
     const toggleShow = (k) => { ov.value.show[k] = !ov.value.show[k]; };
@@ -1421,7 +1487,8 @@ const WebcamEditor = {
     });
     return { mapFound, ISS_MAP_SHAPES, issMapEntry, inRows, setSpace, previewMap, setMap, setMinimap, SPACE_GROUPS, toggleHours, hoursNote, id, cam, shape, WEBCAM_SEC, zone, ov, colour, DEFAULT_SHARPEN, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
       orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, hasText, customCols, SHIELD_PRESETS, SHIELD_KINDS, SHIELD_PLACES, SHIELD_SIZES, SHIELD_STYLES, shieldSrc, signMissing, presetShown, presetDone,
-      CONTAINERS, feedFor, feedPill, healthFor, downPill, local, cityQ, cityHits, citySearching, searchCity, pickCity, clearCity, cityLabel, wxPoint, jpFaces, jpSample, jc, jcSizes, jcSetFace, jcSample, JC_POSITIONS, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
+      CONTAINERS, feedFor, feedPill, healthFor, downPill, local, cityQ, cityHits, citySearching, searchCity, pickCity, clearCity, cityLabel, wxPoint, jpFaces, jpSample, jc, jcSizes, jcSetFace, jcSample, JC_POSITIONS,
+      flagSet, fl, flagAuto, FLAG_GROUPS, FLAG_POSITIONS, FLAG_SIZES, flagQ, flagGroup, flagIds, flagHits, flagSrc, flagName, setFlagMode, addFlag, removeFlag, moveFlag, setCountry, setRegion, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
   },
   template: `<div class="page" v-if="cam">
     <div class="page-head" v-if="mapMode"><div class="grow"><h1>ISS map</h1>
@@ -1575,8 +1642,8 @@ const WebcamEditor = {
         <div class="card"><div class="card-head"><Icon name="Captions" :size="16"/><h3>Caption</h3>
             <span class="spacer"></span><button v-if="!mapMode" class="btn sm ghost" @click="captionToAll" title="Copy this caption look to every webcam"><Icon name="Copy" :size="14"/>Use on all webcams</button></div>
           <div class="card-body stack">
-            <div class="seg wc-captabs"><button v-for="t in [{v:'theme', l:'Theme', i:'Palette'}, {v:'content', l:'What it says', i:'Text'}, {v:'look', l:'Size & look', i:'Ruler'}, {v:'when', l:'When', i:'Clock'}, {v:'japanese', l:'Japanese', i:'Languages'}]"
-              :key="t.v" type="button" :class="{on: capTab === t.v}" @click="capTab = t.v" :disabled="!['theme', 'japanese'].includes(t.v) && ov.style === 'none'"><Icon :name="t.i" :size="14"/>{{ t.l }}</button></div>
+            <div class="seg wc-captabs"><button v-for="t in [{v:'theme', l:'Theme', i:'Palette'}, {v:'content', l:'What it says', i:'Text'}, {v:'look', l:'Size & look', i:'Ruler'}, {v:'when', l:'When', i:'Clock'}, {v:'japanese', l:'Japanese', i:'Languages'}, {v:'flags', l:'Flags', i:'Flag'}]"
+              :key="t.v" type="button" :class="{on: capTab === t.v}" @click="capTab = t.v" :disabled="!['theme', 'japanese', 'flags'].includes(t.v) && ov.style === 'none'"><Icon :name="t.i" :size="14"/>{{ t.l }}</button></div>
             <div v-if="capTab === 'theme'" class="wc-layouts"><button v-for="(l, k) in LAYOUTS" :key="k" type="button" class="wc-layout" :class="{on: ov.style === k}" @click="ov.style = k" :title="l.note">
               <Icon :name="l.icon" :size="15"/><b>{{ l.label }}</b><span class="faint">{{ l.note }}</span></button></div>
             <template v-if="ov.style !== 'none' && capTab === 'look'">
@@ -1693,6 +1760,56 @@ const WebcamEditor = {
                 <img v-if="jcSample" :src="jcSample" alt="" style="image-rendering:pixelated; max-width:100%; display:block">
                 <Field label="Position" hint="Next to the caption: above it in a bottom corner, below it in a top one">
                   <Seg :modelValue="jc.corner || 'auto'" @update:modelValue="v => jc.corner = v" :options="JC_POSITIONS"/></Field>
+              </template>
+            </template>
+            <template v-if="capTab === 'flags'">
+              <div v-if="flagSet && !flagSet.have" class="faint" style="font-size:12px">The flag set isn't on the hub yet: it goes in the state folder's data/flags
+                (index.json and the PNGs). It isn't in the repo, since some of the artwork can't be published.</div>
+              <ToggleRow :modelValue="fl.on !== false" @update:modelValue="v => fl.on = v" label="Show flags"
+                hint="A row of pixel flags: countries at 23 px, provinces, states, prefectures and cities at 18 px"/>
+              <template v-if="fl.on !== false">
+                <Field label="Which flags">
+                  <Seg :modelValue="Array.isArray(fl.ids) ? 'choose' : 'auto'" @update:modelValue="setFlagMode"
+                    :options="[{value:'auto', label:'Automatic'}, {value:'choose', label:'Choose'}]"/></Field>
+                <div v-if="!Array.isArray(fl.ids)" class="faint" style="font-size:12px">
+                  <template v-if="flagAuto && flagAuto.country">This webcam is in {{ flagAuto.country.toUpperCase() }}{{ flagAuto.region ? ' · ' + flagAuto.region : '' }}
+                    (from its place, time zone and location), so it shows its country's flag{{ flagAuto.region ? ' and its province / state / prefecture flag' : '' }}.</template>
+                  <template v-else>Where this webcam is isn't known, so it shows no flags. Give it a place like “Toronto, ON” or “Dublin, Ireland”, a time zone, or set the codes below.</template></div>
+                <div class="row" style="gap:10px; flex-wrap:wrap; align-items:flex-end">
+                  <div v-for="(fid, i) in flagIds" :key="fid" class="stack" style="gap:3px; align-items:center">
+                    <img :src="flagSrc(fid, fl.size || 'auto')" :alt="flagName(fid)" :title="flagName(fid)" style="image-rendering:pixelated; height:46px; display:block">
+                    <div class="row" style="gap:2px" v-if="Array.isArray(fl.ids)">
+                      <button class="btn sm ghost" type="button" @click="moveFlag(i, -1)" :disabled="i === 0" title="Move left"><Icon name="ChevronLeft" :size="12"/></button>
+                      <button class="btn sm ghost" type="button" @click="removeFlag(i)" title="Remove"><Icon name="X" :size="12"/></button>
+                      <button class="btn sm ghost" type="button" @click="moveFlag(i, 1)" :disabled="i === flagIds.length - 1" title="Move right"><Icon name="ChevronRight" :size="12"/></button></div>
+                    <span class="faint" style="font-size:11px; max-width:90px; text-align:center">{{ flagName(fid) }}</span>
+                  </div>
+                  <span v-if="!flagIds.length" class="faint" style="font-size:12px">No flags.</span>
+                </div>
+                <template v-if="Array.isArray(fl.ids)">
+                  <div class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap">
+                    <Field label="Add a flag"><input class="input" v-model="flagQ" placeholder="Search: Ontario, Tokyo, Shibuya…" style="width:220px"></Field>
+                    <Field label="Kind"><select class="input" style="width:auto" v-model="flagGroup">
+                      <option v-for="g in FLAG_GROUPS" :key="g.value" :value="g.value">{{ g.label }}</option></select></Field>
+                    <span class="faint" style="font-size:12px" v-if="flagIds.length >= 6">Up to 6 flags.</span>
+                  </div>
+                  <div class="row" style="gap:8px; flex-wrap:wrap; max-height:220px; overflow:auto">
+                    <button v-for="f in flagHits" :key="f.id" type="button" class="btn sm ghost" style="flex-direction:column; gap:2px; height:auto; padding:4px 6px"
+                      :disabled="flagIds.includes(f.id) || flagIds.length >= 6" @click="addFlag(f.id)" :title="f.name">
+                      <img :src="flagSrc(f.id)" alt="" style="image-rendering:pixelated; height:23px; display:block">
+                      <span style="font-size:10px; max-width:80px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ f.name }}</span></button>
+                  </div>
+                </template>
+                <Field label="Position" hint="On the caption: above it in a bottom corner, below it in a top one (above the Japanese caption, if it's there)">
+                  <Seg :modelValue="fl.corner || 'auto'" @update:modelValue="v => fl.corner = v" :options="FLAG_POSITIONS"/></Field>
+                <Field label="Size" hint="Auto: countries at 23 px, the rest at 18 px">
+                  <Seg :modelValue="fl.size ?? 'auto'" @update:modelValue="v => fl.size = v" :options="FLAG_SIZES"/></Field>
+                <div class="row" style="gap:12px; align-items:flex-end" v-if="!mapMode">
+                  <Field label="Country code" hint="Overrides where the webcam is: ca, us, jp…"><input class="input" style="width:70px" :value="cam.country || ''"
+                    @input="setCountry($event.target.value)" maxlength="2" placeholder="auto"></Field>
+                  <Field label="Province / state / prefecture" hint="BC, MA, 13 (Tokyo)…"><input class="input" style="width:70px" :value="cam.region || ''"
+                    @input="setRegion($event.target.value)" maxlength="3" placeholder="auto"></Field>
+                </div>
               </template>
             </template>
             <div class="faint" style="font-size:12px" v-if="capTab === 'content'">When a row is too wide, its last pieces are left out (or it continues on the next line, with Wraps);

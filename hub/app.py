@@ -22,6 +22,8 @@ from hub.util import atomic_write_json, read_json
 # the hub's own previews of webcam captions draw real highway signs from its data dir (the Pi reads its synced copy)
 from display.modules import webcam_caption as _webcam_caption  # noqa: E402
 _webcam_caption.SIGN_DIRS.append(str(paths.DATA_DIR / "shields"))
+from display.modules import caption_flags as _caption_flags  # noqa: E402
+_caption_flags.FLAG_DIRS.insert(0, str(paths.DATA_DIR / "flags"))      # the flag set (not in git; see caption_flags)
 
 WEB_DIR = Path(__file__).parent / "web"
 ICON_NAME = re.compile(r"^[A-Za-z0-9._=^-]+\.png$")
@@ -1498,6 +1500,51 @@ def _place_matches(g, wanted):
     names = [str(g.get(k) or "").lower() for k in ("admin1", "admin2", "country")]
     full = _REGIONS.get(w, w)
     return any(n == full or n.startswith(full) for n in names if n) or str(g.get("country_code") or "").lower() == w
+
+
+@app.get("/api/flags")
+def flags_list():
+    """The caption flag set (display/modules/caption_flags.py; it lives in the state's data/flags, not in git):
+    [{id, name, group, country, region, default, sizes}], grouped for the panel's picker."""
+    idx = _caption_flags.index()
+    out = [{"id": fid, "name": e.get("name") or fid, "group": e.get("group") or "", "country": e.get("country") or "",
+            "region": e.get("region") or "", "default": e.get("default") or 18,
+            "sizes": _flag_sizes(e)} for fid, e in idx.items()]
+    return {"flags": out, "have": bool(out)}
+
+
+def _flag_sizes(e):
+    """The sizes of a flag that are really on disk (the index may list one not fetched yet)."""
+    base = os.path.dirname(_caption_flags._index["path"] or "")
+    return sorted(int(s) for s, fn in (e.get("files") or {}).items()
+                  if s in ("18", "23") and isinstance(fn, str) and os.path.isfile(os.path.join(base, fn)))
+
+
+@app.get("/api/flags/img/{fid}/{size}")
+def flags_img(fid: str, size: str):
+    """A flag's PNG at 18 or 23 px (its other size when that one is missing; "auto": its own default)."""
+    if not re.fullmatch(r"[a-z0-9-]{2,40}", fid) or size not in ("18", "23", "auto"):
+        raise HTTPException(404)
+    e = _caption_flags.index().get(fid)
+    if not e:
+        raise HTTPException(404)
+    files = e.get("files") or {}
+    want = str(e.get("default") or 18) if size == "auto" else size
+    base = os.path.dirname(_caption_flags._index["path"] or "")
+    for s in [want] + [x for x in ("18", "23") if x != want]:
+        fn = files.get(s)
+        if fn and re.fullmatch(r"[a-z0-9-]+_(18|23)\.png", fn) and os.path.isfile(os.path.join(base, fn)):
+            return FileResponse(os.path.join(base, fn), media_type="image/png", headers={"Cache-Control": "max-age=300"})
+    raise HTTPException(404)
+
+
+@app.post("/api/webcams/flags_auto")
+def webcams_flags_auto(cam: dict = Body(...)):
+    """What a webcam's automatic flags are: where common/flagplaces.py puts it and the flags that gives."""
+    from common import flagplaces
+    country, region = flagplaces.locate(cam)
+    return {"country": country, "region": region,
+            "ids": flagplaces.default_ids(cam, _caption_flags.index() or None)}
 
 
 @app.get("/api/webcams/geocode")
