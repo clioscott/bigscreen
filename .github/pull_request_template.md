@@ -16,5 +16,8 @@
 
 ## Risk
 
-- [ ] Low: auto-merge once checks pass
-- [ ] Needs Scott's OK (rendering pipeline, panel timing, deploy, services, data deletion, anything large)
+- [ ] Auto-merge once review and checks pass (the work Scott asked for or approved)
+- [ ] Needs Scott's input (`needs-owner`): say exactly what decision or action is needed from him
+
+<!-- What could go wrong, and how to roll back if it does. -->
+

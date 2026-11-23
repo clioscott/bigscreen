@@ -40,12 +40,16 @@ edit code on the server or Pi over SSH (SSH is for inspecting, runtime state and
 2. Commit in small logical steps with plain, descriptive messages (no attribution trailers).
 3. Check locally: `python -m pytest -q tests`, and for visual changes render before/after
    (`/api/*/preview.png`, `python -m tools.readme media <group>` on the server, or the emulator).
-4. Push and open a PR (`gh pr create`) using the template: what and why, how it was tested, before/after images
-   for anything visual, risk. Update `README`/`CLAUDE.md` in the same PR when behaviour or workflow changes.
+4. Push and open a PR (`gh pr create`) using the template: what and why, how it was tested, risk. Before/after
+   images for anything visual when you can attach them (gh can't upload images; don't hand that to Scott).
+   Update `README`/`CLAUDE.md` in the same PR when behaviour or workflow changes.
 5. A second agent reviews the PR and leaves review comments (`gh pr review --comment`); fix what it finds.
-6. Small, low-risk PRs: `gh pr merge --auto --squash` (merges once CI passes). Bigger or risky ones (rendering
-   pipeline, panel timing, deploy, services, deleting data, anything touching the Pi's boot): label
-   `needs-owner` and wait for Scott's approval in the PR.
+6. Then `gh pr merge --auto --squash` (merges once CI passes). Once Scott has asked for the work or approved its
+   plan, go ahead: size or risk alone (rendering pipeline, timing, services, deploy) is not a reason to wait.
+   Involve Scott only when his input is actually needed: a choice the plan didn't settle, something only he can
+   do (a sudo password, checking the wall in person), or going beyond what he approved (deleting data, changing
+   the Pi's boot or panel timing values when the plan didn't say so). Then label the PR `needs-owner` and say in
+   it exactly what you need from him.
 7. Milestones (a new screen, a major feature set, a visible redesign) get a release with a short summary:
    `gh release create v2.N --generate-notes`.
 
