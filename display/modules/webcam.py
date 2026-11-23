@@ -519,7 +519,7 @@ class Stream:
 
     def _run(self):
         try:
-            os.sched_setaffinity(0, {0, 1})        # off the render core (2) and rgbmatrix's (3)
+            os.sched_setaffinity(0, {0})           # off the render core (2), the panels' send (1) and refresh (3)
         except (AttributeError, OSError):
             pass
         while self.alive and time.time() - self.last_use < IDLE_SEC:

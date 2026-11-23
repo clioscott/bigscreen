@@ -91,7 +91,11 @@ Urgent fix: push straight to `main` as admin (bypasses the ruleset) — the time
 
 **Since 2026-10-09 v2 drives the panels** (`bigscreen-display` enabled at boot; hub `hub.display_mode = "v2"`,
 so saves hot-reload — no restart). Pi boot line has `isolcpus=2,3`: render thread pinned to core 2, rgbmatrix
-refresh thread on core 3. Backups: `/boot/firmware/cmdline.txt.pre-v2`.
+refresh thread on core 3, the panels' send thread (`display/main.py` Presenter, `system.display.present_core`) on
+core 1, webcam readers and everything else on core 0. The send releases the GIL while waiting for the refresh only
+with `RGBMatrix.SwapOnVSyncNoGil` (deploy/rgbmatrix_setbuffer.py): after changing that patch, rebuild on the Pi with
+`bash deploy/pi-setup.sh` and restart `bigscreen-display` (the deploy timer doesn't rebuild the library).
+Backups: `/boot/firmware/cmdline.txt.pre-v2`.
 
 **Rollback to v1** (kept installed): `sudo systemctl disable --now bigscreen-display && sudo systemctl enable --now bigscreen-client`
 on the Pi, set `hub.display_mode` to `"v1"`, and on the server restore `~/bigscreen-server/server/sync.py.pre-v2`

@@ -74,7 +74,8 @@ flowchart LR
 rpi-rgb-led-matrix's `graphics` module pixel for pixel, down to the same BDF parsing quirks and line algorithm.
 Only the 64 × 16 tiles that changed go to the panels, in one C++ call (`FrameCanvas.SetBuffer`, a method this
 project patches into the library's Python binding). The render thread and the library's refresh thread each get
-an isolated core (`isolcpus=2,3`), so the panels don't flicker even while radar plays.
+an isolated core (`isolcpus=2,3`), so the panels don't flicker even while radar plays; frames are sent to the
+panels from a third core while the next one is drawn.
 
 **The wall has two sides**, and each runs its own rotation of screens (`display/rotation.py`). A screen always plays
 to its end. Rules (`display/rules.py`: time of day, weekday, "an alert is active", "it's raining") are checked only

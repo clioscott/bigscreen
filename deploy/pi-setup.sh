@@ -24,4 +24,4 @@ rm -f "$BUILD"/bindings/python/rgbmatrix/core.cpp "$BUILD"/bindings/python/rgbma
 "$VENV/bin/python" "$REPO/deploy/rgbmatrix_setbuffer.py" "$BUILD"
 CMAKE_BUILD_PARALLEL_LEVEL=1 $RUN "$VENV/bin/pip" install --no-build-isolation -q "$BUILD"
 
-"$VENV/bin/python" -c "from rgbmatrix import RGBMatrix; from rgbmatrix.core import FrameCanvas; assert hasattr(FrameCanvas, 'SetBuffer'); print('rgbmatrix OK: SetBuffer available')"
+"$VENV/bin/python" -c "from rgbmatrix import RGBMatrix; from rgbmatrix.core import FrameCanvas; assert hasattr(FrameCanvas, 'SetBuffer'); assert hasattr(RGBMatrix, 'SwapOnVSyncNoGil'); print('rgbmatrix OK: SetBuffer and SwapOnVSyncNoGil available')"
