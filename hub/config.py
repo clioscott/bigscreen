@@ -371,7 +371,8 @@ def _validate_iss_map(m):
     _validate_overlay("ISS map", m.get("overlay"))
     mp = m.get("map")
     if mp is not None:
-        if not isinstance(mp, dict) or not set(mp) <= {"when_down", "fixed", "extras"}                 or not isinstance(mp.get("fixed", False), bool):
+        if not isinstance(mp, dict) or not set(mp) <= {"when_down", "fixed", "extras"} \
+                or not isinstance(mp.get("fixed", False), bool):
             raise ConfigError("ISS map: map takes fixed (true or false) and extras")
         if mp.get("extras") is not None:
             _validate_map_extras("ISS map", mp["extras"])

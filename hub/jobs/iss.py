@@ -353,11 +353,21 @@ def extras(now, old=None):
     return out
 
 
+def wanted(cfg) -> bool:
+    """The ISS is on the wall somewhere: a webcam in space, or the ISS map in the rotation (or set up)."""
+    mods = (cfg or {}).get("modules") or {}
+    cams = ((mods.get("webcams") or {}).get("cams") or {})
+    if any(isinstance(c, dict) and c.get("space") for c in cams.values()):
+        return True
+    lc = mods.get("layout_cycle") or {}
+    return bool(mods.get("iss_map")) or any(str((e or {}).get("panel", "")).startswith("iss_map")
+                                            for side in ("left", "right") for e in lc.get(side) or [] if isinstance(e, dict))
+
+
 def run(cfg):
     from hub.util import atomic_write_json
-    cams = (((cfg.get("modules") or {}).get("webcams") or {}).get("cams") or {})
-    if not any(isinstance(c, dict) and c.get("space") for c in cams.values()):
-        return {"ok": True, "skipped": "no webcam is in space"}
+    if not wanted(cfg):
+        return {"ok": True, "skipped": "the ISS isn't on the wall (no webcam in space, no ISS map)"}
     now = time.time()
     l1, l2 = elements()
     # from BACK before now: the wall shows video from 35 s ago (and more for a webcam that lags), so the track must

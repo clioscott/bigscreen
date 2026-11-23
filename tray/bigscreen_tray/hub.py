@@ -16,6 +16,8 @@ PANEL_LABELS = {
     "bridges": "Bridges now", "bridges_full": "Bridges now (full width)", "bridges_wall": "Bridges now (whole wall)",
     "timezones": "Time zone map", "timezones_full": "Time zone map (full width)",
     "timezones_wall": "Time zone map (whole wall)",
+    "iss_map": "ISS map", "iss_map_full": "ISS map (full width)", "iss_map_tall": "ISS map (above the clock)",
+    "iss_map_wall": "ISS map (whole wall)",
 }
 WEATHER_SCREENS = {"current": "Current conditions", "hourly": "Hourly forecast", "forecast": "7-day forecast",
                    "warning": "Warnings"}

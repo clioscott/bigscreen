@@ -45,3 +45,11 @@ def test_the_iss_map_settings_are_checked_in_the_config():
     for bad in ("x", {"label": 3}, {"map": {"fixed": "yes"}}, {"map": {"extras": {"nope": {}}}}, {"overlay": {"corner": "middle"}}):
         with pytest.raises(config.ConfigError):
             config._validate_iss_map(bad)
+
+
+def test_the_iss_data_is_fetched_for_the_map_entry_even_without_an_iss_webcam():
+    from hub.jobs.iss import wanted
+    assert not wanted({"modules": {"webcams": {"cams": {"a": {}}}}})
+    assert wanted({"modules": {"webcams": {"cams": {"a": {"space": "iss"}}}}})
+    assert wanted({"modules": {"layout_cycle": {"right": [{"panel": "iss_map_full", "dwell_sec": 60}]}}})
+    assert wanted({"modules": {"iss_map": {"label": "ISS"}}})

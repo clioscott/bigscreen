@@ -1146,22 +1146,31 @@ const IssMapPreview = {
   setup(props) {
     const src = ref("");
     const err = ref("");
-    let t = null, busy = false, last = null;
+    let t = null, busy = false, again = false, last = null, gone = false;
     const draw = async () => {
-      if (busy) return;
+      if (busy) { again = true; return; }                   // (a change mid-request: drawn right after it)
       busy = true;
+      again = false;
       try {
         const r = await fetch("/api/iss-map/preview.png", { method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ settings: props.settings, shape: props.shape }) });
-        if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+        if (!r.ok) {
+          let why = r.statusText;
+          try { why = (await r.json()).detail || why; } catch { why = (await r.text().catch(() => "")) || why; }
+          throw new Error(`The hub couldn't draw the map (${r.status}): ${why}`.slice(0, 200));
+        }
         const url = URL.createObjectURL(await r.blob());
+        if (gone) { URL.revokeObjectURL(url); return; }
         if (last) URL.revokeObjectURL(last);
         last = src.value = url;
         err.value = "";
-      } catch (e) { err.value = e.message; } finally { busy = false; }
+      } catch (e) { err.value = e.message; } finally {
+        busy = false;
+        if (again && !gone) draw();
+      }
     };
     onMounted(() => { draw(); t = setInterval(draw, 2000); });
-    onBeforeUnmount(() => { clearInterval(t); if (last) URL.revokeObjectURL(last); });
+    onBeforeUnmount(() => { gone = true; clearInterval(t); if (last) URL.revokeObjectURL(last); });
     watch(() => [props.settings, props.shape], draw, { deep: true });
     return { src, err };
   },
@@ -1255,6 +1264,8 @@ const WebcamEditor = {
       }
     };
     watch(id, fill, { immediate: true, flush: "sync" });
+    // a save replaces the config with the hub's, which has no iss_map until it's been saved once: seed it again
+    if (props.mapMode) watch(() => store.draft.modules.iss_map, (v) => { if (!v) { seedIssMap(); fill(id.value); } }, { flush: "sync" });
     const ov = computed(() => cam.value.overlay);
     const colour = computed(() => cam.value.colour);
     const probe = ref(null);
@@ -1573,7 +1584,7 @@ const WebcamEditor = {
                 <Field label="Position"><div class="wc-corners wc-six">
                   <button v-for="c in POSITIONS" :key="c" type="button" :class="{on: ov.corner === c}" @click="ov.corner = c" :title="c"></button></div></Field>
                 <Field label="Text size" v-if="ov.style !== 'dot'"><Seg v-model="ov.font" :options="FONTS"/></Field>
-                <Field v-if="cam.space" label="Small world map" hint="Coastlines, the ISS and its last 90 minutes; above or below the caption when they share a corner">
+                <Field v-if="cam.space && !mapMode" label="Small world map" hint="Coastlines, the ISS and its last 90 minutes; above or below the caption when they share a corner">
                   <div class="row nowrap" style="gap:8px"><Toggle :modelValue="!!ov.minimap?.on" @update:modelValue="v => setMinimap('on', v)" title="Small world map"/>
                     <div v-if="ov.minimap?.on" class="wc-corners"><button v-for="c in ['tl', 'tr', 'bl', 'br']" :key="c" type="button" :class="{on: (ov.minimap?.corner || 'tr') === c}" @click="setMinimap('corner', c)" :title="c"></button></div></div></Field>
                 <Field label="Japanese text size" hint="Kana and kanji only; the English keeps the text size" v-if="ov.style !== 'dot'">
