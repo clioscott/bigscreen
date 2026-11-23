@@ -174,24 +174,28 @@ def _clock(t, tz=None, u=None):
 
 
 def _countdown(sec):
+    """A duration, its units in lower case ("1h30m20s", "4m05s", "2d3h"): the panels draw lower case dimmer
+    (draw_value), so the numbers stand out without spaces taking room."""
     sec = max(0, int(sec))
     if sec >= 86400:
-        return f"{sec // 86400}D {sec % 86400 // 3600}H"
+        return f"{sec // 86400}d{sec % 86400 // 3600}h"
     if sec >= 3600:
-        return f"{sec // 3600}H{sec % 3600 // 60:02d}M"
-    return f"{sec // 60}M{sec % 60:02d}S"
+        return f"{sec // 3600}h{sec % 3600 // 60:02d}m{sec % 60:02d}s"
+    if sec >= 60:
+        return f"{sec // 60}m{sec % 60:02d}s"
+    return f"{sec}s"
 
 
 def _speed(kms, u):
     if u["speed"] == "kms":
-        return f"{kms:.2f} KM/S"
+        return f"{kms:.2f} km/s"
     if u["speed"] == "mph":
-        return f"{kms * 2236.94:,.0f} MPH"
-    return f"{kms * 3600:,.0f} KM/H"
+        return f"{kms * 2236.94:,.0f} mph"
+    return f"{kms * 3600:,.0f} km/h"
 
 
 def _dist(km, u):
-    return f"{km * 0.621371:,.0f} MI" if u["distance"] == "mi" else f"{km:,.0f} KM"
+    return f"{km * 0.621371:,.0f} mi" if u["distance"] == "mi" else f"{km:,.0f} km"
 
 
 def _elements(data):
@@ -288,20 +292,20 @@ def rows_for(key, ctx):
             return []
         inc, mm, ecc, rev, epoch = e
         if key == "period":
-            return [("PERIOD", f"{1440 / mm:.1f} MIN")]
+            return [("PERIOD", f"{1440 / mm:.1f} min")]
         if key == "incl":
             return [("INCL", f"{inc:.2f}°")]
         if key == "orbit_no":                            # (the TLE's count wraps at 100,000: the ISS passed it in 2016)
             n = rev + int((t - epoch) / 86400 * mm) + (100000 if epoch > 1_480_000_000 and rev < 100000 else 0)
             return [("ORBIT", f"NO. {n:,}")]
         if key == "elements_age":
-            return [("TLE", f"{max(0, t - epoch) / 3600:.0f}H OLD")]
+            return [("TLE", f"{max(0, t - epoch) / 3600:.0f}h old")]
         a = (MU / (mm * 2 * math.pi / 86400) ** 2) ** (1 / 3)
-        return [("PERI/APO", f"{a * (1 - ecc) - R_E:.0f}/{a * (1 + ecc) - R_E:.0f} KM" if u["distance"] == "km"
-                 else f"{(a * (1 - ecc) - R_E) * .621:.0f}/{(a * (1 + ecc) - R_E) * .621:.0f} MI")]
+        return [("PERI/APO", f"{a * (1 - ecc) - R_E:.0f}/{a * (1 + ecc) - R_E:.0f} km" if u["distance"] == "km"
+                 else f"{(a * (1 - ecc) - R_E) * .621:.0f}/{(a * (1 + ecc) - R_E) * .621:.0f} mi")]
     if key == "mass":
         v, ok = _val(live, "mass")
-        return [("MASS", f"{v / 1000:,.0f} T" if u["distance"] == "km" else f"{v * 0.0011023:,.0f} TONS")] if ok and v > 0 else []
+        return [("MASS", f"{v / 1000:,.0f} t" if u["distance"] == "km" else f"{v * 0.0011023:,.0f} tons")] if ok and v > 0 else []
     ppl = [p for p in d.get("people") or [] if isinstance(p, dict)]
     iss_ppl = [p for p in ppl if p.get("iss")]
     tg_ppl = [p for p in ppl if not p.get("iss") and "shenzhou" in str(p.get("craft", "")).lower()]
@@ -336,7 +340,7 @@ def rows_for(key, ctx):
                 out.append((_flag(p.get("flag"), fl) + name, role))
             else:
                 dd = _days(t, p.get("launched"))
-                out.append((_flag(p.get("flag"), fl) + name, f"{dd}D" if dd is not None else ""))
+                out.append((_flag(p.get("flag"), fl) + name, f"{dd}d" if dd is not None else ""))
         return out
     if key == "people":
         return [("IN SPACE", str(len(ppl)))] if ppl else []
@@ -382,7 +386,7 @@ def rows_for(key, ctx):
             if key == "docked_ports":
                 out.append((lab, _short(x.get("port") or "", 16)))
             else:
-                out.append((lab, f"{dd}D" if dd is not None else ""))
+                out.append((lab, f"{dd}d" if dd is not None else ""))
         return out
     if key == "signal":
         aos = ctx.get("aos")
@@ -425,9 +429,9 @@ def rows_for(key, ctx):
                              + ("TODAY" if ago < 1 else f"{ago}D AGO"))]
     if key == "equiplock":
         v, ok = _val(live, "airlock_p")
-        return [("EQUIP LOCK", f"{v:.0f} MMHG")] if ok else []
-    simple = {"cabin_p": ("CABIN", "{:.0f} MMHG"), "o2": ("O2", "{:.0f} MMHG"), "co2": ("CO2", "{:.1f} MMHG"),
-              "crewlock": ("CREWLOCK", "{:.0f} MMHG"), "water": ("WATER", "{:.0f}%"), "urine": ("URINE", "{:.0f}%"),
+        return [("EQUIP LOCK", f"{v:.0f} mmhg")] if ok else []
+    simple = {"cabin_p": ("CABIN", "{:.0f} mmhg"), "o2": ("O2", "{:.0f} mmhg"), "co2": ("CO2", "{:.1f} mmhg"),
+              "crewlock": ("CREWLOCK", "{:.0f} mmhg"), "water": ("WATER", "{:.0f}%"), "urine": ("URINE", "{:.0f}%"),
               "waste": ("WASTE H2O", "{:.0f}%"), "gyros": ("GYROS", "{:.0f}/4 ONLINE")}
     if key in simple:
         v, ok = _val(live, key)
@@ -467,9 +471,9 @@ def rows_for(key, ctx):
         word = "QUIET" if kp < 4 else "ACTIVE" if kp < 5 else f"STORM G{min(5, int(kp) - 4)}"
         return [("KP", f"{kp:.1f} {word}")]
     if key == "wind" and w.get("wind") is not None:
-        return [("SOLAR WIND", f"{w['wind']:.0f} KM/S")]
+        return [("SOLAR WIND", f"{w['wind']:.0f} km/s")]
     if key == "bz" and w.get("bz") is not None:
-        return [("BT/BZ", f"{w.get('bt', 0):.0f}/{w['bz']:+.0f} NT")]
+        return [("BT/BZ", f"{w.get('bt', 0):.0f}/{w['bz']:+.0f} nt")]
     if key == "xray" and w.get("xray"):
         f = float(w["xray"])
         cls = next(((c, f / b) for c, b in (("X", 1e-4), ("M", 1e-5), ("C", 1e-6), ("B", 1e-7)) if f >= b), ("A", f / 1e-8))
@@ -530,6 +534,15 @@ def draw_text(img, x, y, s, rgb, font="tiny"):
     graphics.DrawText(cv, f, x, y + f.baseline, Color(*rgb), s)
 
 
+def draw_value(img, x, y, s, rgb, unit_rgb, font="tiny"):
+    """A value with its units dimmer: the lower-case letters (a duration's h, m and s; everything else on the panels
+    is in capitals) in unit_rgb, the rest in rgb, so the numbers stand out in the tiny font."""
+    import re
+    for part in re.findall(r"[a-z]+|[^a-z]+", s):
+        draw_text(img, x, y, part, unit_rgb if part.islower() else rgb, font)
+        x += text_w(part, font)
+
+
 def _hex(s, d):
     from display.modules.mapsats import hex_rgb
     return hex_rgb(s, d)
@@ -547,7 +560,7 @@ def measure(p, ctx, max_w):
                 got = rows_for(k, {**ctx, "flags": p.get("flags", True), "crew_names": p.get("crew_names")})
             except Exception:
                 continue
-            if not labels and k not in LIST_FIELDS:          # just the values ("757 MMHG", not "CABIN 757 MMHG")
+            if not labels and k not in LIST_FIELDS:          # just the values ("757 mmhg", not "CABIN 757 mmhg")
                 got = [(a if b is None else str(b), None) for a, b in got]
             ser = _series(ctx, k, p) if k in sparks and got else None
             rows += got
@@ -703,7 +716,7 @@ def draw(img, placed):
         for i, (a, b, is_title) in enumerate(m["lines"]):
             yy = y + 1 + m["lh"] * i
             if b is None:
-                draw_text(img, x + 2, yy, a, acc if is_title else txt, m["font"])
+                draw_value(img, x + 2, yy, a, acc if is_title else txt, acc, m["font"])
             else:
                 draw_text(img, x + 2, yy, a, acc, m["font"])
                 vx = x + 2 + m["split"] + 3
@@ -712,5 +725,5 @@ def draw(img, placed):
                     if ser is not None:
                         spark(img, vx, yy, m["sw"], m["lh"] - 2, ser, m["spark_rgb"])
                     vx += m["sw"] + 3
-                draw_text(img, vx, yy, str(b), txt, m["font"])
+                draw_value(img, vx, yy, str(b), txt, acc, m["font"])
 

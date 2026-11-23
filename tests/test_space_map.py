@@ -60,9 +60,9 @@ def _ctx(**kw):
 
 def test_crew_names_full_last_role_or_just_flags():
     got = {m: mappanels.rows_for("crew", _ctx(crew_names=m)) for m in mappanels.CREW_NAMES}
-    assert got["full"] == [("PYOTR DUBROV", "10D")] and got["last"] == [("DUBROV", "10D")]
-    assert got["role"] == [("CMDR. DUBROV", "10D")] and got["flags"][0][1] is None
-    assert mappanels.rows_for("tg_crew", _ctx(crew_names="last")) == [("ZHU", "5D")]   # (family name first)
+    assert got["full"] == [("PYOTR DUBROV", "10d")] and got["last"] == [("DUBROV", "10d")]
+    assert got["role"] == [("CMDR. DUBROV", "10d")] and got["flags"][0][1] is None
+    assert mappanels.rows_for("tg_crew", _ctx(crew_names="last")) == [("ZHU", "5d")]   # (family name first)
 
 
 def test_fields_without_data_drop_out_and_space_weather_reads_right():
@@ -190,7 +190,7 @@ def test_sparklines_and_spacewalk_only_panels():
     p = mappanels.panels_of({"panels": [{"pos": "tr", "fields": ["co2", "eva"], "sparks": ["co2"], "spark_w": 24,
                                          "spark_min": 30}]})[0]
     m = mappanels.measure(p, ctx, 300)
-    assert m["sw"] == 24 and m["sers"][0] is not None and m["lines"][1][1].startswith("1H")
+    assert m["sw"] == 24 and m["sers"][0] is not None and m["lines"][1][1].startswith("1h")
     img = np.zeros((40, 200, 3), np.uint8)
     mappanels.draw(img, [(p, m, 0, 0)])
     assert (img == (255, 214, 90)).all(axis=2).sum() > 10                  # the line is drawn
@@ -245,3 +245,10 @@ def test_the_space_map_video_shows_only_a_usable_picture(monkeypatch):
     assert p._video(data, time.time()).shape == (54, 96, 3)
     dark = {"track": [[time.time() - 600 + i * 10, 0, 0, 0] for i in range(200)]}
     assert p._video(dark, time.time()) is None and p.stream is None        # (night side: closed)
+
+
+def test_durations_have_lower_case_units_drawn_dimmer():
+    assert [mappanels._countdown(x) for x in (42, 245, 5420, 2 * 86400 + 3 * 3600)] == ["42s", "4m05s", "1h30m20s", "2d3h"]
+    img = np.zeros((8, 80, 3), np.uint8)
+    mappanels.draw_value(img, 0, 0, "1h30m", (255, 255, 255), (0, 255, 0))
+    assert (img == (255, 255, 255)).all(axis=2).any() and (img == (0, 255, 0)).all(axis=2).any()
