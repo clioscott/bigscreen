@@ -16,7 +16,8 @@ import { Alerts } from "./pages/alerts.js";
 import { Quake } from "./pages/quake.js";
 import { Fonts } from "./pages/fonts.js";
 import { Naad, Roads, Quakes, Tsunami, Wildfire } from "./pages/bcalerts.js";
-import { Webcams, IssMap } from "./pages/webcams.js";
+import { Webcams } from "./pages/webcams.js";
+import { SpaceMap } from "./pages/space_map.js";
 import { Bridges } from "./pages/bridges.js";
 import { Timezones } from "./pages/timezones.js";
 import { Election } from "./pages/election.js";
@@ -29,7 +30,7 @@ const NAV = [
   { id: "headlines", label: "Headlines", icon: "Newspaper" },
   { id: "maps", label: "Weather maps", icon: "Radar" },
   { id: "webcams", label: "Webcams", icon: "Video" },
-  { id: "iss-map", label: "ISS map", icon: "Orbit" },
+  { id: "iss-map", label: "Space Map", icon: "Orbit" },
   { id: "bridges", label: "Bridges now", icon: "Construction" },
   { id: "timezones", label: "Time zone map", icon: "Globe" },
   { id: "election", label: "US election", icon: "Vote" },
@@ -50,7 +51,7 @@ const NAV = [
 ];
 
 const App = {
-  components: { ...common, PlayingBar, Overview, Rotation, Ticker, Headlines, Maps, MapEditor, Areas, AreaEditor, Colours, DisplaySettings, System, Consoles, Alerts, Quake, Fonts, Naad, Roads, Quakes, Tsunami, Wildfire, Webcams, IssMap, Bridges, Timezones, Election },
+  components: { ...common, PlayingBar, Overview, Rotation, Ticker, Headlines, Maps, MapEditor, Areas, AreaEditor, Colours, DisplaySettings, System, Consoles, Alerts, Quake, Fonts, Naad, Roads, Quakes, Tsunami, Wildfire, Webcams, SpaceMap, Bridges, Timezones, Election },
   setup() {
     const ready = ref(false);
     const err = ref("");
@@ -69,7 +70,7 @@ const App = {
       if (r === "areas" && store.route.params[0]) return "AreaEditor";
       return { overview: "Overview", rotation: "Rotation", ticker: "Ticker", headlines: "Headlines", maps: "Maps", areas: "Areas",
         colours: "Colours", display: "DisplaySettings", system: "System", consoles: "Consoles", alerts: "Alerts", quake: "Quake", fonts: "Fonts",
-        naad: "Naad", roads: "Roads", quakes: "Quakes", tsunami: "Tsunami", wildfire: "Wildfire", webcams: "Webcams", "iss-map": "IssMap", bridges: "Bridges", timezones: "Timezones", election: "Election" }[r] || "Overview";
+        naad: "Naad", roads: "Roads", quakes: "Quakes", tsunami: "Tsunami", wildfire: "Wildfire", webcams: "Webcams", "iss-map": "SpaceMap", bridges: "Bridges", timezones: "Timezones", election: "Election" }[r] || "Overview";
     });
     const feedsBad = computed(() => Object.values(store.status?.jobs || {}).filter((j) => ["stale", "failing"].includes(j.health)).length);
     const disp = computed(() => store.display?.status);
