@@ -1,4 +1,5 @@
-"""Flags on a webcam's caption: a row of pixel flags in any corner, stacked on the caption when they share its corner.
+"""Flags on a webcam's caption: a row of pixel flags in any corner, stacked on the caption when they share its corner,
+or beside it.
 
 The flag set itself isn't in the repo (it includes artwork whose licence doesn't allow publishing it): it lives in the
 hub's runtime data, ``<data>/flags/`` (synced to the Pi like the other data), as ``index.json`` and one PNG per flag
@@ -9,8 +10,10 @@ files: {"18": file, "23": file}}}}. Countries are drawn at 23 px by default and 
     on       show flags
     ids      the flags, left to right; null: automatic (the webcam's country, then its province / state / prefecture,
              common/flagplaces.py), so a webcam with a known place shows its flags without being set up
-    corner   auto (the caption's corner) | tl tc tr / bl bc br. In the caption's corner the row sits right against
-             the caption: above it in a bottom corner, below it in a top one, lined up with its outer edge
+    corner   auto (the caption's corner) | tl tc tr / bl bc br | left | right. In the caption's corner the row sits
+             right against the caption: above it in a bottom corner, below it in a top one, lined up with its outer
+             edge. left / right: beside the caption (and its weather icon), lined up with the caption's outer edge
+             (bottoms together in a bottom corner, tops in a top one); with no room on that side, above / below it
     size     auto (each flag's own default) | 18 | 23
     opacity  0.1-1: how solid the flags are (the video shows through the rest); their outline fades with them
 """
@@ -27,6 +30,7 @@ from common import flagplaces
 FLAG_DIRS = [os.path.join(os.environ.get("BIGSCREEN_DATA_DIR", "/dev/shm/bigscreen"), "flags")]
 DEFAULT_FLAGS = {"on": True, "ids": None, "corner": "auto", "size": "auto", "opacity": 0.8}
 CORNERS = ("tl", "tc", "tr", "bl", "bc", "br")
+BESIDE = ("left", "right")
 SIZES = (18, 23)
 GAP = 2                       # between flags (each has a 1 px outline in the caption's background colour)
 MAX_FLAGS = 6
@@ -113,10 +117,12 @@ def row_size(imgs) -> tuple[int, int]:
     return w, h
 
 
-def draw(zc, anchor, w, h, ov, ids, box, place):
+def draw(zc, anchor, w, h, ov, ids, box, place, main=None, beside=None):
     """Draw the row of flags ``ids`` in the zone canvas zc (w × h). ``anchor``: the caption's box (x0, y0, x1, y1),
     with the Japanese caption when that sits on it, or None. ``box(zc, x, y, w, h, rgb, opacity)`` draws a background
-    box, ``place(corner, bw, bh)`` gives a box's top-left in a corner. Returns the row's box, or None."""
+    box, ``place(corner, bw, bh)`` gives a box's top-left in a corner. ``main``: the caption's own box; ``beside``:
+    it with its weather icon, and as wide as a Japanese caption stacked on it (the left / right positions go beside
+    that). Returns the row's box, or None."""
     if not ids:
         return None
     fs = flags_of(ov)
@@ -128,7 +134,17 @@ def draw(zc, anchor, w, h, ov, ids, box, place):
         return None
     own = str(ov.get("corner") or "bl")
     corner = fs.get("corner") if fs.get("corner") in CORNERS else own
-    if corner == own and anchor:                           # on the caption: above it (bottom) or below it (top)
+    side_pos = None
+    if fs.get("corner") in BESIDE and main:                # beside the caption, lined up with its outer edge
+        sx0, _, sx1, _ = beside or main
+        _, my0, _, my1 = main
+        bx = sx0 - 1 - rw if fs["corner"] == "left" else sx1 + 1
+        by = my1 - rh if own[:1] != "t" else my0
+        if 0 <= bx and bx + rw <= w and 0 <= by and by + rh <= h:
+            side_pos = (bx, by)
+    if side_pos:
+        bx, by = side_pos
+    elif corner == own and anchor:                         # on the caption: above it (bottom) or below it (top)
         x0, y0, x1, y1 = anchor
         side = own[1:] if own[1:] in ("l", "c", "r") else "l"
         bx = x0 if side == "l" else x1 - rw if side == "r" else (x0 + x1 - rw) // 2

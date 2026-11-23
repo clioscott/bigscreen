@@ -131,8 +131,39 @@ def test_no_flag_set_draws_nothing(tmp_path, monkeypatch):
 def test_flag_settings_are_validated():
     from hub.config import ConfigError, _validate_overlay
     _validate_overlay("x", {"flags": {"on": True, "ids": ["ca", "ca-on"], "corner": "tr", "size": 18}})
-    _validate_overlay("x", {"flags": {"ids": None, "opacity": 0.35}})
+    _validate_overlay("x", {"flags": {"ids": None, "opacity": 0.35, "corner": "left"}})
     for bad in ({"ids": "ca"}, {"ids": ["CA!"]}, {"corner": "middle"}, {"size": 20}, {"on": "yes"}, {"colour": 1},
-                {"ids": ["ca"] * 7}, {"opacity": 0}, {"opacity": 1.5}, {"opacity": True}):
+                {"ids": ["ca"] * 7}, {"corner": "above"}, {"opacity": 0}, {"opacity": 1.5}, {"opacity": True}):
         with pytest.raises(ConfigError):
             _validate_overlay("x", {"flags": bad})
+
+
+def test_right_of_the_caption_lines_up_with_its_bottom(flag_set):
+    buf, box = _draw({"corner": "bl", "flags": {"corner": "right"}})
+    red = _where(buf, (255, 0, 0))
+    capt = _where(buf, (255, 255, 255))
+    assert red[2] > box[2] - 70 and red[2] > capt[3]        # to the right of the caption's text
+    assert abs(red[1] - (box[3] - 2)) <= 1                  # bottoms together (inside the 1 px outline)
+
+
+def test_left_of_a_caption_against_the_left_edge_goes_above_it(flag_set):
+    buf, _ = _draw({"corner": "bl", "flags": {"corner": "left"}})
+    red = _where(buf, (255, 0, 0))
+    capt = _where(buf, (255, 255, 255))
+    assert red[1] < capt[0]                                 # no room on the left: stacked above instead
+
+
+def test_left_of_a_caption_on_the_right(flag_set):
+    buf, box = _draw({"corner": "tr", "flags": {"corner": "left"}})
+    blue = _where(buf, (0, 0, 255))
+    capt = _where(buf, (255, 255, 255))
+    assert blue[3] < capt[2]                                # left of the caption's text
+    assert _where(buf, (255, 0, 0))[0] <= 4                 # tops together, at the top
+
+
+def test_beside_keeps_clear_of_a_wide_japanese_caption(flag_set):
+    jp = {"on": True, "text": "歌舞伎町一番街のとても長い日本語のキャプション"}
+    buf, box = _draw({"corner": "bl", "jp_caption": jp, "flags": {"corner": "right"}})
+    red = _where(buf, (255, 0, 0))
+    _, plain = _draw({"corner": "bl", "flags": {"corner": "right"}})
+    assert red[2] > plain[2]                                # pushed past the Japanese caption's right edge
