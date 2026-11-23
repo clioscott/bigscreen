@@ -87,7 +87,8 @@ DEFAULT_OVERLAY = {"style": "tag", "corner": "bl", "when": "always", "font": "sm
                             "daynight": False, "weather": True, "sun": False, "age": False, "live": True,
                             "credit": False, "custom": False, "shield": False, "over": True,
                             **{k: False for k in WX_EXTRAS}, **{k: k in ("orbit", "below", "crew") for k in SPACE}},
-                   "crew_flags": True, "mission_days": False}
+                   "crew_flags": True, "mission_days": False,
+                   "flags": {"on": True, "ids": None, "corner": "auto", "size": "auto"}}   # (caption_flags.py)
 WHITE, BLACK = Color(255, 255, 255), Color(0, 0, 0)
 WX_MAX_AGE = 2 * 3600       # weather older than this isn't shown
 FIT_LINES = 3               # "fit" wraps onto up to this many lines before dropping sections
@@ -472,6 +473,8 @@ class Content:
         self.name_more = [up(s) for s in self.name_more]
         self.name_lines = [up(s) for s in str(cam.get("label") or "").splitlines() if s.strip()][:NAME_LINES]
         self.space = bool(cam.get("space"))
+        from display.modules import caption_flags         # the row of flags (display/modules/caption_flags.py)
+        self.flag_ids = tuple(caption_flags.ids_for(cam, ov))
         self.headline_kind = head
         self.title = up(sec[head] + (" " + self.ampm if head == "time" and self.ampm else ""))
         order = [k for k in (ov.get("order") or []) if k in ORDER] + [k for k in ORDER if k not in (ov.get("order") or [])]
@@ -821,7 +824,7 @@ def _layer(style, ov, ct, w, h, font_for):
     from display.gfx import Canvas
     blink = 0
     key = (style, json.dumps(ov, sort_keys=True, default=str), ct.title, tuple(ct.bits()), tuple(ct.name_lines), ct.icon, ct.night, ct.live,
-           ct.ampm, ct.clock(), w, h, blink, id(font_for), ct.side_icon)
+           ct.ampm, ct.clock(), w, h, blink, id(font_for), ct.side_icon, ct.flag_ids, _flag_set_stamp())
     hit = _layers.get(key)
     if hit is not None:
         return hit
@@ -836,7 +839,14 @@ def _layer(style, ov, ct, w, h, font_for):
         main = zc.bbox                                     # the caption's own box (before the icon and the Japanese)
         if ct.side_icon and main:
             _icon_beside(zc, main, w, h, ov, ct.side_icon)
-        _jp_caption(zc, main, w, h, ov, fl)
+        jp = _jp_caption(zc, main, w, h, ov, fl)
+        if ct.flag_ids:                                    # the flags: on the caption (and its Japanese) or a corner
+            anchor = main
+            if jp and main and jp_caption_of(ov).get("corner") not in ("tl", "tc", "tr", "bl", "bc", "br"):
+                anchor = (min(main[0], jp[0]), min(main[1], jp[1]), max(main[2], jp[2]), max(main[3], jp[3]))
+            from display.modules import caption_flags
+            caption_flags.draw(zc, anchor, w, h, ov, ct.flag_ids, _box,
+                               lambda corner, bw, bh: Ctx(zc, (0, 0, w, h), {**ov, "corner": corner}, fl).place(bw, bh, 2))
         planes.append(cv.buf.astype(np.int32))
         if zc.bbox:
             bbox = zc.bbox if bbox is None else (min(bbox[0], zc.bbox[0]), min(bbox[1], zc.bbox[1]),
@@ -876,7 +886,8 @@ def jp_caption_of(ov) -> dict:
 def _jp_caption(zc, main, w, h, ov, font_for):
     """The separate Japanese caption: its own lines of text in its own Japanese font and size (JP_FACES), on the
     caption's background (colour, strength, padding) and in its text colour. "auto": stacked against the main caption
-    (above it in a bottom corner, below it in a top one, lined up with its outer edge); else its own corner."""
+    (above it in a bottom corner, below it in a top one, lined up with its outer edge); else its own corner. Returns
+    its box (x0, y0, x1, y1), or None when there is none."""
     jc = jp_caption_of(ov)
     lines = [s.rstrip() for s in str(jc.get("text") or "")[:JP_CAPTION_TEXT_MAX].splitlines()]
     while lines and not lines[-1]:
@@ -925,6 +936,14 @@ def _jp_caption(zc, main, w, h, ov, font_for):
         if s:
             x = bx + bw - pad - _tw(f, s) if right else bx + pad
             graphics.DrawText(zc, f, x, by + pad + i * lh + f.baseline, color, s)
+    return bx, by, bx + bw, by + bh
+
+
+def _flag_set_stamp():
+    """Changes when the flag set on disk changes (a cached caption layer is redrawn with the new flags)."""
+    from display.modules import caption_flags
+    caption_flags.index()
+    return caption_flags._index["mtime"]
 
 
 def _icon_beside(zc, box, w, h, ov, name):
