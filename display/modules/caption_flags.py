@@ -12,6 +12,7 @@ files: {"18": file, "23": file}}}}. Countries are drawn at 23 px by default and 
     corner   auto (the caption's corner) | tl tc tr / bl bc br. In the caption's corner the row sits right against
              the caption: above it in a bottom corner, below it in a top one, lined up with its outer edge
     size     auto (each flag's own default) | 18 | 23
+    opacity  0.1-1: how solid the flags are (the video shows through the rest); their outline fades with them
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ import numpy as np
 from common import flagplaces
 
 FLAG_DIRS = [os.path.join(os.environ.get("BIGSCREEN_DATA_DIR", "/dev/shm/bigscreen"), "flags")]
-DEFAULT_FLAGS = {"on": True, "ids": None, "corner": "auto", "size": "auto"}
+DEFAULT_FLAGS = {"on": True, "ids": None, "corner": "auto", "size": "auto", "opacity": 0.8}
 CORNERS = ("tl", "tc", "tr", "bl", "bc", "br")
 SIZES = (18, 23)
 GAP = 2                       # between flags (each has a 1 px outline in the caption's background colour)
@@ -142,12 +143,35 @@ def draw(zc, anchor, w, h, ov, ids, box, place):
         op = min(1.0, max(0.0, float(op)))
     except (TypeError, ValueError):
         op = 0.7
+    try:
+        fop = min(1.0, max(0.1, float(fs.get("opacity", DEFAULT_FLAGS["opacity"]))))
+    except (TypeError, ValueError):
+        fop = DEFAULT_FLAGS["opacity"]
     x = bx
     for a in imgs:                                         # bottoms lined up: a 23 px country beside 18 px regions
         fh, fw = a.shape[:2]
         y = by + rh - 2 - fh
-        box(zc, x, y, fw + 2, fh + 2, rgb, op)              # 1 px outline in the caption's background
-        m = a[..., 3] > 127
-        zc.Blit(a[..., :3], x + 1, y + 1, m)
+        for ex, ey, ew, eh in ((x, y, fw + 2, 1), (x, y + fh + 1, fw + 2, 1), (x, y + 1, 1, fh), (x + fw + 1, y + 1, 1, fh)):
+            box(zc, ex, ey, ew, eh, rgb, op * fop)          # 1 px outline in the caption's background, faded with them
+        _blend(zc, a, x + 1, y + 1, fop, rgb, op * fop)
         x += fw + 2 + GAP
     return bx, by, bx + rw, by + rh
+
+
+def _blend(zc, a, x, y, op, back, back_op):
+    """The flag over what's under it at opacity op, clipped to the zone (the caption layer turns this into the
+    flag's own opacity over the video). Its see-through pixels (an emblem's corners) get the caption's background
+    colour at back_op instead, as the outline does, so a cut-out shape keeps a backing."""
+    h, w = a.shape[:2]
+    X0, Y0, X1, Y1 = max(x, zc.x0), max(y, zc.y0), min(x + w, zc.x1), min(y + h, zc.y1)
+    if X1 <= X0 or Y1 <= Y0:
+        return
+    src = a[Y0 - y:Y1 - y, X0 - x:X1 - x]
+    m = src[..., 3] > 127
+    region = zc.buf[Y0:Y1, X0:X1]
+    mixed = region.astype(np.float32) * (1 - op) + src[..., :3].astype(np.float32) * op
+    region[m] = (mixed[m] + 0.5).astype(np.uint8)
+    if (~m).any():
+        under = region.astype(np.float32) * (1 - back_op) + np.array(back, np.float32) * back_op
+        region[~m] = (under[~m] + 0.5).astype(np.uint8)
+    zc.mark(X0, Y0, X1, Y1)

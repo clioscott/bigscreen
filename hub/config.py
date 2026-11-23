@@ -321,14 +321,16 @@ def _validate_overlay(name, ov):
     fl = ov.get("flags")
     if fl is not None:                                     # the row of flags (display/modules/caption_flags.py)
         ids = fl.get("ids") if isinstance(fl, dict) else None
-        if not isinstance(fl, dict) or not set(fl) <= {"on", "ids", "corner", "size"} \
+        if not isinstance(fl, dict) or not set(fl) <= {"on", "ids", "corner", "size", "opacity"} \
                 or not isinstance(fl.get("on", True), bool) \
                 or fl.get("corner", "auto") not in ("auto", "tl", "tc", "tr", "bl", "bc", "br") \
                 or fl.get("size", "auto") not in ("auto", 18, 23) \
+                or isinstance(fl.get("opacity", 1), bool) or not isinstance(fl.get("opacity", 1), (int, float)) \
+                or not 0.1 <= fl.get("opacity", 1) <= 1 \
                 or not (ids is None or (isinstance(ids, list) and len(ids) <= 6 and all(
                     isinstance(i, str) and re.fullmatch(r"[a-z0-9-]{2,40}", i) for i in ids))):
             raise ConfigError(f"webcam {name}: flags need on (true or false), up to 6 flags (or none for automatic), "
-                              "a position and a size (auto, 18 or 23)")
+                              "a position, a size (auto, 18 or 23) and an opacity of 0.1-1")
     show = ov.get("show", {})
     if not isinstance(show, dict) or any(k not in SECTIONS for k in show):
         raise ConfigError(f"webcam {name}: caption show has an unknown section")
