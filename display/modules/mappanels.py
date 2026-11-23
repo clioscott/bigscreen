@@ -21,7 +21,15 @@ POSITIONS = ("tl", "tc", "tr", "ml", "mc", "mr", "bl", "bc", "br")
 LAYOUTS = ("rows", "line")
 PANEL_FONTS = {"tiny": ("tiny", 7), "small": ("small", 9)}
 PANEL_DEFAULTS = {"on": True, "pos": "tr", "title": "", "fields": [], "layout": "rows", "labels": True, "flags": True,
-                  "font": "tiny", "opacity": 0.72, "colour": "#d7dce4", "accent": "#6e87a0", "crew_names": "full"}
+                  "font": "tiny", "opacity": 0.72, "colour": "#d7dce4", "accent": "#6e87a0", "crew_names": "full",
+                  "when": "always", "sparks": [], "spark_min": 90, "spark_w": 30, "spark_colour": "#ffd65a"}
+WHEN = ("always", "eva")             # a panel shown always, or only while a spacewalk is under way
+SPARK_MIN = (5, 180)                 # minutes a sparkline covers (the hub keeps 3 h)
+SPARK_W = (8, 80)                    # its width in pixels
+# the fields that can have a sparkline: field -> the hub's series (hub/iss_live.py history)
+SERIES_OF = {"alt": "alt", "speed": "speed", "mass": "mass", "cabin_p": "cabin_p", "cabin_t": "cabin_t", "o2": "o2",
+             "co2": "co2", "crewlock": "crewlock", "equiplock": "airlock_p", "water": "water", "urine": "urine",
+             "waste": "waste", "gyros": "gyros", "power_v": "v_avg", "power_a": "a_sum", "arrays": "sarj_p"}
 CREW_NAMES = ("full", "last", "role", "flags")      # the crew lists: full names, last names, role + last name, or
                                                     # just each country's flag and how many
 ROLE_SHORT = {"Commander": "CMDR.", "Flight Engineer": "FE", "Pilot": "PLT.", "Payload Specialist": "PS",
@@ -56,7 +64,7 @@ FIELDS = {
     "ru_via": ("Comms", "Russian link"), "cn_via": ("Comms", "Tiangong's link"), "ku": ("Comms", "Ku-band video link"),
     # station systems (NASA ISS Live)
     "cabin_p": ("Systems", "Cabin pressure"), "cabin_t": ("Systems", "Cabin temperature"), "o2": ("Systems", "Oxygen"),
-    "co2": ("Systems", "CO₂"), "crewlock": ("Systems", "Crewlock pressure"), "water": ("Systems", "Clean water tank"),
+    "co2": ("Systems", "CO₂"), "water": ("Systems", "Clean water tank"),
     "urine": ("Systems", "Urine tank"), "waste": ("Systems", "Waste water tank"), "upa": ("Systems", "Urine processor"),
     "gyros": ("Systems", "Gyroscopes online"), "mode": ("Systems", "Station mode"),
     "att_mode": ("Systems", "Attitude control"), "nav": ("Systems", "Navigation source"),
@@ -64,6 +72,13 @@ FIELDS = {
     "ru_att": ("Systems", "Russian attitude control"), "ru_thrusters": ("Systems", "Russian thrusters"),
     "power_v": ("Systems", "Solar array voltage"), "power_a": ("Systems", "Solar array current"),
     "arrays": ("Systems", "Solar array (SARJ) angles"), "betas": ("Systems", "Array beta gimbals"),
+    # spacewalks (from the crewlock's pressure: hub/iss_live.py)
+    "eva": ("Spacewalk", "Spacewalk under way, and for how long"),
+    "eva_status": ("Spacewalk", "Spacewalk: under way or none"),
+    "eva_start": ("Spacewalk", "When the spacewalk started"),
+    "eva_last": ("Spacewalk", "The last spacewalk (when, how long)"),
+    "crewlock": ("Spacewalk", "Crewlock pressure (zero: open to space)"),
+    "equiplock": ("Spacewalk", "Equipment lock pressure"),
     # space weather (NOAA SWPC)
     "kp": ("Space weather", "Kp index"), "wind": ("Space weather", "Solar wind speed"),
     "bz": ("Space weather", "Magnetic field (Bt / Bz)"), "xray": ("Space weather", "X-ray flux (flare class)"),
@@ -376,6 +391,26 @@ def rows_for(key, ctx):
     if key == "ku":
         c = _cal(live, "ku_tx")
         return [("KU-BAND", "TX" if (c or "").upper() == "YES" else "OFF")] if c else []
+    if key in ("eva", "eva_status", "eva_start", "eva_last"):
+        e = (live or {}).get("eva") if isinstance(live, dict) else None
+        e = e if isinstance(e, dict) else {}
+        on = bool(e.get("on")) and e.get("since")
+        if key == "eva":
+            return [("SPACEWALK", _countdown(t - float(e["since"])))] if on else []
+        if key == "eva_status":
+            return [("SPACEWALK", f"UNDER WAY {_countdown(t - float(e['since']))}" if on else "NONE")] if isinstance(live, dict) else []
+        if key == "eva_start":
+            s_, _lt = _clock(float(e["since"]), None, {"time": "24h"}) if on else (None, None)
+            return [("STARTED", f"{s_} UTC")] if s_ else []
+        last = e.get("last") if isinstance(e.get("last"), dict) else None
+        if not last or not last.get("start") or not last.get("end"):
+            return []
+        ago = int((t - float(last["end"])) // 86400)
+        return [("LAST EVA", f"{_countdown(float(last['end']) - float(last['start']))}, "
+                             + ("TODAY" if ago < 1 else f"{ago}D AGO"))]
+    if key == "equiplock":
+        v, ok = _val(live, "airlock_p")
+        return [("EQUIP LOCK", f"{v:.0f} MMHG")] if ok else []
     simple = {"cabin_p": ("CABIN", "{:.0f} MMHG"), "o2": ("O2", "{:.0f} MMHG"), "co2": ("CO2", "{:.1f} MMHG"),
               "crewlock": ("CREWLOCK", "{:.0f} MMHG"), "water": ("WATER", "{:.0f}%"), "urine": ("URINE", "{:.0f}%"),
               "waste": ("WASTE H2O", "{:.0f}%"), "gyros": ("GYROS", "{:.0f}/4 ONLINE")}
@@ -489,7 +524,8 @@ def measure(p, ctx, max_w):
     """A panel's content and size: (lines, w, h) where lines are [(label, value, is_title)]; None when empty."""
     font, lh = PANEL_FONTS.get(p.get("font"), PANEL_FONTS["tiny"])
     labels = p.get("labels", True)
-    rows = []
+    sparks = set(p.get("sparks") or []) if p.get("layout") != "line" else set()
+    rows, sers = [], []
     for k in p.get("fields") or []:
         if k in FIELDS:
             try:
@@ -498,9 +534,12 @@ def measure(p, ctx, max_w):
                 continue
             if not labels and k not in LIST_FIELDS:          # just the values ("757 MMHG", not "CABIN 757 MMHG")
                 got = [(a if b is None else str(b), None) for a, b in got]
+            ser = _series(ctx, k, p) if k in sparks and got else None
             rows += got
+            sers += [ser] + [None] * (len(got) - 1)
     if not rows:
         return None
+    sw = int(_clamp(p.get("spark_w", 30), *SPARK_W)) if any(x is not None for x in sers) else 0
     title = str(p.get("title") or "").upper()
     if p.get("layout") == "line":
         parts = [(a if b is None else (f"{a} {b}" if labels else str(b))) for a, b in rows]
@@ -512,15 +551,72 @@ def measure(p, ctx, max_w):
         return {"lines": [(s, None, False)], "w": min(max_w, text_w(s, font) + 4), "h": lh + 2, "lh": lh, "font": font,
                 "split": 0}
     vw = max((text_w(str(b), font) for a, b in rows if b is not None), default=0)
-    room = max_w - 4                                             # (too wide: the names are cut, the values kept)
+    room = max_w - 4 - (int(_clamp(p.get("spark_w", 30), *SPARK_W)) + 3 if any(x is not None for x in sers) else 0)
     fit = lambda a, n: a if text_w(a, font) <= n else next((a[:i] + "." for i in range(len(a) - 1, 0, -1)
                                                            if text_w(a[:i] + ".", font) <= n), a[:1])
     rows = [(fit(a, room - (vw + 3 if b is not None else 0)), b) for a, b in rows]
     lw = max((text_w(a, font) for a, b in rows if b is not None), default=0)
     wide = max((text_w(a, font) for a, b in rows if b is None), default=0)
-    w = max(wide, lw + (3 + vw if vw else 0), text_w(title, font) if title else 0) + 4
+    w = max(wide, lw + (3 + vw if vw else 0) + (sw + 3 if sw else 0), text_w(title, font) if title else 0) + 4
     lines = ([(title, None, True)] if title else []) + [(a, b, False) for a, b in rows]
-    return {"lines": lines, "w": min(max_w, w), "h": lh * len(lines) + 2, "lh": lh, "font": font, "split": lw}
+    return {"lines": lines, "w": min(max_w, w), "h": lh * len(lines) + 2, "lh": lh, "font": font, "split": lw,
+            "sw": sw, "sers": ([None] if title else []) + sers,
+            "spark_rgb": _hex(p.get("spark_colour"), (255, 214, 90))}
+
+
+def _clamp(v, lo, hi):
+    try:
+        return max(lo, min(hi, float(v)))
+    except (TypeError, ValueError):
+        return lo
+
+
+def _series(ctx, k, p):
+    """A field's recent values for its sparkline (the panel's spark_min of them), or None when the hub has too few."""
+    hist = ((ctx.get("live") or {}).get("history") or {}) if isinstance(ctx.get("live"), dict) else {}
+    pts = (hist.get("series") or {}).get(SERIES_OF.get(k, "")) or []
+    if len(pts) < 3:
+        return None
+    end = pts[-1][0]
+    span = _clamp(p.get("spark_min", 90), *SPARK_MIN) * 60
+    got = [(tt, v) for tt, v in pts if tt >= end - span]
+    return (got, end - span, end) if len(got) >= 3 else None
+
+
+def spark(img, x, y, w, h, ser, rgb):
+    """A sparkline w×h at x, y: the values over the panel's window, scaled to their own range, a faint fill under the
+    line and the newest value as a bright dot."""
+    pts, t0, t1 = ser
+    ts = np.array([a for a, _b in pts], float)
+    vs = np.array([b for _a, b in pts], float)
+    cols = np.interp(np.linspace(t0, t1, w), ts, vs, left=np.nan)
+    ok = ~np.isnan(cols)
+    if ok.sum() < 2:
+        return
+    lo, hi = np.nanmin(cols), np.nanmax(cols)
+    if hi - lo < 1e-9:
+        lo, hi = lo - 1, hi + 1
+    ys = np.round((h - 1) - (cols - lo) / (hi - lo) * (h - 1))
+    H, W = img.shape[:2]
+    col = np.array(rgb, np.float32)
+    for i in np.flatnonzero(ok):
+        X, Y = x + int(i), y + int(ys[i])
+        if 0 <= X < W:
+            img[max(0, Y + 1):min(H, y + h), X] = (img[max(0, Y + 1):min(H, y + h), X] * 0.6 + col * 0.18).astype(np.uint8)
+            if 0 <= Y < H:
+                img[Y, X] = rgb
+    i = int(np.flatnonzero(ok)[-1])
+    X, Y = x + i, y + int(ys[i])
+    img[max(0, Y - 1):Y + 2, max(0, X - 1):min(W, X + 1)] = (255, 255, 255)
+
+
+def history_keys(mapset):
+    """The hub series the Space Map's panels chart (what the Pi asks the hub for)."""
+    out = set()
+    for p in panels_of(mapset):
+        if p.get("on", True) and p.get("layout") != "line":
+            out |= {SERIES_OF[k] for k in p.get("sparks") or [] if k in SERIES_OF and k in (p.get("fields") or [])}
+    return out
 
 
 def layout(panels, ctx, w, h, top=0, bottom=0, avoid=None):
@@ -528,8 +624,9 @@ def layout(panels, ctx, w, h, top=0, bottom=0, avoid=None):
     the bottom ones end above the caption (its box, ``avoid``, where they'd overlap it; else ``bottom`` rows), and
     the middle ones are centred in what the top and bottom of their column leave."""
     by = {k: [] for k in POSITIONS}
+    eva_on = bool(((ctx.get("live") or {}).get("eva") or {}).get("on")) if isinstance(ctx.get("live"), dict) else False
     for p in panels:
-        if p.get("on", True) and p.get("fields"):
+        if p.get("on", True) and p.get("fields") and (p.get("when", "always") != "eva" or eva_on):
             by[p["pos"]].append(p)
     col_w = max(40, int(w * 0.48))
     meas = {}
@@ -588,5 +685,11 @@ def draw(img, placed):
                 draw_text(img, x + 2, yy, a, acc if is_title else txt, m["font"])
             else:
                 draw_text(img, x + 2, yy, a, acc, m["font"])
-                draw_text(img, x + 2 + m["split"] + 3, yy, str(b), txt, m["font"])
+                vx = x + 2 + m["split"] + 3
+                if m.get("sw"):
+                    ser = m["sers"][i] if i < len(m["sers"]) else None
+                    if ser is not None:
+                        spark(img, vx, yy, m["sw"], m["lh"] - 2, ser, m["spark_rgb"])
+                    vx += m["sw"] + 3
+                draw_text(img, vx, yy, str(b), txt, m["font"])
 

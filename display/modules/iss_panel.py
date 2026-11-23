@@ -71,7 +71,7 @@ class IssMapPanel:
         return self._iss
 
     def draw(self, c, zone, entry, transition):
-        from display.modules import issmap, space
+        from display.modules import issmap, mappanels, space
         now = time.time()
         key = (entry.get("panel"), tuple(zone))
         if transition or key not in self.started:
@@ -80,7 +80,8 @@ class IssMapPanel:
         shape = shape_of_panel(entry.get("panel"), zone)
         issmap.draw_full(c, zone, data, now - space.LAG, fixed=bool(self.cam["map"].get("fixed")),
                          caption_box=self.boxes.get(key), extras=issmap.extras_of(self.cam, space_map=True),
-                         live=issmap.live_from(self.hub), mapset=self.cam["map"], view=issmap.view_of(self.cam, shape))
+                         live=issmap.live_from(self.hub, mappanels.history_keys(self.cam["map"])),
+                         mapset=self.cam["map"], view=issmap.view_of(self.cam, shape))
         cam = for_shape(self.cam, shape)                                       # the caption settings of its size
         self.boxes[key] = draw_caption(c, zone, cam, now - self.started[key], self.font, extra={"space": data})
         return None

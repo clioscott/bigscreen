@@ -49,6 +49,17 @@ values: dict = {}                  # name -> {"v": raw, "cal": calibrated text, 
 signal = deque()                   # [(t, 1 | 0)] whenever it changed
 _lock = threading.Lock()
 
+# the readings' recent past, for the Space Map's sparklines: one sample per SERIES_STEP, SERIES_SEC of them, of every
+# numeric reading plus a few worked out from them (altitude, speed, array voltage and current)
+SERIES_SEC = 3 * 3600
+SERIES_STEP = 20.0
+series: dict = {}                  # name -> deque[(t, value)]
+R_EARTH = 6378.137
+# a spacewalk: the crewlock pumped down (below EVA_MMHG for EVA_HOLD s) until it's back up; kept across restarts
+EVA_MMHG = 100.0
+EVA_HOLD = 60.0
+eva = {"on": False, "since": None, "low_since": None, "last": None}
+
 
 def log(msg):
     print(f"[iss-live] {msg}\n", end="", flush=True)
@@ -72,7 +83,7 @@ def snapshot() -> dict:
         vals = {k: dict(v) for k, v in values.items()}
     fresh = state["heard"] is not None and now - state["heard"] < STALE_SEC     # (keepalives count: LOS is quiet)
     return {"at": now, "connected": bool(state["connected"] and fresh), "signal": sig, "values": vals,
-            "error": state["error"]}
+            "error": state["error"], "eva": {k: eva[k] for k in ("on", "since", "last")}}
 
 
 def decode(rest, prev):
@@ -103,6 +114,105 @@ def _note(name, val, cls, cal, now):
                 signal.popleft()
             return
         values[name] = {"v": val, "cal": cal, "at": now}
+        _sample(name, val, now)
+        if name == "crewlock":
+            _eva(val, now)
+
+
+def _num(name):
+    try:
+        return float(values[name]["v"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _put(name, v, now):
+    q = series.get(name)
+    if q is None:
+        q = series[name] = deque()
+    if q and now - q[-1][0] < SERIES_STEP:
+        q[-1] = (q[-1][0], v)                         # (the newest value in this step)
+    else:
+        q.append((now, v))
+    while q and q[0][0] < now - SERIES_SEC:
+        q.popleft()
+
+
+def _sample(name, val, now):
+    """Keep a reading (and what's worked out from it) in its series (under the lock)."""
+    try:
+        v = float(val)
+    except (TypeError, ValueError):
+        return
+    if v != v:
+        return
+    _put(name, v, now)
+    if name.startswith("pos_"):
+        p = [_num(k) for k in ("pos_x", "pos_y", "pos_z")]
+        if None not in p:
+            _put("alt", (p[0] ** 2 + p[1] ** 2 + p[2] ** 2) ** 0.5 - R_EARTH, now)
+    elif name.startswith("vel_"):
+        p = [_num(k) for k in ("vel_x", "vel_y", "vel_z")]
+        if None not in p:
+            _put("speed", (p[0] ** 2 + p[1] ** 2 + p[2] ** 2) ** 0.5 / 1000.0, now)          # km/s
+    elif name[:2] in ("v_", "a_"):
+        got = [_num(name[:2] + k) for k in ("1a", "2a", "1b", "2b")]
+        got = [g for g in got if g is not None]
+        if got:
+            _put("v_avg" if name[0] == "v" else "a_sum", sum(got) / len(got) if name[0] == "v" else sum(got), now)
+
+
+def _eva(val, now):
+    """The crewlock's pressure: a spacewalk starts once it's been below EVA_MMHG for EVA_HOLD s (from when it went
+    below) and ends when it's back up (under the lock)."""
+    try:
+        p = float(val)
+    except (TypeError, ValueError):
+        return
+    changed = False
+    if p < EVA_MMHG:
+        if eva["low_since"] is None:
+            eva["low_since"] = now
+        if not eva["on"] and now - eva["low_since"] >= EVA_HOLD:
+            eva.update(on=True, since=eva["low_since"])
+            changed = True
+    else:
+        if eva["on"]:
+            eva.update(on=False, last={"start": eva["since"], "end": now})
+            changed = True
+        eva["low_since"] = None
+    if changed:
+        _save_eva()
+
+
+def _eva_path():
+    from hub import paths
+    return paths.CACHE_DIR / "iss_eva.json"
+
+
+def _save_eva():
+    try:
+        import json
+        _eva_path().write_text(json.dumps(eva))
+    except Exception:
+        pass
+
+
+def _load_eva():
+    try:
+        import json
+        got = json.loads(_eva_path().read_text())
+        if isinstance(got, dict):
+            eva.update({k: got.get(k) for k in eva})
+    except Exception:
+        pass
+
+
+def history(keys=None) -> dict:
+    """What /api/iss/history serves: each reading's samples over the last SERIES_SEC ([[t, value], …], rounded)."""
+    with _lock:
+        out = {k: [[round(t), round(v, 3)] for t, v in q] for k, q in series.items() if keys is None or k in keys}
+    return {"at": time.time(), "step": SERIES_STEP, "series": out}
 
 
 def _session():
@@ -175,4 +285,5 @@ def _run():
 
 
 def start():
+    _load_eva()
     threading.Thread(target=_run, name="iss-live", daemon=True).start()

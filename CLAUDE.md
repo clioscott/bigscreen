@@ -178,7 +178,10 @@ once (`hold: false`), so the rotation resumes by itself.
   in one of nine places with its own fields from `FIELDS`, layout, font, colours, crew name style) and `units`.
   Its caption is its own (one line by default); the ISS webcam's is untouched. China's link: Tiangong → a Chinese
   station or a Tianlian II relay (inferred). Extra data in iss.json for the panels: `people`, `spacewx` (NOAA SWPC),
-  `launches` (Launch Library 2, at most hourly). More NASA ISS Live items in `hub/iss_live.py ITEMS`.
+  `launches` (Launch Library 2, at most hourly). More NASA ISS Live items in `hub/iss_live.py ITEMS`; the hub keeps
+  3 h of each reading (`iss_live.series`, `/api/iss/history?keys=`) for panel sparklines (`sparks`, `spark_min`,
+  `spark_w`; the Pi fetches only the series its panels chart, every minute) and detects spacewalks from the
+  crewlock pressure (`iss_live.eva`, kept in `cache/iss_eva.json`); a panel with `when: "eva"` shows only during one.
 - 4K: YouTube's live HLS stops at 1080p; 1440p/4K exist only as DASH (VP9 WebM segments by sequence number). The
   lookup passes `youtube:formats=incomplete` to list them, which needs a current yt-dlp with yt-dlp-ejs and deno
   (`~/.deno/bin/deno` on the server, found by `deno_path`). They're used only when a crop needs more than the HLS

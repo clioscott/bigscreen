@@ -1394,9 +1394,12 @@ def _fetch_wx(points, timeout=8):
 _iss_cache = {"mtime": None, "data": None}
 
 
-def _iss_live():
+def _iss_live(history=False):
     from hub import iss_live
-    return iss_live.snapshot()
+    snap = iss_live.snapshot()
+    if history:                                           # (the Space Map's sparklines)
+        snap["history"] = iss_live.history()
+    return snap
 
 
 def _iss_data():
@@ -1419,6 +1422,14 @@ def iss_live_now():
     newest readings. The display's ISS map polls this every few seconds while it's up."""
     from hub import iss_live
     return iss_live.snapshot()
+
+
+@app.get("/api/iss/history")
+def iss_history(keys: str = ""):
+    """The ISS Live readings' recent past (hub/iss_live.py: one sample every 20 s, 3 h), for the Space Map's
+    sparklines; the display's map asks for it every minute while it's up."""
+    from hub import iss_live
+    return iss_live.history([k for k in keys.split(",") if k] or None)
 
 
 @app.get("/api/iss-map/catalog")
@@ -1446,6 +1457,7 @@ def iss_map_catalog():
         "fields": [{"key": k, "group": g, "label": lab} for k, (g, lab) in mappanels.FIELDS.items()],
         "groups": mappanels.GROUPS, "positions": mappanels.POSITIONS, "panel_defaults": mappanels.PANEL_DEFAULTS,
         "default_panels": mappanels.default_panels(), "crew_names": mappanels.CREW_NAMES,
+        "spark_fields": list(mappanels.SERIES_OF), "spark_min": mappanels.SPARK_MIN, "spark_w": mappanels.SPARK_W,
         "units": {k: list(v) for k, v in mappanels.UNITS.items()}, "unit_defaults": mappanels.UNIT_DEFAULTS,
         "layers": [{"key": k, **{f: L[f] for f in ("label", "flag", "orbit", "mesh", "colour", "note")},
                     "count": counts.get(k)} for k, L in LAYERS.items()],
@@ -1467,7 +1479,7 @@ def iss_map_preview(payload: dict):
     cam = iss_panel.settings_of({"iss_map": s if isinstance(s, dict) else None,
                                  "webcams": (config.load().get("modules") or {}).get("webcams")})
     try:
-        img = iss_panel.render_preview(cam, shape, tuple(zones[shape]), _iss_data(), _iss_live())
+        img = iss_panel.render_preview(cam, shape, tuple(zones[shape]), _iss_data(), _iss_live(history=True))
     except Exception as e:                                # (a half-typed setting: say what, don't 500 blankly)
         raise HTTPException(400, f"{type(e).__name__}: {e}")
     out = io.BytesIO()

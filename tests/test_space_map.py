@@ -19,7 +19,7 @@ def _track(lon0=0.0, lat=0.0, step=10, n=700, dlon=0.6):
 
 @pytest.fixture(autouse=True)
 def _no_hub(monkeypatch):
-    monkeypatch.setattr(issmap, "live_from", lambda hub: None)
+    monkeypatch.setattr(issmap, "live_from", lambda hub, keys=None: None)
 
 
 def test_the_automatic_view_reaches_north_past_the_russian_stations_and_keeps_the_band_off_the_caption():
@@ -148,6 +148,54 @@ def test_the_hub_checks_the_space_map_settings():
                                 "links": {"cn": {"up": "#112233", "style": "comet"}}, "units": {"speed": "mph"}})
     for bad in ({"views": {"tall": {"zoom": 9}}}, {"panels": [{"pos": "middle"}]}, {"panels": [{"fields": ["nope"]}]},
                 {"sats": {"pluto": {}}}, {"links": {"nasa": {"style": "lasers"}}}, {"labels": {"iss": {"pos": "up"}}},
-                {"relays": "sometimes"}, {"panels": [{"crew_names": "nick"}]}, {"nope": 1}):
+                {"relays": "sometimes"}, {"panels": [{"crew_names": "nick"}]}, {"nope": 1},
+                {"panels": [{"sparks": ["kp"]}]}, {"panels": [{"spark_min": 999}]}, {"panels": [{"when": "night"}]}):
         with pytest.raises(config.ConfigError):
             config._validate_space_map(bad)
+
+
+def test_the_hub_keeps_each_readings_past_and_works_out_altitude(monkeypatch):
+    from collections import deque
+    from hub import iss_live
+    monkeypatch.setattr(iss_live, "values", {})
+    monkeypatch.setattr(iss_live, "series", {})
+    for i in range(10):
+        t = 1000.0 + i * 25
+        for k, v in (("pos_x", 6800.0), ("pos_y", 0.0), ("pos_z", 0.0), ("co2", 2.4 + i / 100)):
+            iss_live._note(k, str(v), "24", None, t)
+    h = iss_live.history(["co2", "alt"])["series"]
+    assert len(h["co2"]) == 10 and abs(h["alt"][-1][1] - (6800 - iss_live.R_EARTH)) < 0.01
+    assert isinstance(iss_live.series["co2"], deque)
+
+
+def test_a_spacewalk_starts_when_the_crewlock_stays_pumped_down_and_ends_when_it_is_back_up(monkeypatch):
+    from hub import iss_live
+    monkeypatch.setattr(iss_live, "eva", {"on": False, "since": None, "low_since": None, "last": None})
+    monkeypatch.setattr(iss_live, "_save_eva", lambda: None)
+    iss_live._eva("756", 0)
+    iss_live._eva("3", 100)
+    iss_live._eva("0", 130)                                                # (not yet a minute)
+    assert not iss_live.eva["on"]
+    iss_live._eva("0", 170)
+    assert iss_live.eva["on"] and iss_live.eva["since"] == 100
+    iss_live._eva("750", 100 + 6 * 3600)
+    assert not iss_live.eva["on"] and iss_live.eva["last"] == {"start": 100, "end": 100 + 6 * 3600}
+
+
+def test_sparklines_and_spacewalk_only_panels():
+    pts = [[T0 - 3600 + i * 20, 2.4 + (i % 7) / 50] for i in range(181)]
+    live = {"values": {"co2": {"v": "2.5"}, "crewlock": {"v": "0"}}, "eva": {"on": True, "since": T0 - 3700},
+            "history": {"series": {"co2": pts}}}
+    ctx = {**_ctx(), "live": live}
+    p = mappanels.panels_of({"panels": [{"pos": "tr", "fields": ["co2", "eva"], "sparks": ["co2"], "spark_w": 24,
+                                         "spark_min": 30}]})[0]
+    m = mappanels.measure(p, ctx, 300)
+    assert m["sw"] == 24 and m["sers"][0] is not None and m["lines"][1][1].startswith("1H")
+    img = np.zeros((40, 200, 3), np.uint8)
+    mappanels.draw(img, [(p, m, 0, 0)])
+    assert (img == (255, 214, 90)).all(axis=2).sum() > 10                  # the line is drawn
+    only = mappanels.panels_of({"panels": [{"pos": "tc", "fields": ["crewlock"], "when": "eva"}]})
+    assert mappanels.layout(only, ctx, 448, 175)
+    quiet = {**ctx, "live": {**live, "eva": {"on": False}}}
+    assert mappanels.layout(only, quiet, 448, 175) == []
+    assert mappanels.history_keys({"panels": [{"fields": ["co2", "power_a"], "sparks": ["co2", "power_a"]}]}) == {"co2", "a_sum"}

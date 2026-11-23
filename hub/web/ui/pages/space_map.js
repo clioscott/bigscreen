@@ -144,6 +144,7 @@ export const SpaceMap = {
       const i = f.indexOf(k);
       if (i >= 0) f.splice(i, 1); else f.push(k);
       setP("fields", f);
+      if (i >= 0 && (selPanel.value.sparks || []).includes(k)) setP("sparks", selPanel.value.sparks.filter((x) => x !== k));
     };
     const moveField = (i, d) => {
       const f = [...selPanel.value.fields];
@@ -153,6 +154,13 @@ export const SpaceMap = {
     };
     const groupFields = (g) => (cat.value?.fields || []).filter((f) => f.group === g
       && (!fieldQ.value || f.label.toLowerCase().includes(fieldQ.value.toLowerCase())));
+    const sparkable = computed(() => (selPanel.value?.fields || []).filter((k) => (cat.value?.spark_fields || []).includes(k)));
+    const toggleSpark = (k) => {
+      const f = [...(selPanel.value.sparks || [])];
+      const i = f.indexOf(k);
+      if (i >= 0) f.splice(i, 1); else f.push(k);
+      setP("sparks", f);
+    };
     const hasCrew = computed(() => (selPanel.value?.fields || []).some((k) => ["crew", "crew_roles", "tg_crew"].includes(k)));
     const panelName = (p) => p.title || (p.fields || []).slice(0, 2).map(fieldLabel).join(", ") || "Empty panel";
     // --- links, labels, satellites, layers
@@ -193,7 +201,7 @@ export const SpaceMap = {
     const setUnit = (k, v) => { map.value.units = { ...(map.value.units || {}), [k]: v }; };
     const pct = (v) => Math.round(v * 100) + "%";
     return { cam, map, cat, tab, zone, found, play, SHAPES, ENTRY, TABS, POS_NAMES, LAYER_ITEMS, LINK_LABEL, KIND_NAMES, PIECES, SECTIONS, CAPTION_CORNERS, FONTS,
-      panels, sel, selPanel, P, inPos, addPanel, setP, movePanel, removePanel, dupPanel, fieldQ, fieldLabel, toggleField, moveField, groupFields, hasCrew, panelName,
+      panels, sel, selPanel, P, inPos, sparkable, toggleSpark, addPanel, setP, movePanel, removePanel, dupPanel, fieldQ, fieldLabel, toggleField, moveField, groupFields, hasCrew, panelName,
       link, setLink, lab, setLab, sat, setSat, ex, setEx, setTop, names, setName, nameQ, objects, view, setView, ov, twoRows, oneRow, units, setUnit, pct };
   },
   template: `<div class="page" v-if="cam">
@@ -238,6 +246,15 @@ export const SpaceMap = {
               <Field label="Text colour"><ColorPick :modelValue="P(selPanel, 'colour')" @update:modelValue="v => setP('colour', v)"/></Field>
               <Field label="Labels & title colour"><ColorPick :modelValue="P(selPanel, 'accent')" @update:modelValue="v => setP('accent', v)"/></Field>
             </div>
+            <div class="row" style="gap:16px; align-items:flex-start; flex-wrap:wrap">
+              <Field label="Show" hint="Only during a spacewalk: hidden the rest of the time, so it costs no room"><Seg :modelValue="P(selPanel, 'when')" @update:modelValue="v => setP('when', v)"
+                :options="[{value:'always', label:'Always'}, {value:'eva', label:'Only during a spacewalk'}]"/></Field></div>
+            <Field v-if="sparkable.length" label="Sparklines" :hint="P(selPanel, 'layout') === 'line' ? 'Sparklines show in the Table layout only' : 'A small chart of the recent past beside each reading you pick'">
+              <div class="row" style="gap:6px; flex-wrap:wrap"><button v-for="k in sparkable" :key="k" type="button" class="isx-chip" :class="{on: (selPanel.sparks || []).includes(k)}" @click="toggleSpark(k)">{{ fieldLabel(k) }}</button></div></Field>
+            <div class="row" style="gap:16px; align-items:flex-start; flex-wrap:wrap" v-if="(selPanel.sparks || []).length">
+              <Field label="Covering" hint="How far back each sparkline goes"><Stepper :modelValue="P(selPanel, 'spark_min')" @update:modelValue="v => setP('spark_min', v)" :min="cat.spark_min[0]" :max="cat.spark_min[1]" :step="5" unit=" min"/></Field>
+              <Field label="Width" hint="Narrower saves room"><Stepper :modelValue="P(selPanel, 'spark_w')" @update:modelValue="v => setP('spark_w', v)" :min="cat.spark_w[0]" :max="cat.spark_w[1]" :step="2" unit=" px"/></Field>
+              <Field label="Colour"><ColorPick :modelValue="P(selPanel, 'spark_colour')" @update:modelValue="v => setP('spark_colour', v)"/></Field></div>
             <Field v-if="hasCrew" label="Crew names" hint="Role + last name uses the mission role (Commander, Flight Engineer…); the data has no military ranks">
               <Seg :modelValue="P(selPanel, 'crew_names')" @update:modelValue="v => setP('crew_names', v)"
                 :options="[{value:'full', label:'Full names'}, {value:'last', label:'Last names'}, {value:'role', label:'CMDR. DUBROV'}, {value:'flags', label:'Flags and counts'}]"/></Field>

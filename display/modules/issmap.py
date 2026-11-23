@@ -340,14 +340,19 @@ def signal_at(live, t):
 # --- the hub's live feed (NASA ISS Live: hub/iss_live.py), polled while a map is up -----------------------------
 LIVE_EVERY = 3.0
 LIVE_STALE = 15.0             # a snapshot older than this (the hub down, restarting) isn't used
-_live = {"data": None, "got": 0.0, "used": 0.0, "hub": None, "thread": None}
+_live = {"data": None, "got": 0.0, "used": 0.0, "hub": None, "thread": None, "keys": None}
 
 
-def live_from(hub):
-    """The newest /api/iss/live from the hub (polled in the background every LIVE_EVERY while asked for), or None
-    when there's no fresh one."""
+HISTORY_EVERY = 60.0          # the readings' past (/api/iss/history: the Space Map's sparklines), this often
+
+
+def live_from(hub, history_keys=None):
+    """The newest /api/iss/live from the hub (polled in the background every LIVE_EVERY while asked for, with the
+    readings in ``history_keys``: their past from /api/iss/history every HISTORY_EVERY, as its "history"), or None when
+    there's no fresh one."""
     now = time.time()
     _live["used"], _live["hub"] = now, hub
+    _live["keys"] = sorted(history_keys) if history_keys else None
     th = _live["thread"]
     if hub and (th is None or not th.is_alive()):
         _live["thread"] = threading.Thread(target=_poll_live, name="iss-live", daemon=True)
@@ -357,11 +362,26 @@ def live_from(hub):
 
 def _poll_live():
     import urllib.request
+    hist, hist_at = None, 0.0
     while time.time() - _live["used"] < 15:
+        base = _live["hub"].rstrip("/")
         try:
-            with urllib.request.urlopen(_live["hub"].rstrip("/") + "/api/iss/live", timeout=4) as r:
+            keys = _live["keys"]
+            if not keys:
+                hist = None
+            elif time.time() - hist_at > HISTORY_EVERY or (hist or {}).get("keys") != keys:
+                hist_at = time.time()
+                with urllib.request.urlopen(base + "/api/iss/history?keys=" + ",".join(keys), timeout=6) as r:
+                    h = json.loads(r.read())
+                hist = {**h, "keys": keys} if isinstance(h, dict) else hist
+        except Exception:
+            pass
+        try:
+            with urllib.request.urlopen(base + "/api/iss/live", timeout=4) as r:
                 d = json.loads(r.read())
             if isinstance(d, dict):
+                if hist:
+                    d["history"] = hist
                 _live["data"], _live["got"] = d, time.time()
         except Exception:
             pass

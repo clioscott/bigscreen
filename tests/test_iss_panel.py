@@ -12,7 +12,7 @@ from display.modules import iss_panel, issmap
 
 @pytest.fixture(autouse=True)
 def _no_hub(monkeypatch):
-    monkeypatch.setattr(issmap, "live_from", lambda hub: None)
+    monkeypatch.setattr(issmap, "live_from", lambda hub, keys=None: None)
 
 
 def test_until_saved_the_iss_webcam_lends_its_caption_and_map():

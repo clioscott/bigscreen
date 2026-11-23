@@ -503,8 +503,15 @@ def _validate_space_map(mp):
                     or any(not isinstance(p.get(b, True), bool) for b in ("on", "labels", "flags")) \
                     or not (num(p.get("opacity", 0.7)) and 0 <= p.get("opacity", 0.7) <= 1) \
                     or any(k in p and not colour(p[k]) for k in ("colour", "accent")) \
-                    or p.get("crew_names", "full") not in mappanels.CREW_NAMES:
-                raise bad(f"panel {i + 1}: place, layout, font, title (up to 30), opacity 0-1, colours like #ff8800")
+                    or p.get("crew_names", "full") not in mappanels.CREW_NAMES \
+                    or p.get("when", "always") not in mappanels.WHEN \
+                    or not isinstance(p.get("sparks", []), list) or any(k not in mappanels.SERIES_OF for k in p.get("sparks", [])) \
+                    or not (num(p.get("spark_min", 90)) and mappanels.SPARK_MIN[0] <= p.get("spark_min", 90) <= mappanels.SPARK_MIN[1]) \
+                    or not (num(p.get("spark_w", 30)) and mappanels.SPARK_W[0] <= p.get("spark_w", 30) <= mappanels.SPARK_W[1]) \
+                    or ("spark_colour" in p and not colour(p["spark_colour"])):
+                raise bad(f"panel {i + 1}: place, layout, font, title (up to 30), opacity 0-1, colours like #ff8800, "
+                          f"when always/eva, sparklines for {', '.join(mappanels.SERIES_OF)} over "
+                          f"{mappanels.SPARK_MIN[0]}-{mappanels.SPARK_MIN[1]} min, {mappanels.SPARK_W[0]}-{mappanels.SPARK_W[1]} px wide")
 
 
 def _validate_webcams(wc):
