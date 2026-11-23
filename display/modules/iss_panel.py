@@ -13,7 +13,7 @@ import os
 import time
 
 from display.gfx import graphics
-from display.modules.webcam_caption import FONTS, draw_caption, for_shape
+from display.modules.webcam_caption import FONTS, draw_caption, for_shape, shape_of_panel
 
 DEFAULT_HUB = "http://192.168.1.111:8800"
 
@@ -80,8 +80,6 @@ class IssMapPanel:
         issmap.draw_full(c, zone, data, now - space.LAG, fixed=bool(self.cam["map"].get("fixed")),
                          caption_box=self.boxes.get(key), extras=issmap.extras_of(self.cam),
                          live=issmap.live_from(self.hub))
-        p = entry.get("panel") or "iss_map"                 # the caption settings of the size it's drawn at
-        shape = {"iss_map_full": "full", "iss_map_tall": "tall", "iss_map_wall": "wall"}.get(p, "side")
-        cam = for_shape(self.cam, "left" if shape == "side" else shape)
+        cam = for_shape(self.cam, shape_of_panel(entry.get("panel"), zone))   # the caption settings of its size
         self.boxes[key] = draw_caption(c, zone, cam, now - self.started[key], self.font, extra={"space": data})
         return None

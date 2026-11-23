@@ -222,6 +222,15 @@ SIZES_ON_WALL = ("side", "full", "tall", "wall")
 _shaped: dict = {}
 
 
+def shape_of_panel(panel, zone=None):
+    """The shape a webcam (or ISS map) entry is drawn at: wall, full, tall, or the side its zone is on."""
+    p = str(panel or "")
+    for suffix, shape in (("_wall", "wall"), ("_full", "full"), ("_tall", "tall")):
+        if p.endswith(suffix):
+            return shape
+    return "left" if zone is not None and zone[0] == 0 else "right"
+
+
 def for_shape(cam: dict, shape) -> dict:
     """The webcam with the caption settings of the size ``shape`` (left | right | full | tall | wall) is drawn at."""
     per = cam.get("overlays") if isinstance(cam, dict) else None

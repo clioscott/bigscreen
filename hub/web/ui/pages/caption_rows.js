@@ -25,7 +25,7 @@ export const CaptionRows = {
     let sortables = [];
     const loadLegacy = async () => {
       if (props.ov.rows) return;
-      try { legacy.value = (await api("/api/webcams/caption-rows", { json: { cam: props.cam } })).rows; } catch { legacy.value = [{ items: [{ k: "live" }, { k: "name" }] }]; }
+      try { legacy.value = (await api("/api/webcams/caption-rows", { json: { cam: { ...props.cam, overlay: props.ov } } })).rows; } catch { legacy.value = [{ items: [{ k: "live" }, { k: "name" }] }]; }
     };
     const rows = computed(() => props.ov.rows || legacy.value || []);
     // the first change writes the rows into the caption (until then it has none: opening a webcam isn't a change)

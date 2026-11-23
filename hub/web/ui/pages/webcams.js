@@ -1399,19 +1399,18 @@ const WebcamEditor = {
       if (Array.isArray(pl)) store.draft.modules.webcams.playlist = pl.filter((x) => x.cam !== id.value);
       go("webcams");
     };
+    // the shared caption to every webcam's shared caption (sizes with a caption of their own keep it)
     const captionToAll = () => {
-      const size = ownSize.value ? capSize.value : null;    // a size's own caption goes to that size on every webcam
+      let kept = 0;
       for (const c of Object.values(store.draft.modules.webcams.cams)) {
         if (c === cam.value) continue;
-        const target = size ? c.overlays?.[size] || c.overlay : c.overlay;
-        const ids = target?.flags?.ids ?? null;           // each webcam keeps its own flags (where it is)
+        const ids = c.overlay?.flags?.ids ?? null;           // each webcam keeps its own flags (where it is)
         const copy = clone(ov.value);
         copy.flags = { ...copy.flags, ids };
-        if (size) (c.overlays || (c.overlays = {}))[size] = copy;
-        else c.overlay = copy;
+        c.overlay = copy;
+        if (c.overlays && Object.keys(c.overlays).length) kept++;
       }
-      toast(size ? `Every webcam now uses this caption at ${SIZE_LABELS[size]} (save to keep it)`
-        : "Every webcam now uses this caption (save to keep it)");
+      toast("Every webcam now uses this caption" + (kept ? ` (${kept} keep their own caption at some sizes)` : "") + " (save to keep it)");
     };
     // this caption as every webcam's own caption at this width (their other sizes stay as they are)
     const captionToSize = () => {
@@ -1682,7 +1681,7 @@ const WebcamEditor = {
           </div></div>
 
         <div class="card"><div class="card-head"><Icon name="Captions" :size="16"/><h3>Caption</h3>
-            <span class="spacer"></span><button v-if="!mapMode" class="btn sm ghost" @click="captionToAll" title="Copy this caption look to every webcam"><Icon name="Copy" :size="14"/>Use on all webcams</button>
+            <span class="spacer"></span><button v-if="!mapMode && !ownSize" class="btn sm ghost" @click="captionToAll" title="Copy this caption look to every webcam (sizes with a caption of their own keep it)"><Icon name="Copy" :size="14"/>Use on all webcams</button>
             <button v-if="!mapMode" class="btn sm ghost" @click="captionToSize" :title="'Give every webcam this caption at ' + SIZE_LABELS[capSize] + ' (their other sizes stay as they are)'">
               <Icon name="Copy" :size="14"/>Use at {{ SIZE_LABELS[capSize] }} on all webcams</button></div>
           <div class="card-body stack">
@@ -1725,7 +1724,7 @@ const WebcamEditor = {
             </template>
             <template v-if="ov.style !== 'none' && capTab === 'content'">
               <Field label="Rows" hint="Each row, top to bottom; drag pieces to reorder them, between rows, or to Not shown. Separators come from the palette; every piece has its own size">
-                <CaptionRows :cam="cam" :ov="ov" :labels="SECTIONS" :has-text="hasText"/></Field>
+                <CaptionRows :key="capSize + (ownSize ? ':own' : '')" :cam="cam" :ov="ov" :labels="SECTIONS" :has-text="hasText"/></Field>
               <ToggleRow v-if="cam.space && inRows('crew')" :modelValue="ov.crew_flags !== false" @update:modelValue="v => ov.crew_flags = v"
                 label="Flags for the people aboard" hint="Each country's count with its flag (3, 3, 1); off: 7 aboard"/>
               <Field v-if="cam.space && inRows('coords')" label="Coordinates" hint="Updated every frame as the ISS moves">

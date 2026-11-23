@@ -813,14 +813,8 @@ class WebcamPanel:
     # drawing -----------------------------------------------------------------------------------------------
     @staticmethod
     def shape_for(entry, zone):
-        p = entry.get("panel", "webcam")
-        if p == "webcam_wall":
-            return "wall"
-        if p == "webcam_full":
-            return "full"
-        if p == "webcam_tall":
-            return "tall"
-        return "left" if zone[0] == 0 else "right"
+        from display.modules.webcam_caption import shape_of_panel
+        return shape_of_panel(entry.get("panel", "webcam"), zone)
 
     def draw(self, c, zone, entry, transition):
         if entry.get("cam"):
