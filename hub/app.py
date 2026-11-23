@@ -1392,9 +1392,12 @@ def _fetch_wx(points, timeout=8):
 _iss_cache = {"mtime": None, "data": None}
 
 
-def _iss_live():
+def _iss_live(history=False):
     from hub import iss_live
-    return iss_live.snapshot()
+    snap = iss_live.snapshot()
+    if history:                                           # (the Space Map's sparklines)
+        snap["history"] = iss_live.history()
+    return snap
 
 
 def _iss_data():
@@ -1419,18 +1422,100 @@ def iss_live_now():
     return iss_live.snapshot()
 
 
+@app.get("/api/iss/history")
+def iss_history(keys: str = ""):
+    """The ISS Live readings' recent past (hub/iss_live.py: one sample every 20 s, 3 h), for the Space Map's
+    sparklines; the display's map asks for it every minute while it's up."""
+    from hub import iss_live
+    return iss_live.history([k for k in keys.split(",") if k] or None)
+
+
+@app.get("/api/iss-map/catalog")
+def iss_map_catalog():
+    """What the Space Map page offers: the panel fields, the satellite layers (with how many each has now), the
+    link networks and styles, the label kinds, the map layers (extras), units, and the objects that can be renamed."""
+    from common.satlayers import LAYERS
+    from display.modules import issmap, maplabels, mappanels, mapsats
+    data = _iss_data() or {}
+    counts = {}
+    for k in LAYERS:
+        try:
+            meta = read_json(paths.DATA_DIR / "issmap" / f"sats_{k}.json", None)
+            counts[k] = meta.get("count") if isinstance(meta, dict) else None
+        except Exception:
+            counts[k] = None
+    objects = [{"key": "ISS", "kind": "iss"}, {"key": "Tiangong", "kind": "tiangong"}]
+    objects += [{"key": r["name"], "kind": "relays", "net": r["net"]} for r in issmap.valid_relays(data.get("relays"))]
+    objects += [{"key": n, "kind": "ground", "net": net} for n, _p, net in issmap.ground_sites(True, True)]
+    for k in ("gps", "goes", "galileo", "glonass", "beidou", "iridium"):
+        meta = read_json(paths.DATA_DIR / "issmap" / f"sats_{k}.json", None)
+        for n in (meta or {}).get("names") or []:
+            objects.append({"key": n, "kind": "sats", "layer": k, "short": mapsats._short_name(n)})
+    return {
+        "fields": [{"key": k, "group": g, "label": lab} for k, (g, lab) in mappanels.FIELDS.items()],
+        "groups": mappanels.GROUPS, "positions": mappanels.POSITIONS, "panel_defaults": mappanels.PANEL_DEFAULTS,
+        "default_panels": mappanels.default_panels(), "crew_names": mappanels.CREW_NAMES,
+        "spark_fields": list(mappanels.SERIES_OF), "spark_min": mappanels.SPARK_MIN, "spark_w": mappanels.SPARK_W,
+        "video_defaults": mappanels.VIDEO_DEFAULTS, "video_w": mappanels.VIDEO_W,
+        "space_cams": [{"id": k, "label": str(c.get("label") or k).split("\n")[0]}
+                       for k, c in (((config.load().get("modules") or {}).get("webcams") or {}).get("cams") or {}).items()
+                       if isinstance(c, dict) and c.get("space")],
+        "units": {k: list(v) for k, v in mappanels.UNITS.items()}, "unit_defaults": mappanels.UNIT_DEFAULTS,
+        "layers": [{"key": k, **{f: L[f] for f in ("label", "flag", "orbit", "mesh", "colour", "note")},
+                    "count": counts.get(k)} for k, L in LAYERS.items()],
+        "sat_defaults": mapsats.SAT_DEFAULTS, "marks": mapsats.MARKS,
+        "nets": issmap.NETS, "link_defaults": issmap.LINK_DEFAULTS, "link_styles": issmap.LINK_STYLES,
+        "label_kinds": maplabels.KINDS, "label_defaults": maplabels.LABEL_DEFAULTS, "label_places": maplabels.PLACES,
+        "extras": issmap.EXTRAS, "view": issmap.VIEW, "view_ranges": issmap.VIEW_RANGES, "objects": objects,
+    }
+
+
+def _space_map_video(settings):
+    """The Space Map's small video for the preview: the ISS webcam's latest still (hub/webcams.py snapshot, never
+    waited for), cut to its full-width crop and scaled to the video's size; None when it's off or there's no still."""
+    import numpy as np
+    from display.modules import iss_panel, mappanels, webcam as wc
+    vid = mappanels.video_of(settings.get("map"))
+    if not vid.get("on"):
+        return None
+    cam = iss_panel.video_cam(settings, ((config.load().get("modules") or {}).get("webcams") or {}).get("cams"))
+    if not cam:
+        return None
+    try:
+        jpg, _state = webcams.snapshot(cam.get("source") or {})
+    except Exception:
+        return None
+    if not jpg:
+        return None
+    w, h = mappanels.video_size(vid)
+    im = Image.open(io.BytesIO(jpg)).convert("RGB")
+    FW, FH = im.size
+    crop = wc.crop_for(cam, "full", w, h)
+    if crop:
+        cw = float(crop["w"]) * FW
+        x0, y0 = float(crop.get("x", 0)) * FW, float(crop.get("y", 0)) * FH
+    else:
+        cw, x0, y0 = FW, 0.0, 0.0
+    ch = min(FH - y0, cw * h / w)
+    im = im.crop((int(x0), int(y0), int(x0 + cw), int(y0 + ch))).resize((w, h), Image.LANCZOS)
+    return np.asarray(im, np.uint8)
+
+
 @app.post("/api/iss-map/preview.png")
 def iss_map_preview(payload: dict):
     """The ISS map entry as the wall would draw it now (display/modules/iss_panel.py), for the draft settings:
     {"settings": modules.iss_map, "shape": left|right|full|tall|wall}."""
-    from display.modules import iss_panel, webcam as wc
+    from display.modules import iss_panel
     zones = _webcam_zones()
     shape = payload.get("shape") if payload.get("shape") in zones else "tall"
     s = payload.get("settings")
     cam = iss_panel.settings_of({"iss_map": s if isinstance(s, dict) else None,
                                  "webcams": (config.load().get("modules") or {}).get("webcams")})
-    img = wc.render_preview(_webcam_caption.for_shape(cam, shape), None, tuple(zones[shape]), elapsed=30.0,
-                            extra={"space": _iss_data(), "iss_live": _iss_live()}, show_map=True)
+    try:
+        img = iss_panel.render_preview(cam, shape, tuple(zones[shape]), _iss_data(), _iss_live(history=True),
+                                       video=_space_map_video(cam))
+    except Exception as e:                                # (a half-typed setting: say what, don't 500 blankly)
+        raise HTTPException(400, f"{type(e).__name__}: {e}")
     out = io.BytesIO()
     Image.fromarray(img).save(out, "PNG", compress_level=1)
     return Response(out.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})

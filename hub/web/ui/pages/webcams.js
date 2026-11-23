@@ -117,10 +117,6 @@ const slug = (s) => (s || "webcam").toLowerCase().replace(/[^a-z0-9]+/g, "_").re
 const host = (u) => { try { return new URL(u).host.replace(/^www\./, ""); } catch { return u || ""; } };
 const qs = (o) => Object.entries(o).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
 export const camEntry = (id, shape) => ({ panel: SHAPES[shape].panel, cam: id, rules: [], dwell_sec: WEBCAM_SEC });
-// the ISS map's own rotation entries (display/modules/iss_panel.py), by size
-export const ISS_MAP_SHAPES = { left: "iss_map", right: "iss_map", full: "iss_map_full", tall: "iss_map_tall", wall: "iss_map_wall" };
-export const ISS_MAP_SEC = 60;
-const issMapEntry = (shape) => ({ panel: ISS_MAP_SHAPES[shape], rules: [], dwell_sec: ISS_MAP_SEC });
 
 // where a webcam's weather comes from: its weather city (picked by name), else its own coordinates
 const wxPoint = (c) => (c?.wx_city && Number.isFinite(c.wx_city.lat) ? c.wx_city
@@ -518,16 +514,17 @@ const addEntry = (panel, side, entry) => {
 };
 
 // Where something plays in the rotation, with a button to put it there (and a link to the Rotation page)
-const InRotation = {
+export const InRotation = {
   props: { found: Array, what: String, shapes: Object, make: Function },
   setup(props) {
-    const shape = ref("full");
+    const shape = ref(props.shapes.full ? "full" : Object.keys(props.shapes)[0]);
+    const offered = computed(() => Object.fromEntries(Object.entries(SHAPES).filter(([k]) => props.shapes[k])));
     const add = () => {
       const s = SHAPES[shape.value];
       addEntry(props.shapes[shape.value], s.side, props.make ? props.make(shape.value) : null);
       toast(`${props.what} added to the ${s.side} rotation (${s.label.toLowerCase()}). Save to keep it.`);
     };
-    return { shape, add, SHAPES, shapeOfPanel };
+    return { shape, add, SHAPES, offered, shapeOfPanel };
   },
   template: `<div class="wc-rot">
     <Icon name="RefreshCw" :size="15"/>
@@ -535,7 +532,7 @@ const InRotation = {
       <span v-for="(u, k) in found" :key="k" class="pill accent">{{ u.side }} side · {{ SHAPES[shapeOfPanel(u.e, u.side)].label.toLowerCase() }}{{ u.e.variants?.length ? ' · other sizes at set times' : '' }}{{ u.e.enabled === false ? ' · off' : '' }}</span>
       <a href="#/rotation" class="btn sm ghost">Rules, sizes and timing<Icon name="ArrowRight" :size="13"/></a></template>
     <template v-else><span>Not in the rotation yet.</span><span class="spacer"></span>
-      <select class="input" v-model="shape" style="width:auto; height:28px"><option v-for="(s, k) in SHAPES" :key="k" :value="k">{{ s.label }}</option></select>
+      <select class="input" v-model="shape" style="width:auto; height:28px"><option v-for="(s, k) in offered" :key="k" :value="k">{{ s.label }}</option></select>
       <button class="btn sm primary" @click="add"><Icon name="ListPlus" :size="14"/>Add to the rotation</button></template>
   </div>`,
 };
@@ -1127,63 +1124,12 @@ const WallPreview = {
 };
 
 // --- editor -------------------------------------------------------------------------------------------------------
-// The ISS map entry's settings (modules.iss_map): shaped like a webcam in space; a first visit copies the ISS
-// webcam's caption and map settings (as the wall uses them until then), in saved and draft alike (not a change)
-const seedIssMap = () => {
-  const src = Object.values(store.saved?.modules?.webcams?.cams || {}).find((c) => c?.space) || {};
-  seed(["modules", "iss_map"], { label: src.label || "International Space Station", overlay: clone(src.overlay || {}),
-    ...(src.overlays ? { overlays: clone(src.overlays) } : {}),
-    map: { fixed: !!src.map?.fixed, ...(src.map?.extras ? { extras: clone(src.map.extras) } : {}) } });
-};
-
-// An ISS map preview: the hub draws the draft settings as the wall would, every couple of seconds
-const IssMapPreview = {
-  props: { settings: Object, shape: String, zone: Array },
-  setup(props) {
-    const src = ref("");
-    const err = ref("");
-    let t = null, busy = false, again = false, last = null, gone = false;
-    const draw = async () => {
-      if (busy) { again = true; return; }                   // (a change mid-request: drawn right after it)
-      busy = true;
-      again = false;
-      try {
-        const r = await fetch("/api/iss-map/preview.png", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ settings: props.settings, shape: props.shape }) });
-        if (!r.ok) {
-          let why = r.statusText;
-          try { why = (await r.json()).detail || why; } catch { why = (await r.text().catch(() => "")) || why; }
-          throw new Error(`The hub couldn't draw the map (${r.status}): ${why}`.slice(0, 200));
-        }
-        const url = URL.createObjectURL(await r.blob());
-        if (gone) { URL.revokeObjectURL(url); return; }
-        if (last) URL.revokeObjectURL(last);
-        last = src.value = url;
-        err.value = "";
-      } catch (e) { err.value = e.message; } finally {
-        busy = false;
-        if (again && !gone) draw();
-      }
-    };
-    onMounted(() => { draw(); t = setInterval(draw, 2000); });
-    onBeforeUnmount(() => { gone = true; clearInterval(t); if (last) URL.revokeObjectURL(last); });
-    watch(() => [props.settings, props.shape], draw, { deep: true });
-    return { src, err };
-  },
-  template: `<div class="led" :style="{maxWidth: Math.min(zone[0] * 3 + 22, 1366) + 'px'}">
-    <img v-if="src" :src="src" :style="{aspectRatio: zone[0] + ' / ' + zone[1]}" alt="The ISS map as the wall draws it">
-    <div v-else class="placeholder">{{ err || 'Drawing the map…' }}</div></div>`,
-};
-
 const WebcamEditor = {
-  components: { CropEditor, WallPreview, CaptionRows, IssMapExtras, IssMapPreview, InRotation },
-  props: { mapMode: Boolean },
+  components: { CropEditor, WallPreview, CaptionRows, IssMapExtras, InRotation },
   setup(props) {
     seedWebcams();
-    if (props.mapMode) seedIssMap();
-    const id = computed(() => (props.mapMode ? "iss_map" : store.route.params[0]));
-    const cam = computed(() => (props.mapMode ? store.draft.modules.iss_map : store.draft.modules.webcams.cams?.[id.value]));
-    const mapFound = computed(() => rotationEntries((e) => e.panel?.startsWith("iss_map")));
+    const id = computed(() => store.route.params[0]);
+    const cam = computed(() => store.draft.modules.webcams.cams?.[id.value]);
     const shape = ref("tall");                             // the crop shown first (and added to the rotation): above the clock
     const { status, feedFor, healthFor } = useStatus();
     const zone = computed(() => status.value.zones[shape.value] || [448, 130]);
@@ -1316,10 +1262,9 @@ const WebcamEditor = {
     };
     const fill = (cid) => {
       for (const root of [store.saved, store.draft]) {
-        const c = props.mapMode ? root?.modules?.iss_map : root?.modules?.webcams?.cams?.[cid];
+        const c = root?.modules?.webcams?.cams?.[cid];
         if (!c) continue;
-        if (props.mapMode) c.space = "iss";
-        else c.source = c.source || { type: "youtube", url: "" };
+        c.source = c.source || { type: "youtube", url: "" };
         c.overlay = fullOverlay(c.overlay);
         for (const k of Object.keys(c.overlays || {})) c.overlays[k] = fullOverlay(c.overlays[k]);
         c.colour = c.colour || {};
@@ -1328,7 +1273,6 @@ const WebcamEditor = {
     };
     watch(id, fill, { immediate: true, flush: "sync" });
     // a save replaces the config with the hub's, which has no iss_map until it's been saved once: seed it again
-    if (props.mapMode) watch(() => store.draft.modules.iss_map, (v) => { if (!v) { seedIssMap(); fill(id.value); } }, { flush: "sync" });
     // the caption being edited: the size shown above's own when it has one, else the one every size shares
     const capSize = computed(() => SIZE_OF_SHAPE[shape.value] || "side");
     const ownSize = computed(() => !!cam.value?.overlays?.[capSize.value]);
@@ -1376,7 +1320,7 @@ const WebcamEditor = {
       }
       toast("Every size now centres on this crop (adjust each if needed)");
     };
-    const entryFor = (sh) => (props.mapMode ? issMapEntry(sh) : camEntry(id.value, sh));
+    const entryFor = (sh) => camEntry(id.value, sh);
     const play = async (hold) => {
       if (dirty.value.length) await previewOnDisplay(120, { hook: false });   // so the wall shows this crop and caption
       const s = SHAPES[shape.value];
@@ -1517,15 +1461,13 @@ const WebcamEditor = {
       const on = !here || a === b ? null : a < b ? here >= a && here < b : here >= a || here < b;
       return where + (here ? " · it's " + here + " there now: " + (on ? "in the list" : "skipped") : "");
     });
-    return { mapFound, ISS_MAP_SHAPES, issMapEntry, inRows, setSpace, previewMap, setMap, setMinimap, SPACE_GROUPS, toggleHours, hoursNote, id, cam, shape, WEBCAM_SEC, zone, ov, colour, DEFAULT_SHARPEN, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
+    return { inRows, setSpace, previewMap, setMap, setMinimap, SPACE_GROUPS, toggleHours, hoursNote, id, cam, shape, WEBCAM_SEC, zone, ov, colour, DEFAULT_SHARPEN, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
       orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, hasText, customCols, SHIELD_PRESETS, SHIELD_KINDS, SHIELD_PLACES, SHIELD_SIZES, SHIELD_STYLES, shieldSrc, signMissing, presetShown, presetDone,
       CONTAINERS, feedFor, feedPill, healthFor, downPill, local, cityQ, cityHits, citySearching, searchCity, pickCity, clearCity, cityLabel, wxPoint, jpFaces, jpSample, jc, jcSizes, jcSetFace, jcSample, JC_POSITIONS, capSize, ownSize, ownSizes, setOwnSize, SIZE_LABELS, captionToSize,
       flagSet, fl, flagAuto, FLAG_GROUPS, FLAG_POSITIONS, FLAG_SIZES, flagQ, flagGroup, flagIds, flagHits, flagSrc, flagName, setFlagMode, addFlag, removeFlag, moveFlag, setCountry, setRegion, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
   },
   template: `<div class="page" v-if="cam">
-    <div class="page-head" v-if="mapMode"><div class="grow"><h1>ISS map</h1>
-      <div class="faint" style="font-size:13px">The ISS map on its own in the rotation: where the station is, its orbit, who it's talking to, with a caption like the ISS webcam's</div></div></div>
-    <div class="page-head" v-else><div class="grow">
+    <div class="page-head"><div class="grow">
       <a href="#/webcams" class="faint" style="font-size:12.5px"><Icon name="ArrowLeft" :size="13"/> Webcams</a>
       <h1>{{ cam.label || id }}</h1></div>
       <span v-if="downPill(healthFor(id))" class="pill bad" :title="downPill(healthFor(id)).title">{{ downPill(healthFor(id)).text }}</span>
@@ -1534,19 +1476,7 @@ const WebcamEditor = {
 
     <div class="two-col">
       <div class="stack">
-        <div class="card" v-if="mapMode"><div class="card-head"><Icon name="Orbit" :size="16"/><h3>The map</h3></div>
-          <div class="card-body stack">
-            <Field label="Name" hint="Each line shows on its own line in the caption"><textarea class="input" rows="2" v-model="cam.label"
-              style="resize:vertical; min-height:58px; padding-top:6px; line-height:1.35"></textarea></Field>
-            <div class="wc-rot"><Icon name="LocateFixed" :size="15"/>
-              <Seg :modelValue="cam.map?.fixed ? 'fixed' : 'follow'" @update:modelValue="v => setMap('fixed', v === 'fixed')"
-                :options="[{ value: 'follow', label: 'Follow the ISS' }, { value: 'fixed', label: 'Fixed world' }]"/>
-              <span class="faint" style="font-size:12px">{{ cam.map?.fixed ? 'the world stays put and the ISS crosses it' : 'the ISS stays in the middle and the world turns under it' }}</span></div>
-            <div class="faint" style="font-size:12px">The ISS webcam's own map (when its video is unusable) keeps its settings on the webcam's page.</div>
-          </div></div>
-        <div class="card" v-if="mapMode"><div class="card-head"><Icon name="Layers" :size="16"/><h3>Map extras</h3></div>
-          <div class="card-body"><IssMapExtras :cam="cam"/></div></div>
-        <div class="card" v-if="!mapMode"><div class="card-head"><Icon name="Link" :size="16"/><h3>Source</h3></div>
+        <div class="card"><div class="card-head"><Icon name="Link" :size="16"/><h3>Source</h3></div>
           <div class="card-body stack">
             <Seg v-model="cam.source.type" :options="[{value:'youtube', label:'YouTube live', icon:'Youtube'}, {value:'stream', label:'Stream URL', icon:'Radio'},
               {value:'drivebc', label:'DriveBC camera', icon:'Cctv'}, {value:'image', label:'Still image', icon:'Image'}]"/>
@@ -1590,7 +1520,7 @@ const WebcamEditor = {
               <template v-if="local.tz"> · {{ local.tz }}{{ cam.tz && cam.tz !== local.tz ? ' (the time zone above says ' + cam.tz + ')' : '' }}</template></div>
           </div></div>
 
-        <div class="card" v-if="!mapMode"><div class="card-head"><Icon name="Crop" :size="16"/><h3>Picture</h3></div>
+        <div class="card"><div class="card-head"><Icon name="Crop" :size="16"/><h3>Picture</h3></div>
           <div class="card-body stack">
             <div class="seg"><button v-for="(s, k) in SHAPES" :key="k" type="button" :class="{on: shape === k}" @click="shape = k">
               <Icon :name="s.icon" :size="14"/>{{ s.label }}<span v-if="customCrop(k)" class="faint" title="Has its own crop">•</span></button></div>
@@ -1608,16 +1538,6 @@ const WebcamEditor = {
       <div class="stack sticky">
         <div class="card"><div class="card-head"><span class="live">LIVE</span><h3>On the wall · {{ SHAPES[shape].label.toLowerCase() }} ({{ zone[0] }}×{{ zone[1] }})</h3></div>
           <div class="card-body stack">
-            <template v-if="mapMode">
-              <div class="seg"><button v-for="(s, k) in SHAPES" :key="k" type="button" :class="{on: shape === k}" @click="shape = k"><Icon :name="s.icon" :size="14"/>{{ s.label }}</button></div>
-              <IssMapPreview :settings="cam" :shape="shape" :zone="zone"/>
-              <div class="faint" style="font-size:12px" v-if="SHAPES[shape].note">{{ SHAPES[shape].note }}</div>
-              <div class="row">
-                <button class="btn sm" @click="play(false)"><Icon name="Play" :size="14"/>Play once on the wall</button>
-                <button class="btn sm" @click="play(true)"><Icon name="Pause" :size="14"/>Hold on the wall</button></div>
-              <InRotation :found="mapFound" what="The ISS map" :shapes="ISS_MAP_SHAPES" :make="issMapEntry"/>
-            </template>
-            <template v-else>
             <div v-if="cam.space && cam.map?.when_down !== false" class="row" style="gap:8px; align-items:center"><span class="faint" style="font-size:12px">Preview</span>
               <Seg :modelValue="previewMap ? 'map' : 'video'" @update:modelValue="v => previewMap = v === 'map'" :options="[{ value: 'video', label: 'Video' }, { value: 'map', label: 'Map (video unusable)' }]"/></div>
             <WallPreview :cam="cam" :shape="shape" :cam-id="id" :show-map="!!cam.space && previewMap && cam.map?.when_down !== false"/>
@@ -1663,13 +1583,12 @@ const WebcamEditor = {
               <span class="faint" style="font-size:12px">a "loss of signal" card instead of the video (NASA's ISS stream has one); passed over like a black picture</span></div>
             <div class="faint" style="font-size:12px" v-if="used.length">Also its own rotation entry ({{ used.map(u => u.side).join(', ') }}):
               <a href="#/webcams">combine it into the list</a> on the Webcams page.</div>
-            <div class="faint" style="font-size:12px" v-if="cam.space">The ISS map can also be its own entry in the rotation: <a href="#/iss-map">ISS map</a>.</div>
-            </template>
+            <div class="faint" style="font-size:12px" v-if="cam.space">The map can also be its own entry in the rotation: the <a href="#/iss-map">Space Map</a>.</div>
           </div></div>
 
         <div class="card"><div class="card-head"><Icon name="Captions" :size="16"/><h3>Caption</h3>
-            <span class="spacer"></span><button v-if="!mapMode && !ownSize" class="btn sm ghost" @click="captionToAll" title="Copy this caption look to every webcam (sizes with a caption of their own keep it)"><Icon name="Copy" :size="14"/>Use on all webcams</button>
-            <button v-if="!mapMode" class="btn sm ghost" @click="captionToSize" :title="'Give every webcam this caption at ' + SIZE_LABELS[capSize] + ' (their other sizes stay as they are)'">
+            <span class="spacer"></span><button v-if="!ownSize" class="btn sm ghost" @click="captionToAll" title="Copy this caption look to every webcam (sizes with a caption of their own keep it)"><Icon name="Copy" :size="14"/>Use on all webcams</button>
+            <button class="btn sm ghost" @click="captionToSize" :title="'Give every webcam this caption at ' + SIZE_LABELS[capSize] + ' (their other sizes stay as they are)'">
               <Icon name="Copy" :size="14"/>Use at {{ SIZE_LABELS[capSize] }} on all webcams</button></div>
           <div class="card-body stack">
             <ToggleRow :modelValue="ownSize" @update:modelValue="setOwnSize" :label="'Own caption for ' + SIZE_LABELS[capSize]"
@@ -1684,7 +1603,7 @@ const WebcamEditor = {
                 <Field label="Position"><div class="wc-corners wc-six">
                   <button v-for="c in POSITIONS" :key="c" type="button" :class="{on: ov.corner === c}" @click="ov.corner = c" :title="c"></button></div></Field>
                 <Field label="Text size" v-if="ov.style !== 'dot'"><Seg v-model="ov.font" :options="FONTS"/></Field>
-                <Field v-if="cam.space && !mapMode" label="Small world map" hint="Coastlines, the ISS and its last 90 minutes; above or below the caption when they share a corner">
+                <Field v-if="cam.space" label="Small world map" hint="Coastlines, the ISS and its last 90 minutes; above or below the caption when they share a corner">
                   <div class="row nowrap" style="gap:8px"><Toggle :modelValue="!!ov.minimap?.on" @update:modelValue="v => setMinimap('on', v)" title="Small world map"/>
                     <div v-if="ov.minimap?.on" class="wc-corners"><button v-for="c in ['tl', 'tr', 'bl', 'br']" :key="c" type="button" :class="{on: (ov.minimap?.corner || 'tr') === c}" @click="setMinimap('corner', c)" :title="c"></button></div></div></Field>
                 <Field label="Japanese text size" hint="Kana and kanji only; the English keeps the text size" v-if="ov.style !== 'dot'">
@@ -1841,7 +1760,7 @@ const WebcamEditor = {
                   <Field label="Opacity" hint="Lower lets the video show through"><div style="width:150px">
                     <Slider :modelValue="fl.opacity ?? 0.8" @update:modelValue="v => fl.opacity = v" :min="0.1" :max="1" :step="0.05" :format="v => Math.round(v * 100) + '%'"/></div></Field>
                 </div>
-                <div class="row" style="gap:12px; align-items:flex-end" v-if="!mapMode">
+                <div class="row" style="gap:12px; align-items:flex-end">
                   <Field label="Country code" hint="Overrides where the webcam is: ca, us, jp…"><input class="input" style="width:70px" :value="cam.country || ''"
                     @input="setCountry($event.target.value)" maxlength="2" placeholder="auto"></Field>
                   <Field label="Province / state / prefecture" hint="BC, MA, 13 (Tokyo)…"><input class="input" style="width:70px" :value="cam.region || ''"
@@ -1856,11 +1775,6 @@ const WebcamEditor = {
     </div>
   </div>
   <div class="page" v-else><div class="empty">No webcam “{{ id }}”. <a href="#/webcams">Back to webcams</a></div></div>`,
-};
-
-export const IssMap = {
-  components: { WebcamEditor },
-  template: `<WebcamEditor map-mode/>`,
 };
 
 export const Webcams = {

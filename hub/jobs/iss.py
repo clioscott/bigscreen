@@ -185,6 +185,27 @@ def sea(name) -> str:
 
 
 # --- crew -----------------------------------------------------------------------------------------------------
+def people():
+    """Everyone in space (the Space Map's crew panels): [{"name", "flag", "craft", "launched", "iss", "role",
+    "agency"}], or None."""
+    try:
+        d = json.loads(_cached_get("people.json", CREW_URL, CREW_TTL))
+    except Exception:
+        return None
+    out = []
+    for p in d.get("people") or []:
+        if not isinstance(p, dict) or not p.get("name"):
+            continue
+        try:
+            launched = int(float(p.get("launched")))
+        except (TypeError, ValueError):
+            launched = None
+        out.append({"name": str(p["name"]), "flag": str(p.get("flag_code") or "").lower()[:2],
+                    "craft": str(p.get("spacecraft") or ""), "launched": launched, "iss": bool(p.get("iss")),
+                    "role": str(p.get("position") or ""), "agency": str(p.get("agency") or "")})
+    return out
+
+
 def crew():
     """({"count", "by": [[flag code, n], …]}, {"name", "start"}) from the people-in-space list (Nones on failure)."""
     try:
@@ -230,12 +251,14 @@ def _tles(text):
 
 
 def relays(now):
-    """The relay satellites, where they are now: NASA's TDRS fleet and Russia's Luch-5 (geostationary, so their
-    positions barely move between runs). [{"name", "net": "tdrs"|"luch", "lat", "lon"}]"""
+    """The relay satellites, where they are now: NASA's TDRS fleet, Russia's Luch-5 and China's Tianlian II
+    (geostationary, so their positions barely move between runs). [{"name", "net": "tdrs"|"luch"|"tianlian", "lat",
+    "lon"}]"""
     from sgp4.api import Satrec
     out = []
     for net, url, keep in (("tdrs", CELESTRAK + "?GROUP=tdrss&FORMAT=tle", lambda n: n.startswith("TDRS")),
-                           ("luch", CELESTRAK + "?NAME=LUCH-5&FORMAT=tle", lambda n: n in ("LUCH-5A", "LUCH-5B", "LUCH-5V"))):
+                           ("luch", CELESTRAK + "?NAME=LUCH-5&FORMAT=tle", lambda n: n in ("LUCH-5A", "LUCH-5B", "LUCH-5V")),
+                           ("tianlian", CELESTRAK + "?NAME=TIANLIAN&FORMAT=tle", lambda n: n.startswith("TIANLIAN 2"))):
         try:
             got = _tles(_cached_get(f"relays_{net}.tle", url, RELAY_TTL, timeout=FETCH_TIMEOUT))
         except Exception:
@@ -290,6 +313,71 @@ def docked(now):
     return out
 
 
+SWPC = "https://services.swpc.noaa.gov"
+LAUNCHES_URL = "https://ll.thespacedevs.com/2.3.0/launches/upcoming/?limit=8&mode=normal"
+LAUNCHES_TTL = 3600                 # (Launch Library 2's free tier: 15 requests an hour)
+PAD_FLAG = {"gf": "eu", "kz": "ru"}  # Kourou launches for Europe, Baikonur for Russia
+
+
+def spacewx():
+    """Space weather now (NOAA SWPC): {"kp", "kp_at", "wind" km/s, "bt", "bz" nT, "xray" W/m², "scales": {"R", "S",
+    "G"}}; parts that fail are left out."""
+    out = {}
+    get = lambda path: requests.get(SWPC + path, headers=UA, timeout=FETCH_TIMEOUT).json()
+    for name, fn in (
+            ("kp", lambda: get("/json/planetary_k_index_1m.json")[-1]),
+            ("wind", lambda: get("/products/summary/solar-wind-speed.json")[0]),
+            ("mag", lambda: get("/products/summary/solar-wind-mag-field.json")[0]),
+            ("xray", lambda: [x for x in get("/json/goes/primary/xrays-6-hour.json") if x.get("energy") == "0.1-0.8nm"][-1]),
+            ("scales", lambda: get("/products/noaa-scales.json")["0"])):
+        try:
+            d = fn()
+        except Exception:
+            continue
+        if name == "kp":
+            out.update(kp=float(d.get("estimated_kp", d.get("kp_index"))), kp_at=d.get("time_tag"))
+        elif name == "wind":
+            out["wind"] = float(d["proton_speed"])
+        elif name == "mag":
+            out.update(bt=float(d["bt"]), bz=float(d["bz_gsm"]))
+        elif name == "xray":
+            out["xray"] = float(d["flux"])
+        else:
+            out["scales"] = {k: str((d.get(k) or {}).get("Scale") or "0") for k in ("R", "S", "G")}
+    return out or None
+
+
+def launches(now):
+    """The next launches anywhere (Launch Library 2): [{"name", "rocket", "net" (unix), "status", "pad", "lat",
+    "lon", "flag", "provider"}], or None."""
+    from datetime import datetime
+    try:
+        d = json.loads(_cached_get("launches.json", LAUNCHES_URL, LAUNCHES_TTL, timeout=FETCH_TIMEOUT))
+    except Exception:
+        return None
+    out = []
+    for r in d.get("results") or []:
+        try:
+            net = datetime.fromisoformat(str(r["net"]).replace("Z", "+00:00")).timestamp()
+        except (KeyError, ValueError, TypeError):
+            continue
+        if net < now - 3600:
+            continue
+        pad = r.get("pad") or {}
+        cc = str(((pad.get("country") or {}).get("alpha_2_code")) or "").lower()
+        name = str(r.get("name") or "")
+        rocket, _, payload = name.partition(" | ")
+        try:
+            lat, lon = float(pad.get("latitude")), float(pad.get("longitude"))
+        except (TypeError, ValueError):
+            lat = lon = None
+        out.append({"name": payload or name, "rocket": rocket if payload else "", "net": int(net),
+                    "status": str((r.get("status") or {}).get("abbrev") or ""), "pad": str(pad.get("name") or ""),
+                    "lat": lat, "lon": lon, "flag": PAD_FLAG.get(cc, cc),
+                    "provider": str((r.get("launch_service_provider") or {}).get("name") or "")})
+    return out[:6]
+
+
 def _write_grid(path, magic, grid):
     import numpy as np
     g = np.ascontiguousarray(grid, np.uint8)
@@ -339,16 +427,18 @@ def extras(now, old=None):
     out = {}
     d = paths.DATA_DIR / "issmap"
     d.mkdir(parents=True, exist_ok=True)
+    kept = ("relays", "css", "docked", "people", "spacewx", "launches")      # (in iss.json: an old copy beats none)
     for name, fn in (("relays", lambda: relays(now)), ("css", lambda: css_track(now)), ("docked", lambda: docked(now)),
+                     ("people", people), ("spacewx", spacewx), ("launches", lambda: launches(now)),
                      ("aurora", lambda: aurora(d)), ("lights", lambda: city_lights(d))):
         if time.time() - now > EXTRAS_BUDGET:
-            out[name] = old.get(name) if name in ("relays", "css", "docked") else "skipped: out of time"
+            out[name] = old.get(name) if name in kept else "skipped: out of time"
             continue
         try:
             out[name] = fn()
         except Exception as e:
-            out[name] = old.get(name) if name in ("relays", "css", "docked") else f"failed: {str(e)[:120]}"
-        if name in ("relays", "css", "docked") and not out[name]:
+            out[name] = old.get(name) if name in kept else f"failed: {str(e)[:120]}"
+        if name in kept and not out[name]:
             out[name] = old.get(name)
     return out
 
@@ -384,13 +474,14 @@ def run(cfg):
     except Exception:
         old = {}
     out = {"at": now, "elements": [l1, l2], "track": tr, "events": events(tr), "over": over, "tz": tz,
-           "crew": c, "mission": m, **{k: old.get(k) for k in ("relays", "css", "docked")}}
+           "crew": c, "mission": m, **{k: old.get(k) for k in ("relays", "css", "docked", "people", "spacewx", "launches")}}
     atomic_write_json(paths.DATA_DIR / "iss.json", out)          # the orbit first: the extras can't hold it up
     x = extras(now, old)
-    out.update(relays=x["relays"], css=x["css"], docked=x["docked"])
+    out.update({k: x[k] for k in ("relays", "css", "docked", "people", "spacewx", "launches")})
     atomic_write_json(paths.DATA_DIR / "iss.json", out)
     return {"ok": True, "points": len(tr), "events": len(out["events"]), "crew": (c or {}).get("count"),
             "relays": len(x["relays"] or []), "css": bool(x["css"]), "docked": len(x["docked"] or []),
+            "people": len(x["people"] or []), "spacewx": bool(x["spacewx"]), "launches": len(x["launches"] or []),
             "aurora": x["aurora"], "lights": x["lights"]}
 
 

@@ -252,8 +252,10 @@ def _validate_map_extras(name, ex):
         raise bad("must be an object")
     choices = {("sunlit", "shadow"): tuple(SHADOW), ("flow", "speed"): tuple(FLOW_SPEED),
                ("flow", "direction"): ("both", "down", "up"), ("telemetry", "corner"): ("tl", "tr"),
-               ("docked", "corner"): ("tl", "tr")}
-    ranges = {("lights", "strength"): (0.1, 1.0), ("aurora", "strength"): (0.1, 1.0), ("ahead", "minutes"): (5, 90)}
+               ("docked", "corner"): ("tl", "tr"), ("grid", "lines"): ("grid", "special", "both")}
+    ranges = {("lights", "strength"): (0.1, 1.0), ("aurora", "strength"): (0.1, 1.0), ("ahead", "minutes"): (5, 90),
+              ("trail", "minutes"): (5, 95), ("night", "darkness"): (0.0, 0.95), ("grid", "step"): (10, 90),
+              ("footprint", "elevation"): (0, 45), ("launches", "count"): (1, 6)}
     for k, v in ex.items():
         if k not in EXTRAS:
             raise bad(f"unknown extra {k!r}")
@@ -387,22 +389,138 @@ def _validate_bridges(br):
 
 
 def _validate_iss_map(m):
-    """modules.iss_map (display/modules/iss_panel.py): a label, a caption (overlay) and the map's settings."""
+    """modules.iss_map, the Space Map (display/modules/iss_panel.py): a label, a caption (overlay) and the map's
+    settings: views per size, link looks, relays and ground stations, labels and names, satellite layers, panels."""
     if m is None:
         return
     if not isinstance(m, dict):
-        raise ConfigError("ISS map: must be an object")
+        raise ConfigError("Space Map: must be an object")
     if not isinstance(m.get("label", ""), str):
-        raise ConfigError("ISS map: label must be text")
-    _validate_overlay("ISS map", m.get("overlay"))
-    _validate_overlays("ISS map", m.get("overlays"))
+        raise ConfigError("Space Map: label must be text")
+    v = m.get("sats_interval_sec")
+    if v is not None and (not isinstance(v, (int, float)) or isinstance(v, bool) or v < 300):
+        raise ConfigError("Space Map: sats_interval_sec must be at least 300")
+    _validate_overlay("Space Map", m.get("overlay"))
+    _validate_overlays("Space Map", m.get("overlays"))
     mp = m.get("map")
-    if mp is not None:
-        if not isinstance(mp, dict) or not set(mp) <= {"when_down", "fixed", "extras"} \
-                or not isinstance(mp.get("fixed", False), bool):
-            raise ConfigError("ISS map: map takes fixed (true or false) and extras")
-        if mp.get("extras") is not None:
-            _validate_map_extras("ISS map", mp["extras"])
+    if mp is None:
+        return
+    _validate_space_map(mp)
+
+
+SPACE_MAP_KEYS = {"when_down", "fixed", "extras", "views", "links", "relays", "ground", "labels", "names", "sats",
+                  "panels", "units", "icons", "video"}
+
+
+def _validate_space_map(mp):
+    from common.satlayers import LAYERS
+    from display.modules import issmap, maplabels, mappanels, mapsats
+    bad = lambda what: ConfigError(f"Space Map: {what}")
+    num = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool)
+    colour = lambda v: isinstance(v, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", v)
+    if not isinstance(mp, dict) or not set(mp) <= SPACE_MAP_KEYS or not isinstance(mp.get("fixed", False), bool):
+        raise bad(f"map takes {', '.join(sorted(SPACE_MAP_KEYS))}")
+    if mp.get("extras") is not None:
+        _validate_map_extras("Space Map", mp["extras"])
+    views = mp.get("views")
+    if views is not None:
+        from display.modules.webcam_caption import SIZES_ON_WALL
+        if not isinstance(views, dict) or any(k not in SIZES_ON_WALL for k in views):
+            raise bad(f"views are per size: {', '.join(SIZES_ON_WALL)}")
+        for size, vw in views.items():
+            if not isinstance(vw, dict) or not set(vw) <= set(issmap.VIEW):
+                raise bad(f"the {size} view takes {', '.join(issmap.VIEW)}")
+            for k, (lo, hi) in issmap.VIEW_RANGES.items():
+                x = vw.get(k)
+                if x is not None and (not num(x) or not lo <= x <= hi):
+                    raise bad(f"the {size} view's {k} must be {lo}-{hi}")
+            if not isinstance(vw.get("clear", True), bool):
+                raise bad(f"the {size} view's clear must be true or false")
+    lk = mp.get("links")
+    if lk is not None:
+        if not isinstance(lk, dict) or any(k not in issmap.NETS for k in lk):
+            raise bad(f"links are per network: {', '.join(issmap.NETS)}")
+        for net, st in lk.items():
+            if not isinstance(st, dict) or not set(st) <= set(issmap.LINK_DEFAULTS[net]):
+                raise bad(f"{net} links take {', '.join(issmap.LINK_DEFAULTS[net])}")
+            if any(k in st and not colour(st[k]) for k in ("up", "down")):
+                raise bad(f"{net} link colours must be like #ff8800")
+            if st.get("style", "dots") not in issmap.LINK_STYLES or st.get("speed", "normal") not in issmap.FLOW_SPEED \
+                    or st.get("direction", "both") not in ("both", "down", "up") \
+                    or not (num(st.get("line", 1.0)) and 0 <= st.get("line", 1.0) <= 1):
+                raise bad(f"{net} links: style {'/'.join(issmap.LINK_STYLES)}, speed, direction, line 0-1")
+    if mp.get("relays", "always") not in issmap.RELAY_SHOW:
+        raise bad(f"relays must be {' or '.join(issmap.RELAY_SHOW)}")
+    if mp.get("ground", "always") not in ("always", "linked", "hidden"):
+        raise bad("ground stations must be always, linked or hidden")
+    if mp.get("icons", "auto") not in ("auto", "small", "big"):
+        raise bad("icons must be auto, small or big")
+    labels = mp.get("labels")
+    if labels is not None:
+        if not isinstance(labels, dict) or any(k not in maplabels.KINDS for k in labels):
+            raise bad(f"labels are for {', '.join(maplabels.KINDS)}")
+        for kind, L in labels.items():
+            d = maplabels.LABEL_DEFAULTS[kind]
+            if not isinstance(L, dict) or not set(L) <= set(d):
+                raise bad(f"{kind} labels take {', '.join(d)}")
+            if L.get("pos", "auto") not in maplabels.PLACES or ("colour" in L and not colour(L["colour"])) \
+                    or any(not isinstance(L[k], bool) for k in L if isinstance(d[k], bool)):
+                raise bad(f"{kind} labels: pos {'/'.join(maplabels.PLACES)}, a colour like #ff8800, the rest true/false")
+    names = mp.get("names")
+    if names is not None and (not isinstance(names, dict) or len(names) > 500
+                              or any(not isinstance(k, str) or not isinstance(v, str) or len(v) > 40 for k, v in names.items())):
+        raise bad("names: your own name (up to 40 letters) for each object")
+    sats = mp.get("sats")
+    if sats is not None:
+        if not isinstance(sats, dict) or any(k not in LAYERS for k in sats):
+            raise bad(f"satellite layers are {', '.join(LAYERS)}")
+        for k, st in sats.items():
+            if not isinstance(st, dict) or not set(st) <= set(mapsats.SAT_DEFAULTS):
+                raise bad(f"{k} takes {', '.join(mapsats.SAT_DEFAULTS)}")
+            if st.get("mark", "auto") not in mapsats.MARKS or (st.get("colour") is not None and not colour(st["colour"])) \
+                    or any(not isinstance(st.get(b, False), bool) for b in ("on", "label", "links")) \
+                    or not (num(st.get("near_km", 0)) and 0 <= st.get("near_km", 0) <= 20000) \
+                    or not (num(st.get("brightness", 0.7)) and 0.1 <= st.get("brightness", 0.7) <= 1) \
+                    or st.get("speed", "normal") not in issmap.FLOW_SPEED:
+                raise bad(f"{k}: mark {'/'.join(mapsats.MARKS)}, a colour like #ff8800, brightness 0.1-1, near_km 0-20000")
+    units = mp.get("units")
+    if units is not None and (not isinstance(units, dict) or any(k not in mappanels.UNITS or v not in mappanels.UNITS[k]
+                                                                for k, v in units.items())):
+        raise bad("units: " + "; ".join(f"{k} {'/'.join(v)}" for k, v in mappanels.UNITS.items()))
+    vid = mp.get("video")
+    if vid is not None:
+        if not isinstance(vid, dict) or not set(vid) <= set(mappanels.VIDEO_DEFAULTS) \
+                or any(not isinstance(vid.get(b, True), bool) for b in ("on", "border", "tag")) \
+                or vid.get("pos", "br") not in mappanels.POSITIONS \
+                or not (num(vid.get("width", 96)) and mappanels.VIDEO_W[0] <= vid.get("width", 96) <= mappanels.VIDEO_W[1]) \
+                or not (vid.get("cam") is None or isinstance(vid.get("cam"), str)):
+            raise bad(f"video: on, cam (a webcam id), pos (one of the nine places), width "
+                      f"{mappanels.VIDEO_W[0]}-{mappanels.VIDEO_W[1]} px, border and tag (true or false)")
+    panels = mp.get("panels")
+    if panels is not None:
+        if not isinstance(panels, list) or len(panels) > 40:
+            raise bad("panels must be a list (up to 40)")
+        for i, p in enumerate(panels):
+            if not isinstance(p, dict) or not set(p) <= set(mappanels.PANEL_DEFAULTS) | {"id"}:
+                raise bad(f"panel {i + 1} takes {', '.join(mappanels.PANEL_DEFAULTS)}")
+            f = p.get("fields", [])
+            if not isinstance(f, list) or any(x not in mappanels.FIELDS for x in f) or len(set(f)) != len(f):
+                raise bad(f"panel {i + 1}: fields must be some of the known ones, each once")
+            if p.get("pos", "tr") not in mappanels.POSITIONS or p.get("layout", "rows") not in mappanels.LAYOUTS \
+                    or p.get("font", "tiny") not in mappanels.PANEL_FONTS \
+                    or not isinstance(p.get("title", ""), str) or len(p.get("title", "")) > 30 \
+                    or any(not isinstance(p.get(b, True), bool) for b in ("on", "labels", "flags")) \
+                    or not (num(p.get("opacity", 0.7)) and 0 <= p.get("opacity", 0.7) <= 1) \
+                    or any(k in p and not colour(p[k]) for k in ("colour", "accent")) \
+                    or p.get("crew_names", "full") not in mappanels.CREW_NAMES \
+                    or p.get("when", "always") not in mappanels.WHEN \
+                    or not isinstance(p.get("sparks", []), list) or any(k not in mappanels.SERIES_OF for k in p.get("sparks", [])) \
+                    or not (num(p.get("spark_min", 90)) and mappanels.SPARK_MIN[0] <= p.get("spark_min", 90) <= mappanels.SPARK_MIN[1]) \
+                    or not (num(p.get("spark_w", 30)) and mappanels.SPARK_W[0] <= p.get("spark_w", 30) <= mappanels.SPARK_W[1]) \
+                    or ("spark_colour" in p and not colour(p["spark_colour"])):
+                raise bad(f"panel {i + 1}: place, layout, font, title (up to 30), opacity 0-1, colours like #ff8800, "
+                          f"when always/eva, sparklines for {', '.join(mappanels.SERIES_OF)} over "
+                          f"{mappanels.SPARK_MIN[0]}-{mappanels.SPARK_MIN[1]} min, {mappanels.SPARK_W[0]}-{mappanels.SPARK_W[1]} px wide")
 
 
 def _validate_webcams(wc):

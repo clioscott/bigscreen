@@ -25,7 +25,7 @@ def _iss_x(img):
 
 @pytest.fixture(autouse=True)
 def _no_hub(monkeypatch):
-    monkeypatch.setattr(issmap, "live_from", lambda hub: None)       # (no polling the real hub from the tests)
+    monkeypatch.setattr(issmap, "live_from", lambda hub, keys=None: None)       # (no polling the real hub from the tests)
 
 
 def test_nasa_links_go_through_a_tdrs_relay_to_white_sands_or_guam_and_only_with_the_signal():

@@ -18,7 +18,7 @@ const SPACE = ["place", "coords", "orbit", "below", "crew", "mission"];
 const ALWAYS = ["live", "credit", "custom", "shield"];
 
 export const CaptionRows = {
-  props: { cam: Object, ov: Object, labels: Object, hasText: Function },
+  props: { cam: Object, ov: Object, labels: Object, hasText: Function, only: Array },   // only: the pieces offered (else all)
   setup(props) {
     const root = ref(null);
     const legacy = ref(null);                       // the rows the wall draws for settings from before rows
@@ -37,6 +37,7 @@ export const CaptionRows = {
     const available = computed(() => {
       const names = Array.from({ length: Math.min(4, nameLines.value) }, (_, i) => (i ? "name:" + (i + 1) : "name"));
       const kinds = props.cam.space ? SPACE : EARTH.filter((k) => k !== "age" || ["drivebc", "image"].includes(props.cam.source?.type));
+      if (props.only) return [...names, ...props.only];
       return [...names, ...ALWAYS.slice(0, 1), ...kinds, ...ALWAYS.slice(1)];
     });
     const placed = computed(() => new Set(rows.value.flatMap((r) => r.items.map((i) => i.k))));

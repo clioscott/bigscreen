@@ -170,6 +170,26 @@ once (`hold: false`), so the rotation resumes by itself.
   else via Luch-5 to Shchyolkovo. Relay positions, Tiangong, docked ships: `hub/jobs/iss.py` → iss.json; aurora and
   city lights: `data/issmap/*.bin`. Extras (`issmap.EXTRAS`, panel `pages/iss_map_extras.js`) each on/off with
   settings; full-width zones (≥ `BIG_W`) get the big icons; the moving link data is drawn per frame (`issmap.flow`).
+- **Space Map** (control panel "Space Map", route `#/iss-map`, `pages/space_map.js`; config `modules.iss_map`, panel
+  `iss_map_tall`: made for above the clock only, the other `iss_map*` sizes still play but aren't offered). The ISS
+  map as its own entry, with settings the webcam's map doesn't have (passed as `mapset`; the webcam's map passes
+  None and draws as it always did): `map.views.<size>` (zoom, stretch, lat or automatic, lon, clear: `issmap.View`;
+  automatic reaches `TOP_MIN` north and keeps the ISS's band off the caption), `links.<nasa|ru|cn>` (colours, style
+  dots/dashes/comet/pulse/still, speed, direction, line), `relays`/`ground` (always | linked | hidden), `labels.<kind>`
+  and `names` (`display/modules/maplabels.py`: name, flag, crew, place or auto = least overlap), `sats.<layer>`
+  (`display/modules/mapsats.py` + `common/satlayers.py`; job `hub/jobs/sats.py` propagates CelesTrak groups with
+  sgp4 every 10 min into `data/issmap/sats_<layer>.bin`, 30 s steps the Pi interpolates; laser trellis = likely
+  neighbour links, redrawn every 5 s from a cached mask), `panels` (`display/modules/mappanels.py`: any number, each
+  in one of nine places with its own fields from `FIELDS`, layout, font, colours, crew name style) and `units`.
+  Its caption is its own (one line by default); the ISS webcam's is untouched. China's link: Tiangong → a Chinese
+  station or a Tianlian II relay (inferred). Extra data in iss.json for the panels: `people`, `spacewx` (NOAA SWPC),
+  `launches` (Launch Library 2, at most hourly). More NASA ISS Live items in `hub/iss_live.py ITEMS`; the hub keeps
+  3 h of each reading (`iss_live.series`, `/api/iss/history?keys=`) for panel sparklines (`sparks`, `spark_min`,
+  `spark_w`; the Pi fetches only the series its panels chart, every minute) and detects spacewalks from the
+  crewlock pressure (`iss_live.eva`, kept in `cache/iss_eva.json`); a panel with `when: "eva"` shows only during one. `map.video` = {on, cam, pos, width, border, tag}: a small live
+  picture of the ISS webcam in one of the nine places (`iss_panel._video`: its own `webcam.Stream` at that size with
+  the full-width crop), only while usable (daylight with `daylight_only`, not `WebcamPanel._unusable`); the map keeps
+  room for it only then (`mapset["_video_up"]`). The ISS webcam's own screen is unaffected.
 - 4K: YouTube's live HLS stops at 1080p; 1440p/4K exist only as DASH (VP9 WebM segments by sequence number). The
   lookup passes `youtube:formats=incomplete` to list them, which needs a current yt-dlp with yt-dlp-ejs and deno
   (`~/.deno/bin/deno` on the server, found by `deno_path`). They're used only when a crop needs more than the HLS

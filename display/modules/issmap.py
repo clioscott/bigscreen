@@ -71,7 +71,20 @@ NASA_GROUND = {"White Sands": (32.50, -106.61), "Guam": (13.59, 144.84)}
 RU_GROUND = {"Shchyolkovo": (55.92, 38.00), "Ulan-Ude": (51.83, 107.60), "Ussuriysk": (43.80, 131.95),
              "Yelizovo": (53.19, 158.39)}
 LUCH_GROUND = "Shchyolkovo"
+CN_GROUND = {"Beijing": (40.07, 116.27), "Kashgar": (39.50, 76.00), "Jiamusi": (46.80, 130.32), "Sanya": (18.25, 109.50)}
+GROUND_FLAG = {**{n: "us" for n in NASA_GROUND}, **{n: "ru" for n in RU_GROUND}, **{n: "cn" for n in CN_GROUND}}
+RELAY_FLAG = {"tdrs": "us", "luch": "ru", "tianlian": "cn"}
 FALLBACK_RELAYS = [{"name": "TDRS", "net": "tdrs", "lat": 0.0, "lon": lo} for lo in (-41.0, -62.0, -171.0, 85.0)]
+# the links' look per network (``map.links.<net>``): the leg up to a relay (or straight down), the leg down from it,
+# how the data moves along them (the animation drawn every frame) and how bright the line under it is
+NETS = {"nasa": "NASA and partners (US, Canada, Europe, Japan)", "ru": "Russia", "cn": "China (Tiangong)"}
+LINK_DEFAULTS = {
+    "nasa": {"up": "#ff2828", "down": "#3cdcff", "style": "dots", "speed": "normal", "direction": "both", "line": 1.0},
+    "ru": {"up": "#ff8c28", "down": "#ffd26e", "style": "dots", "speed": "normal", "direction": "both", "line": 1.0},
+    "cn": {"up": "#ff4646", "down": "#ffd23c", "style": "dots", "speed": "normal", "direction": "both", "line": 1.0},
+}
+LINK_STYLES = ("dots", "dashes", "comet", "pulse", "still")
+RELAY_SHOW = ("always", "linked")
 ALT_KM = 420.0
 MIN_EL = 5.0
 R_KM = 6371.0
@@ -114,12 +127,19 @@ DISH_BIG = ["D....S...D",
 CSS_BIG = ["RRR.RRR", "RRRWRRR", "...W...", "..WWW.."]
 PAL = {"A": (220, 150, 40), "W": (235, 235, 235), "G": (240, 200, 60), "B": (70, 130, 255), "D": (225, 225, 235),
        "S": (150, 150, 160), "K": (110, 110, 125), "L": (255, 210, 90), "T": (60, 200, 170), "E": (250, 190, 140),
-       "R": (230, 80, 60), "H": (160, 105, 30)}
+       "R": (230, 80, 60), "H": (160, 105, 30), "Y": (255, 214, 90), "M": (220, 222, 235), "P": (255, 150, 100)}
 RU = lambda art: [r.replace("D", "E") for r in art]                               # a Russian station's dish
-ICONS = {False: {"iss": ISS_ART, "tdrs": RELAY_ART, "luch": LUCH_ART, "nasa": DISH_ART, "ru": RU(DISH_ART),
-                 "css": CSS_ART},
-         True: {"iss": ISS_BIG, "tdrs": RELAY_BIG, "luch": LUCH_BIG, "nasa": DISH_BIG, "ru": RU(DISH_BIG),
-                "css": CSS_BIG}}
+CN = lambda art: [r.replace("D", "R") for r in art]                               # a Chinese station's dish
+TL_ART = ["RR.W.RR", "RRWWWRR", "RR.W.RR"]
+TL_BIG = [r.replace("T", "R") for r in LUCH_BIG]
+SUN_ART = [".Y.Y.", "YYYYY", ".YYY.", "YYYYY", ".Y.Y."]
+MOON_ART = [".MM.", "MM..", "MM..", ".MM."]
+PAD_ART = ["..P..", ".PPP.", ".PPP.", "PPPPP", "P.P.P"]
+ICONS = {False: {"iss": ISS_ART, "tdrs": RELAY_ART, "luch": LUCH_ART, "tianlian": TL_ART, "nasa": DISH_ART,
+                 "ru": RU(DISH_ART), "cn": CN(DISH_ART), "css": CSS_ART},
+         True: {"iss": ISS_BIG, "tdrs": RELAY_BIG, "luch": LUCH_BIG, "tianlian": TL_BIG, "nasa": DISH_BIG,
+                "ru": RU(DISH_BIG), "cn": CN(DISH_BIG), "css": CSS_BIG}}
+GROUND_ART = {"nasa": "nasa", "ru": "ru", "cn": "cn"}
 
 # --- the extras: each on or off, with its settings (cams.<id>.map.extras) ---------------------------------------
 TELEMETRY_ROWS = ("cabin_p", "cabin_t", "o2", "co2", "gyros", "ku", "water", "arrays")
@@ -134,16 +154,32 @@ EXTRAS = {
     "flow": {"on": True, "speed": "normal", "direction": "both"},
     "telemetry": {"on": True, "corner": "tr", "rows": ["cabin_p", "cabin_t", "o2", "co2", "gyros", "water"]},
     "docked": {"on": True, "corner": "tl", "days": True},
+    # (the Space Map's own: the webcam's map keeps to the ones above)
+    "trail": {"on": True, "minutes": 90},
+    "chinese": {"on": True},
+    "borders": {"on": True},
+    "night": {"on": True, "darkness": 0.55},
+    "grid": {"on": False, "step": 30, "lines": "grid"},
+    "sunmoon": {"on": False, "lines": False},
+    "footprint": {"on": False, "elevation": 10, "tiangong": False},
+    "terminator": {"on": False},
+    "launches": {"on": False, "count": 3},
 }
+SPACE_ONLY = ("trail", "chinese", "borders", "night", "grid", "sunmoon", "footprint", "terminator", "launches")
 FLOW_SPEED = {"slow": 6.0, "normal": 12.0, "fast": 24.0}   # px a second
 FLOW_GAP = 8                                                 # px between the dots
 
 
-def extras_of(cam) -> dict:
-    """The map's extras for a webcam: EXTRAS with its own settings over them."""
+def extras_of(cam, space_map=False) -> dict:
+    """The map's extras for a webcam (or the Space Map: space_map): EXTRAS with its own settings over them. The
+    webcam's map has none of the Space Map's own (SPACE_ONLY) but the trail, borders and night as they always were."""
     got = ((cam or {}).get("map") or {}).get("extras") if isinstance((cam or {}).get("map"), dict) else None
     got = got if isinstance(got, dict) else {}
-    return {k: {**d, **(got.get(k) if isinstance(got.get(k), dict) else {})} for k, d in EXTRAS.items()}
+    out = {k: {**d, **(got.get(k) if isinstance(got.get(k), dict) else {})} for k, d in EXTRAS.items()}
+    if not space_map:
+        for k in SPACE_ONLY:
+            out[k] = {**EXTRAS[k], "on": k in ("trail", "borders", "night")}
+    return out
 
 
 def _on(ex, k):
@@ -192,6 +228,41 @@ def _generation(name):
     return ord(m.group(1)) if m else 0
 
 
+def link_style(mapset, net) -> dict:
+    """A network's link look: LINK_DEFAULTS with ``map.links.<net>`` over it, colours as RGB."""
+    got = ((mapset or {}).get("links") or {}).get(net) if isinstance((mapset or {}).get("links"), dict) else None
+    st = {**LINK_DEFAULTS[net], **(got if isinstance(got, dict) else {})}
+    from display.modules.mapsats import hex_rgb
+    st["rgb"] = [hex_rgb(st["up"], hex_rgb(LINK_DEFAULTS[net]["up"])), hex_rgb(st["down"], hex_rgb(LINK_DEFAULTS[net]["down"]))]
+    return st
+
+
+def cn_links(pos, relays=None):
+    """Tiangong's link at pos: straight down to a Chinese ground station that sees it above MIN_EL (the highest), else
+    through the Tianlian relay that sees it and a Chinese station (inferred from geometry, as for Russia)."""
+    css = _xyz(pos[0], pos[1], R_KM + 390.0)
+    el, n = max((elevation(p, css), n) for n, p in CN_GROUND.items())
+    if el >= MIN_EL:
+        return [{"net": "cn", "pts": [pos, CN_GROUND[n]], "legs": [0], "via": n}]
+    best = None
+    for r in valid_relays(relays):
+        if r.get("net") != "tianlian":
+            continue
+        sat = _xyz(r["lat"], r["lon"], GEO_KM)
+        if not _clear(css, sat):
+            continue
+        g = max(CN_GROUND, key=lambda k: elevation(CN_GROUND[k], sat))
+        if elevation(CN_GROUND[g], sat) < MIN_EL:
+            continue
+        rank = (-_generation(r.get("name")), gc_km(pos, (r["lat"], r["lon"])))
+        if best is None or rank < best[0]:
+            best = (rank, r, g)
+    if not best:
+        return []
+    _d, r, g = best
+    return [{"net": "cn", "pts": [pos, (r["lat"], r["lon"]), CN_GROUND[g]], "legs": [0, 1], "via": r.get("name")}]
+
+
 def links(pos, relays=None, aos=None, russian=True):
     """The ISS's links at pos (lat, lon): [{"net", "pts": [(lat, lon), …] from the ISS, "cols": [colour per leg],
     "via": name}]. NASA: unless the signal is known lost (aos False), through the TDRS that both the ISS and a ground
@@ -223,18 +294,18 @@ def links(pos, relays=None, aos=None, russian=True):
         if got:
             _d, r, g = got
             out.append({"net": "nasa", "pts": [pos, (r.get("lat") or 0.0, r["lon"]), NASA_GROUND[g]],
-                        "cols": [LINK, RELAY_LINK], "via": r.get("name")})
+                        "cols": [LINK, RELAY_LINK], "legs": [0, 1], "via": r.get("name")})
     if russian:
         seen = [(elevation(p, iss), n) for n, p in RU_GROUND.items()]
         el, n = max(seen)
         if el >= MIN_EL:
-            out.append({"net": "ru", "pts": [pos, RU_GROUND[n]], "cols": [RU_LINK], "via": n})
+            out.append({"net": "ru", "pts": [pos, RU_GROUND[n]], "cols": [RU_LINK], "legs": [0], "via": n})
         else:
             got = via("luch", {LUCH_GROUND: RU_GROUND[LUCH_GROUND]})
             if got:
                 _d, r, g = got
                 out.append({"net": "ru", "pts": [pos, (r.get("lat") or 0.0, r["lon"]), RU_GROUND[g]],
-                            "cols": [RU_LINK, RU_RELAY_LINK], "via": r.get("name")})
+                            "cols": [RU_LINK, RU_RELAY_LINK], "legs": [0, 1], "via": r.get("name")})
     return out
 
 
@@ -243,7 +314,7 @@ def valid_relays(relays):
     out = []
     for r in relays if isinstance(relays, list) else []:
         try:
-            if isinstance(r, dict) and r.get("net") in ("tdrs", "luch"):
+            if isinstance(r, dict) and r.get("net") in ("tdrs", "luch", "tianlian"):
                 out.append({**r, "lat": float(r.get("lat") or 0.0), "lon": float(r["lon"])})
         except (KeyError, TypeError, ValueError):
             continue
@@ -269,14 +340,19 @@ def signal_at(live, t):
 # --- the hub's live feed (NASA ISS Live: hub/iss_live.py), polled while a map is up -----------------------------
 LIVE_EVERY = 3.0
 LIVE_STALE = 15.0             # a snapshot older than this (the hub down, restarting) isn't used
-_live = {"data": None, "got": 0.0, "used": 0.0, "hub": None, "thread": None}
+_live = {"data": None, "got": 0.0, "used": 0.0, "hub": None, "thread": None, "keys": None}
 
 
-def live_from(hub):
-    """The newest /api/iss/live from the hub (polled in the background every LIVE_EVERY while asked for), or None
-    when there's no fresh one."""
+HISTORY_EVERY = 60.0          # the readings' past (/api/iss/history: the Space Map's sparklines), this often
+
+
+def live_from(hub, history_keys=None):
+    """The newest /api/iss/live from the hub (polled in the background every LIVE_EVERY while asked for, with the
+    readings in ``history_keys``: their past from /api/iss/history every HISTORY_EVERY, as its "history"), or None when
+    there's no fresh one."""
     now = time.time()
     _live["used"], _live["hub"] = now, hub
+    _live["keys"] = sorted(history_keys) if history_keys else None
     th = _live["thread"]
     if hub and (th is None or not th.is_alive()):
         _live["thread"] = threading.Thread(target=_poll_live, name="iss-live", daemon=True)
@@ -286,11 +362,26 @@ def live_from(hub):
 
 def _poll_live():
     import urllib.request
+    hist, hist_at = None, 0.0
     while time.time() - _live["used"] < 15:
+        base = _live["hub"].rstrip("/")
         try:
-            with urllib.request.urlopen(_live["hub"].rstrip("/") + "/api/iss/live", timeout=4) as r:
+            keys = _live["keys"]
+            if not keys:
+                hist = None
+            elif time.time() - hist_at > HISTORY_EVERY or (hist or {}).get("keys") != keys:
+                hist_at = time.time()
+                with urllib.request.urlopen(base + "/api/iss/history?keys=" + ",".join(keys), timeout=6) as r:
+                    h = json.loads(r.read())
+                hist = {**h, "keys": keys} if isinstance(h, dict) else hist
+        except Exception:
+            pass
+        try:
+            with urllib.request.urlopen(base + "/api/iss/live", timeout=4) as r:
                 d = json.loads(r.read())
             if isinstance(d, dict):
+                if hist:
+                    d["history"] = hist
                 _live["data"], _live["got"] = d, time.time()
         except Exception:
             pass
@@ -326,41 +417,103 @@ def grid(name):
 
 
 # --- projection ------------------------------------------------------------------------------------------------
+VIEW = {"zoom": 1.0, "stretch": 1.0, "lat": None, "lon": 0.0, "clear": True}
+VIEW_RANGES = {"zoom": (1.0, 4.0), "stretch": (0.5, 2.0), "lat": (-80.0, 80.0), "lon": (-180.0, 180.0)}
+TOP_MIN = 66.0                # an automatic view reaches at least this far north (Moscow, Scandinavia, the Russian
+                              # ground stations), squashing the map from top to bottom when the zone is too short
+
+
+def view_of(cam, shape) -> dict:
+    """The map's view for a size (``cams.<id>.map.views.<side|full|tall|wall>``) over VIEW."""
+    from display.modules.webcam_caption import SIZE_OF_SHAPE
+    mp = (cam or {}).get("map") if isinstance((cam or {}).get("map"), dict) else {}
+    views = mp.get("views") if isinstance(mp.get("views"), dict) else {}
+    got = views.get(SIZE_OF_SHAPE.get(shape, shape))
+    return {**VIEW, **(got if isinstance(got, dict) else {})}
+
+
+def _num_in(v, k):
+    lo, hi = VIEW_RANGES[k]
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        x = VIEW[k] if VIEW[k] is not None else 0.0
+    return max(lo, min(hi, x))
+
+
 class View:
-    """Where things go on a map w×h: an equirectangular world W px round (the zone's width, or wider when following
-    the ISS in a tall narrow zone, so the map keeps filling it), lat top..bot over mh rows from y0.
+    """Where things go on a map w×h: an equirectangular world W px round (the zone's width times the zoom, or wider
+    when following the ISS in a tall narrow zone, so the map keeps filling it). The world is drawn once as a raster
+    of latitudes top..bot (mh rows; ``key`` names it for the caches), put on the screen with its first row at y0
+    (which can be above the zone, when the view is zoomed in on part of it).
 
-    reserve (top px, bottom px): rows the caption covers. The ISS's whole band of latitudes (and so its trail) is
-    kept clear of them: the map is moved, and squashed from top to bottom only when the band doesn't otherwise fit.
-    The map still runs on under the caption."""
+    opts (VIEW, per size): zoom (1 = the world's width fits the zone), stretch (rows per degree of latitude against
+    columns per degree of longitude), lat (the latitude at the middle of the zone, or None: automatic), lon (degrees
+    the view's middle is east of the ISS, or of 0° with a fixed world), clear (automatic only: keep the ISS's band
+    off the caption).
 
-    def __init__(self, w, h, follow=True, small=False, reserve=None):
+    Automatic: the ISS's whole band of latitudes (and so its trail) stays clear of reserve (top px, bottom px: the
+    rows the caption covers), the rest of the zone showing as far towards the other pole as it reaches (at least
+    TOP_MIN north: the map is squashed from top to bottom only when it has to be). Zoomed in too far for the band to
+    fit, the view follows the ISS up and down instead. The map still runs on under the caption."""
+
+    def __init__(self, w, h, follow=True, small=False, reserve=None, opts=None, iss_lat=None):
         self.w, self.h, self.follow, self.small = w, h, follow, small
+        o = {**VIEW, **(opts or {})} if not small else dict(VIEW)
+        zoom, stretch = _num_in(o["zoom"], "zoom"), _num_in(o["stretch"], "stretch")
+        self.lon_off = _num_in(o["lon"], "lon")
         if small:
-            s, span = w / 360.0, 180.0
+            s = w / 360.0
         else:
-            s = w / 360.0 if not follow else max(w / 360.0, h / 180.0)
-            span = min(180.0, h / s)
+            s = (w / 360.0 if not follow else max(w / 360.0, h / 180.0)) * zoom
         self.W = max(8, int(round(360.0 * s)))
-        self.mh = min(h, max(4, int(round(span * s))))
-        self.y0 = (h - self.mh) // 2
-        # a short map is the ISS's band (it never goes past 51.6°); a taller one reaches up to the Arctic coasts
-        c = 7.0 * min(1.0, max(0.0, (span - 104.0) / 50.0))
-        top = min(90.0, c + span / 2)
-        bot = top - span
-        if bot < -90.0:
-            bot, top = -90.0, -90.0 + span
-        rt, rb = reserve or (0, 0)
-        avail = h - rt - rb - 2 * BAND_MARGIN
-        if not small and (rt or rb) and avail >= 12:
-            ys = min(self.mh / span, avail / (2 * ISS_LAT))         # px per degree of latitude
-            top = ISS_LAT + (rt + BAND_MARGIN) / ys                  # (past the pole: space above the map)
-            self.y0 = max(0, int(math.ceil((top - 90.0) * ys)))
-            top = min(90.0, top)
-            bot = max(-90.0, top - (h - self.y0) / ys)
-            self.mh = min(h - self.y0, max(4, int(round((top - bot) * ys))))
-        self.top, self.bot = top, bot
-        self.key = (self.W, self.mh, self.y0, round(top, 3), round(bot, 3))
+        ys = s * stretch                                            # px per degree of latitude
+        rt, rb = (reserve or (0, 0)) if not small else (0, 0)
+        lat = o.get("lat")
+        if small:
+            ys = h / 180.0
+            top = 90.0
+        elif lat is not None:                                       # a latitude in the middle of the zone
+            top = _num_in(lat, "lat") + (h / 2) / ys
+        else:
+            clear = bool(o.get("clear", True)) and bool(rt or rb)
+            y_lo, y_hi = (rt + BAND_MARGIN, h - rb - BAND_MARGIN) if clear else (0, h)
+            avail = y_hi - y_lo
+            need = ISS_LAT + max(ISS_LAT, TOP_MIN if not rt else ISS_LAT)   # (the band, and the north it should reach)
+            if zoom <= 1.2 and avail >= 12:
+                ys = min(ys, avail / need, avail / (2 * ISS_LAT))
+                if rb or not rt:                                    # the band's south edge just above the caption
+                    top = -ISS_LAT + y_hi / ys
+                else:                                               # (a caption at the top: its north edge under it)
+                    top = ISS_LAT + y_lo / ys
+                top = max(ISS_LAT + y_lo / ys,                      # (a zone taller than the world: centred,
+                          min(top, 90.0 + max(0.0, (h / ys - 180.0) / 2)))   # as far as the band stays clear)
+            elif zoom > 1.2 and iss_lat is not None:                # zoomed in: up and down with the ISS
+                top = float(iss_lat) + (y_lo + avail / 2) / ys
+            else:
+                span = h / ys
+                c = 7.0 * min(1.0, max(0.0, (span - 104.0) / 50.0))   # a short map is the ISS's band; taller: north
+                top = min(90.0 + max(0.0, (span - 180.0) / 2), c + span / 2)
+        if not small and (lat is not None or zoom > 1.2):          # (no further than the poles allow)
+            span = h / ys
+            if span <= 180.0:
+                top = max(-90.0 + span, min(90.0, top))
+        self.ys = ys
+        # the raster: the whole world when the view moves up and down, else just the latitudes it shows
+        moving = not small and lat is None and zoom > 1.2
+        r_top = 90.0 if moving else min(90.0, top)
+        r_bot = -90.0 if moving else max(-90.0, top - h / ys)
+        self.top, self.bot = r_top, r_bot
+        self.mh = max(4, int(round((r_top - r_bot) * ys)))
+        self.y0 = int(round((top - r_top) * ys))                    # the raster's first row on the screen
+        self.key = (self.W, self.mh, round(r_top, 3), round(r_bot, 3))
+
+    def rows(self):
+        """(screen rows, raster rows) the world covers: two slices of equal length (maybe empty)."""
+        a, b = max(0, self.y0), min(self.h, self.y0 + self.mh)
+        if b <= a:
+            return slice(0, 0), slice(0, 0)
+        return slice(a, b), slice(a - self.y0, b - self.y0)
 
     def wx(self, lon):
         """World x (px, 0..W) of a longitude: arrays too."""
@@ -370,10 +523,12 @@ class View:
         return self.y0 + (self.top - np.asarray(lat, float)) / (self.top - self.bot) * self.mh
 
     def left(self, iss_lon):
-        """The world x at the map's left edge: the ISS in the middle, or the whole world from the date line."""
-        if not self.follow or iss_lon is None:
+        """The world x at the map's left edge: the ISS in the middle (moved by the view's lon), or with a fixed world
+        0° (plus lon): the whole world from the date line when the map isn't zoomed."""
+        if self.follow and iss_lon is None:
             return 0
-        return int(math.floor(float(self.wx(iss_lon)) - self.w / 2 + 0.5))
+        c = (float(iss_lon) if self.follow else 0.0) + self.lon_off
+        return int(math.floor(float(self.wx(c)) - self.w / 2 + 0.5))
 
 
 # --- drawing primitives ----------------------------------------------------------------------------------------
@@ -400,7 +555,11 @@ def _plot(img, xs, ys, rgb, alpha=None, left=None, period=None):
     ok = (xi >= 0) & (xi < w) & (yi >= 0) & (yi < h)
     xi, yi = xi[ok], yi[ok]
     col = np.asarray(rgb, np.float32)
-    if alpha is None:
+    if alpha is None and xi.size > 4 * h * w // 8:         # (very many: each pixel once, through a mask)
+        m = np.zeros(h * w, bool)
+        m[yi * w + xi] = True
+        img.reshape(-1, img.shape[2])[m] = col
+    elif alpha is None:
         img[yi, xi] = col
     else:                                                  # (blended in float just at these pixels)
         a = np.asarray(alpha, np.float32)[ok][:, None]
@@ -485,29 +644,56 @@ def _polylines(img, v, lines, rgb):
     _plot(img, xs, ys, rgb, None, 0, v.W)
 
 
+def _graticule(img, v, grid):
+    """Lines of latitude and longitude every ``step`` degrees (or only the equator and tropics: lines "special"),
+    faint, the equator a little brighter."""
+    step = max(10, min(90, int(grid.get("step", 30))))
+    special = {0.0: (60, 80, 110), 23.44: (45, 60, 85), -23.44: (45, 60, 85), 66.56: (40, 55, 80), -66.56: (40, 55, 80)}
+    lats = {} if grid.get("lines") == "special" else {float(a): (32, 44, 66) for a in range(-90 + step, 90, step)}
+    lats.update(special if grid.get("lines") in ("special", "both") else {0.0: (60, 80, 110)})
+    for la, rgb in lats.items():
+        y = int(round(float(v.y(la)) - v.y0))
+        if 0 <= y < v.mh:
+            img[y, ::2] = rgb
+    if grid.get("lines") != "special":
+        for lo in range(-180, 180, step):
+            x = int(round(float(v.wx(lo)))) % v.W
+            img[::2, x] = (32, 44, 66)
+
+
 _bases: dict = {}
 
 
-def base(v, full, big=False, russian=True):
-    """The world W×mh: ocean, coastlines and, for the full map, borders and the ground stations (they never move);
-    uint8, cached per size. Returns (image, mask of the icons' pixels: the trail goes under them)."""
-    key = (v.key, full, big, russian)
+def ground_sites(russian=True, chinese=False):
+    """[(name, (lat, lon), net)] of the ground stations on the full map."""
+    out = [(n, p, "nasa") for n, p in NASA_GROUND.items()]
+    if russian:
+        out += [(n, p, "ru") for n, p in RU_GROUND.items()]
+    if chinese:
+        out += [(n, p, "cn") for n, p in CN_GROUND.items()]
+    return out
+
+
+def base(v, full, big=False, russian=True, chinese=False, stations=True, borders=True, grid=None):
+    """The world W×mh: ocean, coastlines and, for the full map, borders (and a grid of latitudes and longitudes) and
+    the ground stations (they never move); uint8, cached per size. Returns (image, mask of the icons' pixels: the
+    trail goes under them)."""
+    key = (v.key, full, big, russian, chinese, stations, borders, json.dumps(grid))
     hit = _bases.get(key)
     if hit is None:
         img = np.empty((v.mh, v.W, 3), np.uint8)
         img[:] = OCEAN
         L = world_lines()
-        if full:
+        if full and grid:
+            _graticule(img, v, grid)
+        if full and borders:
             _polylines(img, v, L["borders"], BORDER)
         _polylines(img, v, L["coast"], COAST)
         icons = np.zeros((v.mh, v.W, 3), np.uint8)
-        if full:
+        if full and stations:
             art = ICONS[big]
-            for la, lo in NASA_GROUND.values():
-                _sprite(icons, art["nasa"], float(v.wx(lo)), float(v.y(la)) - v.y0, v, 0)
-            if russian:
-                for la, lo in RU_GROUND.values():
-                    _sprite(icons, art["ru"], float(v.wx(lo)), float(v.y(la)) - v.y0, v, 0)
+            for _n, (la, lo), net in ground_sites(russian, chinese):
+                _sprite(icons, art[GROUND_ART[net]], float(v.wx(lo)), float(v.y(la)) - v.y0, v, 0)
         mask = icons.any(axis=2)
         img[mask] = icons[mask]
         if len(_bases) > 8:
@@ -516,7 +702,7 @@ def base(v, full, big=False, russian=True):
     return hit
 
 
-def daylight(v, t):
+def daylight(v, t, night=NIGHT):
     """How bright each pixel of the world is at time t: 1 in daylight, NIGHT at night, smooth through twilight (as the
     weather maps' shade_day_night). (mh, W, 1) float32."""
     jd = julian(t)
@@ -531,7 +717,7 @@ def daylight(v, t):
         + (np.cos(lat)[:, None] * math.cos(dec)).astype(np.float32) * np.cos(ha).astype(np.float32)[None, :]
     lo = math.sin(math.radians(-TWILIGHT))
     f = np.clip((se - lo) / -lo, 0.0, 1.0)
-    return (NIGHT + (1.0 - NIGHT) * f)[..., None]
+    return (night + (1.0 - night) * f)[..., None]
 
 
 _samples_memo: dict = {}
@@ -567,23 +753,31 @@ def _sample_now(v, g, north_first):
 _shaded: dict = {}
 
 
-def shaded(v, full, t, big=False, ex=None):
+def shaded(v, full, t, big=False, ex=None, stations=True):
     """The world with day and night (and on the full map the city lights and the aurora on the night side; the icons
     stay lit), recomputed every SHADE_EVERY: (image, icon mask)."""
     slot = int(t // SHADE_EVERY)
     russian = bool(full and _on(ex, "russian"))
+    chinese = bool(full and _on(ex, "chinese") and _on(ex, "tiangong"))
     lights = grid("lights") if full and _on(ex, "lights") else None
     aurora = grid("aurora") if full and _on(ex, "aurora") else None
-    key = (v.key, full, big, russian)
-    tag = (slot, id(lights), id(aurora), json.dumps([(ex or {}).get("lights"), (ex or {}).get("aurora")], default=str))
+    night = 1.0 - float((ex.get("night") or {}).get("darkness", 1 - NIGHT)) if full and ex and "night" in ex else NIGHT
+    if full and ex and "night" in ex and not _on(ex, "night"):
+        night = 1.0
+    night = max(0.05, min(1.0, night))
+    gr = dict(ex["grid"]) if full and _on(ex, "grid") else None
+    borders = not (full and ex and "borders" in ex and not _on(ex, "borders"))
+    key = (v.key, full, big, russian, chinese, stations, borders, json.dumps(gr))
+    tag = (slot, id(lights), id(aurora), night,
+           json.dumps([(ex or {}).get("lights"), (ex or {}).get("aurora")], default=str))
     hit = _shaded.get(key)
     if hit is None or hit[0] != tag:
         if len(_shaded) > 8:
             _shaded.clear()
-        img, mask = base(v, full, big, russian)
-        day = daylight(v, slot * SHADE_EVERY)
+        img, mask = base(v, full, big, russian, chinese, stations, borders, gr)
+        day = daylight(v, slot * SHADE_EVERY, night)
         lit = img * day
-        dark = ((1.0 - day[..., 0]) / (1.0 - NIGHT)).clip(0, 1)
+        dark = ((1.0 - day[..., 0]) / max(1e-6, 1.0 - night)).clip(0, 1) if night < 1.0 else np.zeros(day.shape[:2], np.float32)
         for g, north, k, rgb, f in ((lights, True, "lights", LIGHTS, lambda x: np.clip((x - 0.18) * 1.6, 0, 1)),
                                     (aurora, False, "aurora", AURORA, lambda x: np.clip((x * 255 - 4) / 30, 0, .75))):
             if g is None:
@@ -674,37 +868,16 @@ def reserve_for(box, h):
     return (int(y1) + 1, 0) if y0 < h - y1 else (0, h - int(y0) + 1)
 
 
-# --- text panels -----------------------------------------------------------------------------------------------
-_font = {}
-
-
-def _tiny():
-    f = _font.get("tiny")
-    if f is None:
-        from display.gfx import graphics
-        from display.modules.webcam_caption import FONTS
-        f = _font["tiny"] = graphics.Font()
-        f.LoadFont(FONTS["tiny"])
-    return f
-
-
-def _canvas(img):
-    from display.gfx import Canvas
-    cv = Canvas.__new__(Canvas)
-    cv.width, cv.height, cv.buf = img.shape[1], img.shape[0], img
-    return cv
-
-
+# --- text ------------------------------------------------------------------------------------------------------
 def _tw(s):
-    f = _tiny()
-    return sum(max(0, f.CharacterWidth(ord(ch))) for ch in s)
+    from display.modules.mappanels import text_w
+    return text_w(s)
 
 
 def _text(img, x, y, s, rgb):
     """Text with its top-left at x, y."""
-    from display.gfx import Color, graphics
-    f = _tiny()
-    graphics.DrawText(_canvas(img), f, x, y + f.baseline, Color(*rgb), s)
+    from display.modules.mappanels import draw_text
+    draw_text(img, x, y, s, rgb)
 
 
 def _num(live, k, d=0):
@@ -715,7 +888,7 @@ def _num(live, k, d=0):
 
 
 def telemetry_lines(live, rows):
-    """[(label, value)] for the telemetry panel (NASA ISS Live readings; -- when the hub has none)."""
+    """[(label, value)] for the old telemetry panel (NASA ISS Live readings; -- when the hub has none)."""
     out = []
     for k in rows:
         if k == "arrays":
@@ -756,7 +929,7 @@ def docked_lines(data, now, days=True):
 
 
 def _panel(img, corner, y, lines, head=None):
-    """A see-through dark panel of tiny text in a top corner from row y; returns the row under it."""
+    """The webcam map's see-through dark panel of tiny text in a top corner from row y; returns the row under it."""
     h, w = img.shape[:2]
     rows = ([(head, None)] if head else []) + lines
     lw = max((_tw(a) for a, b in rows if b is not None), default=0)
@@ -775,154 +948,430 @@ def _panel(img, corner, y, lines, head=None):
     return y + bh + 2
 
 
-def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, live=None):
-    """The map at time t (as filmed): (image (h, w, 3) uint8, link paths for the moving data, or []). full: the full
-    map (borders, stations, relays, links, the detailed ISS, the extras); else the small map (coastlines, trail, the
+# --- the Space Map's own layers --------------------------------------------------------------------------------
+def _circle(lat, lon, rho, n=120):
+    """Points (lats, lons) round the small circle rho degrees from (lat, lon)."""
+    p, l0, r = math.radians(lat), math.radians(lon), math.radians(rho)
+    th = np.linspace(0, 2 * math.pi, n)
+    la = np.arcsin(np.sin(p) * math.cos(r) + np.cos(p) * math.sin(r) * np.cos(th))
+    lo = l0 + np.arctan2(np.sin(th) * math.sin(r) * math.cos(p), math.cos(r) - math.sin(p) * np.sin(la))
+    return np.degrees(la), (np.degrees(lo) + 540.0) % 360.0 - 180.0
+
+
+def footprint_deg(alt_km, el_deg):
+    """How far (degrees of arc) from the point below a satellite at alt_km it is seen el_deg above the horizon."""
+    e = math.radians(el_deg)
+    return math.degrees(math.acos(R_KM / (R_KM + alt_km) * math.cos(e)) - e)
+
+
+def _ring(img, v, left, lat, lon, rho, rgb, alpha=0.55):
+    la, lo = _circle(lat, lon, rho)
+    x, y = v.wx(lo), v.y(la)
+    _seg_line(img, v, left, x[:-1], y[:-1], x[1:], y[1:], rgb, np.full(len(x) - 1, alpha, np.float32))
+
+
+def _terminator(img, v, left, t):
+    from common.orbit import sub_point
+    jd = julian(t)
+    la, lo = sub_point(sun_dir(jd), jd)
+    _ring(img, v, left, la, lo, 90.0, (255, 190, 90), 0.5)
+
+
+def _screen(v, left, wx_, y_):
+    return int(round((wx_ - left) % v.W)), int(round(y_))
+
+
+# --- the maps --------------------------------------------------------------------------------------------------
+def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, live=None, mapset=None, view=None,
+           avoid=None):
+    """The map at time t (as filmed): (image (h, w, 3) uint8, paths for the moving data, or []). full: the full map
+    (borders, stations, relays, links, the detailed ISS, the extras); else the small map (coastlines, trail, the
     tiny ISS). fixed (full map only): the world held still with the ISS crossing it; else centred on the ISS.
-    reserve: the caption's rows (see View). extras: extras_of(cam). live: the hub's /api/iss/live."""
+    reserve: the caption's rows (see View); avoid: its box. extras: extras_of(cam). live: the hub's /api/iss/live.
+    mapset: the Space Map's ``map`` settings (links, relays, labels, names, satellites, panels, units; None: the
+    webcam's map, drawn as it always was). view: its view for this size (view_of)."""
+    from display.modules import mappanels, maplabels, mapsats
     from display.modules.space import position
     if w < 8 or h < 4:
         return np.zeros((max(0, h), max(0, w), 3), np.uint8), []
-    ex = (extras if extras is not None else extras_of(None)) if full else {}
-    big = bool(full and w >= BIG_W)
+    smap = mapset is not None
+    ms = mapset if isinstance(mapset, dict) else {}
+    ex = (extras if extras is not None else extras_of(None, smap)) if full else {}
+    size = ms.get("icons") if ms.get("icons") in ("small", "big") else "auto"
+    big = bool(full and (size == "big" or (size == "auto" and w >= BIG_W)))
     art = ICONS[big]
-    v = View(w, h, follow=not (full and fixed), small=not full, reserve=reserve if full else None)
     track = (data or {}).get("track") if isinstance(data, dict) else None
     pos = position(track, t) if track else None
+    v = View(w, h, follow=not (full and fixed), small=not full, reserve=reserve if full else None,
+             opts=view if full else None, iss_lat=pos[0] if pos else None)
     left = v.left(pos[1] if pos else None)
     img = np.empty((h, w, 3), np.uint8)
-    if v.mh < h:
-        img[:] = OUTSIDE
-    world, mask = shaded(v, full, t, big, ex)
-    band = img[v.y0:v.y0 + v.mh]
-    _window(band, world, left, v.W)                        # the world from ``left``, round the date line
+    img[:] = OUTSIDE
+    ground_mode = ms.get("ground") if ms.get("ground") in ("always", "linked", "hidden") else "always"
+    world, mask = shaded(v, full, t, big, ex, stations=ground_mode == "always")
+    sr, rr = v.rows()
+    band = img[sr]
+    _window(band, world[rr], left, v.W)                    # the world from ``left``, round the date line
     paths = []
     if pos is None:
         return img, paths
+    if full and _on(ex, "terminator"):
+        _terminator(img, v, left, t)
     if full and _on(ex, "ahead"):
         _ahead(img, v, left, track, t, pos, ex["ahead"].get("minutes", 45))
-    _trail(img, v, left, track, t, pos, sunlit=(ex["sunlit"].get("shadow", "blue") if _on(ex, "sunlit") else None))
+    if not full or _on(ex, "trail"):
+        span = max(5.0, float((ex.get("trail") or {}).get("minutes", 90))) * 60 if full else TRAIL_SEC
+        _trail(img, v, left, track, t, pos, span=span,
+               sunlit=(ex["sunlit"].get("shadow", "blue") if _on(ex, "sunlit") else None))
     if full:                                               # the stations back over the trail
         m = np.empty(band.shape[:2] + (1,), bool)
-        _window(m, mask[..., None], left, v.W)
+        _window(m, mask[rr][..., None], left, v.W)
         src = np.empty_like(band)
-        _window(src, world, left, v.W)
+        _window(src, world[rr], left, v.W)
         np.copyto(band, src, where=m)
     ix, iy = float(v.wx(pos[1])), float(v.y(pos[0]))
-    if full:
-        css = (data or {}).get("css")
-        if _on(ex, "tiangong") and css:
-            cpos = position(css, t)
-            if cpos:
-                if ex["tiangong"].get("trail", True):
-                    _trail(img, v, left, css, t, cpos, colour=CSS, peak=0.5, floor=0.05)
-                cx, cy = float(v.wx(cpos[1])), float(v.y(cpos[0]))
-                _sprite(img, art["css"], cx, cy, v, left)
-                if ex["tiangong"].get("label", True) and big:
-                    X = int(round((cx - left) % v.W))
-                    lab = "TIANGONG"
-                    _text(img, min(w - _tw(lab) - 1, X + 6), max(0, int(cy) - 9), lab, (230, 110, 90))
-        aos = signal_at(live, t) if _on(ex, "signal") else None
-        relays = valid_relays((data or {}).get("relays")) or FALLBACK_RELAYS
-        for lk in links(pos, relays, aos, russian=_on(ex, "russian")):
-            xs, ys = [ix], [iy]
-            for la, lo in lk["pts"][1:]:
-                xs.append(float(_unwrap(np.array([xs[-1]]), np.array([float(v.wx(lo))]), v.W)[0]))
-                ys.append(float(v.y(la)))
-            for k, col in enumerate(lk["cols"]):
-                _seg_line(img, v, left, xs[k], ys[k], xs[k + 1], ys[k + 1], col)
-            live_ok = aos is True if lk["net"] == "nasa" else True
-            if live_ok:
-                paths.append({"xs": xs, "ys": ys, "cols": lk["cols"], "left": left, "W": v.W})
-        for r in relays:
-            if r.get("net") == "luch" and not _on(ex, "russian"):
-                continue
-            _sprite(img, art["luch" if r.get("net") == "luch" else "tdrs"], float(v.wx(r["lon"])),
-                    float(v.y(r.get("lat") or 0.0)), v, left)
-        if w >= 280:                                        # the panels, in the top corners
-            top = (reserve or (0, 0))[0]                     # (under a caption at the top)
-            ys_ = {"tl": top, "tr": top}
-            if _on(ex, "telemetry"):
-                c = ex["telemetry"].get("corner", "tr") if ex["telemetry"].get("corner") in ys_ else "tr"
-                rows = [r for r in ex["telemetry"].get("rows") or [] if r in TELEMETRY_ROWS]
-                if rows:
-                    ys_[c] = _panel(img, c, ys_[c], telemetry_lines(live, rows))
-            if _on(ex, "docked"):
-                lines = docked_lines(data, t, ex["docked"].get("days", True))
-                if lines:
-                    c = ex["docked"].get("corner", "tr") if ex["docked"].get("corner") in ys_ else "tr"
-                    ys_[c] = _panel(img, c, ys_[c], [(s, None) for s in lines], head="DOCKED")
-        if _on(ex, "signal") and ex["signal"].get("tag", True) and aos is not None:
-            lab = "AOS" if aos else "LOS"
-            X = int(round((ix - left) % v.W)) + len(art["iss"][0]) // 2 + 3
-            Y = max(0, min(h - 8, int(iy) - 3))
-            img[Y:Y + 7, X - 1:X + _tw(lab) + 1] = (img[Y:Y + 7, X - 1:X + _tw(lab) + 1] * 0.3).astype(np.uint8)
-            _text(img, X, Y + 1, lab, AOS_C if aos else LOS_C)
-    _sprite(img, art["iss"] if full else SMALL_ART, ix, iy, v, left, clamp_y=True)
+    if not full:
+        _sprite(img, SMALL_ART, ix, iy, v, left, clamp_y=True)
+        return img, paths
+    IX, IY = _screen(v, left, ix, iy)
+    hw = lambda a: (len(a[0]) // 2 + 1, len(a) // 2 + 1)
+    icons, label_items = [], []
+    lab = {k: maplabels.labels_of(ms, k) for k in maplabels.KINDS}
+    rgb_of = lambda k: mapsats.hex_rgb(lab[k]["colour"], (200, 200, 200))
+    flag = lambda k, code: (__import__("display.modules.flags", fromlist=["x"]).flag_char(code) if lab[k]["flag"] else "")
+    people = [p for p in (data or {}).get("people") or [] if isinstance(p, dict)]
+
+    def label(kind, key, default, anchor, half, code=None, prio=5, extra="", optional=False):
+        if not smap:
+            return
+        L = lab[kind]
+        name = maplabels.name_for(ms, key, default).upper() if L["name"] else ""
+        text = (flag(kind, code) if code else "") + name + extra
+        if text.strip():
+            label_items.append({"text": text, "anchor": anchor, "half": half, "pos": L["pos"], "prio": prio,
+                                "rgb": rgb_of(kind), "backdrop": L.get("backdrop", True), "optional": optional})
+
+    # satellite layers (under everything else: there can be thousands)
+    counts = {}
+    if smap and isinstance(ms.get("sats"), dict):
+        counts = mapsats.draw(img, v, left, t, ms, DATA_DIR, pos, (ix, iy), paths, label_items, lab["sats"],
+                              rgb_of("sats"), icons)
+        m = np.empty(band.shape[:2] + (1,), bool)          # (the ground stations stay on top)
+        _window(m, mask[rr][..., None], left, v.W)
+        src = np.empty_like(band)
+        _window(src, world[rr], left, v.W)
+        np.copyto(band, src, where=m)
+    # Tiangong and its link
+    css = (data or {}).get("css")
+    cpos = position(css, t) if (css and _on(ex, "tiangong")) else None
+    if cpos:
+        if ex["tiangong"].get("trail", True):
+            _trail(img, v, left, css, t, cpos, colour=CSS, peak=0.5, floor=0.05)
+        cx, cy = float(v.wx(cpos[1])), float(v.y(cpos[0]))
+        _sprite(img, art["css"], cx, cy, v, left)
+        CX, CY = _screen(v, left, cx, cy)
+        icons.append((CX - hw(art["css"])[0], CY - hw(art["css"])[1], CX + hw(art["css"])[0], CY + hw(art["css"])[1]))
+        if smap:
+            tg = [p for p in people if not p.get("iss") and "shenzhou" in str(p.get("craft", "")).lower()]
+            crew = f" {len(tg)} CREW" if lab["tiangong"].get("crew") and tg else ""
+            label("tiangong", "Tiangong", "Tiangong", (CX, CY), hw(art["css"]), "cn", 1, crew)
+        elif ex["tiangong"].get("label", True) and big:    # (the webcam's map: its name, as it always was)
+            X = int(round((cx - left) % v.W))
+            _text(img, min(w - _tw("TIANGONG") - 1, X + 6), max(0, int(cy) - 9), "TIANGONG", (230, 110, 90))
+        if _on(ex, "footprint") and ex["footprint"].get("tiangong"):
+            _ring(img, v, left, cpos[0], cpos[1], footprint_deg(390.0, float(ex["footprint"].get("elevation", 10))),
+                  CSS, 0.45)
+    # the links
+    aos = signal_at(live, t) if _on(ex, "signal") else None
+    relays = valid_relays((data or {}).get("relays")) or FALLBACK_RELAYS
+    lks = links(pos, relays, aos, russian=_on(ex, "russian"))
+    if cpos and _on(ex, "chinese"):
+        lks += cn_links(cpos, relays)
+    used = set()
+    for lk in lks:
+        st = link_style(ms, lk["net"])
+        start = (cx, cy) if lk["net"] == "cn" else (ix, iy)
+        xs, ys = [start[0]], [start[1]]
+        for la, lo in lk["pts"][1:]:
+            xs.append(float(_unwrap(np.array([xs[-1]]), np.array([float(v.wx(lo))]), v.W)[0]))
+            ys.append(float(v.y(la)))
+        legs = lk.get("legs") or list(range(len(xs) - 1))
+        cols = [st["rgb"][min(1, g)] for g in legs]
+        line = max(0.0, min(1.0, float(st.get("line", 1.0))))
+        for k, col in enumerate(cols):
+            if line > 0:
+                _seg_line(img, v, left, xs[k], ys[k], xs[k + 1], ys[k + 1], col, None if line >= 1 else [line])
+        lk["ground"] = next((n for n, p in {**NASA_GROUND, **RU_GROUND, **CN_GROUND}.items() if p == lk["pts"][-1]), None)
+        lk["relay"] = len(lk["pts"]) > 2
+        used.add(lk.get("via"))
+        used.add(lk["ground"])
+        live_ok = aos is True if lk["net"] == "nasa" else True
+        if live_ok and _on(ex, "flow") and st.get("style") != "still":
+            paths.append({"kind": "link", "xs": xs, "ys": ys, "cols": cols, "left": left, "W": v.W, "style": st["style"],
+                          "speed": st.get("speed", ex["flow"].get("speed")), "direction": st.get("direction", ex["flow"].get("direction"))})
+    # the relays and ground stations (their icons, flags and names)
+    relay_mode = ms.get("relays") if ms.get("relays") in RELAY_SHOW else "always"
+    for r in relays:
+        if (r.get("net") == "luch" and not _on(ex, "russian")) or (r.get("net") == "tianlian" and not (cpos and _on(ex, "chinese"))):
+            continue
+        if relay_mode == "linked" and r.get("name") not in used:
+            continue
+        a = art[r.get("net")] if r.get("net") in art else art["tdrs"]
+        rx, ry = float(v.wx(r["lon"])), float(v.y(r.get("lat") or 0.0))
+        _sprite(img, a, rx, ry, v, left)
+        RX, RY = _screen(v, left, rx, ry)
+        icons.append((RX - hw(a)[0], RY - hw(a)[1], RX + hw(a)[0], RY + hw(a)[1]))
+        label("relays", r.get("name"), r.get("name") or "", (RX, RY), hw(a), RELAY_FLAG.get(r.get("net")), 3, optional=True)
+    for n, (la, lo), net in ground_sites(_on(ex, "russian"), bool(cpos and _on(ex, "chinese"))):
+        if ground_mode == "hidden" or (ground_mode == "linked" and n not in used):
+            continue
+        a = art[GROUND_ART[net]]
+        gx, gy = float(v.wx(lo)), float(v.y(la))
+        if ground_mode == "linked":
+            _sprite(img, a, gx, gy, v, left)
+        GX, GY = _screen(v, left, gx, gy)
+        icons.append((GX - hw(a)[0], GY - hw(a)[1], GX + hw(a)[0], GY + hw(a)[1]))
+        label("ground", n, n, (GX, GY), hw(a), GROUND_FLAG.get(n), 4, optional=True)
+    # the Sun and Moon, the footprint, launch pads
+    if _on(ex, "sunmoon"):
+        from common.orbit import moon_dir, sub_point
+        jd = julian(t)
+        for vec, a in ((sun_dir(jd), SUN_ART), (moon_dir(jd), MOON_ART)):
+            la, lo = sub_point(vec, jd)
+            sx, sy = float(v.wx(lo)), float(v.y(la))
+            if ex["sunmoon"].get("lines"):
+                _seg_line(img, v, left, ix, iy, sx, sy, PAL["Y" if a is SUN_ART else "M"], [0.25])
+            _sprite(img, a, sx, sy, v, left)
+            SX, SY = _screen(v, left, sx, sy)
+            icons.append((SX - 3, SY - 3, SX + 3, SY + 3))
+    if _on(ex, "footprint"):
+        _ring(img, v, left, pos[0], pos[1], footprint_deg(ALT_KM, float(ex["footprint"].get("elevation", 10))),
+              (255, 214, 120), 0.6)
+    if _on(ex, "launches"):
+        for x in [x for x in (data or {}).get("launches") or [] if isinstance(x, dict) and x.get("lat") is not None
+                  and x.get("net", 0) > t - 1800][:max(1, int(ex["launches"].get("count", 3)))]:
+            px_, py_ = float(v.wx(x["lon"])), float(v.y(x["lat"]))
+            _sprite(img, PAD_ART, px_, py_, v, left)
+            PX, PY = _screen(v, left, px_, py_)
+            icons.append((PX - 3, PY - 3, PX + 3, PY + 3))
+            dt = x["net"] - t
+            from display.modules.mappanels import _countdown
+            label("launch", x.get("name"), str(x.get("rocket") or x.get("name") or "").split()[0] if lab["launch"]["name"] else "",
+                  (PX, PY), (3, 3), x.get("flag"), 2, (" T-" + _countdown(dt)) if dt > 0 else "")
+            paths.append({"kind": "pulse", "x": PX, "y": PY, "rgb": PAL["P"]})
+    # the panels (where they go first: the labels keep off them)
+    top, bottom = (reserve or (0, 0))
+    placed = []
+    if smap:
+        ctx = {"data": data, "live": live, "t": t, "units": mappanels.units_of(ms), "pos": pos, "aos": aos,
+               "links": lks, "css_pos": cpos, "sat_counts": counts}
+        vid = mappanels.video_of(ms)
+        placed = mappanels.layout(mappanels.panels_of(ms, ex), ctx, w, h, top, bottom, avoid,
+                                  video=vid if vid.get("on") and ms.get("_video_up") else None)
+        for p, m, x, y in placed:
+            if m.get("video"):                             # where the live video goes (iss_panel draws it)
+                paths.append({"kind": "video", "x": x, "y": y, "w": m["w"], "h": m["h"],
+                              "border": bool(p.get("border", True)), "tag": bool(p.get("tag", True))})
+    elif w >= 280:                                         # the webcam's map: its two panels, as they always were
+        ys_ = {"tl": top, "tr": top}
+        if _on(ex, "telemetry"):
+            c = ex["telemetry"].get("corner", "tr") if ex["telemetry"].get("corner") in ys_ else "tr"
+            rows = [r for r in ex["telemetry"].get("rows") or [] if r in TELEMETRY_ROWS]
+            if rows:
+                ys_[c] = _panel(img, c, ys_[c], telemetry_lines(live, rows))
+        if _on(ex, "docked"):
+            lines = docked_lines(data, t, ex["docked"].get("days", True))
+            if lines:
+                c = ex["docked"].get("corner", "tr") if ex["docked"].get("corner") in ys_ else "tr"
+                ys_[c] = _panel(img, c, ys_[c], [(s, None) for s in lines], head="DOCKED")
+    pboxes = mappanels.boxes(placed)
+    # the ISS's own label, then all the labels where they cover least
+    iss_half = hw(art["iss"])
+    icons.append((IX - iss_half[0], IY - iss_half[1], IX + iss_half[0], IY + iss_half[1]))
+    crew = [p for p in people if p.get("iss")]
+    n_crew = len(crew) or ((data or {}).get("crew") or {}).get("count")
+    label("iss", "ISS", "ISS", (IX, IY), iss_half, None, 0,
+          f" {n_crew} CREW" if lab["iss"].get("crew") and n_crew else "")
+    if _on(ex, "signal") and ex["signal"].get("tag", True) and aos is not None:   # (the AOS/LOS tag's room)
+        X = IX + len(art["iss"][0]) // 2 + 3
+        icons.append((X - 1, IY - 3, X + 14, IY + 4))
+    if smap:
+        obstacles = icons + pboxes + ([tuple(avoid)] if avoid else [])
+        maplabels.draw(img, maplabels.place(label_items, obstacles, w, h))
+        mappanels.draw(img, placed)
+    if _on(ex, "signal") and ex["signal"].get("tag", True) and aos is not None:
+        lab_ = "AOS" if aos else "LOS"
+        X = IX + len(art["iss"][0]) // 2 + 3
+        Y = max(0, min(h - 8, IY - 3))
+        img[Y:Y + 7, max(0, X - 1):X + _tw(lab_) + 1] = (img[Y:Y + 7, max(0, X - 1):X + _tw(lab_) + 1] * 0.3).astype(np.uint8)
+        _text(img, X, Y + 1, lab_, AOS_C if aos else LOS_C)
+    _sprite(img, art["iss"], ix, iy, v, left, clamp_y=True)  # (last: nothing ever covers the ISS)
+    if pboxes:
+        for p in paths:
+            if p.get("kind") != "video":
+                p["skip"] = pboxes
     return img, paths
 
 
+# --- the moving data (drawn every frame over the cached map) ----------------------------------------------------
+def _keep(px, py, skip):
+    ok = np.ones(px.shape, bool)
+    for x0, y0, x1, y1 in skip or ():
+        ok &= ~((px >= x0) & (px < x1) & (py >= y0) & (py < y1))
+    return ok
+
+
+def _along(xs, ys, s, cum, seg):
+    k = np.clip(np.searchsorted(cum, s, side="right") - 1, 0, len(seg) - 1)
+    f = (s - cum[k]) / np.maximum(seg[k], 1e-6)
+    return xs[k] + (xs[k + 1] - xs[k]) * f, ys[k] + (ys[k + 1] - ys[k]) * f, k
+
+
+def _put(buf, p, px, py, col, alpha=None):
+    ok = _keep(np.rint((px - p["left"]) % p["W"]), np.rint(py), p.get("skip"))
+    if alpha is not None:
+        alpha = np.asarray(alpha, np.float32)[ok]
+    if ok.any():
+        _plot(buf, px[ok], py[ok], col, alpha, p["left"], p["W"])
+
+
 def flow(buf, paths, now, ex, big=False):
-    """The data moving along the links (drawn every frame over the map): dots travelling down (ISS to ground) and/or
-    up, the link's own colour lightened, kept off the icons at the ends and the relay."""
+    """The data moving along the links (drawn every frame over the map), in each network's style: dots, dashes,
+    comets (a bright head with a fading tail) or a pulse of light running along the line; down (ISS to ground), up
+    or both ways; kept off the icons at the ends and the relay, and off the panels."""
     if not paths or not _on(ex, "flow"):
         return
-    speed = FLOW_SPEED.get((ex["flow"] or {}).get("speed"), FLOW_SPEED["normal"])
-    direction = (ex["flow"] or {}).get("direction", "both")
-    gap = FLOW_GAP + (2 if direction == "both" else 0)
     clear = 7 if big else 4
     for p in paths:
+        kind = p.get("kind", "link")
+        if kind == "video":
+            continue
+        if kind == "pulse":                                  # a launch pad: a ring that grows and fades
+            r = (now * 4) % 8
+            a = max(0.0, 1 - r / 8)
+            th = np.linspace(0, 2 * math.pi, 24, endpoint=False)
+            px, py = p["x"] + (r + 3) * np.cos(th), p["y"] + (r + 3) * np.sin(th)
+            q = {"left": 0, "W": buf.shape[1] * 4, "skip": p.get("skip")}
+            ok = _keep(px, py, q["skip"])
+            if ok.any():
+                _plot(buf, px[ok], py[ok], p["rgb"], np.full(int(ok.sum()), a * 0.8, np.float32))
+            continue
+        if kind == "segs":                                   # many short links (a trellis): one dot running each
+            x0, y0, x1, y1 = (np.asarray(p[k], float) for k in ("x0", "y0", "x1", "y1"))
+            if not x0.size:
+                continue
+            L = np.maximum(np.hypot(x1 - x0, y1 - y0), 1.0)
+            sp = FLOW_SPEED.get(p.get("speed"), FLOW_SPEED["normal"]) * 0.6
+            f = (now * sp / L + p["phase"]) % 1.0
+            if p.get("direction") == "up":
+                f = 1 - f
+            px, py = x0 + (x1 - x0) * f, y0 + (y1 - y0) * f
+            col = np.asarray(p["rgb"], float) * 0.4 + 255 * 0.6
+            _put(buf, p, px, py, col)
+            continue
         xs, ys = np.asarray(p["xs"], float), np.asarray(p["ys"], float)
         seg = np.hypot(np.diff(xs), np.diff(ys))
         cum = np.r_[0, np.cumsum(seg)]
         total = cum[-1]
         if total < 2 * clear + 2:
             continue
+        style = p.get("style", "dots")
+        speed = FLOW_SPEED.get(p.get("speed"), FLOW_SPEED["normal"])
+        direction = p.get("direction", "both")
+        cols = [np.asarray(c, float) for c in p["cols"]]
+        lighten = lambda c, lift: c * (1 - lift) + 255 * lift
+        if style == "pulse":                                 # light running along the whole line
+            s = np.arange(clear, total - clear, 1.0)
+            ph = (now * speed) if direction != "up" else -(now * speed)
+            a = np.clip(np.sin((s - ph) / 14.0 * math.pi) * 1.4 - 0.4, 0, 1) * 0.8
+            px, py, k = _along(xs, ys, s, cum, seg)
+            for leg in range(len(seg)):
+                sel = (k == leg) & (a > 0.02)
+                if sel.any():
+                    _put(buf, p, px[sel], py[sel], lighten(cols[leg], 0.6), a[sel])
+            continue
+        gap = {"dots": FLOW_GAP, "dashes": 10, "comet": 26}.get(style, FLOW_GAP) + (2 if direction == "both" else 0)
         runs = []
         if direction in ("down", "both"):
-            runs.append(((now * speed) % gap + np.arange(0, total, gap), 0.75))
+            runs.append(((now * speed) % gap + np.arange(0, total, gap), 0.75, 1))
         if direction in ("up", "both"):
-            runs.append((total - ((now * speed + gap / 2) % gap + np.arange(0, total, gap)), 0.45))
-        for s, lift in runs:
-            s = s[(s > 0) & (s < total)]
-            s = s[np.min(np.abs(s[:, None] - cum[None, :]), axis=1) > clear]
+            runs.append((total - ((now * speed + gap / 2) % gap + np.arange(0, total, gap)), 0.45, -1))
+        for heads, lift, sgn in runs:
+            if style == "dashes":
+                s = (heads[:, None] - sgn * np.arange(4)[None, :]).ravel()
+                a = None
+            elif style == "comet":
+                tail = 7
+                s = (heads[:, None] - sgn * np.arange(tail)[None, :]).ravel()
+                a = np.tile(1.0 - np.arange(tail) / tail, heads.size)
+            else:
+                s, a = heads, None
+            keep = (s > 0) & (s < total)
+            keep &= np.min(np.abs(s[:, None] - cum[None, :]), axis=1) > clear
+            s = s[keep]
+            a = a[keep] if a is not None else None
             if not s.size:
                 continue
-            k = np.clip(np.searchsorted(cum, s, side="right") - 1, 0, len(seg) - 1)
-            f = (s - cum[k]) / np.maximum(seg[k], 1e-6)
-            px, py = xs[k] + (xs[k + 1] - xs[k]) * f, ys[k] + (ys[k + 1] - ys[k]) * f
+            px, py, k = _along(xs, ys, s, cum, seg)
             for leg in range(len(seg)):
                 sel = k == leg
                 if sel.any():
-                    col = np.asarray(p["cols"][leg], float) * (1 - lift) + 255 * lift
-                    _plot(buf, px[sel], py[sel], col, None, p["left"], p["W"])
+                    _put(buf, p, px[sel], py[sel], lighten(cols[leg], lift), None if a is None else a[sel])
 
 
 _cache: dict = {}
 
 
-def cached(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, live=None):
+def cached(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, live=None, mapset=None, view=None,
+           avoid=None):
     """render(), redone every COMPOSE_EVERY (and when the data, the live feed or the settings change)."""
-    ek = json.dumps(extras, sort_keys=True, default=str) if extras else ""
-    key = (w, h, full, fixed, tuple(reserve or ()), ek)
+    ek = json.dumps([extras, mapset, view], sort_keys=True, default=str) if (extras or mapset or view) else ""
+    key = (w, h, full, fixed, tuple(reserve or ()), tuple(avoid or ()), ek)
     slot = (int(t // COMPOSE_EVERY), id(data), id(live))
     hit = _cache.get(key)
     if hit is None or hit[0] != slot:
         if len(_cache) > 8:
             _cache.clear()
-        hit = _cache[key] = (slot, render(w, h, data, t, full, fixed, reserve, extras, live))
+        hit = _cache[key] = (slot, render(w, h, data, t, full, fixed, reserve, extras, live, mapset, view, avoid))
     return hit[1]
 
 
-def draw_full(c, zone, data, t, fixed=False, caption_box=None, extras=None, live=None, now=None):
+def draw_full(c, zone, data, t, fixed=False, caption_box=None, extras=None, live=None, now=None, mapset=None,
+              view=None):
     """The full map over the whole zone, the ISS's band clear of the caption (its box in the zone, if any), with the
     data moving along its links."""
     x, y, w, h = zone
-    ex = extras if extras is not None else extras_of(None)
-    img, paths = cached(w, h, data, t, True, fixed, reserve_for(caption_box, h), ex, live)
+    ex = extras if extras is not None else extras_of(None, mapset is not None)
+    img, paths = cached(w, h, data, t, True, fixed, reserve_for(caption_box, h), ex, live, mapset, view,
+                        tuple(caption_box) if caption_box and mapset is not None else None)
     c.Blit(img, x, y)
     if paths:
         flow(c.buf[max(0, y):y + h, max(0, x):x + w], paths, time.time() if now is None else now, ex, w >= BIG_W)
+    return paths
+
+
+def video_box(paths):
+    """Where the Space Map left room for its live video ({x, y, w, h, border, tag}, zone-relative), or None."""
+    return next((p for p in paths or [] if p.get("kind") == "video"), None)
+
+
+def draw_video(buf, box, frame):
+    """The live video into its box (a 1 px dark frame round it, and a small LIVE tag)."""
+    if box is None or frame is None:
+        return
+    x, y, w, h = box["x"], box["y"], box["w"], box["h"]
+    H, W = buf.shape[:2]
+    if box.get("border", True):
+        buf[max(0, y):min(H, y + h), max(0, x):min(W, x + w)] = (40, 46, 60)
+    fh, fw = frame.shape[:2]
+    X0, Y0 = x + 1, y + 1
+    X1, Y1 = min(W, X0 + min(fw, w - 2)), min(H, Y0 + min(fh, h - 2))
+    if X1 > X0 and Y1 > Y0:
+        buf[Y0:Y1, X0:X1] = frame[:Y1 - Y0, :X1 - X0]
+    if box.get("tag", True):
+        tw = _tw("LIVE") + 3
+        buf[Y0:Y0 + 7, X0:X0 + tw] = (200, 30, 40)
+        _text(buf, X0 + 2, Y0 + 1, "LIVE", (255, 255, 255))
 
 
 def small_size(w, h):
