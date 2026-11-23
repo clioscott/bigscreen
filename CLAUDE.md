@@ -147,6 +147,12 @@ once (`hold: false`), so the rotation resumes by itself.
   (timezonefinder), and the crew and expedition (corquaid's people-in-space list) → `data/iss.json`.
   `display/modules/space.py` makes the caption sections for the moment the video shows (35 s ago), interpolating the
   coordinates every frame. Flags are colour glyphs (`display/modules/flags.py`, `gfx.COLOR_GLYPHS`) drawn by DrawText.
+- Caption flags (`display/modules/caption_flags.py`, `overlay.flags = {on, ids, corner, size}`): a row of pixel flags in
+  a corner or stacked on the caption (and its Japanese caption). `ids: null` is automatic: `common/flagplaces.py` works
+  out the country and province/state/prefecture from the webcam's `country`/`region`, place text, time zone and
+  coordinates. The flag set is **not in git** (r74n's state flags and some city/emblem artwork can't be published):
+  `~/bigscreen-state/data/flags/` (`index.json` + `<id>_<18|23>.png`), synced to the Pi. It's made on Scott's PC
+  (Pictures/pixel-flags-icons/mockups/tool/export_flagset.py) and copied there.
 - ISS maps (`display/modules/issmap.py`): the full map plays in the ISS's turn while its video is unusable (night side
   with `daylight_only`, a blank/plain/frozen picture by when it's on screen — `Stream.blank_on_screen` — or no picture);
   `cams.<id>.map = {when_down (default on: never down/skipped), fixed (off: centred on the ISS), extras}`. The ISS's
