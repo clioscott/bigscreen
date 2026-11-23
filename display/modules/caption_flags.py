@@ -153,14 +153,15 @@ def draw(zc, anchor, w, h, ov, ids, box, place):
         y = by + rh - 2 - fh
         for ex, ey, ew, eh in ((x, y, fw + 2, 1), (x, y + fh + 1, fw + 2, 1), (x, y + 1, 1, fh), (x + fw + 1, y + 1, 1, fh)):
             box(zc, ex, ey, ew, eh, rgb, op * fop)          # 1 px outline in the caption's background, faded with them
-        _blend(zc, a, x + 1, y + 1, fop)
+        _blend(zc, a, x + 1, y + 1, fop, rgb, op * fop)
         x += fw + 2 + GAP
     return bx, by, bx + rw, by + rh
 
 
-def _blend(zc, a, x, y, op):
+def _blend(zc, a, x, y, op, back, back_op):
     """The flag over what's under it at opacity op, clipped to the zone (the caption layer turns this into the
-    flag's own opacity over the video)."""
+    flag's own opacity over the video). Its see-through pixels (an emblem's corners) get the caption's background
+    colour at back_op instead, as the outline does, so a cut-out shape keeps a backing."""
     h, w = a.shape[:2]
     X0, Y0, X1, Y1 = max(x, zc.x0), max(y, zc.y0), min(x + w, zc.x1), min(y + h, zc.y1)
     if X1 <= X0 or Y1 <= Y0:
@@ -170,4 +171,7 @@ def _blend(zc, a, x, y, op):
     region = zc.buf[Y0:Y1, X0:X1]
     mixed = region.astype(np.float32) * (1 - op) + src[..., :3].astype(np.float32) * op
     region[m] = (mixed[m] + 0.5).astype(np.uint8)
+    if (~m).any():
+        under = region.astype(np.float32) * (1 - back_op) + np.array(back, np.float32) * back_op
+        region[~m] = (under[~m] + 0.5).astype(np.uint8)
     zc.mark(X0, Y0, X1, Y1)
