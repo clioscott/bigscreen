@@ -318,6 +318,17 @@ def _validate_overlay(name, ov):
                 or not 1 <= jc.get("size", 12) <= 64:
             raise ConfigError(f"webcam {name}: the Japanese caption needs text (up to 400 characters), a Japanese "
                               "font, a size and a position")
+    fl = ov.get("flags")
+    if fl is not None:                                     # the row of flags (display/modules/caption_flags.py)
+        ids = fl.get("ids") if isinstance(fl, dict) else None
+        if not isinstance(fl, dict) or not set(fl) <= {"on", "ids", "corner", "size"} \
+                or not isinstance(fl.get("on", True), bool) \
+                or fl.get("corner", "auto") not in ("auto", "tl", "tc", "tr", "bl", "bc", "br") \
+                or fl.get("size", "auto") not in ("auto", 18, 23) \
+                or not (ids is None or (isinstance(ids, list) and len(ids) <= 6 and all(
+                    isinstance(i, str) and re.fullmatch(r"[a-z0-9-]{2,40}", i) for i in ids))):
+            raise ConfigError(f"webcam {name}: flags need on (true or false), up to 6 flags (or none for automatic), "
+                              "a position and a size (auto, 18 or 23)")
     show = ov.get("show", {})
     if not isinstance(show, dict) or any(k not in SECTIONS for k in show):
         raise ConfigError(f"webcam {name}: caption show has an unknown section")
@@ -497,6 +508,11 @@ def _validate_webcams(wc):
                 raise ConfigError(f'webcam {name}: hours must be {{"from": "HH:MM", "to": "HH:MM"}}')
         if not isinstance(cam.get("daylight_only", True), bool):
             raise ConfigError(f"webcam {name}: daylight_only must be true or false")
+        for key, pat in (("country", r"[A-Za-z]{2}"), ("region", r"[A-Za-z0-9]{1,3}")):
+            v = cam.get(key)                               # where the webcam is (the caption's automatic flags)
+            if v not in (None, "") and not (isinstance(v, str) and re.fullmatch(pat, v)):
+                raise ConfigError(f"webcam {name}: {key} must be a code like "
+                                  + ('"ca" or "jp"' if key == "country" else '"BC", "MA" or "13"'))
         if cam.get("space") not in (None, "iss"):
             raise ConfigError(f'webcam {name}: space must be "iss" (the only place in space with webcams)')
         mp = cam.get("map")                                # the ISS map (display/modules/issmap.py)
