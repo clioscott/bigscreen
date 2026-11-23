@@ -28,6 +28,17 @@ ITEMS = {
     "USLAB000058": "cabin_p", "USLAB000059": "cabin_t", "USLAB000053": "o2", "USLAB000055": "co2",
     "USLAB000005": "gyros", "Z1000013": "ku_tx", "Z1000014": "ku_el", "NODE3000009": "water",
     "S0000004": "sarj_p", "S0000003": "sarj_s", "AIRLOCK000054": "airlock_p", "USLAB000081": "maneuver",
+    # (the Space Map's panels: display/modules/mappanels.py; each checked against the live feed 2026-11-23)
+    "USLAB000032": "pos_x", "USLAB000033": "pos_y", "USLAB000034": "pos_z",          # km (J2000)
+    "USLAB000035": "vel_x", "USLAB000036": "vel_y", "USLAB000037": "vel_z",          # m/s
+    "USLAB000039": "mass", "USLAB000086": "mode", "USLAB000012": "att_mode", "USLAB000013": "nav",
+    "USLAB000102": "gmt", "NODE3000005": "urine", "NODE3000008": "waste", "NODE3000004": "upa",
+    "AIRLOCK000049": "crewlock",
+    "S4000001": "v_1a", "P4000001": "v_2a", "S6000004": "v_1b", "P6000004": "v_2b",
+    "S4000002": "a_1a", "P4000002": "a_2a", "S6000005": "a_1b", "P6000005": "a_2b",
+    "S4000007": "beta_1a", "P4000007": "beta_2a", "S6000008": "beta_1b", "P6000007": "beta_2b",
+    "S4000008": "beta_3a", "P4000008": "beta_4a",
+    "RUSSEG000001": "ru_mode", "RUSSEG000024": "ru_thrusters", "RUSSEG000025": "ru_att",
 }
 AOS_CLASS = "24"
 STALE_SEC = 30.0
