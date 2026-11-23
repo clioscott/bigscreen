@@ -839,6 +839,7 @@ def _layer(style, ov, ct, w, h, font_for):
         main = zc.bbox                                     # the caption's own box (before the icon and the Japanese)
         if ct.side_icon and main:
             _icon_beside(zc, main, w, h, ov, ct.side_icon)
+        beside = zc.bbox                                   # the caption with its weather icon: flags go beside this
         jp = _jp_caption(zc, main, w, h, ov, fl)
         if ct.flag_ids:                                    # the flags: on the caption (and its Japanese) or a corner
             anchor = main
@@ -846,7 +847,8 @@ def _layer(style, ov, ct, w, h, font_for):
                 anchor = (min(main[0], jp[0]), min(main[1], jp[1]), max(main[2], jp[2]), max(main[3], jp[3]))
             from display.modules import caption_flags
             caption_flags.draw(zc, anchor, w, h, ov, ct.flag_ids, _box,
-                               lambda corner, bw, bh: Ctx(zc, (0, 0, w, h), {**ov, "corner": corner}, fl).place(bw, bh, 2))
+                               lambda corner, bw, bh: Ctx(zc, (0, 0, w, h), {**ov, "corner": corner}, fl).place(bw, bh, 2),
+                               main=main, beside=beside)
         planes.append(cv.buf.astype(np.int32))
         if zc.bbox:
             bbox = zc.bbox if bbox is None else (min(bbox[0], zc.bbox[0]), min(bbox[1], zc.bbox[1]),

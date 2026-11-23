@@ -323,7 +323,7 @@ def _validate_overlay(name, ov):
         ids = fl.get("ids") if isinstance(fl, dict) else None
         if not isinstance(fl, dict) or not set(fl) <= {"on", "ids", "corner", "size", "opacity"} \
                 or not isinstance(fl.get("on", True), bool) \
-                or fl.get("corner", "auto") not in ("auto", "tl", "tc", "tr", "bl", "bc", "br") \
+                or fl.get("corner", "auto") not in ("auto", "tl", "tc", "tr", "bl", "bc", "br", "left", "right") \
                 or fl.get("size", "auto") not in ("auto", 18, 23) \
                 or isinstance(fl.get("opacity", 1), bool) or not isinstance(fl.get("opacity", 1), (int, float)) \
                 or not 0.1 <= fl.get("opacity", 1) <= 1 \

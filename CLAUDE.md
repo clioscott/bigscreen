@@ -149,7 +149,7 @@ once (`hold: false`), so the rotation resumes by itself.
   coordinates every frame. Flags are colour glyphs (`display/modules/flags.py`, `gfx.COLOR_GLYPHS`) drawn by DrawText.
 - Caption flags (`display/modules/caption_flags.py`, `overlay.flags = {on, ids, corner, size, opacity}`; opacity
   0.1-1, default 0.8: blended over the video, the outline fading with them): a row of pixel flags in a corner or
-  stacked on the caption (and its Japanese caption). `ids: null` is automatic: `common/flagplaces.py` works
+  stacked on the caption (and its Japanese caption), or beside it (`corner: left | right`). `ids: null` is automatic: `common/flagplaces.py` works
   out the country and province/state/prefecture from the webcam's `country`/`region`, place text, time zone and
   coordinates. The flag set is **not in git** (r74n's state flags and some city/emblem artwork can't be published):
   `~/bigscreen-state/data/flags/` (`index.json` + `<id>_<18|23>.png`), synced to the Pi. It's made on Scott's PC
