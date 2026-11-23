@@ -1697,14 +1697,20 @@ async def webcams_frames(type: str, w: int, h: int, url: str = "", id: int | Non
 
 
 @app.get("/api/webcams/warm")
-def webcams_warm(type: str, url: str = "", id: int | None = None, refresh: int | None = None, fps: int = 15):
+def webcams_warm(type: str, url: str = "", id: int | None = None, refresh: int | None = None, fps: int = 15,
+                 w: int | None = None, h: int | None = None, x: float | None = None, y: float | None = None,
+                 cw: float | None = None, px: int = 0):
     """Start (or keep alive) a webcam's feed before its screen comes up, so the screen opens on a picture instead of
     "loading". The display asks shortly before (display/modules/webcam.py warm); a feed outlives its last ask or viewer
-    by GRACE_SEC. Never fails loudly: the screen itself reports a source that won't come up."""
+    by GRACE_SEC. With the zone it will play in (w, h and the crop), the feed decodes the detail that crop needs from
+    the start instead of restarting for it once the wall's stream opens. Never fails loudly: the screen itself reports
+    a source that won't come up."""
     try:
         f = webcams.feed({"type": type, "url": url, "id": id, "refresh_sec": refresh}, max(1, min(30, fps)))
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}
+    if w and h and 8 <= w <= 448 and 8 <= h <= 192 and hasattr(f, "expect"):
+        f.expect(w, h, _consumer_args(cw, x, y, 1, 1, 1, None, px)[0])
     return {"ok": True, "state": f.state}
 
 
