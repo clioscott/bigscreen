@@ -1,0 +1,153 @@
+"""The Space Map (the ISS map as its own entry): its view per size, the panels in nine places, labels that keep off
+each other, the satellite layers, China's links, and the settings the hub accepts."""
+
+import json
+import struct
+import time
+
+import numpy as np
+import pytest
+
+from display.modules import issmap, maplabels, mappanels, mapsats
+
+T0 = 1_790_000_000
+
+
+def _track(lon0=0.0, lat=0.0, step=10, n=700, dlon=0.6):
+    return {"track": [[T0 + i * step, lat, (lon0 + i * dlon + 180) % 360 - 180, 1] for i in range(n)]}
+
+
+@pytest.fixture(autouse=True)
+def _no_hub(monkeypatch):
+    monkeypatch.setattr(issmap, "live_from", lambda hub: None)
+
+
+def test_the_automatic_view_reaches_north_past_the_russian_stations_and_keeps_the_band_off_the_caption():
+    for w, h, rb in ((448, 175, 18), (448, 192, 18), (448, 134, 18)):
+        v = issmap.View(w, h, reserve=(0, rb))
+        assert float(v.y(issmap.TOP_MIN)) >= -0.5                      # 66°N is on the map (not cut off)
+        assert float(v.y(-issmap.ISS_LAT)) <= h - rb - issmap.BAND_MARGIN + 0.5
+
+
+def test_zoomed_in_the_view_follows_the_iss_up_and_down():
+    a = issmap.View(448, 175, opts={"zoom": 2.5}, iss_lat=40.0)
+    b = issmap.View(448, 175, opts={"zoom": 2.5}, iss_lat=-40.0)
+    assert a.W == round(448 * 2.5) and a.key == b.key                  # one raster of the whole world
+    assert abs(float(a.y(40.0)) - 175 / 2) < 2 and abs(float(b.y(-40.0)) - 175 / 2) < 2
+
+
+def test_a_set_latitude_sits_in_the_middle_and_stretch_changes_rows_per_degree():
+    v = issmap.View(448, 175, opts={"lat": 30.0, "stretch": 1.5})
+    assert abs(float(v.y(30.0)) - 87.5) < 1.5
+    assert abs(v.ys - 448 / 360 * 1.5) < 1e-6
+
+
+def test_the_view_is_read_per_size():
+    cam = {"map": {"views": {"tall": {"zoom": 2}, "wall": {"lat": 10}}}}
+    assert issmap.view_of(cam, "tall")["zoom"] == 2 and issmap.view_of(cam, "wall")["lat"] == 10
+    assert issmap.view_of(cam, "left") == issmap.VIEW
+
+
+def _ctx(**kw):
+    d = {"people": [{"name": "Pyotr Dubrov", "flag": "ru", "craft": "Soyuz MS-29", "launched": T0 - 86400 * 10,
+                     "iss": True, "role": "Commander"},
+                    {"name": "Zhu Yangzhu", "flag": "cn", "craft": "Shenzhou 23", "launched": T0 - 86400 * 5,
+                     "iss": False, "role": "Commander"}],
+         "spacewx": {"kp": 5.3, "wind": 410, "bt": 5, "bz": -3, "xray": 2.3e-6},
+         "mission": {"name": "Expedition 75", "start": T0 - 86400 * 3}}
+    return {"data": d, "live": None, "t": T0, "units": mappanels.UNIT_DEFAULTS, "flags": False, **kw}
+
+
+def test_crew_names_full_last_role_or_just_flags():
+    got = {m: mappanels.rows_for("crew", _ctx(crew_names=m)) for m in mappanels.CREW_NAMES}
+    assert got["full"] == [("PYOTR DUBROV", "10D")] and got["last"] == [("DUBROV", "10D")]
+    assert got["role"] == [("CMDR. DUBROV", "10D")] and got["flags"][0][1] is None
+    assert mappanels.rows_for("tg_crew", _ctx(crew_names="last")) == [("ZHU", "5D")]   # (family name first)
+
+
+def test_fields_without_data_drop_out_and_space_weather_reads_right():
+    assert mappanels.rows_for("cabin_p", _ctx()) == []                     # (no live feed)
+    assert mappanels.rows_for("kp", _ctx())[0][1].startswith("5.3 STORM G1")
+    assert mappanels.rows_for("xray", _ctx())[0][1] == "C2.3"
+    assert mappanels.rows_for("expedition", _ctx()) == [("EXPEDITION 75", "DAY 4")]
+
+
+def test_panels_in_one_column_never_overlap():
+    panels = [{"pos": p, "fields": ["kp", "wind", "bz", "xray", "expedition"], "on": True}
+              for p in ("tl", "ml", "bl", "tl", "bl")]
+    placed = mappanels.layout(mappanels.panels_of({"panels": panels}), _ctx(), 448, 175, 0, 18)
+    boxes = mappanels.boxes(placed)
+    assert 3 <= len(boxes) <= 5                                       # (what has no room is left out)
+    for i, a in enumerate(boxes):
+        for b in boxes[i + 1:]:
+            assert a[3] <= b[1] or b[3] <= a[1] or a[2] <= b[0] or b[2] <= a[0]
+
+
+def test_labels_keep_off_what_is_already_there():
+    items = [{"text": "TDRS 7", "anchor": (100, 50), "half": (4, 2), "pos": "auto", "prio": 3, "rgb": (255, 255, 255)}]
+    (it, x, y, _t, bw), = maplabels.place(items, [(104, 40, 160, 60)], 448, 175)   # something right of it
+    assert x + bw <= 104 or y + maplabels.LH <= 40 or y >= 60
+    fixed = [{**items[0], "pos": "below"}]
+    (_it, x, y, _t, _bw), = maplabels.place(fixed, [], 448, 175)
+    assert y > 50
+
+
+def _sats_file(tmp_path, lat0, lon0, lon1):
+    d = tmp_path / "issmap"
+    d.mkdir()
+    la = np.array([[lat0 * 100], [lat0 * 100]], "<i2")
+    lo = np.array([[lon0 * 100], [lon1 * 100]], "<i2")
+    head = struct.pack("<4sIHIdf", b"SAT2", 1, 2, 0, float(T0), 30.0)
+    (d / "sats_gps.bin").write_bytes(head + la.tobytes() + lo.tobytes())
+    (d / "sats_gps.json").write_text(json.dumps({"names": ["GPS BIIR-5  (PRN 22)"]}))
+
+
+def test_satellites_are_interpolated_across_the_date_line(tmp_path):
+    _sats_file(tmp_path, 10.0, 179.0, -179.0)
+    mapsats._files.clear()
+    f = mapsats.load("gps", str(tmp_path))
+    lat, lon, ok = mapsats.positions(f, T0 + 15)
+    assert ok[0] and abs(lat[0] - 10) < 0.01 and abs(abs(lon[0]) - 180) < 0.01
+    assert mapsats.positions(f, T0 + 100) is None                          # (past the file: nothing, not old)
+    assert mapsats._short_name("GPS BIIR-5  (PRN 22)") == "PRN 22"
+
+
+def test_tiangong_talks_to_a_chinese_station_or_through_tianlian():
+    assert issmap.cn_links((40.0, 110.0))[0]["via"] in issmap.CN_GROUND
+    relay = [{"name": "Tianlian 2-02", "net": "tianlian", "lat": 0.8, "lon": 76.9}]
+    got = issmap.cn_links((-20.0, 70.0), relay)
+    assert got and got[0]["via"] == "Tianlian 2-02" and len(got[0]["pts"]) == 3
+
+
+def test_the_whole_space_map_draws_with_everything_on(tmp_path, monkeypatch):
+    _sats_file(tmp_path, 10.0, 20.0, 21.0)
+    mapsats._files.clear()
+    monkeypatch.setattr(issmap, "DATA_DIR", str(tmp_path))
+    ex = issmap.extras_of({"map": {"extras": {k: {"on": True} for k in issmap.EXTRAS}}}, space_map=True)
+    ms = {"sats": {"gps": {"on": True, "links": True, "label": True}}, "relays": "linked", "ground": "linked",
+          "labels": {k: {"name": True, "flag": True} for k in maplabels.KINDS},
+          "panels": [{"pos": p, "fields": list(mappanels.FIELDS)[:6]} for p in mappanels.POSITIONS],
+          "links": {"nasa": {"style": "comet"}, "ru": {"style": "pulse"}}}
+    data = {**_track(lon0=40.0, lat=-30.0), "css": [[T0 + i * 20, 20.0, (i * 1.2) % 360 - 180, 1] for i in range(350)],
+            "launches": [{"name": "X", "rocket": "Falcon 9", "net": T0 + 7200, "lat": 28.5, "lon": -80.6, "flag": "us"}]}
+    live = {"at": T0 + 3040, "connected": True, "signal": [[T0, 1]]}
+    img, paths = issmap.render(448, 175, data, T0 + 3000, extras=ex, live=live, mapset=ms,
+                               view=issmap.VIEW, reserve=(0, 18), avoid=(0, 157, 300, 175))
+    assert img.shape == (175, 448, 3) and paths
+    buf = img.copy()
+    issmap.flow(buf, paths, time.time(), ex, True)
+    assert (buf != img).any()
+
+
+def test_the_hub_checks_the_space_map_settings():
+    from hub import config
+    config._validate_space_map({"views": {"tall": {"zoom": 2, "lat": None}}, "relays": "linked",
+                                "panels": [{"pos": "mc", "fields": ["kp"], "crew_names": "role"}],
+                                "sats": {"starlink": {"on": True, "brightness": 0.3, "links": True, "near_km": 2000}},
+                                "labels": {"ground": {"flag": True, "pos": "below"}}, "names": {"TDRS 13": "TDRS-M"},
+                                "links": {"cn": {"up": "#112233", "style": "comet"}}, "units": {"speed": "mph"}})
+    for bad in ({"views": {"tall": {"zoom": 9}}}, {"panels": [{"pos": "middle"}]}, {"panels": [{"fields": ["nope"]}]},
+                {"sats": {"pluto": {}}}, {"links": {"nasa": {"style": "lasers"}}}, {"labels": {"iss": {"pos": "up"}}},
+                {"relays": "sometimes"}, {"panels": [{"crew_names": "nick"}]}, {"nope": 1}):
+        with pytest.raises(config.ConfigError):
+            config._validate_space_map(bad)

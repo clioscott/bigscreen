@@ -1421,18 +1421,55 @@ def iss_live_now():
     return iss_live.snapshot()
 
 
+@app.get("/api/iss-map/catalog")
+def iss_map_catalog():
+    """What the Space Map page offers: the panel fields, the satellite layers (with how many each has now), the
+    link networks and styles, the label kinds, the map layers (extras), units, and the objects that can be renamed."""
+    from common.satlayers import LAYERS
+    from display.modules import issmap, maplabels, mappanels, mapsats
+    data = _iss_data() or {}
+    counts = {}
+    for k in LAYERS:
+        try:
+            meta = read_json(paths.DATA_DIR / "issmap" / f"sats_{k}.json", None)
+            counts[k] = meta.get("count") if isinstance(meta, dict) else None
+        except Exception:
+            counts[k] = None
+    objects = [{"key": "ISS", "kind": "iss"}, {"key": "Tiangong", "kind": "tiangong"}]
+    objects += [{"key": r["name"], "kind": "relays", "net": r["net"]} for r in issmap.valid_relays(data.get("relays"))]
+    objects += [{"key": n, "kind": "ground", "net": net} for n, _p, net in issmap.ground_sites(True, True)]
+    for k in ("gps", "goes", "galileo", "glonass", "beidou", "iridium"):
+        meta = read_json(paths.DATA_DIR / "issmap" / f"sats_{k}.json", None)
+        for n in (meta or {}).get("names") or []:
+            objects.append({"key": n, "kind": "sats", "layer": k, "short": mapsats._short_name(n)})
+    return {
+        "fields": [{"key": k, "group": g, "label": lab} for k, (g, lab) in mappanels.FIELDS.items()],
+        "groups": mappanels.GROUPS, "positions": mappanels.POSITIONS, "panel_defaults": mappanels.PANEL_DEFAULTS,
+        "default_panels": mappanels.default_panels(), "crew_names": mappanels.CREW_NAMES,
+        "units": {k: list(v) for k, v in mappanels.UNITS.items()}, "unit_defaults": mappanels.UNIT_DEFAULTS,
+        "layers": [{"key": k, **{f: L[f] for f in ("label", "flag", "orbit", "mesh", "colour", "note")},
+                    "count": counts.get(k)} for k, L in LAYERS.items()],
+        "sat_defaults": mapsats.SAT_DEFAULTS, "marks": mapsats.MARKS,
+        "nets": issmap.NETS, "link_defaults": issmap.LINK_DEFAULTS, "link_styles": issmap.LINK_STYLES,
+        "label_kinds": maplabels.KINDS, "label_defaults": maplabels.LABEL_DEFAULTS, "label_places": maplabels.PLACES,
+        "extras": issmap.EXTRAS, "view": issmap.VIEW, "view_ranges": issmap.VIEW_RANGES, "objects": objects,
+    }
+
+
 @app.post("/api/iss-map/preview.png")
 def iss_map_preview(payload: dict):
     """The ISS map entry as the wall would draw it now (display/modules/iss_panel.py), for the draft settings:
     {"settings": modules.iss_map, "shape": left|right|full|tall|wall}."""
-    from display.modules import iss_panel, webcam as wc
+    from display.modules import iss_panel
     zones = _webcam_zones()
     shape = payload.get("shape") if payload.get("shape") in zones else "tall"
     s = payload.get("settings")
     cam = iss_panel.settings_of({"iss_map": s if isinstance(s, dict) else None,
                                  "webcams": (config.load().get("modules") or {}).get("webcams")})
-    img = wc.render_preview(_webcam_caption.for_shape(cam, shape), None, tuple(zones[shape]), elapsed=30.0,
-                            extra={"space": _iss_data(), "iss_live": _iss_live()}, show_map=True)
+    try:
+        img = iss_panel.render_preview(cam, shape, tuple(zones[shape]), _iss_data(), _iss_live())
+    except Exception as e:                                # (a half-typed setting: say what, don't 500 blankly)
+        raise HTTPException(400, f"{type(e).__name__}: {e}")
     out = io.BytesIO()
     Image.fromarray(img).save(out, "PNG", compress_level=1)
     return Response(out.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})

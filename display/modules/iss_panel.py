@@ -1,4 +1,4 @@
-"""The ISS map as its own rotation entry (control panel → ISS map): the full ISS map (display/modules/issmap.py) with
+"""The Space Map (the ISS map as its own rotation entry; control panel → Space Map): the full ISS map (display/modules/issmap.py) with
 its caption, on one side (``iss_map``), the full width (``iss_map_full``), above the clock (``iss_map_tall``) or the
 whole wall (``iss_map_wall``). It plays for the entry's own seconds.
 
@@ -77,9 +77,42 @@ class IssMapPanel:
         if transition or key not in self.started:
             self.started[key] = now
         data = self._space(now)
+        shape = shape_of_panel(entry.get("panel"), zone)
         issmap.draw_full(c, zone, data, now - space.LAG, fixed=bool(self.cam["map"].get("fixed")),
-                         caption_box=self.boxes.get(key), extras=issmap.extras_of(self.cam),
-                         live=issmap.live_from(self.hub))
-        cam = for_shape(self.cam, shape_of_panel(entry.get("panel"), zone))   # the caption settings of its size
+                         caption_box=self.boxes.get(key), extras=issmap.extras_of(self.cam, space_map=True),
+                         live=issmap.live_from(self.hub), mapset=self.cam["map"], view=issmap.view_of(self.cam, shape))
+        cam = for_shape(self.cam, shape)                                       # the caption settings of its size
         self.boxes[key] = draw_caption(c, zone, cam, now - self.started[key], self.font, extra={"space": data})
         return None
+
+
+def render_preview(settings, shape, size, data, live, elapsed=30.0):
+    """The Space Map as the wall draws it at a size (shape: left | right | full | tall | wall; size: (w, h)) for the
+    control panel: the map with its caption, the moving data where it is now."""
+    from display.gfx import Canvas
+    from display.modules import issmap, space
+    w, h = size
+    cam = for_shape(settings, shape)
+    fonts = {}
+
+    def font_for(sz):
+        f = fonts.get(sz)
+        if f is None:
+            f = fonts[sz] = graphics.Font()
+            try:
+                f.LoadFont(FONTS.get(sz, sz))
+            except Exception:
+                f.LoadFont(FONTS["small"])
+        return f
+
+    box = draw_caption(Canvas(w, h), (0, 0, w, h), cam, elapsed, font_for, extra={"space": data})   # (where it goes)
+    c = Canvas(w, h)
+    ex = issmap.extras_of(settings, space_map=True)
+    now = time.time()
+    img, paths = issmap.render(w, h, data, now - space.LAG, True, bool(settings["map"].get("fixed")),
+                               issmap.reserve_for(box, h), ex, live, settings["map"],
+                               issmap.view_of(settings, shape), tuple(box) if box else None)
+    c.Blit(img, 0, 0)
+    issmap.flow(c.buf, paths, now, ex, w >= issmap.BIG_W)
+    draw_caption(c, (0, 0, w, h), cam, elapsed, font_for, extra={"space": data})
+    return c.buf.copy()
