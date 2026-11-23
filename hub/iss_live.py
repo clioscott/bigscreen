@@ -8,7 +8,8 @@ session open while a webcam is in space, and keeps the newest value of each item
 its ISS map is up; the signal is looked up for the moment the video shows (space.LAG behind), like the orbit.
 
 Signal: TIME_000001's status class is 24 while the ground has the signal (as ISS Mimic and NASA's own page read
-it); anything else, or nothing from the feed for STALE_SEC, is LOS / unknown.
+it); anything else is LOS. During LOS the feed goes quiet (no updates, only the session's keepalives): the last
+signal stands for as long as the session is alive (heard from within STALE_SEC, keepalives included).
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ AOS_CLASS = "24"
 STALE_SEC = 30.0
 HISTORY_SEC = 3600.0
 
-state = {"connected": False, "since": None, "error": None, "updates": 0, "last": None}
+state = {"connected": False, "since": None, "error": None, "updates": 0, "last": None, "heard": None}
 values: dict = {}                  # name -> {"v": raw, "cal": calibrated text, "at": when}
 signal = deque()                   # [(t, 1 | 0)] whenever it changed
 _lock = threading.Lock()
@@ -58,7 +59,7 @@ def snapshot() -> dict:
     with _lock:
         sig = [list(x) for x in signal]
         vals = {k: dict(v) for k, v in values.items()}
-    fresh = state["last"] is not None and now - state["last"] < STALE_SEC
+    fresh = state["heard"] is not None and now - state["heard"] < STALE_SEC     # (keepalives count: LOS is quiet)
     return {"at": now, "connected": bool(state["connected"] and fresh), "signal": sig, "values": vals,
             "error": state["error"]}
 
@@ -125,6 +126,7 @@ def _session():
         prev = {}
         for ln in lines:
             now = time.time()
+            state["heard"] = now
             if ln.startswith("U,"):
                 _u, sid, _item, rest = ln.split(",", 3)
                 k = int(sid) - 1

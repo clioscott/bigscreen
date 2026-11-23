@@ -280,3 +280,16 @@ def test_odd_data_from_the_hub_never_breaks_the_map():
             "docked": [{"name": "X", "docked": "soon"}, 5], "css": None}
     img, _ = issmap.render(448, 134, data, T0 + 3000, live="not a dict")
     assert img.shape == (134, 448, 3)
+
+
+def test_a_quiet_feed_during_los_still_counts_as_connected(monkeypatch):
+    from hub import iss_live
+    now = time.time()
+    monkeypatch.setitem(iss_live.state, "connected", True)
+    monkeypatch.setitem(iss_live.state, "last", now - 600)          # no updates for 10 min (LOS)
+    monkeypatch.setitem(iss_live.state, "heard", now - 3)           # but keepalives
+    monkeypatch.setattr(iss_live, "signal", __import__("collections").deque([(now - 600, 0)]))
+    snap = iss_live.snapshot()
+    assert snap["connected"] and issmap.signal_at(snap, now - 35) is False
+    monkeypatch.setitem(iss_live.state, "heard", now - 120)         # the session itself gone quiet: unknown
+    assert issmap.signal_at(iss_live.snapshot(), now - 35) is None
