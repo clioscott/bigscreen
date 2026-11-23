@@ -72,6 +72,7 @@ def _draw(overlay, cam=None):
     from display.gfx import Canvas
     c = Canvas(448, 192)
     c.buf[:] = 60
+    overlay = {**overlay, "flags": {"opacity": 1, **overlay.get("flags", {})}}   # solid: the colours are exact
     cam = {"label": "Toronto Skyline", "place": "Toronto, ON", "tz": "America/Toronto", "overlay": overlay, **(cam or {})}
     box = cap.draw_caption(c, (0, 0, 448, 192), cam, 1.0, _font, now_local=datetime.now().astimezone())
     return c.buf, box
@@ -114,6 +115,12 @@ def test_flags_off_or_unknown_place_show_nothing(flag_set):
     assert _where(buf, (255, 0, 0)) is None
 
 
+def test_opacity_lets_the_video_show_through(flag_set):
+    buf, _ = _draw({"corner": "bl", "flags": {"opacity": 0.5}})
+    assert _where(buf, (255, 0, 0)) is None                 # never solid red
+    assert _where(buf, (158, 30, 30))                       # half red, half the frame's grey (60)
+
+
 def test_no_flag_set_draws_nothing(tmp_path, monkeypatch):
     monkeypatch.setattr(cf, "FLAG_DIRS", [str(tmp_path / "none")])
     cf._index.update(path=None, mtime=None, flags={})
@@ -124,8 +131,8 @@ def test_no_flag_set_draws_nothing(tmp_path, monkeypatch):
 def test_flag_settings_are_validated():
     from hub.config import ConfigError, _validate_overlay
     _validate_overlay("x", {"flags": {"on": True, "ids": ["ca", "ca-on"], "corner": "tr", "size": 18}})
-    _validate_overlay("x", {"flags": {"ids": None}})
+    _validate_overlay("x", {"flags": {"ids": None, "opacity": 0.35}})
     for bad in ({"ids": "ca"}, {"ids": ["CA!"]}, {"corner": "middle"}, {"size": 20}, {"on": "yes"}, {"colour": 1},
-                {"ids": ["ca"] * 7}):
+                {"ids": ["ca"] * 7}, {"opacity": 0}, {"opacity": 1.5}, {"opacity": True}):
         with pytest.raises(ConfigError):
             _validate_overlay("x", {"flags": bad})

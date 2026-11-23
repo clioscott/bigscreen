@@ -88,7 +88,7 @@ DEFAULT_OVERLAY = {"style": "tag", "corner": "bl", "when": "always", "font": "sm
                             "credit": False, "custom": False, "shield": False, "over": True,
                             **{k: False for k in WX_EXTRAS}, **{k: k in ("orbit", "below", "crew") for k in SPACE}},
                    "crew_flags": True, "mission_days": False,
-                   "flags": {"on": True, "ids": None, "corner": "auto", "size": "auto"}}   # (caption_flags.py)
+                   "flags": {"on": True, "ids": None, "corner": "auto", "size": "auto", "opacity": 0.8}}   # (caption_flags.py)
 WHITE, BLACK = Color(255, 255, 255), Color(0, 0, 0)
 WX_MAX_AGE = 2 * 3600       # weather older than this isn't shown
 FIT_LINES = 3               # "fit" wraps onto up to this many lines before dropping sections
