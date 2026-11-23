@@ -32,6 +32,9 @@ BOTTOM_STRIP_PX = 17
 STREAM_AHEAD = 16.0          # a webcam this close: the Pi opens its stream and fills its buffer (webcam.py warm)
 VIDEO_FPS = 30               # the loop's rate while webcam video is on screen (system.display.video_fps): App._period
 VIDEO_HOLD_SEC = 0.5         # … from the last draw of video this long ago
+PRESENT_CORE = 1             # frames go to the panels from this core (Presenter; system.display.present_core, -1:
+                             # sent on the render thread as before). Cores: 0 the rest (network, webcam readers),
+                             # 1 sending, 2 drawing, 3 rgbmatrix's refresh (2 and 3 isolated at boot)
 GRID_WARM_AHEAD = 120.0      # the camera grid's tiles are fetched this far ahead of its turn (s)
 TILE_W, TILE_H = 64, 16      # dirty-tile granularity for pushing frames to the panels
 BLACK = Color(0, 0, 0)
@@ -69,10 +72,15 @@ class HardwareOutput:
         self.matrix = RGBMatrix(options=o)
         self.canvas = self.matrix.CreateFrameCanvas()
         self.hw_keys = {k: d.get(k) for k in ("gpio_slowdown", "limit_refresh_rate_hz", "pwm_bits",
-                                              "pwm_lsb_nanoseconds", "pwm_dither_bits", "show_refresh_rate")}
+                                              "pwm_lsb_nanoseconds", "pwm_dither_bits", "show_refresh_rate",
+                                              "present_core")}
 
         self.last = [None, None]     # what each of the two swapped hardware canvases currently holds
         self.parity = 0
+        # deploy/rgbmatrix_setbuffer.py: the swap without the GIL, so the render thread keeps drawing while the
+        # Presenter waits for the panels' refresh (a library built before it has only the plain one)
+        self.swap = getattr(self.matrix, "SwapOnVSyncNoGil", None) or self.matrix.SwapOnVSync
+        self.swap_nogil = hasattr(self.matrix, "SwapOnVSyncNoGil")
 
     def present(self, fb):
         """Push only the 64x16 tiles that differ from what this hardware canvas already holds.
@@ -116,13 +124,98 @@ class HardwareOutput:
                     x0, x1 = start * TILE_W, tx * TILE_W
                     self.canvas.SetBuffer(np.ascontiguousarray(buf[y0:y0 + TILE_H, x0:x1]), x0, y0)
             np.copyto(last, buf)
-        self.canvas = self.matrix.SwapOnVSync(self.canvas)
+        swap = getattr(self, "swap", None) or self.matrix.SwapOnVSync
+        self.canvas = swap(self.canvas)
         self.parity ^= 1
         return True
 
     def set_brightness(self, value):
         self.matrix.brightness = max(1, min(100, int(value)))
         self.last = [None, None]      # brightness is baked into the bit-planes: rewrite everything
+
+
+class _Frame:
+    def __init__(self, buf):
+        self.buf = buf
+
+
+class Presenter:
+    """Sends frames to the panels on its own core while the render thread draws the next one.
+
+    Drawing (core 2, ~4-8 ms) and sending (converting to bit-planes plus waiting for the panels' refresh, ~10 ms)
+    used to run back to back on one core: ~17-19 ms, over 60 Hz's 16.7 ms. Here a drawn frame is copied into the
+    Presenter's buffer (~0.1 ms) and sent on PRESENT_CORE while the next one is drawn, so a frame costs the longer of
+    the two, not their sum. One frame in flight: submit() waits while the previous one is still being sent, which
+    keeps the frames in order and the render loop's grid honest. Brightness is applied here too, between frames, so
+    nothing else touches the panels while a frame is being sent."""
+
+    def __init__(self, output, core=None):
+        self.output, self.core = output, core
+        self._cv = threading.Condition()
+        self._buf = None
+        self._pending = self._busy = False
+        self._brightness = None
+        self.ms = deque(maxlen=300)          # sending each pushed frame (conversion + wait for the refresh)
+        self.pushed = deque(maxlen=300)
+        self.wait_ms = deque(maxlen=300)     # the render thread waiting for the previous frame to be sent
+        self.errors = deque(maxlen=20)
+        threading.Thread(target=self._run, name="present", daemon=True).start()
+
+    def submit(self, fb):
+        t = time.perf_counter()
+        with self._cv:
+            while self._pending or self._busy:
+                self._cv.wait()
+            if self._buf is None or self._buf.shape != fb.buf.shape:
+                self._buf = np.empty_like(fb.buf)
+            np.copyto(self._buf, fb.buf)
+            self._pending = True
+            self._cv.notify_all()
+        self.wait_ms.append((time.perf_counter() - t) * 1000.0)
+
+    def set_brightness(self, value):
+        with self._cv:
+            self._brightness = value
+            self._pending = True             # (applied before the frame now waiting, or on its own)
+            self._cv.notify_all()
+
+    def idle(self, timeout=1.0):
+        """Wait until nothing is waiting or being sent (tests)."""
+        end = time.time() + timeout
+        with self._cv:
+            while (self._pending or self._busy) and time.time() < end:
+                self._cv.wait(0.05)
+            return not (self._pending or self._busy)
+
+    def _run(self):
+        if self.core is not None:
+            try:
+                os.sched_setaffinity(0, {self.core})
+            except (AttributeError, OSError) as e:
+                print(f"[display] could not pin the panels' send to core {self.core}: {e}")
+        while True:
+            with self._cv:
+                while not self._pending:
+                    self._cv.wait()
+                self._pending, self._busy = False, True
+                level, self._brightness = self._brightness, None
+                buf = self._buf
+            try:
+                if level is not None:
+                    self.output.set_brightness(level)
+                if buf is not None:
+                    t = time.perf_counter()
+                    pushed = self.output.present(_Frame(buf))
+                    if pushed:
+                        self.ms.append((time.perf_counter() - t) * 1000.0)
+                    self.pushed.append(bool(pushed))
+            except Exception:
+                self.errors.append(traceback.format_exc()[-600:])
+                print(traceback.format_exc())
+            finally:
+                with self._cv:
+                    self._busy = False
+                    self._cv.notify_all()
 
 
 class EmulatorOutput:
@@ -483,6 +576,12 @@ class App:
         from display.modules.weather_maps import MapStore
         self.maps = MapStore(DATA_DIR)
         self.output = EmulatorOutput() if emulate else HardwareOutput(self.cfg)
+        core = self.cfg.system.get("display", {}).get("present_core", PRESENT_CORE)
+        self.presenter = None
+        if not emulate and isinstance(core, int) and core >= 0:
+            self.presenter = Presenter(self.output, core)
+            sys.setswitchinterval(0.001)       # the send thread gets the GIL back within 1 ms of needing it (5 ms
+                                               # by default: a frame's send could wait that long behind a draw)
         L = self.cfg.layout
         self.fb = Canvas(L.get("width", 448), L.get("height", 192))
         self.screen = Screen(self.cfg, self.loader, maps=self.maps)
@@ -534,7 +633,10 @@ class App:
             if night:
                 level = nm.get("brightness", level)
         if level != self.brightness:
-            self.output.set_brightness(level)
+            if self.presenter is not None:
+                self.presenter.set_brightness(level)     # between frames, on the send thread
+            else:
+                self.output.set_brightness(level)
             self.brightness = level
 
     # -- loop -------------------------------------------------------------------
@@ -565,12 +667,15 @@ class App:
                 with self.frame_lock:
                     self.last_frame = self.fb.buf.copy()
                     self.frame_seq += 1
-            pushed = self.output.present(self.fb)
+            if self.presenter is not None:
+                self.presenter.submit(self.fb)               # sent on its own core while the next one is drawn
+            else:
+                pushed = self.output.present(self.fb)
+                if pushed:
+                    self.present_ms.append((time.time() - t1) * 1000.0)
+                self.pushed.append(bool(pushed))
             t2 = time.time()
             self.frame_ms.append((t1 - t0) * 1000.0)
-            if pushed:
-                self.present_ms.append((t2 - t1) * 1000.0)
-            self.pushed.append(bool(pushed))
             self.frame_times.append(t2)
             # a fixed grid, not "sleep what's left of this frame": a slow frame (a video frame's conversion and the
             # wait for vsync) is made up by the next one instead of pushing every later frame back (which ran the
@@ -586,7 +691,8 @@ class App:
         """The loop's frame time: 1 / system.display.fps (60), or while webcam video is on screen (drawn in the last
         VIDEO_HOLD_SEC) 1 / video_fps (30). Video is 30 fps: at 60 Hz each frame had to show for exactly two draws, and
         a draw plus pushing a frame (~19 ms) overran 16.7 ms, so frames showed for uneven times (judder); at 30 Hz
-        every draw is a new frame with ~14 ms to spare. The ticker and clock move by time, so they look the same."""
+        every draw is a new frame with ~14 ms to spare. The ticker and clock move by time, so they look the same. With
+        the Presenter sending frames on its own core, drawing and sending overlap; video_fps 60 is then worth trying."""
         d = self.cfg.system.get("display", {})
         fps = d.get("fps", 60)
         if video_at is not None and now - video_at < VIDEO_HOLD_SEC:
@@ -606,17 +712,25 @@ class App:
 
     def stats(self):
         ms = sorted(self.frame_ms)
-        pm = sorted(self.present_ms)
+        p = self.presenter
+        pm = sorted(p.ms if p is not None else self.present_ms)
+        pushed = list(p.pushed if p is not None else self.pushed)
+        wm = sorted(p.wait_ms) if p is not None else []
         ft = list(self.frame_times)
         fps = (len(ft) - 1) / (ft[-1] - ft[0]) if len(ft) > 2 and ft[-1] > ft[0] else 0.0
         return {
+            "present_thread": None if p is None else {
+                "core": p.core, "swap_nogil": bool(getattr(self.output, "swap_nogil", False)),
+                "wait_ms_avg": round(sum(wm) / len(wm), 2) if wm else None,
+                "wait_ms_p95": round(wm[int(len(wm) * 0.95) - 1], 2) if wm else None,
+                "errors": len(p.errors)},
             "fps": round(fps, 1),
             "draw_ms_avg": round(sum(ms) / len(ms), 2) if ms else None,
             "draw_ms_p95": round(ms[int(len(ms) * 0.95) - 1], 2) if ms else None,
             "draw_ms_max": round(ms[-1], 2) if ms else None,
             "present_ms_avg": round(sum(pm) / len(pm), 2) if pm else None,
             "present_ms_p95": round(pm[int(len(pm) * 0.95) - 1], 2) if pm else None,
-            "pushed_pct": round(100 * sum(self.pushed) / len(self.pushed)) if self.pushed else None,
+            "pushed_pct": round(100 * sum(pushed) / len(pushed)) if pushed else None,
             "webcams": self.screen.webcam.describe() if hasattr(self.screen, "webcam") else [],
             "uptime_s": int(time.time() - self.started),
             "config_revision": self.cfg.revision,
