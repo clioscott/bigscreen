@@ -255,3 +255,28 @@ def test_data_moves_along_the_links_only_while_nasa_has_the_signal():
         buf = img.copy()
         issmap.flow(buf, paths, 1000.0, ex, True)
         assert (buf != img).any() == want
+
+
+def test_the_live_feed_decodes_lightstreamer_fields():
+    from hub import iss_live
+    assert iss_live.decode("758.1|24|758.10", []) == ["758.1", "24", "758.10"]
+    assert iss_live.decode("759||", ["758", "24", "x"]) == ["759", "24", "x"]          # empty: unchanged
+    assert iss_live.decode("#|$|a%7Cb", ["1", "2", "3"]) == [None, "", "a|b"]
+    assert iss_live.decode("7|^2", ["1", "24", "c"]) == ["7", "24", "c"]
+
+
+def test_an_old_live_snapshot_is_not_used(monkeypatch):
+    monkeypatch.undo()                                                  # (the real live_from, without polling)
+    monkeypatch.setattr(issmap.threading, "Thread", lambda **k: SimpleNamespace(start=lambda: None, is_alive=lambda: True))
+    monkeypatch.setitem(issmap._live, "data", {"signal": [[0, 1]], "connected": True})
+    monkeypatch.setitem(issmap._live, "got", time.time() - 60)
+    assert issmap.live_from("http://hub") is None
+    monkeypatch.setitem(issmap._live, "got", time.time())
+    assert issmap.live_from("http://hub") is not None
+
+
+def test_odd_data_from_the_hub_never_breaks_the_map():
+    data = {**_track(), "relays": [{"net": "tdrs"}, {"net": "luch", "lon": "x"}, "nope"],
+            "docked": [{"name": "X", "docked": "soon"}, 5], "css": None}
+    img, _ = issmap.render(448, 134, data, T0 + 3000, live="not a dict")
+    assert img.shape == (134, 448, 3)

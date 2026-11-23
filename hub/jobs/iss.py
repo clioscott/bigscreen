@@ -55,13 +55,13 @@ def cache_dir() -> Path:
     return d
 
 
-def _cached_get(name, url, ttl, binary=False):
+def _cached_get(name, url, ttl, binary=False, timeout=60):
     """A file fetched at most every ttl (kept in the cache; an old copy is used when the fetch fails)."""
     p = cache_dir() / name
     if p.exists() and time.time() - p.stat().st_mtime < ttl:
         return p.read_bytes() if binary else p.read_text()
     try:
-        r = requests.get(url, headers=UA, timeout=60)
+        r = requests.get(url, headers=UA, timeout=timeout)
         r.raise_for_status()
         p.write_bytes(r.content)
     except Exception:
@@ -213,6 +213,10 @@ LIGHTS_URL = ("https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?SERVICE
               "&LAYERS=VIIRS_Black_Marble&CRS=EPSG:4326&BBOX=-90,-180,90,180&WIDTH=1440&HEIGHT=720&FORMAT=image/png"
               "&STYLES=")
 LIGHTS_TTL = 90 * 86400
+LIGHTS_RETRY = 86400                # a failed city-lights fetch is tried again after this
+EXTRAS_BUDGET = 120.0               # the extras' fetches stop starting after this long (the job's timeout is 240 s)
+FETCH_TIMEOUT = 20
+MIN_TDRS = 7                        # TDRS 1-6 (the first generation, 1983-1993) are left out: retired or spares
 
 
 def _tles(text):
@@ -233,16 +237,22 @@ def relays(now):
     for net, url, keep in (("tdrs", CELESTRAK + "?GROUP=tdrss&FORMAT=tle", lambda n: n.startswith("TDRS")),
                            ("luch", CELESTRAK + "?NAME=LUCH-5&FORMAT=tle", lambda n: n in ("LUCH-5A", "LUCH-5B", "LUCH-5V"))):
         try:
-            got = _tles(_cached_get(f"relays_{net}.tle", url, RELAY_TTL))
+            got = _tles(_cached_get(f"relays_{net}.tle", url, RELAY_TTL, timeout=FETCH_TIMEOUT))
         except Exception:
             continue
         for name, l1, l2 in got:
             if not keep(name):
                 continue
-            sat = Satrec.twoline2rv(l1, l2)
-            jd = julian(now)
-            e, r, _v = sat.sgp4(int(jd), jd - int(jd))
+            try:
+                sat = Satrec.twoline2rv(l1, l2)
+                jd = julian(now)
+                e, r, _v = sat.sgp4(int(jd), jd - int(jd))
+            except Exception:
+                continue
             if e or abs(sat.no_kozai * 1440 / (2 * math.pi) - 1.0027) > 0.01:   # (geostationary only)
+                continue
+            num = name.split()[-1]
+            if net == "tdrs" and num.isdigit() and int(num) < MIN_TDRS:
                 continue
             lat, lon = ground(r, jd)
             out.append({"name": name.title().replace("Tdrs", "TDRS"), "net": net, "lat": round(lat, 2),
@@ -253,7 +263,7 @@ def relays(now):
 def css_track(now):
     """Tiangong's track over the same span as the ISS's ([[t, lat, lon, lit], …] every 20 s), or None."""
     try:
-        got = _tles(_cached_get("css.tle", f"{CELESTRAK}?CATNR={CSS_ID}&FORMAT=tle", TLE_TTL))
+        got = _tles(_cached_get("css.tle", f"{CELESTRAK}?CATNR={CSS_ID}&FORMAT=tle", TLE_TTL, timeout=FETCH_TIMEOUT))
         _n, l1, l2 = got[0]
         return track(l1, l2, now - BACK, horizon=HORIZON + BACK, step=20)
     except Exception:
@@ -263,12 +273,21 @@ def css_track(now):
 def docked(now):
     """The spacecraft docked to the ISS: [{"name", "flag", "docked" (unix), "port"}], or None."""
     try:
-        d = json.loads(_cached_get("docked.json", DOCKED_URL, CREW_TTL))
+        d = json.loads(_cached_get("docked.json", DOCKED_URL, CREW_TTL, timeout=FETCH_TIMEOUT))
+        items = d.get("spacecraft") if isinstance(d, dict) else None
     except Exception:
         return None
-    return [{"name": str(x.get("name") or ""), "flag": str(x.get("flag_code") or "").lower()[:2],
-             "docked": x.get("docked"), "port": x.get("docking_port")}
-            for x in d.get("spacecraft") or [] if x.get("iss") and x.get("name")]
+    out = []
+    for x in items if isinstance(items, list) else []:
+        if not isinstance(x, dict) or not x.get("iss") or not x.get("name"):
+            continue
+        try:
+            when = int(float(x.get("docked")))
+        except (TypeError, ValueError):
+            when = None
+        out.append({"name": str(x["name"]), "flag": str(x.get("flag_code") or "").lower()[:2], "docked": when,
+                    "port": x.get("docking_port")})
+    return out
 
 
 def _write_grid(path, magic, grid):
@@ -282,7 +301,7 @@ def _write_grid(path, magic, grid):
 def aurora(out_dir):
     """NOAA's OVATION aurora forecast → issmap/aurora.bin: 181 rows (lat -90..90) × 360 (lon 0..359), 0-100."""
     import numpy as np
-    r = requests.get(OVATION_URL, headers=UA, timeout=60)
+    r = requests.get(OVATION_URL, headers=UA, timeout=FETCH_TIMEOUT)
     r.raise_for_status()
     d = r.json()
     g = np.zeros((181, 360), np.uint8)
@@ -298,9 +317,13 @@ def city_lights(out_dir):
     import numpy as np
     from PIL import Image
     p = out_dir / "lights.bin"
+    tried = cache_dir() / "lights.tried"
     if p.exists() and time.time() - p.stat().st_mtime < LIGHTS_TTL:
         return False
-    r = requests.get(LIGHTS_URL, headers=UA, timeout=120)
+    if tried.exists() and time.time() - tried.stat().st_mtime < LIGHTS_RETRY:
+        return "waiting to try again"                 # (failed lately: not every run)
+    tried.touch()
+    r = requests.get(LIGHTS_URL, headers=UA, timeout=60)
     r.raise_for_status()
     img = np.asarray(Image.open(io.BytesIO(r.content)).convert("L"), np.uint8)
     h, w = img.shape
@@ -309,16 +332,24 @@ def city_lights(out_dir):
     return True
 
 
-def extras(now):
-    """Everything the map's extras need; each part on its own (one failing leaves the rest)."""
-    out = {"relays": relays(now), "css": css_track(now), "docked": docked(now)}
+def extras(now, old=None):
+    """Everything the map's extras need; each part on its own (one failing or out of time keeps what the last run
+    had, from ``old``), none started after EXTRAS_BUDGET."""
+    old = old if isinstance(old, dict) else {}
+    out = {}
     d = paths.DATA_DIR / "issmap"
     d.mkdir(parents=True, exist_ok=True)
-    for name, fn in (("aurora", aurora), ("lights", city_lights)):
+    for name, fn in (("relays", lambda: relays(now)), ("css", lambda: css_track(now)), ("docked", lambda: docked(now)),
+                     ("aurora", lambda: aurora(d)), ("lights", lambda: city_lights(d))):
+        if time.time() - now > EXTRAS_BUDGET:
+            out[name] = old.get(name) if name in ("relays", "css", "docked") else "skipped: out of time"
+            continue
         try:
-            out[name] = fn(d)
+            out[name] = fn()
         except Exception as e:
-            out[name] = f"failed: {str(e)[:120]}"
+            out[name] = old.get(name) if name in ("relays", "css", "docked") else f"failed: {str(e)[:120]}"
+        if name in ("relays", "css", "docked") and not out[name]:
+            out[name] = old.get(name)
     return out
 
 
@@ -338,12 +369,18 @@ def run(cfg):
         over.append([row[0], below.name(row[1], row[2])])
         tz.append([row[0], below.zone(row[1], row[2])])
     c, m = crew()
-    x = extras(now)
+    try:
+        old = json.loads((paths.DATA_DIR / "iss.json").read_text())
+    except Exception:
+        old = {}
     out = {"at": now, "elements": [l1, l2], "track": tr, "events": events(tr), "over": over, "tz": tz,
-           "crew": c, "mission": m, "relays": x["relays"], "css": x["css"], "docked": x["docked"]}
+           "crew": c, "mission": m, **{k: old.get(k) for k in ("relays", "css", "docked")}}
+    atomic_write_json(paths.DATA_DIR / "iss.json", out)          # the orbit first: the extras can't hold it up
+    x = extras(now, old)
+    out.update(relays=x["relays"], css=x["css"], docked=x["docked"])
     atomic_write_json(paths.DATA_DIR / "iss.json", out)
     return {"ok": True, "points": len(tr), "events": len(out["events"]), "crew": (c or {}).get("count"),
-            "relays": len(x["relays"]), "css": bool(x["css"]), "docked": len(x["docked"] or []),
+            "relays": len(x["relays"] or []), "css": bool(x["css"]), "docked": len(x["docked"] or []),
             "aurora": x["aurora"], "lights": x["lights"]}
 
 

@@ -63,10 +63,26 @@ def snapshot() -> dict:
             "error": state["error"]}
 
 
+def decode(rest, prev):
+    """A TLCP update's fields (``a|b|c``) over the previous values: empty = unchanged, ``#`` = null (None), ``$`` =
+    empty text, ``^N`` = the next N unchanged; anything else percent-encoded."""
+    from urllib.parse import unquote
+    out, i = [], 0
+    for f in rest.split("|"):
+        if f.startswith("^") and f[1:].isdigit():
+            for _ in range(int(f[1:])):
+                out.append(prev[i] if i < len(prev) else None)
+                i += 1
+            continue
+        out.append(prev[i] if f == "" and i < len(prev) else None if f in ("#", "") else "" if f == "$" else unquote(f))
+        i += 1
+    return out
+
+
 def _note(name, val, cls, cal, now):
     with _lock:
         if name == "signal":
-            if cls == "":
+            if not cls:
                 return
             aos = 1 if cls == AOS_CLASS else 0
             if not signal or signal[-1][1] != aos:
@@ -74,12 +90,7 @@ def _note(name, val, cls, cal, now):
             while len(signal) > 1 and signal[1][0] < now - HISTORY_SEC:
                 signal.popleft()
             return
-        cur = values.setdefault(name, {"v": None, "cal": None, "at": None})
-        if val != "":
-            cur["v"] = val
-        if cal != "":
-            cur["cal"] = cal
-        cur["at"] = now
+        values[name] = {"v": val, "cal": cal, "at": now}
 
 
 def _session():
@@ -88,34 +99,36 @@ def _session():
                       data={"LS_adapter_set": "ISSLIVE", "LS_cid": CID, "LS_content_length": "100000000",
                             "LS_keepalive_millis": "5000"},
                       stream=True, timeout=(15, 60), headers=UA)
-    r.raise_for_status()
-    lines = r.iter_lines(decode_unicode=True)
-    sess = None
-    for ln in lines:
-        if ln.startswith("CONOK"):
-            sess = ln.split(",")[1]
-            break
-        if ln.startswith(("CONERR", "END")):
-            raise RuntimeError(ln[:120])
-    if not sess:
-        raise RuntimeError("no session")
-    keys = list(ITEMS)
-    for i, item in enumerate(keys, 1):
-        requests.post(BASE + "/control.txt?LS_protocol=TLCP-2.5.0&LS_session=" + sess,
-                      data={"LS_op": "add", "LS_subId": str(i), "LS_group": item,
-                            "LS_schema": "Value Status.Class CalibratedData", "LS_mode": "MERGE",
-                            "LS_snapshot": "true", "LS_reqId": str(i)}, timeout=15, headers=UA)
-    state.update(connected=True, since=time.time(), error=None)
-    log("connected")
-    last_check = time.time()
     try:
+        r.raise_for_status()
+        lines = r.iter_lines(decode_unicode=True)
+        sess = None
+        for ln in lines:
+            if ln.startswith("CONOK"):
+                sess = ln.split(",")[1]
+                break
+            if ln.startswith(("CONERR", "END")):
+                raise RuntimeError(ln[:120])
+        if not sess:
+            raise RuntimeError("no session")
+        keys = list(ITEMS)
+        for i, item in enumerate(keys, 1):
+            c = requests.post(BASE + "/control.txt?LS_protocol=TLCP-2.5.0&LS_session=" + sess,
+                              data={"LS_op": "add", "LS_subId": str(i), "LS_group": item,
+                                    "LS_schema": "Value Status.Class CalibratedData", "LS_mode": "MERGE",
+                                    "LS_snapshot": "true", "LS_reqId": str(i)}, timeout=15, headers=UA)
+            if not c.text.startswith("REQOK"):
+                log(f"{item} refused: {c.text.strip()[:80]}")
+        state.update(connected=True, since=time.time(), error=None)
+        log("connected")
+        last_check = time.time()
+        prev = {}
         for ln in lines:
             now = time.time()
             if ln.startswith("U,"):
                 _u, sid, _item, rest = ln.split(",", 3)
-                f = (rest.split("|") + ["", "", ""])[:3]
-                f = ["" if x == "#" else x for x in f]
                 k = int(sid) - 1
+                f = prev[k] = (decode(rest, prev.get(k, [])) + [None, None, None])[:3]
                 if 0 <= k < len(keys):
                     _note(ITEMS[keys[k]], f[0], f[1], f[2], now)
                     state["updates"] += 1
@@ -137,9 +150,10 @@ def _run():
         if not wanted():
             time.sleep(60)
             continue
+        t0 = time.time()
         try:
             _session()
-            wait = 5.0
+            wait = 5.0 if time.time() - t0 > 120 else min(300.0, wait * 2)   # (one ended at once: back off)
         except Exception as e:
             state.update(connected=False, error=f"{time.strftime('%H:%M:%S')} {str(e)[:160]}")
             log(f"error: {e}")

@@ -133,7 +133,7 @@ EXTRAS = {
     "russian": {"on": True},
     "flow": {"on": True, "speed": "normal", "direction": "both"},
     "telemetry": {"on": True, "corner": "tr", "rows": ["cabin_p", "cabin_t", "o2", "co2", "gyros", "water"]},
-    "docked": {"on": True, "corner": "tr", "days": True},
+    "docked": {"on": True, "corner": "tl", "days": True},
 }
 FLOW_SPEED = {"slow": 6.0, "normal": 12.0, "fast": 24.0}   # px a second
 FLOW_GAP = 8                                                 # px between the dots
@@ -197,7 +197,7 @@ def links(pos, relays=None, aos=None, russian=True):
     "via": name}]. NASA: unless the signal is known lost (aos False), through the TDRS that both the ISS and a ground
     terminal can see (the newest; then the nearest the ISS), down to White Sands (or else Guam). Russia: down to a Russian station
     that sees the ISS above MIN_EL (the highest), else through a Luch-5 that the ISS and Shchyolkovo can see."""
-    relays = relays or FALLBACK_RELAYS
+    relays = valid_relays(relays) or FALLBACK_RELAYS
     iss = _xyz(pos[0], pos[1], R_KM + ALT_KM)
     out = []
 
@@ -238,6 +238,18 @@ def links(pos, relays=None, aos=None, russian=True):
     return out
 
 
+def valid_relays(relays):
+    """The relays with a usable position (the data comes from the hub; anything odd is left out)."""
+    out = []
+    for r in relays if isinstance(relays, list) else []:
+        try:
+            if isinstance(r, dict) and r.get("net") in ("tdrs", "luch"):
+                out.append({**r, "lat": float(r.get("lat") or 0.0), "lon": float(r["lon"])})
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
+
+
 def signal_at(live, t):
     """NASA's signal at time t from the hub's live feed: True (AOS), False (LOS), None (not known)."""
     if not isinstance(live, dict):
@@ -256,17 +268,20 @@ def signal_at(live, t):
 
 # --- the hub's live feed (NASA ISS Live: hub/iss_live.py), polled while a map is up -----------------------------
 LIVE_EVERY = 3.0
-_live = {"data": None, "used": 0.0, "hub": None, "thread": None}
+LIVE_STALE = 15.0             # a snapshot older than this (the hub down, restarting) isn't used
+_live = {"data": None, "got": 0.0, "used": 0.0, "hub": None, "thread": None}
 
 
 def live_from(hub):
-    """The newest /api/iss/live from the hub (polled in the background every LIVE_EVERY while asked for), or None."""
-    _live["used"], _live["hub"] = time.time(), hub
+    """The newest /api/iss/live from the hub (polled in the background every LIVE_EVERY while asked for), or None
+    when there's no fresh one."""
+    now = time.time()
+    _live["used"], _live["hub"] = now, hub
     th = _live["thread"]
     if hub and (th is None or not th.is_alive()):
         _live["thread"] = threading.Thread(target=_poll_live, name="iss-live", daemon=True)
         _live["thread"].start()
-    return _live["data"]
+    return _live["data"] if now - _live["got"] < LIVE_STALE else None
 
 
 def _poll_live():
@@ -274,7 +289,9 @@ def _poll_live():
     while time.time() - _live["used"] < 15:
         try:
             with urllib.request.urlopen(_live["hub"].rstrip("/") + "/api/iss/live", timeout=4) as r:
-                _live["data"] = json.loads(r.read())
+                d = json.loads(r.read())
+            if isinstance(d, dict):
+                _live["data"], _live["got"] = d, time.time()
         except Exception:
             pass
         time.sleep(LIVE_EVERY)
@@ -299,6 +316,8 @@ def grid(name):
             return hit[2]
         raw = open(path, "rb").read()
         w, h = int.from_bytes(raw[4:6], "big"), int.from_bytes(raw[6:8], "big")
+        if w < 2 or h < 2:
+            raise ValueError("empty grid")
         arr = np.frombuffer(raw[8:8 + w * h], np.uint8).reshape(h, w)
     except (OSError, ValueError):
         mt, arr = None, None
@@ -515,9 +534,24 @@ def daylight(v, t):
     return (NIGHT + (1.0 - NIGHT) * f)[..., None]
 
 
+_samples_memo: dict = {}
+
+
 def _sample(v, g, north_first):
     """A lat/lon grid (rows of latitude, columns of longitude from -180, or from 0 for the aurora) at each world
-    pixel: (mh, W) float32 0..1."""
+    pixel: (mh, W) float32 0..255, kept per view and grid (only the night side changes every SHADE_EVERY)."""
+    key = (v.key, id(g), north_first)
+    hit = _samples_memo.get(key)
+    if hit is not None and hit[0] is g:
+        return hit[1]
+    if len(_samples_memo) > 8:
+        _samples_memo.clear()
+    out = _sample_now(v, g, north_first)
+    _samples_memo[key] = (g, out)
+    return out
+
+
+def _sample_now(v, g, north_first):
     gh, gw = g.shape
     lons = (np.arange(v.W) + 0.5) / v.W * 360.0 - 180.0
     lats = v.top - (np.arange(v.mh) + 0.5) / v.mh * (v.top - v.bot)
@@ -555,8 +589,11 @@ def shaded(v, full, t, big=False, ex=None):
             if g is None:
                 continue
             strength = float((ex.get(k) or {}).get("strength", 0.8))
-            vals = _sample(v, g, north) / 255.0
-            a = (f(vals) * (dark if north else np.clip(dark * 1.5, 0, 1)) * strength)[..., None]
+            fk = (v.key, id(g), k)
+            hit = _samples_memo.get(fk)
+            if hit is None or hit[0] is not g:                   # the brightness of each pixel's lights / aurora
+                hit = _samples_memo[fk] = (g, f(_sample(v, g, north) / 255.0).astype(np.float32))
+            a = (hit[1] * (dark if north else np.clip(dark * 1.5, 0, 1)) * strength)[..., None]
             lit = lit * (1 - a) + np.asarray(rgb, np.float32) * a
         lit = (lit + 0.5).astype(np.uint8)
         lit[mask] = img[mask]
@@ -672,8 +709,8 @@ def _text(img, x, y, s, rgb):
 
 def _num(live, k, d=0):
     try:
-        return float(((live or {}).get("values") or {})[k]["v"]), True
-    except (KeyError, TypeError, ValueError):
+        return float(live["values"][k]["v"]), True
+    except (KeyError, TypeError, ValueError, IndexError):
         return 0.0, False
 
 
@@ -687,7 +724,10 @@ def telemetry_lines(live, rows):
             out.append(("ARRAYS", f"P {p:.0f}  S {s:.0f}" if ok1 and ok2 else "--"))
             continue
         if k == "ku":
-            cal = ((((live or {}).get("values") or {}).get("ku_tx") or {}).get("cal") or "")
+            try:
+                cal = str(live["values"]["ku_tx"]["cal"] or "")
+            except (KeyError, TypeError):
+                cal = ""
             out.append(("KU-BAND", "TX" if cal.upper() == "YES" else "OFF" if cal else "--"))
             continue
         v, ok = _num(live, k)
@@ -702,10 +742,15 @@ def docked_lines(data, now, days=True):
     from display.modules.flags import flag_char
     out = []
     for d in (data or {}).get("docked") or []:
+        if not isinstance(d, dict):
+            continue
         n = str(d.get("name") or "").upper()
-        fc = d.get("flag") or ""
+        fc = str(d.get("flag") or "")
         f = flag_char(fc) if fc else ""
-        dd = f"  {int((now - float(d['docked'])) // 86400)}D" if days and d.get("docked") else ""
+        try:
+            dd = f"  {int((now - float(d['docked'])) // 86400)}D" if days and d.get("docked") else ""
+        except (TypeError, ValueError):
+            dd = ""
         out.append(f"{f}{n}{dd}")
     return out
 
@@ -778,7 +823,7 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
                     lab = "TIANGONG"
                     _text(img, min(w - _tw(lab) - 1, X + 6), max(0, int(cy) - 9), lab, (230, 110, 90))
         aos = signal_at(live, t) if _on(ex, "signal") else None
-        relays = (data or {}).get("relays") or FALLBACK_RELAYS
+        relays = valid_relays((data or {}).get("relays")) or FALLBACK_RELAYS
         for lk in links(pos, relays, aos, russian=_on(ex, "russian")):
             xs, ys = [ix], [iy]
             for la, lo in lk["pts"][1:]:
@@ -795,7 +840,8 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
             _sprite(img, art["luch" if r.get("net") == "luch" else "tdrs"], float(v.wx(r["lon"])),
                     float(v.y(r.get("lat") or 0.0)), v, left)
         if w >= 280:                                        # the panels, in the top corners
-            ys_ = {"tl": 0, "tr": 0}
+            top = (reserve or (0, 0))[0]                     # (under a caption at the top)
+            ys_ = {"tl": top, "tr": top}
             if _on(ex, "telemetry"):
                 c = ex["telemetry"].get("corner", "tr") if ex["telemetry"].get("corner") in ys_ else "tr"
                 rows = [r for r in ex["telemetry"].get("rows") or [] if r in TELEMETRY_ROWS]

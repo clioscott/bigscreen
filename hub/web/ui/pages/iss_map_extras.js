@@ -10,7 +10,7 @@ export const EXTRA_DEFAULTS = {
   russian: { on: true },
   flow: { on: true, speed: "normal", direction: "both" },
   telemetry: { on: true, corner: "tr", rows: ["cabin_p", "cabin_t", "o2", "co2", "gyros", "water"] },
-  docked: { on: true, corner: "tr", days: true },
+  docked: { on: true, corner: "tl", days: true },
 };
 const ROWS = [
   { value: "cabin_p", label: "Cabin pressure" }, { value: "cabin_t", label: "Cabin temperature" },
