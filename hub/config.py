@@ -139,6 +139,7 @@ def validate(cfg):
                 raise ConfigError(f"track {tid}: fps must be 1–30")
 
     _validate_webcams(mods.get("webcams"))
+    _validate_iss_map(mods.get("iss_map"))
     _validate_bridges(mods.get("bridges"))
     _validate_timezones(mods.get("timezones"))
 
@@ -357,6 +358,23 @@ def _validate_bridges(br):
         if not isinstance(ids, list) or not ids or not all(isinstance(x, int) and not isinstance(x, bool) and x > 0
                                                             for x in ids):
             raise ConfigError(f"bridge {c['label']}: pick a DriveBC camera")
+
+
+def _validate_iss_map(m):
+    """modules.iss_map (display/modules/iss_panel.py): a label, a caption (overlay) and the map's settings."""
+    if m is None:
+        return
+    if not isinstance(m, dict):
+        raise ConfigError("ISS map: must be an object")
+    if not isinstance(m.get("label", ""), str):
+        raise ConfigError("ISS map: label must be text")
+    _validate_overlay("ISS map", m.get("overlay"))
+    mp = m.get("map")
+    if mp is not None:
+        if not isinstance(mp, dict) or not set(mp) <= {"when_down", "fixed", "extras"}                 or not isinstance(mp.get("fixed", False), bool):
+            raise ConfigError("ISS map: map takes fixed (true or false) and extras")
+        if mp.get("extras") is not None:
+            _validate_map_extras("ISS map", mp["extras"])
 
 
 def _validate_webcams(wc):

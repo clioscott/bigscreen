@@ -20,7 +20,7 @@ function entrySub(e) {
   }
   if (isWebcamList(e)) bits.push(`${listCount()} webcams, in the Webcams page's order`);
   if (e.panel.startsWith("webcam_grid")) bits.push(`${store.draft.modules.webcams?.grid?.cams?.length || 0} cameras`);
-  if (PANEL_TYPES[e.panel]?.full) bits.push(["weather_alert", "webcam_wall", "webcam_grid_wall", "bridges_wall", "timezones_wall"].includes(e.panel) ? "whole wall"
+  if (PANEL_TYPES[e.panel]?.full) bits.push(["weather_alert", "webcam_wall", "webcam_grid_wall", "bridges_wall", "timezones_wall", "iss_map_wall"].includes(e.panel) ? "whole wall"
     : e.panel.endsWith("_tall") ? "above the clock" : "full width");
   if (e.priority === "next") bits.push("jumps the queue");
   return bits.join(" · ");
