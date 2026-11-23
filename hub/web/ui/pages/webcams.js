@@ -10,6 +10,9 @@ import { CaptionRows } from "./caption_rows.js";
 import { IssMapExtras } from "./iss_map_extras.js";
 
 const DEFAULT_SHARPEN = 0.5;          // hub/webcams.py DEFAULT_SHARPEN: a webcam with no Sharpness of its own
+// a caption of its own per size on the wall (webcam_caption.for_shape): the two sides share one
+const SIZE_OF_SHAPE = { left: "side", right: "side", full: "full", tall: "tall", wall: "wall" };
+const SIZE_LABELS = { side: "the sides", full: "full width", tall: "above the clock", wall: "the whole wall" };
 export const SHAPES = {
   left: { label: "Left side", panel: "webcam", side: "left", icon: "PanelLeft" },
   right: { label: "Right side", panel: "webcam", side: "right", icon: "PanelRight" },
@@ -1138,6 +1141,7 @@ const WallPreview = {
 const seedIssMap = () => {
   const src = Object.values(store.saved?.modules?.webcams?.cams || {}).find((c) => c?.space) || {};
   seed(["modules", "iss_map"], { label: src.label || "International Space Station", overlay: clone(src.overlay || {}),
+    ...(src.overlays ? { overlays: clone(src.overlays) } : {}),
     map: { fixed: !!src.map?.fixed, ...(src.map?.extras ? { extras: clone(src.map.extras) } : {}) } });
 };
 
@@ -1306,21 +1310,27 @@ const WebcamEditor = {
     onBeforeUnmount(() => clearTimeout(localTimer));
     // fill in fields older or hand-written webcams lack, in saved and draft alike (opening one isn't a change);
     // runs on every webcam opened: the editor stays mounted when going from one webcam to another
+    // an overlay with every field the editor reads (older or hand-written ones lack some)
+    const fullOverlay = (o) => {
+      o = { ...clone(DEFAULT_OVERLAY), ...(o || {}) };
+      o.show = { ...DEFAULT_OVERLAY.show, ...(o.show || {}) };
+      const ord = (o.order || []).filter((k) => ORDERABLE.includes(k));
+      if (!ord.includes("live")) ord.unshift("live");      // older orders don't list LIVE: it leads (as on the wall)
+      if (!ord.includes("shield")) ord.unshift("shield");  // nor the shield
+      o.shield = { ...DEFAULT_OVERLAY.shield, ...(o.shield || {}) };
+      o.jp_caption = { ...DEFAULT_OVERLAY.jp_caption, ...(o.jp_caption || {}) };
+      o.flags = { ...DEFAULT_OVERLAY.flags, ...(o.flags || {}) };
+      o.order = [...ord, ...ORDERABLE.filter((k) => !ord.includes(k))];
+      return o;
+    };
     const fill = (cid) => {
       for (const root of [store.saved, store.draft]) {
         const c = props.mapMode ? root?.modules?.iss_map : root?.modules?.webcams?.cams?.[cid];
         if (!c) continue;
         if (props.mapMode) c.space = "iss";
         else c.source = c.source || { type: "youtube", url: "" };
-        c.overlay = { ...clone(DEFAULT_OVERLAY), ...(c.overlay || {}) };
-        c.overlay.show = { ...DEFAULT_OVERLAY.show, ...(c.overlay.show || {}) };
-        const ord = (c.overlay.order || []).filter((k) => ORDERABLE.includes(k));
-        if (!ord.includes("live")) ord.unshift("live");      // older orders don't list LIVE: it leads (as on the wall)
-        if (!ord.includes("shield")) ord.unshift("shield");  // nor the shield
-        c.overlay.shield = { ...DEFAULT_OVERLAY.shield, ...(c.overlay.shield || {}) };
-        c.overlay.jp_caption = { ...DEFAULT_OVERLAY.jp_caption, ...(c.overlay.jp_caption || {}) };
-        c.overlay.flags = { ...DEFAULT_OVERLAY.flags, ...(c.overlay.flags || {}) };
-        c.overlay.order = [...ord, ...ORDERABLE.filter((k) => !ord.includes(k))];
+        c.overlay = fullOverlay(c.overlay);
+        for (const k of Object.keys(c.overlays || {})) c.overlays[k] = fullOverlay(c.overlays[k]);
         c.colour = c.colour || {};
         c.crops = c.crops || {};
       }
@@ -1328,7 +1338,21 @@ const WebcamEditor = {
     watch(id, fill, { immediate: true, flush: "sync" });
     // a save replaces the config with the hub's, which has no iss_map until it's been saved once: seed it again
     if (props.mapMode) watch(() => store.draft.modules.iss_map, (v) => { if (!v) { seedIssMap(); fill(id.value); } }, { flush: "sync" });
-    const ov = computed(() => cam.value.overlay);
+    // the caption being edited: the size shown above's own when it has one, else the one every size shares
+    const capSize = computed(() => SIZE_OF_SHAPE[shape.value] || "side");
+    const ownSize = computed(() => !!cam.value?.overlays?.[capSize.value]);
+    const ov = computed(() => cam.value.overlays?.[capSize.value] || cam.value.overlay);
+    const ownSizes = computed(() => Object.keys(cam.value?.overlays || {}).map((k) => SIZE_LABELS[k] || k));
+    const setOwnSize = (on) => {
+      const c = cam.value;
+      if (on) {
+        c.overlays = c.overlays || {};
+        c.overlays[capSize.value] = fullOverlay(clone(c.overlay));       // starts as a copy of the shared caption
+      } else if (c.overlays) {
+        delete c.overlays[capSize.value];
+        if (!Object.keys(c.overlays).length) delete c.overlays;
+      }
+    };
     const colour = computed(() => cam.value.colour);
     const probe = ref(null);
     const testing = ref(false);
@@ -1375,14 +1399,30 @@ const WebcamEditor = {
       if (Array.isArray(pl)) store.draft.modules.webcams.playlist = pl.filter((x) => x.cam !== id.value);
       go("webcams");
     };
+    // the shared caption to every webcam's shared caption (sizes with a caption of their own keep it)
     const captionToAll = () => {
+      let kept = 0;
       for (const c of Object.values(store.draft.modules.webcams.cams)) {
         if (c === cam.value) continue;
         const ids = c.overlay?.flags?.ids ?? null;           // each webcam keeps its own flags (where it is)
-        c.overlay = clone(ov.value);
-        c.overlay.flags = { ...c.overlay.flags, ids };
+        const copy = clone(ov.value);
+        copy.flags = { ...copy.flags, ids };
+        c.overlay = copy;
+        if (c.overlays && Object.keys(c.overlays).length) kept++;
       }
-      toast("Every webcam now uses this caption (save to keep it)");
+      toast("Every webcam now uses this caption" + (kept ? ` (${kept} keep their own caption at some sizes)` : "") + " (save to keep it)");
+    };
+    // this caption as every webcam's own caption at this width (their other sizes stay as they are)
+    const captionToSize = () => {
+      const size = capSize.value;
+      for (const c of Object.values(store.draft.modules.webcams.cams)) {
+        if (c === cam.value && ownSize.value) continue;
+        const ids = (c.overlays?.[size] || c.overlay)?.flags?.ids ?? null;   // each keeps its own flags
+        const copy = clone(ov.value);
+        copy.flags = { ...copy.flags, ids };
+        (c.overlays || (c.overlays = {}))[size] = copy;
+      }
+      toast(`Every webcam now has this caption at ${SIZE_LABELS[size]} (save to keep it)`);
     };
     const toggleShow = (k) => { ov.value.show[k] = !ov.value.show[k]; };
     // the detail sections that are on, in their order (drag to reorder; the headline isn't a detail)
@@ -1488,7 +1528,7 @@ const WebcamEditor = {
     });
     return { mapFound, ISS_MAP_SHAPES, issMapEntry, inRows, setSpace, previewMap, setMap, setMinimap, SPACE_GROUPS, toggleHours, hoursNote, id, cam, shape, WEBCAM_SEC, zone, ov, colour, DEFAULT_SHARPEN, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
       orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, hasText, customCols, SHIELD_PRESETS, SHIELD_KINDS, SHIELD_PLACES, SHIELD_SIZES, SHIELD_STYLES, shieldSrc, signMissing, presetShown, presetDone,
-      CONTAINERS, feedFor, feedPill, healthFor, downPill, local, cityQ, cityHits, citySearching, searchCity, pickCity, clearCity, cityLabel, wxPoint, jpFaces, jpSample, jc, jcSizes, jcSetFace, jcSample, JC_POSITIONS,
+      CONTAINERS, feedFor, feedPill, healthFor, downPill, local, cityQ, cityHits, citySearching, searchCity, pickCity, clearCity, cityLabel, wxPoint, jpFaces, jpSample, jc, jcSizes, jcSetFace, jcSample, JC_POSITIONS, capSize, ownSize, ownSizes, setOwnSize, SIZE_LABELS, captionToSize,
       flagSet, fl, flagAuto, FLAG_GROUPS, FLAG_POSITIONS, FLAG_SIZES, flagQ, flagGroup, flagIds, flagHits, flagSrc, flagName, setFlagMode, addFlag, removeFlag, moveFlag, setCountry, setRegion, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
   },
   template: `<div class="page" v-if="cam">
@@ -1641,8 +1681,13 @@ const WebcamEditor = {
           </div></div>
 
         <div class="card"><div class="card-head"><Icon name="Captions" :size="16"/><h3>Caption</h3>
-            <span class="spacer"></span><button v-if="!mapMode" class="btn sm ghost" @click="captionToAll" title="Copy this caption look to every webcam"><Icon name="Copy" :size="14"/>Use on all webcams</button></div>
+            <span class="spacer"></span><button v-if="!mapMode && !ownSize" class="btn sm ghost" @click="captionToAll" title="Copy this caption look to every webcam (sizes with a caption of their own keep it)"><Icon name="Copy" :size="14"/>Use on all webcams</button>
+            <button v-if="!mapMode" class="btn sm ghost" @click="captionToSize" :title="'Give every webcam this caption at ' + SIZE_LABELS[capSize] + ' (their other sizes stay as they are)'">
+              <Icon name="Copy" :size="14"/>Use at {{ SIZE_LABELS[capSize] }} on all webcams</button></div>
           <div class="card-body stack">
+            <ToggleRow :modelValue="ownSize" @update:modelValue="setOwnSize" :label="'Own caption for ' + SIZE_LABELS[capSize]"
+              :hint="ownSize ? 'Changes here are for ' + SIZE_LABELS[capSize] + ' only (pick the size in On the wall above). Off: back to the caption the other sizes share'
+                : 'Off: this is the caption every size shares' + (ownSizes.length ? ' (except ' + ownSizes.join(', ') + ', which have their own)' : '') + '. On: ' + SIZE_LABELS[capSize] + ' gets a copy to change on its own'"/>
             <div class="seg wc-captabs"><button v-for="t in [{v:'theme', l:'Theme', i:'Palette'}, {v:'content', l:'What it says', i:'Text'}, {v:'look', l:'Size & look', i:'Ruler'}, {v:'when', l:'When', i:'Clock'}, {v:'japanese', l:'Japanese', i:'Languages'}, {v:'flags', l:'Flags', i:'Flag'}]"
               :key="t.v" type="button" :class="{on: capTab === t.v}" @click="capTab = t.v" :disabled="!['theme', 'japanese', 'flags'].includes(t.v) && ov.style === 'none'"><Icon :name="t.i" :size="14"/>{{ t.l }}</button></div>
             <div v-if="capTab === 'theme'" class="wc-layouts"><button v-for="(l, k) in LAYOUTS" :key="k" type="button" class="wc-layout" :class="{on: ov.style === k}" @click="ov.style = k" :title="l.note">
@@ -1679,7 +1724,7 @@ const WebcamEditor = {
             </template>
             <template v-if="ov.style !== 'none' && capTab === 'content'">
               <Field label="Rows" hint="Each row, top to bottom; drag pieces to reorder them, between rows, or to Not shown. Separators come from the palette; every piece has its own size">
-                <CaptionRows :cam="cam" :ov="ov" :labels="SECTIONS" :has-text="hasText"/></Field>
+                <CaptionRows :key="capSize + (ownSize ? ':own' : '')" :cam="cam" :ov="ov" :labels="SECTIONS" :has-text="hasText"/></Field>
               <ToggleRow v-if="cam.space && inRows('crew')" :modelValue="ov.crew_flags !== false" @update:modelValue="v => ov.crew_flags = v"
                 label="Flags for the people aboard" hint="Each country's count with its flag (3, 3, 1); off: 7 aboard"/>
               <Field v-if="cam.space && inRows('coords')" label="Coordinates" hint="Updated every frame as the ISS moves">

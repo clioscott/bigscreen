@@ -47,7 +47,7 @@ import numpy as np
 from display.gfx import Color, graphics
 from display.modules.webcam_caption import (DEFAULT_OVERLAY, FONTS, INTRO_SEC, LAYOUTS, STYLES,  # noqa: F401
                                             _outlined, _shade, _tw, caption_lines, draw_caption,
-                                            fit_detail, overlay_of)
+                                            fit_detail, for_shape, overlay_of)
 
 DEFAULT_HUB = "http://192.168.1.111:8800"
 IDLE_SEC = 3.0               # hang up when the screen hasn't drawn this webcam for this long
@@ -813,14 +813,8 @@ class WebcamPanel:
     # drawing -----------------------------------------------------------------------------------------------
     @staticmethod
     def shape_for(entry, zone):
-        p = entry.get("panel", "webcam")
-        if p == "webcam_wall":
-            return "wall"
-        if p == "webcam_full":
-            return "full"
-        if p == "webcam_tall":
-            return "tall"
-        return "left" if zone[0] == 0 else "right"
+        from display.modules.webcam_caption import shape_of_panel
+        return shape_of_panel(entry.get("panel", "webcam"), zone)
 
     def draw(self, c, zone, entry, transition):
         if entry.get("cam"):
@@ -950,6 +944,7 @@ class WebcamPanel:
         if not cam:
             self._centre(c, zone, f"No webcam '{entry.get('cam')}'", self.dim)
             return "skip" if now - started > 4 else None
+        capcam = for_shape(cam, self.shape_for(entry, zone))   # the caption settings of the size it's drawn at
         mapped = self._mapped(entry.get("cam"))
         if mapped:                                            # the ISS: its map while the video is unusable
             from display.modules import issmap, space
@@ -965,7 +960,7 @@ class WebcamPanel:
                 issmap.draw_full(c, zone, data, t, fixed=bool((cam.get("map") or {}).get("fixed")),
                                  caption_box=boxes.get(bk), extras=issmap.extras_of(cam),
                                  live=issmap.live_from(self.hub))
-                boxes[bk] = draw_caption(c, zone, cam, now - started, self.font, extra={"space": data})
+                boxes[bk] = draw_caption(c, zone, capcam, now - started, self.font, extra={"space": data})
                 return None
         else:
             st = self._stream(cam, self.shape_for(entry, zone), w, h)
@@ -1000,8 +995,8 @@ class WebcamPanel:
         extra = {"taken": round(st.frame_t - st.age)} if still and st.age is not None else None   # capture time (s)
         if cam.get("space"):                                  # in space: the ISS's orbit, crew and mission
             extra = {**(extra or {}), "space": self._space(now)}
-        box = draw_caption(c, zone, cam, now - started, self.font, wx=wx, extra=extra)
-        draw_small_map(c, zone, cam, (extra or {}).get("space"), now, box)
+        box = draw_caption(c, zone, capcam, now - started, self.font, wx=wx, extra=extra)
+        draw_small_map(c, zone, capcam, (extra or {}).get("space"), now, box)
         return None
 
     def _space(self, now):
@@ -1324,7 +1319,8 @@ def _preview_font(size):
 
 
 def caption_dropped(cam: dict, shape_zone, wx=None, extra=None) -> list:
-    """Sections turned on that the caption can't fit at this size (the control panel lists them)."""
+    """Sections turned on that the caption can't fit at this size (the control panel lists them). ``cam`` as the
+    size sees it (webcam_caption.for_shape)."""
     from display.modules.webcam_caption import dropped_sections
     return dropped_sections(cam, shape_zone, _preview_font, wx, extra)
 
@@ -1340,7 +1336,8 @@ def draw_small_map(c, zone, cam, data, now, caption_box=None):
 
 def render_preview(cam: dict, frame, shape_zone, elapsed=0.0, wx=None, extra=None, show_map=False) -> np.ndarray:
     """The wall's pixels for one zone: a frame already cropped to the zone, plus the caption (control panel). A webcam
-    in space: its small map too, or with show_map (or no frame) the full map its turn shows when the video can't."""
+    in space: its small map too, or with show_map (or no frame) the full map its turn shows when the video can't.
+    ``cam`` as the size sees it (webcam_caption.for_shape)."""
     from display.gfx import Canvas
     w, h = shape_zone
     c = Canvas(w, h)

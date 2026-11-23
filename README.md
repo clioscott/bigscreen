@@ -132,7 +132,8 @@ clock, world clock, departure board, ticker, underline and more) built from the 
 place, local time, the weather at the camera (temperature, conditions, feels-like, high/low, wind, humidity,
 sunrise/sunset; Open-Meteo), date, time difference, your own line and who runs the camera, with its own text size,
 alignment, width, padding and distance from the edge. A ready-made gallery of about a hundred 24/7 YouTube streams can
-be browsed by city and kind, as a grid or on a map. A caption can carry a row of pixel flags (countries at 23 px,
+be browsed by city and kind, as a grid or on a map. Each size on the wall (the sides, full width, above the clock, the whole wall) can have a caption of its own, set
+for one webcam or for every webcam at that size. A caption can carry a row of pixel flags (countries at 23 px,
 provinces, states, prefectures and cities at 18 px), set by hand or worked out from where the webcam is, in any
 corner or stacked on the caption.
 

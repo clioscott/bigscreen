@@ -1331,8 +1331,13 @@ WX_TTL, WX_RETRY, WX_SETTLE = 900.0, 60.0, 1.0
 def _wants_wx(cam):
     """A preview needs the location's weather: shown, or for the local time (a webcam with no tz uses the zone it
     carries; webcam_caption.Content)."""
-    show = ((cam or {}).get("overlay") or {}).get("show") or {}
-    return bool(show.get("weather") or show.get("sun") or (show.get("time", True) and not (cam or {}).get("tz")))
+    cam = cam or {}
+    per = cam.get("overlays") if isinstance(cam.get("overlays"), dict) else {}
+    for ov in [cam.get("overlay") or {}, *per.values()]:      # the shared caption and every size's own
+        show = (ov.get("show") if isinstance(ov, dict) else None) or {}
+        if show.get("weather") or show.get("sun") or (show.get("time", True) and not cam.get("tz")):
+            return True
+    return False
 
 
 def _webcam_wx(cam_id, cam, block=False):
@@ -1426,7 +1431,7 @@ def iss_map_preview(payload: dict):
     s = payload.get("settings")
     cam = iss_panel.settings_of({"iss_map": s if isinstance(s, dict) else None,
                                  "webcams": (config.load().get("modules") or {}).get("webcams")})
-    img = wc.render_preview(cam, None, tuple(zones[shape]), elapsed=30.0,
+    img = wc.render_preview(_webcam_caption.for_shape(cam, shape), None, tuple(zones[shape]), elapsed=30.0,
                             extra={"space": _iss_data(), "iss_live": _iss_live()}, show_map=True)
     out = io.BytesIO()
     Image.fromarray(img).save(out, "PNG", compress_level=1)
@@ -1897,7 +1902,7 @@ def webcams_preview_set(payload: dict = Body(...)):
         extra = {"taken": time.time()} if still else None
         if cam.get("space"):
             extra = {**(extra or {}), "space": _iss_data(), "iss_live": _iss_live()}
-        dropped = wc.caption_dropped(cam, tuple(zones[shape]), wx, extra)
+        dropped = wc.caption_dropped(_webcam_caption.for_shape(cam, shape), tuple(zones[shape]), wx, extra)
     except Exception:
         dropped = []
     return {"token": token, "zone": zones[shape], "dropped": dropped, "has_weather": bool(wx)}
@@ -1940,7 +1945,8 @@ async def webcams_preview(token: str):
         extra = {"taken": round(_feed.image_t)} if getattr(_feed, "image_t", None) else None
         if cam_now.get("space"):                             # in space: the ISS's orbit, crew and mission
             extra = {**(extra or {}), "space": _iss_data(), "iss_live": _iss_live()}
-        img = wc.render_preview(cam_now, frame, (w, h), time.time() - t0, wx=wx, extra=extra,
+        img = wc.render_preview(_webcam_caption.for_shape(cam_now, cur["shape"]), frame, (w, h), time.time() - t0,
+                                wx=wx, extra=extra,
                                 show_map=bool(cur.get("show_map")))
         out = io.BytesIO()
         Image.fromarray(img).save(out, "PNG", compress_level=1)

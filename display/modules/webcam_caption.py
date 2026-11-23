@@ -3,6 +3,9 @@
 The caption is a Tag: a box in a corner with an accent edge, holding ``rows`` of pieces (see "the caption: rows of
 pieces" below). The other styles (bar, ticker, custom…) went with rows (2026-11); a caption set to one draws as tag.
 
+``overlays`` (optional): {side | full | tall | wall: overlay}, a caption of its own for that size on the wall (the
+two sides share "side"); a size without one uses ``overlay``. for_shape() picks it.
+
 ``overlay`` in a webcam's config (all optional; DEFAULT_OVERLAY fills the gaps):
     rows        [{"items": [piece, …], "wrap": bool}, …] (up to MAX_ROWS): each row's pieces in order; a piece is
                 {"k": a section, "name:2".."name:4" (the name's further lines), "live", "shield" or "sep", "size"?
@@ -209,6 +212,40 @@ def conditions_text(code):
     except (TypeError, ValueError):
         return ""
     return next((w for codes, w in CONDITIONS if code in codes), "")
+
+
+# A webcam may give each size on the wall a caption of its own: ``overlays`` = {size: overlay}, the sizes being the
+# sides (left and right share one), full width, above the clock and the whole wall. A size without one uses
+# ``overlay``. for_shape() gives the webcam as that size sees it (cached, so the caption's own caches still hit).
+SIZE_OF_SHAPE = {"left": "side", "right": "side", "full": "full", "tall": "tall", "wall": "wall"}
+SIZES_ON_WALL = ("side", "full", "tall", "wall")
+_shaped: dict = {}
+
+
+def shape_of_panel(panel, zone=None):
+    """The shape a webcam (or ISS map) entry is drawn at: wall, full, tall, or the side its zone is on."""
+    p = str(panel or "")
+    for suffix, shape in (("_wall", "wall"), ("_full", "full"), ("_tall", "tall")):
+        if p.endswith(suffix):
+            return shape
+    return "left" if zone is not None and zone[0] == 0 else "right"
+
+
+def for_shape(cam: dict, shape) -> dict:
+    """The webcam with the caption settings of the size ``shape`` (left | right | full | tall | wall) is drawn at."""
+    per = cam.get("overlays") if isinstance(cam, dict) else None
+    size = SIZE_OF_SHAPE.get(shape)
+    if not isinstance(per, dict) or not isinstance(per.get(size), dict):
+        return cam
+    key = (id(cam), size)
+    hit = _shaped.get(key)
+    if hit is not None and hit[0] is cam and hit[1] is per[size]:
+        return hit[2]
+    if len(_shaped) > 256:
+        _shaped.clear()
+    view = {**cam, "overlay": per[size]}
+    _shaped[key] = (cam, per[size], view)
+    return view
 
 
 def overlay_of(cam: dict) -> dict:

@@ -107,8 +107,11 @@ def wanted(cfg) -> set:
     cams = (((cfg.get("modules") or {}).get("webcams") or {}).get("cams") or {})
     out = set()
     for cam in cams.values():
-        ov = cam.get("overlay") or {}
-        sh = ov.get("shield") or {}
-        if (ov.get("show") or {}).get("shield") and sh.get("style") == "real" and str(sh.get("route") or "").strip():
-            out.add((str(sh["route"]).strip(), sh.get("kind") if sh.get("kind") not in (None, "auto") else None))
+        per = cam.get("overlays") if isinstance(cam.get("overlays"), dict) else {}
+        for ov in [cam.get("overlay") or {}, *per.values()]:      # the shared caption and every size's own
+            if not isinstance(ov, dict):
+                continue
+            sh = ov.get("shield") or {}
+            if (ov.get("show") or {}).get("shield") and sh.get("style") == "real" and str(sh.get("route") or "").strip():
+                out.add((str(sh["route"]).strip(), sh.get("kind") if sh.get("kind") not in (None, "auto") else None))
     return out
