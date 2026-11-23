@@ -23,16 +23,36 @@ def _iss_x(img):
     return np.flatnonzero((img == issmap.PAL["G"]).all(axis=2).any(axis=0))
 
 
-def test_link_goes_straight_down_near_a_station_and_through_a_relay_over_open_ocean():
-    assert issmap.link((33.0, -105.0)) == ("ground", "White Sands")
-    kind, relay, term = issmap.link((-40.0, -130.0))                   # the South Pacific
-    assert kind == "relay" and relay == "TDRS West" and term in issmap.TDRS_GROUND
+@pytest.fixture(autouse=True)
+def _no_hub(monkeypatch):
+    monkeypatch.setattr(issmap, "live_from", lambda hub: None)       # (no polling the real hub from the tests)
+
+
+def test_nasa_links_go_through_a_tdrs_relay_to_white_sands_or_guam_and_only_with_the_signal():
+    got = issmap.links((33.0, -105.0), issmap.FALLBACK_RELAYS, aos=True, russian=False)
+    assert [l["net"] for l in got] == ["nasa"] and got[0]["pts"][-1] == issmap.NASA_GROUND["White Sands"]
+    assert issmap.links((33.0, -105.0), issmap.FALLBACK_RELAYS, aos=False, russian=False) == []
+    relays = [{"name": "TDRS Z", "net": "tdrs", "lat": 0, "lon": 85.0}, {"name": "Luch-5B", "net": "luch", "lat": 0, "lon": 95.0}]
+    got = {l["net"]: l for l in issmap.links((-30.0, 75.0), relays, aos=True)}   # the Indian Ocean
+    assert got["nasa"]["via"] == "TDRS Z" and got["nasa"]["pts"][-1] == issmap.NASA_GROUND["Guam"]
+    assert got["ru"]["via"] == "Luch-5B" and got["ru"]["pts"][-1] == issmap.RU_GROUND["Shchyolkovo"]
+
+
+def test_over_russia_the_russian_segment_talks_straight_to_the_ground():
+    got = [l for l in issmap.links((55.0, 40.0), [], aos=None) if l["net"] == "ru"]
+    assert got and got[0]["via"] == "Shchyolkovo" and len(got[0]["pts"]) == 2
+
+
+def test_the_signal_is_read_for_the_moment_the_video_shows():
+    live = {"at": 1000.0, "connected": True, "signal": [[900.0, 1], [950.0, 0]]}
+    assert issmap.signal_at(live, 920) is True and issmap.signal_at(live, 960) is False
+    assert issmap.signal_at(live, 800) is None and issmap.signal_at(None, 960) is None
 
 
 def test_the_map_stays_centred_on_the_iss():
     data = _track()
     for t in (T0 + 3000, T0 + 5000):
-        img = issmap.render(448, 192, data, t)
+        img = issmap.render(448, 192, data, t)[0]
         xs = _iss_x(img)
         assert xs.size and abs(xs.mean() - 224) <= 1
 
@@ -40,7 +60,7 @@ def test_the_map_stays_centred_on_the_iss():
 def test_a_fixed_world_lets_the_iss_cross_it_and_carries_its_lines_over_the_date_line():
     data = _track(lon0=-30.0, lat=-40.0)
     t = next(r[0] for r in data["track"] if r[2] >= 175)               # just short of the date line
-    img = issmap.render(448, 192, data, t, full=True, fixed=True)
+    img = issmap.render(448, 192, data, t, full=True, fixed=True)[0]
     assert _iss_x(img).mean() > 430                                     # at the right-hand edge, not the middle
     red = (img == issmap.LINK).all(axis=2)
     cols = np.flatnonzero(red.any(axis=0))
@@ -49,7 +69,7 @@ def test_a_fixed_world_lets_the_iss_cross_it_and_carries_its_lines_over_the_date
 
 
 def test_the_small_map_has_no_stations_relays_or_links():
-    img = issmap.render(96, 48, _track(lon0=-110.0, lat=33.0), T0 + 600, full=False)
+    img = issmap.render(96, 48, _track(lon0=-110.0, lat=33.0), T0 + 600, full=False)[0]
     for k in ("B", "K", "D"):
         assert not (img == issmap.PAL[k]).all(axis=2).any()
     assert not (img == issmap.LINK).all(axis=2).any()
@@ -157,7 +177,7 @@ def test_the_small_map_stays_inside_small_zones_or_is_left_out():
     for w, h in ((152, 130), (60, 40), (448, 192)):
         x, y, sw, sh = issmap.small_box(w, h, "br")
         assert sw == 0 or (x >= 1 and y >= 1 and x + sw < w and y + sh < h)
-    assert issmap.render(0, 0, _track(), T0).shape == (0, 0, 3)
+    assert issmap.render(0, 0, _track(), T0)[0].shape == (0, 0, 3)
 
 
 @pytest.mark.parametrize("w,h", [(448, 192), (448, 175), (448, 134), (448, 130), (295, 130), (152, 130)])
@@ -182,3 +202,81 @@ def test_the_iss_is_never_drawn_under_the_caption():
     gold = (img == issmap.PAL["G"]).all(axis=2)
     ys = np.flatnonzero(gold.any(axis=1))
     assert ys.size and ys.max() < box[1]                                   # the ISS is above the caption box
+
+
+def test_map_extras_are_checked_in_the_config():
+    from hub import config
+    config._validate_map_extras("x", {"flow": {"on": True, "speed": "fast", "direction": "up"},
+                                      "telemetry": {"rows": ["o2", "arrays"], "corner": "tl"},
+                                      "lights": {"strength": 0.5}, "ahead": {"minutes": 30}})
+    for bad in ({"nope": {}}, {"flow": {"speed": "warp"}}, {"telemetry": {"rows": ["o2", "o2"]}},
+                {"lights": {"strength": 3}}, {"tiangong": {"trail": "yes"}}, {"docked": {"corner": "bl"}}):
+        with pytest.raises(config.ConfigError):
+            config._validate_map_extras("x", bad)
+
+
+def _all_off(**on):
+    ex = issmap.extras_of(None)
+    for k in ex:
+        ex[k]["on"] = k in on
+    for k, v in on.items():
+        ex[k].update(v)
+    return ex
+
+
+def test_each_extra_is_its_own_switch():
+    data = {**_track(lon0=40.0, lat=-30.0),
+            "css": [[T0 + i * 20, 20.0, (i * 1.2) % 360 - 180, 1] for i in range(350)],
+            "docked": [{"name": "Crew-13 Dragon", "flag": "us", "docked": T0 - 86400 * 3}],
+            "relays": [{"name": "TDRS Z", "net": "tdrs", "lat": 0, "lon": 85.0}]}
+    t = T0 + 3000
+    live = {"at": t + 40, "connected": True, "signal": [[t - 100, 1]],
+            "values": {"o2": {"v": "165.8"}, "gyros": {"v": "4"}}}
+    count = lambda img, rgb: int((img == rgb).all(axis=2).sum())
+    plain = issmap.render(448, 134, data, t, extras=_all_off(), live=live)[0]
+    tg = issmap.render(448, 134, data, t, extras=_all_off(tiangong={}), live=live)[0]
+    assert count(tg, issmap.PAL["R"]) > count(plain, issmap.PAL["R"])
+    sig = issmap.render(448, 134, data, t, extras=_all_off(signal={}), live=live)[0]
+    assert count(sig, issmap.AOS_C) > 0 and count(plain, issmap.AOS_C) == 0
+    tel = issmap.render(448, 134, data, t, extras=_all_off(telemetry={"rows": ["o2", "gyros"]}), live=live)[0]
+    assert count(tel, issmap.TXT) > 10 and count(plain, issmap.TXT) == 0
+    assert [a for a, _ in issmap.telemetry_lines(live, ["o2", "gyros", "water"])] == ["O2", "GYROS", "WATER"]
+    assert issmap.telemetry_lines(live, ["o2", "water"])[1][1] == "--"
+
+
+def test_data_moves_along_the_links_only_while_nasa_has_the_signal():
+    data = {**_track(lon0=40.0, lat=-30.0), "relays": [{"name": "TDRS Z", "net": "tdrs", "lat": 0, "lon": 85.0}]}
+    t = T0 + 500                                                         # over 70°E: TDRS Z sees it
+    ex = _all_off(signal={}, flow={"direction": "down"})
+    for aos, want in ((1, True), (0, False)):
+        live = {"at": t + 40, "connected": True, "signal": [[t - 100, aos]]}
+        img, paths = issmap.render(448, 134, data, t, extras=ex, live=live)
+        assert bool(paths) == want
+        buf = img.copy()
+        issmap.flow(buf, paths, 1000.0, ex, True)
+        assert (buf != img).any() == want
+
+
+def test_the_live_feed_decodes_lightstreamer_fields():
+    from hub import iss_live
+    assert iss_live.decode("758.1|24|758.10", []) == ["758.1", "24", "758.10"]
+    assert iss_live.decode("759||", ["758", "24", "x"]) == ["759", "24", "x"]          # empty: unchanged
+    assert iss_live.decode("#|$|a%7Cb", ["1", "2", "3"]) == [None, "", "a|b"]
+    assert iss_live.decode("7|^2", ["1", "24", "c"]) == ["7", "24", "c"]
+
+
+def test_an_old_live_snapshot_is_not_used(monkeypatch):
+    monkeypatch.undo()                                                  # (the real live_from, without polling)
+    monkeypatch.setattr(issmap.threading, "Thread", lambda **k: SimpleNamespace(start=lambda: None, is_alive=lambda: True))
+    monkeypatch.setitem(issmap._live, "data", {"signal": [[0, 1]], "connected": True})
+    monkeypatch.setitem(issmap._live, "got", time.time() - 60)
+    assert issmap.live_from("http://hub") is None
+    monkeypatch.setitem(issmap._live, "got", time.time())
+    assert issmap.live_from("http://hub") is not None
+
+
+def test_odd_data_from_the_hub_never_breaks_the_map():
+    data = {**_track(), "relays": [{"net": "tdrs"}, {"net": "luch", "lon": "x"}, "nope"],
+            "docked": [{"name": "X", "docked": "soon"}, 5], "css": None}
+    img, _ = issmap.render(448, 134, data, T0 + 3000, live="not a dict")
+    assert img.shape == (134, 448, 3)

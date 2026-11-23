@@ -53,6 +53,7 @@ def _push_once():
                "--include=bcmaps/", "--include=bcmaps/*.bin", "--include=drivebc/", "--include=drivebc/*.bin",
                "--include=shields/", "--include=shields/*.png",          # real highway signs (hub/shield_signs.py)
                "--include=tzmap/", "--include=tzmap/*.bin",              # time zone map rasters (hub/jobs/timezones.py)
+               "--include=issmap/", "--include=issmap/*.bin",            # ISS map: aurora, city lights (hub/jobs/iss.py)
                "--exclude=*",
                "--rsync-path", f"mkdir -p {remote_dir} && rsync",
                "-e", SSH, f"{paths.DATA_DIR}/", f"{target}:{remote_dir}/"]

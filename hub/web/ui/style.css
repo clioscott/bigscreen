@@ -504,3 +504,17 @@ select.input { appearance: none; padding-right: 30px; background-image: url("dat
 .cr-add { border: 1px dashed var(--line-2); border-radius: 10px; background: transparent; color: var(--text-3); min-height: 60px; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; font: inherit; }
 .cr-add:hover { color: inherit; border-color: var(--accent); }
+
+/* the ISS map's extras (pages/iss_map_extras.js) */
+.isx-box { display: block; }
+.isx-box > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; }
+.isx { display: grid; gap: 6px; margin-top: 10px; }
+.isx-row { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: start; gap: 4px 10px; padding: 6px 4px; border-top: 1px solid var(--line-2); }
+.isx-row.off .isx-txt b { opacity: .6; }
+.isx-txt { display: grid; gap: 1px; min-width: 0; font-size: 13px; }
+.isx-txt .faint { font-size: 12px; }
+.isx-set, .isx-rows { grid-column: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.isx-set .slider { min-width: 160px; }
+.isx-chk { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; }
+.isx-chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--surface-2); color: inherit; cursor: pointer; }
+.isx-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }

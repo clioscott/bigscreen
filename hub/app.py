@@ -1387,8 +1387,15 @@ def _fetch_wx(points, timeout=8):
 _iss_cache = {"mtime": None, "data": None}
 
 
+def _iss_live():
+    from hub import iss_live
+    return iss_live.snapshot()
+
+
 def _iss_data():
     """data/iss.json (hub/jobs/iss.py), re-read when it changes."""
+    from display.modules import issmap
+    issmap.DATA_DIR = str(paths.DATA_DIR)                # (the ISS map's city lights and aurora, for previews)
     p = paths.DATA_DIR / "iss.json"
     try:
         mt = p.stat().st_mtime
@@ -1397,6 +1404,14 @@ def _iss_data():
     if mt != _iss_cache["mtime"]:
         _iss_cache.update(mtime=mt, data=read_json(p, None))
     return _iss_cache["data"]
+
+
+@app.get("/api/iss/live")
+def iss_live_now():
+    """NASA's live ISS telemetry as the hub has it (hub/iss_live.py): the signal's changes over the last hour and the
+    newest readings. The display's ISS map polls this every few seconds while it's up."""
+    from hub import iss_live
+    return iss_live.snapshot()
 
 
 @app.get("/api/webcams/status")
@@ -1817,7 +1832,7 @@ def webcams_preview_set(payload: dict = Body(...)):
         still = (cam.get("source") or {}).get("type") in webcams.STILLS
         extra = {"taken": time.time()} if still else None
         if cam.get("space"):
-            extra = {**(extra or {}), "space": _iss_data()}
+            extra = {**(extra or {}), "space": _iss_data(), "iss_live": _iss_live()}
         dropped = wc.caption_dropped(cam, tuple(zones[shape]), wx, extra)
     except Exception:
         dropped = []
@@ -1860,7 +1875,7 @@ async def webcams_preview(token: str):
         wx = cur.get("wx")
         extra = {"taken": round(_feed.image_t)} if getattr(_feed, "image_t", None) else None
         if cam_now.get("space"):                             # in space: the ISS's orbit, crew and mission
-            extra = {**(extra or {}), "space": _iss_data()}
+            extra = {**(extra or {}), "space": _iss_data(), "iss_live": _iss_live()}
         img = wc.render_preview(cam_now, frame, (w, h), time.time() - t0, wx=wx, extra=extra,
                                 show_map=bool(cur.get("show_map")))
         out = io.BytesIO()

@@ -243,6 +243,37 @@ def _validate_rows(name, rows):
                 raise ConfigError(f"webcam {name}: caption piece {str(it)[:60]} isn't one the caption knows")
 
 
+def _validate_map_extras(name, ex):
+    """The ISS map's extras (display/modules/issmap.py EXTRAS): each {on, …its settings}."""
+    from display.modules.issmap import EXTRAS, FLOW_SPEED, SHADOW, TELEMETRY_ROWS
+    bad = lambda what: ConfigError(f"webcam {name}: map extras: {what}")
+    if not isinstance(ex, dict):
+        raise bad("must be an object")
+    choices = {("sunlit", "shadow"): tuple(SHADOW), ("flow", "speed"): tuple(FLOW_SPEED),
+               ("flow", "direction"): ("both", "down", "up"), ("telemetry", "corner"): ("tl", "tr"),
+               ("docked", "corner"): ("tl", "tr")}
+    ranges = {("lights", "strength"): (0.1, 1.0), ("aurora", "strength"): (0.1, 1.0), ("ahead", "minutes"): (5, 90)}
+    for k, v in ex.items():
+        if k not in EXTRAS:
+            raise bad(f"unknown extra {k!r}")
+        if not isinstance(v, dict) or any(s not in EXTRAS[k] for s in v):
+            raise bad(f"{k} takes {', '.join(EXTRAS[k])}")
+        for s, val in v.items():
+            d = EXTRAS[k][s]
+            if (k, s) in choices:
+                if val not in choices[(k, s)]:
+                    raise bad(f"{k} {s} must be one of {', '.join(choices[(k, s)])}")
+            elif (k, s) in ranges:
+                lo, hi = ranges[(k, s)]
+                if isinstance(val, bool) or not isinstance(val, (int, float)) or not lo <= val <= hi:
+                    raise bad(f"{k} {s} must be {lo}-{hi}")
+            elif k == "telemetry" and s == "rows":
+                if not isinstance(val, list) or any(r not in TELEMETRY_ROWS for r in val) or len(set(val)) != len(val):
+                    raise bad(f"telemetry rows must be some of {', '.join(TELEMETRY_ROWS)}")
+            elif isinstance(d, bool) and not isinstance(val, bool):
+                raise bad(f"{k} {s} must be true or false")
+
+
 def _validate_overlay(name, ov):
     """A webcam's caption settings (display/modules/webcam_caption.py); the display also parses them defensively."""
     if ov is None:
@@ -450,9 +481,11 @@ def _validate_webcams(wc):
         if cam.get("space") not in (None, "iss"):
             raise ConfigError(f'webcam {name}: space must be "iss" (the only place in space with webcams)')
         mp = cam.get("map")                                # the ISS map (display/modules/issmap.py)
-        if mp is not None and not (isinstance(mp, dict) and set(mp) <= {"when_down", "fixed"}
-                                   and all(isinstance(v, bool) for v in mp.values())):
-            raise ConfigError(f"webcam {name}: map takes when_down and fixed, each true or false")
+        if mp is not None and not (isinstance(mp, dict) and set(mp) <= {"when_down", "fixed", "extras"}
+                                   and all(isinstance(mp.get(k, False), bool) for k in ("when_down", "fixed"))):
+            raise ConfigError(f"webcam {name}: map takes when_down and fixed (each true or false) and extras")
+        if isinstance(mp, dict) and mp.get("extras") is not None:
+            _validate_map_extras(name, mp["extras"])
         q = cam.get("quality", "auto")
         if q not in ("auto", "max") and not (isinstance(q, int) and not isinstance(q, bool) and 144 <= q <= 4320):
             raise ConfigError(f'webcam {name}: quality must be "auto", "max" or a height (720, 1080, 2160…)')
