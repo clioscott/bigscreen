@@ -181,7 +181,10 @@ once (`hold: false`), so the rotation resumes by itself.
   `launches` (Launch Library 2, at most hourly). More NASA ISS Live items in `hub/iss_live.py ITEMS`; the hub keeps
   3 h of each reading (`iss_live.series`, `/api/iss/history?keys=`) for panel sparklines (`sparks`, `spark_min`,
   `spark_w`; the Pi fetches only the series its panels chart, every minute) and detects spacewalks from the
-  crewlock pressure (`iss_live.eva`, kept in `cache/iss_eva.json`); a panel with `when: "eva"` shows only during one.
+  crewlock pressure (`iss_live.eva`, kept in `cache/iss_eva.json`); a panel with `when: "eva"` shows only during one. `map.video` = {on, cam, pos, width, border, tag}: a small live
+  picture of the ISS webcam in one of the nine places (`iss_panel._video`: its own `webcam.Stream` at that size with
+  the full-width crop), only while usable (daylight with `daylight_only`, not `WebcamPanel._unusable`); the map keeps
+  room for it only then (`mapset["_video_up"]`). The ISS webcam's own screen is unaffected.
 - 4K: YouTube's live HLS stops at 1080p; 1440p/4K exist only as DASH (VP9 WebM segments by sequence number). The
   lookup passes `youtube:formats=incomplete` to list them, which needs a current yt-dlp with yt-dlp-ejs and deno
   (`~/.deno/bin/deno` on the server, found by `deno_path`). They're used only when a crop needs more than the HLS

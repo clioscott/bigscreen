@@ -23,6 +23,21 @@ PANEL_FONTS = {"tiny": ("tiny", 7), "small": ("small", 9)}
 PANEL_DEFAULTS = {"on": True, "pos": "tr", "title": "", "fields": [], "layout": "rows", "labels": True, "flags": True,
                   "font": "tiny", "opacity": 0.72, "colour": "#d7dce4", "accent": "#6e87a0", "crew_names": "full",
                   "when": "always", "sparks": [], "spark_min": 90, "spark_w": 30, "spark_colour": "#ffd65a"}
+# the small live video (``map.video``): the ISS webcam in one of the nine places, only while its picture is usable
+VIDEO_DEFAULTS = {"on": False, "cam": None, "pos": "br", "width": 96, "border": True, "tag": True}
+VIDEO_W = (48, 200)                  # its width in pixels (the height follows: 16:9)
+
+
+def video_of(mapset) -> dict:
+    v = (mapset or {}).get("video")
+    return {**VIDEO_DEFAULTS, **(v if isinstance(v, dict) else {})}
+
+
+def video_size(vid) -> tuple:
+    w = int(_clamp(vid.get("width", 96), *VIDEO_W)) // 2 * 2
+    return w, max(8, round(w * 9 / 16))
+
+
 WHEN = ("always", "eva")             # a panel shown always, or only while a spacewalk is under way
 SPARK_MIN = (5, 180)                 # minutes a sparkline covers (the hub keeps 3 h)
 SPARK_W = (8, 80)                    # its width in pixels
@@ -619,7 +634,7 @@ def history_keys(mapset):
     return out
 
 
-def layout(panels, ctx, w, h, top=0, bottom=0, avoid=None):
+def layout(panels, ctx, w, h, top=0, bottom=0, avoid=None, video=None):
     """Where each panel goes: [(panel, measured, x, y)], stacked per place; the top places start under ``top`` rows,
     the bottom ones end above the caption (its box, ``avoid``, where they'd overlap it; else ``bottom`` rows), and
     the middle ones are centred in what the top and bottom of their column leave."""
@@ -632,6 +647,10 @@ def layout(panels, ctx, w, h, top=0, bottom=0, avoid=None):
     meas = {}
     for pos, ps in by.items():
         meas[pos] = [(p, m) for p in ps for m in [measure(p, ctx, w - 2 if pos[1] == "c" else col_w)] if m]
+    if video:                                                    # (the live video: first in its place, framed)
+        vw, vh = video_size(video)
+        pos = video.get("pos") if video.get("pos") in POSITIONS else "br"
+        meas[pos].insert(0, ({"id": "_video", **video}, {"lines": [], "w": vw + 2, "h": vh + 2, "video": True}))
     xof = lambda pos, m: 0 if pos[1] == "l" else w - m["w"] if pos[1] == "r" else (w - m["w"]) // 2
     out = []
     for col in "lcr":
@@ -672,6 +691,8 @@ def boxes(placed):
 
 def draw(img, placed):
     for p, m, x, y in placed:
+        if m.get("video"):                                       # (the video goes in later, every frame)
+            continue
         h, w = img.shape[:2]
         x0, y0, x1, y1 = max(0, x), max(0, y), min(w, x + m["w"]), min(h, y + m["h"])
         if x1 <= x0 or y1 <= y0:

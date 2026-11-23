@@ -1165,7 +1165,13 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
     if smap:
         ctx = {"data": data, "live": live, "t": t, "units": mappanels.units_of(ms), "pos": pos, "aos": aos,
                "links": lks, "css_pos": cpos, "sat_counts": counts}
-        placed = mappanels.layout(mappanels.panels_of(ms, ex), ctx, w, h, top, bottom, avoid)
+        vid = mappanels.video_of(ms)
+        placed = mappanels.layout(mappanels.panels_of(ms, ex), ctx, w, h, top, bottom, avoid,
+                                  video=vid if vid.get("on") and ms.get("_video_up") else None)
+        for p, m, x, y in placed:
+            if m.get("video"):                             # where the live video goes (iss_panel draws it)
+                paths.append({"kind": "video", "x": x, "y": y, "w": m["w"], "h": m["h"],
+                              "border": bool(p.get("border", True)), "tag": bool(p.get("tag", True))})
     elif w >= 280:                                         # the webcam's map: its two panels, as they always were
         ys_ = {"tl": top, "tr": top}
         if _on(ex, "telemetry"):
@@ -1202,7 +1208,8 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
     _sprite(img, art["iss"], ix, iy, v, left, clamp_y=True)  # (last: nothing ever covers the ISS)
     if pboxes:
         for p in paths:
-            p["skip"] = pboxes
+            if p.get("kind") != "video":
+                p["skip"] = pboxes
     return img, paths
 
 
@@ -1237,6 +1244,8 @@ def flow(buf, paths, now, ex, big=False):
     clear = 7 if big else 4
     for p in paths:
         kind = p.get("kind", "link")
+        if kind == "video":
+            continue
         if kind == "pulse":                                  # a launch pad: a ring that grows and fades
             r = (now * 4) % 8
             a = max(0.0, 1 - r / 8)
@@ -1338,6 +1347,31 @@ def draw_full(c, zone, data, t, fixed=False, caption_box=None, extras=None, live
     c.Blit(img, x, y)
     if paths:
         flow(c.buf[max(0, y):y + h, max(0, x):x + w], paths, time.time() if now is None else now, ex, w >= BIG_W)
+    return paths
+
+
+def video_box(paths):
+    """Where the Space Map left room for its live video ({x, y, w, h, border, tag}, zone-relative), or None."""
+    return next((p for p in paths or [] if p.get("kind") == "video"), None)
+
+
+def draw_video(buf, box, frame):
+    """The live video into its box (a 1 px dark frame round it, and a small LIVE tag)."""
+    if box is None or frame is None:
+        return
+    x, y, w, h = box["x"], box["y"], box["w"], box["h"]
+    H, W = buf.shape[:2]
+    if box.get("border", True):
+        buf[max(0, y):min(H, y + h), max(0, x):min(W, x + w)] = (40, 46, 60)
+    fh, fw = frame.shape[:2]
+    X0, Y0 = x + 1, y + 1
+    X1, Y1 = min(W, X0 + min(fw, w - 2)), min(H, Y0 + min(fh, h - 2))
+    if X1 > X0 and Y1 > Y0:
+        buf[Y0:Y1, X0:X1] = frame[:Y1 - Y0, :X1 - X0]
+    if box.get("tag", True):
+        tw = _tw("LIVE") + 3
+        buf[Y0:Y0 + 7, X0:X0 + tw] = (200, 30, 40)
+        _text(buf, X0 + 2, Y0 + 1, "LIVE", (255, 255, 255))
 
 
 def small_size(w, h):

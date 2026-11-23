@@ -1458,6 +1458,10 @@ def iss_map_catalog():
         "groups": mappanels.GROUPS, "positions": mappanels.POSITIONS, "panel_defaults": mappanels.PANEL_DEFAULTS,
         "default_panels": mappanels.default_panels(), "crew_names": mappanels.CREW_NAMES,
         "spark_fields": list(mappanels.SERIES_OF), "spark_min": mappanels.SPARK_MIN, "spark_w": mappanels.SPARK_W,
+        "video_defaults": mappanels.VIDEO_DEFAULTS, "video_w": mappanels.VIDEO_W,
+        "space_cams": [{"id": k, "label": str(c.get("label") or k).split("\n")[0]}
+                       for k, c in (((config.load().get("modules") or {}).get("webcams") or {}).get("cams") or {}).items()
+                       if isinstance(c, dict) and c.get("space")],
         "units": {k: list(v) for k, v in mappanels.UNITS.items()}, "unit_defaults": mappanels.UNIT_DEFAULTS,
         "layers": [{"key": k, **{f: L[f] for f in ("label", "flag", "orbit", "mesh", "colour", "note")},
                     "count": counts.get(k)} for k, L in LAYERS.items()],
@@ -1466,6 +1470,37 @@ def iss_map_catalog():
         "label_kinds": maplabels.KINDS, "label_defaults": maplabels.LABEL_DEFAULTS, "label_places": maplabels.PLACES,
         "extras": issmap.EXTRAS, "view": issmap.VIEW, "view_ranges": issmap.VIEW_RANGES, "objects": objects,
     }
+
+
+def _space_map_video(settings):
+    """The Space Map's small video for the preview: the ISS webcam's latest still (hub/webcams.py snapshot, never
+    waited for), cut to its full-width crop and scaled to the video's size; None when it's off or there's no still."""
+    import numpy as np
+    from display.modules import iss_panel, mappanels, webcam as wc
+    vid = mappanels.video_of(settings.get("map"))
+    if not vid.get("on"):
+        return None
+    cam = iss_panel.video_cam(settings, ((config.load().get("modules") or {}).get("webcams") or {}).get("cams"))
+    if not cam:
+        return None
+    try:
+        jpg, _state = webcams.snapshot(cam.get("source") or {})
+    except Exception:
+        return None
+    if not jpg:
+        return None
+    w, h = mappanels.video_size(vid)
+    im = Image.open(io.BytesIO(jpg)).convert("RGB")
+    FW, FH = im.size
+    crop = wc.crop_for(cam, "full", w, h)
+    if crop:
+        cw = float(crop["w"]) * FW
+        x0, y0 = float(crop.get("x", 0)) * FW, float(crop.get("y", 0)) * FH
+    else:
+        cw, x0, y0 = FW, 0.0, 0.0
+    ch = min(FH - y0, cw * h / w)
+    im = im.crop((int(x0), int(y0), int(x0 + cw), int(y0 + ch))).resize((w, h), Image.LANCZOS)
+    return np.asarray(im, np.uint8)
 
 
 @app.post("/api/iss-map/preview.png")
@@ -1479,7 +1514,8 @@ def iss_map_preview(payload: dict):
     cam = iss_panel.settings_of({"iss_map": s if isinstance(s, dict) else None,
                                  "webcams": (config.load().get("modules") or {}).get("webcams")})
     try:
-        img = iss_panel.render_preview(cam, shape, tuple(zones[shape]), _iss_data(), _iss_live(history=True))
+        img = iss_panel.render_preview(cam, shape, tuple(zones[shape]), _iss_data(), _iss_live(history=True),
+                                       video=_space_map_video(cam))
     except Exception as e:                                # (a half-typed setting: say what, don't 500 blankly)
         raise HTTPException(400, f"{type(e).__name__}: {e}")
     out = io.BytesIO()

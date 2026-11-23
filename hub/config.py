@@ -409,7 +409,7 @@ def _validate_iss_map(m):
 
 
 SPACE_MAP_KEYS = {"when_down", "fixed", "extras", "views", "links", "relays", "ground", "labels", "names", "sats",
-                  "panels", "units", "icons"}
+                  "panels", "units", "icons", "video"}
 
 
 def _validate_space_map(mp):
@@ -487,6 +487,15 @@ def _validate_space_map(mp):
     if units is not None and (not isinstance(units, dict) or any(k not in mappanels.UNITS or v not in mappanels.UNITS[k]
                                                                 for k, v in units.items())):
         raise bad("units: " + "; ".join(f"{k} {'/'.join(v)}" for k, v in mappanels.UNITS.items()))
+    vid = mp.get("video")
+    if vid is not None:
+        if not isinstance(vid, dict) or not set(vid) <= set(mappanels.VIDEO_DEFAULTS) \
+                or any(not isinstance(vid.get(b, True), bool) for b in ("on", "border", "tag")) \
+                or vid.get("pos", "br") not in mappanels.POSITIONS \
+                or not (num(vid.get("width", 96)) and mappanels.VIDEO_W[0] <= vid.get("width", 96) <= mappanels.VIDEO_W[1]) \
+                or not (vid.get("cam") is None or isinstance(vid.get("cam"), str)):
+            raise bad(f"video: on, cam (a webcam id), pos (one of the nine places), width "
+                      f"{mappanels.VIDEO_W[0]}-{mappanels.VIDEO_W[1]} px, border and tag (true or false)")
     panels = mp.get("panels")
     if panels is not None:
         if not isinstance(panels, list) or len(panels) > 40:

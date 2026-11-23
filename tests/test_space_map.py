@@ -199,3 +199,49 @@ def test_sparklines_and_spacewalk_only_panels():
     quiet = {**ctx, "live": {**live, "eva": {"on": False}}}
     assert mappanels.layout(only, quiet, 448, 175) == []
     assert mappanels.history_keys({"panels": [{"fields": ["co2", "power_a"], "sparks": ["co2", "power_a"]}]}) == {"co2", "a_sum"}
+
+
+def test_the_live_video_gets_a_place_and_the_panels_stack_after_it():
+    ms = {"video": {"on": True, "pos": "tr", "width": 80}, "_video_up": True,
+          "panels": [{"pos": "tr", "fields": ["kp"]}]}
+    img, paths = issmap.render(448, 175, _track(), T0 + 3000, mapset=ms, view=issmap.VIEW, live={"values": {}})
+    box = issmap.video_box(paths)
+    assert box and box["w"] == 82 and box["h"] == 47 and box["x"] == 448 - 82 and box["y"] == 0
+    frame = np.full((45, 80, 3), 77, np.uint8)
+    buf = img.copy()
+    issmap.draw_video(buf, box, frame)
+    assert (buf[30, 448 - 40] == 77).all()
+    gone = issmap.render(448, 175, _track(), T0 + 3000, mapset={**ms, "_video_up": False}, view=issmap.VIEW)[1]
+    assert issmap.video_box(gone) is None                                  # (no picture: no room kept for it)
+
+
+def test_the_space_map_video_shows_only_a_usable_picture(monkeypatch):
+    from types import SimpleNamespace
+    from display.modules import iss_panel, webcam
+    opened = []
+
+    class FakeStream:
+        def __init__(self, hub, q):
+            self.query, self.alive, self.video = q, True, True
+            opened.append(q)
+
+        def used(self, hold=0.0):
+            pass
+
+        def close(self):
+            self.alive = False
+
+        def current(self, now=None):
+            return np.zeros((54, 96, 3), np.uint8)
+
+    monkeypatch.setattr(webcam, "Stream", FakeStream)
+    cfg = SimpleNamespace(modules={"webcams": {"cams": {"iss": {"space": "iss", "source": {"type": "youtube", "url": "u"}}}},
+                                   "iss_map": {"map": {"video": {"on": True}}}})
+    p = iss_panel.IssMapPanel(cfg)
+    data = {"track": [[time.time() - 600 + i * 10, 0, 0, 1] for i in range(200)]}
+    monkeypatch.setattr(webcam.WebcamPanel, "_unusable", staticmethod(lambda st, now: True))
+    assert p._video(data, time.time()) is None and opened                  # (open, but nothing to show yet)
+    monkeypatch.setattr(webcam.WebcamPanel, "_unusable", staticmethod(lambda st, now: False))
+    assert p._video(data, time.time()).shape == (54, 96, 3)
+    dark = {"track": [[time.time() - 600 + i * 10, 0, 0, 0] for i in range(200)]}
+    assert p._video(dark, time.time()) is None and p.stream is None        # (night side: closed)

@@ -154,6 +154,8 @@ export const SpaceMap = {
     };
     const groupFields = (g) => (cat.value?.fields || []).filter((f) => f.group === g
       && (!fieldQ.value || f.label.toLowerCase().includes(fieldQ.value.toLowerCase())));
+    const video = computed(() => ({ ...(cat.value?.video_defaults || {}), ...(map.value.video || {}) }));
+    const setVideo = (k, v) => { map.value.video = { ...(map.value.video || {}), [k]: v }; };
     const sparkable = computed(() => (selPanel.value?.fields || []).filter((k) => (cat.value?.spark_fields || []).includes(k)));
     const toggleSpark = (k) => {
       const f = [...(selPanel.value.sparks || [])];
@@ -201,7 +203,7 @@ export const SpaceMap = {
     const setUnit = (k, v) => { map.value.units = { ...(map.value.units || {}), [k]: v }; };
     const pct = (v) => Math.round(v * 100) + "%";
     return { cam, map, cat, tab, zone, found, play, SHAPES, ENTRY, TABS, POS_NAMES, LAYER_ITEMS, LINK_LABEL, KIND_NAMES, PIECES, SECTIONS, CAPTION_CORNERS, FONTS,
-      panels, sel, selPanel, P, inPos, sparkable, toggleSpark, addPanel, setP, movePanel, removePanel, dupPanel, fieldQ, fieldLabel, toggleField, moveField, groupFields, hasCrew, panelName,
+      panels, sel, selPanel, P, inPos, sparkable, toggleSpark, video, setVideo, addPanel, setP, movePanel, removePanel, dupPanel, fieldQ, fieldLabel, toggleField, moveField, groupFields, hasCrew, panelName,
       link, setLink, lab, setLab, sat, setSat, ex, setEx, setTop, names, setName, nameQ, objects, view, setView, ov, twoRows, oneRow, units, setUnit, pct };
   },
   template: `<div class="page" v-if="cam">
@@ -225,6 +227,23 @@ export const SpaceMap = {
                   {{ panelName(p) }}<small>{{ (p.fields || []).length }}</small></button>
               </div>
             </div>
+          </div></div>
+        <div class="card"><div class="card-head"><Icon name="Video" :size="16"/><h3>Live video</h3><span class="spacer"></span>
+            <Toggle :modelValue="!!video.on" @update:modelValue="v => setVideo('on', v)"/></div>
+          <div class="card-body stack">
+            <div class="faint" style="font-size:12.5px">A small window of the ISS webcam's live picture, only while it actually shows something: hidden on the night side,
+              while it loads, and when the feed is black, frozen or showing the loss-of-signal card. The ISS webcam's own screen is unaffected.</div>
+            <template v-if="video.on">
+            <div class="row" style="gap:16px; align-items:flex-start; flex-wrap:wrap">
+              <Field label="Place" hint="Panels in the same place stack after it"><div class="sm-pos"><button v-for="pos in cat.positions" :key="pos" type="button" :class="{on: (video.pos || 'br') === pos}" @click="setVideo('pos', pos)" :title="POS_NAMES[pos]"></button></div></Field>
+              <Field label="Size" :hint="video.width + ' × ' + Math.round(video.width * 9 / 16) + ' px'"><div style="width:200px"><Slider :modelValue="video.width" @update:modelValue="v => setVideo('width', Math.round(v / 2) * 2)" :min="cat.video_w[0]" :max="cat.video_w[1]" :step="2" :format="v => v + ' px'"/></div></Field>
+              <Field label="Webcam" v-if="cat.space_cams.length > 1"><select class="input" style="width:auto" :value="video.cam || ''" @change="setVideo('cam', $event.target.value || null)">
+                <option value="">The first one in space</option><option v-for="c in cat.space_cams" :key="c.id" :value="c.id">{{ c.label }}</option></select></Field>
+              <Field label="Frame"><Toggle :modelValue="video.border !== false" @update:modelValue="v => setVideo('border', v)"/></Field>
+              <Field label="LIVE tag"><Toggle :modelValue="video.tag !== false" @update:modelValue="v => setVideo('tag', v)"/></Field></div>
+            <div class="faint" style="font-size:12px" v-if="!cat.space_cams.length">No webcam is set to Space yet (Webcams → a webcam → Location → Space).</div>
+            <div class="faint" style="font-size:12px">The preview shows the webcam's latest still; on the wall it's the moving picture. It uses the webcam's full-width crop.</div>
+            </template>
           </div></div>
         <div class="card" v-if="selPanel"><div class="card-head"><Icon name="PanelTop" :size="16"/><h3>{{ panelName(selPanel) }}</h3><span class="spacer"></span>
             <button class="btn sm ghost" @click="movePanel(-1)" title="Earlier in its place"><Icon name="ArrowUp" :size="14"/></button>
