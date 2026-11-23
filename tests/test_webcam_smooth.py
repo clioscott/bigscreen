@@ -1,5 +1,6 @@
-"""Smooth webcam playback: a deep buffer played at exactly the feed's rate, in step only for webcams that ask, the
-render loop at the video's rate while video is on screen, and a warmed feed that starts with the detail it needs."""
+"""Smooth webcam playback: a deep buffer played at exactly the feed's rate (never sped up or slowed down, nothing
+keeping webcams in line with each other), the render loop at the video's rate while video is on screen, and a warmed
+feed that starts with the detail it needs."""
 
 import collections
 import threading
@@ -46,7 +47,7 @@ def test_steady_feed_plays_every_frame_once_at_30hz():
     shown = _play(st, 120, start=int(30 * wm.PLAY_BUFFER_SEC))
     steps = [(b - a) % 256 for a, b in zip(shown, shown[1:])]
     assert set(steps) == {1}                                         # a new frame every tick: no dup, no skip
-    assert st.dry_runs == 0 and st._drift == 0.0
+    assert st.dry_runs == 0
 
 
 def test_steady_feed_at_60hz_shows_each_frame_for_two_draws():
@@ -67,14 +68,15 @@ def test_a_hub_stall_shorter_than_the_buffer_never_shows():
     assert st.dry_runs == 0 and set(steps) == {1}                    # no freeze, no catching up: never seen
 
 
-def test_a_far_off_depth_is_eased_back_gently():
+def test_a_backlog_plays_at_exactly_the_feeds_rate_never_faster():
     st = _stream()
-    for k in range(int(30 * wm.PLAY_BUFFER_SEC * 1.8)):              # a backlog well over the target (after a stall)
-        st._q.append(np.full((1, 1, 3), k % 256, np.uint8))
+    for k in range(int(30 * wm.PLAY_BUFFER_SEC * 1.2)):              # over the target (a stall's backlog), under
+        st._q.append(np.full((1, 1, 3), k % 256, np.uint8))          # the cap with the next segment on top
+    st._shown = st._q.popleft()                                      # playing: the start took the first one
     st._play_t0, st._play_last, st._played, st._play_pos = 100.0, 100.0, True, 0.25
-    st._fill_avg = None
-    _play(st, 30, start=len(st._q), t0=100.0)
-    assert st._drift == wm.DRIFT_MAX                                 # faster, by 1 % only
+    shown = _play(st, 60, start=len(st._q) + 1, t0=100.0)            # (+1: the one on screen)
+    steps = [(b - a) % 256 for a, b in zip(shown, shown[1:])]
+    assert set(steps) == {1}                                         # one frame per draw: not sped up to drain it
 
 
 def test_a_prerolled_stream_keeps_only_what_its_start_needs():
@@ -89,11 +91,10 @@ def test_a_prerolled_stream_keeps_only_what_its_start_needs():
     assert len(st._q) == keep and st._q[-1] == keep + 199
 
 
-def test_only_webcams_that_ask_play_in_step():
+def test_no_webcam_asks_the_hub_for_frames_in_step():
     yt = {"source": {"type": "youtube", "url": "https://youtu.be/x"}}
     assert "sync" not in wm.stream_query(yt, "full", 448, 134)
-    assert wm.stream_query({**yt, "sync": True}, "full", 448, 134)["sync"] == 1
-    assert not wm.in_step(yt) and wm.in_step({**yt, "sync": True})
+    assert "sync" not in wm.stream_query({**yt, "sync": True}, "full", 448, 134)   # an old setting: ignored
 
 
 def test_warming_tells_the_hub_the_zone(monkeypatch):

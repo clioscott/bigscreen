@@ -464,9 +464,6 @@ def _validate_webcams(wc):
         raise ConfigError('webcams.per_turn must be 1-50 or "all"')
     if not isinstance(wc.get("from_top", True), bool):
         raise ConfigError("webcams.from_top must be true or false")
-    d = wc.get("delay_sec")
-    if d is not None and (not isinstance(d, (int, float)) or isinstance(d, bool) or not 10 <= d <= 120):
-        raise ConfigError("webcams.delay_sec must be 10-120 (seconds behind live)")
     for cid, cam in cams.items():
         if not re.fullmatch(r"[A-Za-z0-9_-]+", cid):
             raise ConfigError(f"webcam id {cid!r}: letters, digits, _ and - only")

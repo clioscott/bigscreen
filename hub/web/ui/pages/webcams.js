@@ -72,7 +72,6 @@ const DEFAULT_OVERLAY = { style: "tag", corner: "bl", when: "always", font: "sma
 // name, place (beside the name) and LIVE; local time and the time difference; the temperature (icon in front) and
 // conditions; 12 h clock, medium text, 30 fps
 const NEW_ORDER = ["shield", "live", "name", "place", "time", "offset", "weather", "conditions"];
-export const WEBCAM_DELAY = 35;        // hub/webcams.py DELAY_SEC: how far behind live every webcam plays
 export const WEBCAM_SEC = 40;          // how long a webcam shows in the Webcams list by default (display/modules/webcam.py WEBCAM_SEC)
 const NEW_WEBCAM = { fps: 30,
   overlay: { font: "medium", time_format: "12h", place_beside: true, temp_icon: true,
@@ -590,7 +589,7 @@ const PlaylistTab = {
     const srcHost = (s) => (s?.type === "drivebc" ? `DriveBC camera ${s.id}` : host(s?.url));
     const kindOf = (s) => (STILL.includes(s?.type) ? "Still" : "Live");
     const mins = (s) => (s >= 90 ? `${Math.round(s / 6) / 10} min` : `${s} s`);
-    return { LIST_SHAPES, WEBCAM_SEC, WEBCAM_DELAY, wc, cams, list, on, total, found, single, combine, feedFor, feedPill, healthFor, downPill, fetchAll, fetching, fetchState, fetchResult, srcHost, kindOf, hasSource, mins, go };
+    return { LIST_SHAPES, WEBCAM_SEC, wc, cams, list, on, total, found, single, combine, feedFor, feedPill, healthFor, downPill, fetchAll, fetching, fetchState, fetchResult, srcHost, kindOf, hasSource, mins, go };
   },
   template: `<div class="stack">
     <div class="card"><div class="card-body stack" style="gap:10px">
@@ -609,8 +608,6 @@ const PlaylistTab = {
         <Field label="Each turn starts" hint="At the top, or where the last turn stopped">
           <Seg :modelValue="wc.from_top === false ? 'carry' : 'top'" @update:modelValue="v => wc.from_top = v !== 'carry'"
             :options="[{ value: 'top', label: 'At the top' }, { value: 'carry', label: 'Where it stopped' }]"/></Field>
-        <Field label="Behind live" hint="Webcams set to play in step (on each webcam's page) play this far behind real time, so nearby cameras line up when the wall cuts between them; the rest play from a deep buffer for the smoothest picture">
-          <Stepper :modelValue="wc.delay_sec || WEBCAM_DELAY" @update:modelValue="v => wc.delay_sec = v" :min="10" :max="120" :step="5" unit=" s"/></Field>
         <div class="faint" style="font-size:12.5px; padding-bottom:6px">{{ on.length }} of {{ list.length }} on · the whole list takes {{ mins(total) }}</div>
       </div>
     </div></div>
@@ -1024,9 +1021,6 @@ const CropEditor = {
         const inHi = hi && b.x * s.w >= hi.x - 1 && b.y * s.h >= hi.y - 1 && (b.x + b.w) * s.w <= hi.x + hi.w + 1 && (b.y + b.h) * s.h <= hi.y + hi.h + 1;
         out.decoding = `${res(s.w, s.h)} ${codec(s.vcodec)}${s.dash ? " (DASH segments)" : ""} · ${f.hw ? "hardware (video engine)" : "software"}` +
           (hi ? ` · detail picture ${hi.out_w}×${hi.out_h}${hi.w < s.w || hi.h < s.h ? " (the crops' region)" : ""}` : ` · ${loW} px wide`);
-        if (f.in_step && f.delay) out.timing = { delay: Math.round(f.delay), lag: f.latency != null ? Math.max(0, Math.round(f.latency)) : null,
-          own: Math.round(f.delay) > (info.value.delay_sec || WEBCAM_DELAY) + 0.5 };
-        else if (f.state === "live" && s.w) out.timing = { off: true };
         out.used = (b.w * (inHi ? hi.full_w : loW)) / zw;
         out.pending = out.used < Math.min(out.scale, info.value.oversample || 1.5) * 0.85;
         if (out.k) {                                   // Whole pixels: exact only when cut from the stream's own pixels
@@ -1077,9 +1071,6 @@ const CropEditor = {
     <div v-if="stats" class="wc-stats">
       <div><span>Livestream</span><b>{{ stats.native }}</b><i v-if="stats.others">also {{ stats.others }}</i></div>
       <div v-if="stats.decoding"><span>Hub decodes</span><b>{{ stats.decoding }}</b></div>
-      <div v-if="stats.timing && !stats.timing.off"><span>Behind live</span><b>{{ stats.timing.delay }} s</b>
-        <i>{{ stats.timing.own ? "later than the others: the stream itself is " + stats.timing.lag + " s behind" : "in step with every webcam" + (stats.timing.lag != null ? " (the stream itself is " + stats.timing.lag + " s behind)" : "") }}</i></div>
-      <div v-else-if="stats.timing"><span>Behind live</span><b>not in step</b><i>this stream doesn't date its video: it plays as it arrives</i></div>
       <div><span>Cropped area</span><b>{{ stats.crop }}</b><i>of the stream</i></div>
       <div><span>Viewport</span><b>{{ stats.zone }}</b></div>
       <div v-if="stats.k"><span>Scaling</span><b>exactly {{ stats.k }}:1</b>
@@ -1630,10 +1621,6 @@ const WebcamEditor = {
               <Toggle :modelValue="cam.skip_plain ?? !!cam.space" @update:modelValue="v => cam.skip_plain = v" title="Skip a stand-in picture"/>
               <span>Skip it when the picture is frozen or one plain colour</span>
               <span class="faint" style="font-size:12px">a "loss of signal" card instead of the video (NASA's ISS stream has one); passed over like a black picture</span></div>
-            <div class="wc-rot" v-if="(cam.source || {}).type === 'youtube'"><Icon name="Link2" :size="15"/>
-              <Toggle :modelValue="!!cam.sync" @update:modelValue="v => cam.sync = v" title="In step with nearby webcams"/>
-              <span>In step with nearby webcams</span>
-              <span class="faint" style="font-size:12px">plays exactly as far behind live as the others in step, so cameras looking at the same street line up when the wall cuts between them; a late frame then shows as a freeze. Off: the smoothest playback</span></div>
             <div class="faint" style="font-size:12px" v-if="used.length">Also its own rotation entry ({{ used.map(u => u.side).join(', ') }}):
               <a href="#/webcams">combine it into the list</a> on the Webcams page.</div>
             <div class="faint" style="font-size:12px" v-if="cam.space">The ISS map can also be its own entry in the rotation: <a href="#/iss-map">ISS map</a>.</div>

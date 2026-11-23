@@ -131,11 +131,12 @@ once (`hold: false`), so the rotation resumes by itself.
   `rotation.WARM_AHEAD` s from its end (or on its last pass) and the next entry is a webcam, it calls
   `/api/webcams/warm` every `WARM_EVERY` s, and the screen then opens on a picture.
   Each viewer gets its own crop/scale/colour. At most `MAX_FEEDS` at once.
-- In step (YouTube, live): the hub fetches the segments itself (`Feed._feed_segments`), dates each from the HLS
-  playlist's EXT-X-PROGRAM-DATE-TIME and feeds it to ffmpeg `FEED_LEAD` s before it's due, so every frame plays
-  `modules.webcams.delay_sec` (35) after it was filmed, the same for every webcam (one lagging more plays later).
-  Frames carry their due time (`pack`, BSW2, only when the Pi asks `sync=1`); the Pi shows each when due
-  (`Stream._current_in_step`), no buffering or speed correction, so restarts are seamless and nearby cameras line up.
+- Segments (YouTube, live): the hub fetches them itself (`Feed._feed_segments`) and feeds each to ffmpeg as soon as
+  it's listed, starting `START_BACK_SEC` (15) behind the newest, so a feed arrives with a buffer's worth at once and a
+  restart for more detail carries on seamlessly. The Pi plays every webcam from a deep buffer (`PLAY_BUFFER_SEC`) at
+  exactly the feed's rate: never sped up or slowed down, nothing keeping webcams in line with each other or with live.
+  (Deliberately dropped 2026-11: playing every webcam a fixed delay behind live froze and skipped whenever a frame
+  came late. Don't bring back wall-clock due times or speed correction.)
   A detail ("hi") picture serving one crop is cut and scaled by ffmpeg (`plan` "exact"); several: their region.
 - YouTube bot checks ("Sign in to confirm you're not a bot"): the hub pauses lookups `BOT_COOL` and the Overview
   says so. Signing it in stops them: `python tools/youtube_signin.py` on Scott's PC opens Firefox in a profile of its

@@ -10,12 +10,10 @@ and colour, or a panel preview) gets its frame rendered from them as they're dec
 costs no more memory than a 480p one. When the whole frame at the detail needed is over HI_BUDGET pixels, the hi
 picture is just the region the crops cover.
 
-In step: a live YouTube feed doesn't hand ffmpeg a URL. Feed._feed_segments reads the HLS playlist, which dates every
-segment, and feeds each segment into ffmpeg's stdin a little before it's due: every frame plays DELAY_SEC after it
-was filmed, the same for every webcam, so nearby cameras line up when the wall cuts between them, a feed comes up at
-once (YouTube keeps the last minute or hour of segments) and a restart is seamless. For webcams set to play in step
-(``sync``) the Pi shows each frame when it's due (pack: BSW2 frames carry the time); the rest it plays from its own
-deep buffer at an even rate, which no late frame can disturb.
+Segments: a live YouTube feed doesn't hand ffmpeg a URL. Feed._feed_segments reads the HLS playlist and feeds each
+segment into ffmpeg's stdin as soon as it's listed, starting START_BACK_SEC behind the newest (YouTube keeps the last
+minute or hour of them): a feed comes up with that much video at once and a restart is seamless. Frames go to the Pi
+as they're decoded; it plays them from its own deep buffer at an even rate (display/modules/webcam.py).
 
 YouTube's live HLS stops at 1080p; a live stream's 1440p and 4K exist only as DASH segments (VP9 WebM, numbered like
 the HLS ones). Those are used only when a crop needs more than the HLS has, and only on the video engine, which also
@@ -73,17 +71,7 @@ BOT_COOL = 20 * 60.0         # YouTube asked the hub to prove it isn't a bot: no
 LOOKUP_ARGS = ("--extractor-args", "youtube:formats=incomplete")   # a live stream's DASH formats (1440p, 4K) too,
                              # beside its HLS ones (yt-dlp leaves them out by default: it can't download them whole)
 SEG_TIMEOUT = 20.0           # a segment or playlist request gives up after this long
-# In step: a YouTube feed plays every frame DELAY_SEC after it was filmed (its playlist dates each segment), the same
-# for every webcam, so nearby cameras line up when the wall cuts between them. The hub fetches segments itself and
-# holds them until they're due: a feed starts at once at the right moment (YouTube keeps the last minute or hour).
-DELAY_SEC = 35.0             # modules.webcams.delay_sec when unset: more than any webcam's own lag (0-25 s seen) plus
-                             # a segment (up to 5 s) and fetching
-DELAY_RANGE = (10.0, 120.0)
-DELAY_MARGIN = 3.0           # a stream lagging more than (delay - segment - this) plays later than the rest
-FEED_LEAD = 8.0              # a segment goes into ffmpeg this long before its first frame is due on the wall
-                             # (slack for a busy hub: frames later than this arrive after they're due)
-FETCH_LEAD = 12.0            # … and is downloaded up to this long before that
-START_AHEAD = 1.5            # a run starts with the segment holding what's due this long from now
+START_BACK_SEC = 15.0        # a feed's first run starts this far behind the newest segment: the Pi's buffer fills at once
 PLAYLIST_EVERY = 10.0        # the playlist is read again this often (sooner when the next segment isn't on it yet)
 SCHEMES = {"http", "https", "rtsp", "rtsps", "rtmp", "rtmps"}
 PROTOCOLS = "http,https,tcp,tls,crypto,httpproxy,rtsp,rtsps,rtmp,rtmps,rtmpt"     # network only: no file:, data:
@@ -535,6 +523,18 @@ def get_playlist(url) -> list:
         return parse_playlist(r.read().decode("utf-8", "replace"), url)
 
 
+def start_seq(segs) -> int:
+    """Where a feed's first run starts: the segment START_BACK_SEC behind the end of the newest (or the oldest
+    listed, when the playlist is shorter)."""
+    back, pick = 0.0, segs[-1]
+    for s in reversed(segs):
+        pick = s
+        back += s.dur
+        if back >= START_BACK_SEC:
+            break
+    return pick.seq
+
+
 class Seg(tuple):
     """One HLS segment: (seq, when its first frame was filmed (epoch s, or None), duration s, URL, after a
     discontinuity)."""
@@ -660,7 +660,6 @@ def covers(p, src_w, src_h, want) -> bool:
 
 config_needs = None          # hub/app.py: (type, url) -> [(out_w, out_h, crop)], every place the saved webcams with
                              # this source play: a feed starts with the detail they need (no restart once on screen)
-config_delay = None          # hub/app.py: () -> modules.webcams.delay_sec
 config_quality = None        # hub/app.py: (type, url) -> the stream quality its saved webcams ask for (quality_of)
 
 
@@ -669,15 +668,6 @@ def quality_for(kind, url):
         return config_quality(kind, url) if callable(config_quality) else None
     except Exception:
         return None
-
-
-def delay_sec() -> float:
-    """How far behind real time every webcam plays (modules.webcams.delay_sec, DELAY_SEC when unset)."""
-    try:
-        v = float(config_delay()) if callable(config_delay) else DELAY_SEC
-    except (TypeError, ValueError):
-        v = DELAY_SEC
-    return max(DELAY_RANGE[0], min(DELAY_RANGE[1], v))
 
 
 # --- feeds -----------------------------------------------------------------------------------------------------
@@ -805,16 +795,11 @@ class Feed:
         self._dash_broken = False        # a DASH run wouldn't open: this feed sticks to HLS
         self._fed = False                # this run's fetcher got a segment into ffmpeg
         self._seg_error = ""             # … or why it couldn't
-        # in step (YouTube): segments fetched here and fed to ffmpeg when due; each frame knows when it was filmed
+        # YouTube: segments fetched here and fed to ffmpeg as they're listed (_feed_segments)
         self._seg = None                 # this run's segments ({"timing", "dash"}), or None: ffmpeg opens the URL
-        self._sync_broken = False        # in step didn't work for this stream (no dated segments): ffmpeg opens it
-        self.delay = None                # how far behind real time this feed plays (s): delay_sec(), or more when
-                                         # the stream itself lags more than that allows
-        self.latency = None              # how far behind real time the stream's newest segment ends (s)
+        self._seg_broken = False         # fetching segments didn't work for this stream: ffmpeg opens it
         self._next_seq = None            # the next segment to feed (a new run resumes the timeline from it)
         self._expired = False            # the run ended on an expired URL: look the stream up again, at once
-        self._runs = collections.deque(maxlen=8)   # {"base": dseq before its first frame, "anchor": when its
-                                         # first frame was filmed (None: not in step), "fps", "delay"}
         threading.Thread(target=self._run, name=f"webcam-{urlparse(url).netloc}", daemon=True).start()
         if kind not in STILLS:                              # stills publish directly
             threading.Thread(target=self._pace, name="webcam-pacer", daemon=True).start()
@@ -1003,30 +988,18 @@ class Feed:
                 "image_age_sec": round(time.time() - self.image_t) if self.image_t else None,
                 "native": self.native, "source": self.source, "hi": self.hi, "hw": self.hw,
                 "consumers": len(self.consumers),
-                "formats": [{k: f[k] for k in ("w", "h", "fps", "vcodec")} for f in self.formats],
-                "in_step": bool(self._runs and self._runs[-1].get("anchor") is not None),
-                "delay": round(self.delay, 1) if self.delay else None,
-                "latency": round(self.latency, 1) if self.latency is not None else None}
-
-    def due_of(self, dseq):
-        """When decoded frame dseq is due on the wall (epoch s): when it was filmed plus this feed's delay. None for
-        a frame not in step (its run had no dated segments)."""
-        for run in reversed(list(self._runs)):             # (a copy: the decoder appends to it)
-            if dseq > run["base"]:
-                a = run.get("anchor")
-                return None if a is None else a + (dseq - run["base"] - 1) / run["fps"] + run["delay"]
-        return None
+                "formats": [{k: f[k] for k in ("w", "h", "fps", "vcodec")} for f in self.formats]}
 
     # the ffmpeg loop ------------------------------------------------------------------------------------------
     def _playable(self, formats):
-        # DASH: only by segments (in step), on the video engine, and not after it failed for this feed
+        # DASH: only by segments, on the video engine, and not after it failed for this feed
         return [f for f in playable(formats)
-                if not (f.get("dash") and (self._dash_broken or self._sync_broken))]
+                if not (f.get("dash") and (self._dash_broken or self._seg_broken))]
 
     def _choose(self, fresh):
         """(media URL, title) for the next run, with self.source / self.native / self.hi / self._seg set for it.
-        _seg: this run fetches the segments itself, in step (``{"timing": HLS playlist URL, "dash": DASH format URL
-        or None}``), or None: ffmpeg opens the URL (other sources; a stream without dated segments)."""
+        _seg: this run fetches the segments itself (``{"timing": HLS playlist URL, "dash": DASH format URL or
+        None}``), or None: ffmpeg opens the URL (other sources; a stream whose segments couldn't be fetched)."""
         wants = self.wants()
         self._seg = None
         if self.kind == "youtube":
@@ -1039,7 +1012,7 @@ class Feed:
             self.source = {k: fmt[k] for k in ("w", "h", "fps", "vcodec", "dash")}
             media, title = fmt["url"], info["title"]
             hls = [f for f in self.formats if not f.get("dash") and is_hls(f["url"])]
-            if info.get("status") == "is_live" and hls and not self._sync_broken:
+            if info.get("status") == "is_live" and hls and not self._seg_broken:
                 timing = fmt["url"] if not fmt.get("dash") else native_of(hls)["url"]
                 if is_hls(timing):
                     self._seg = {"timing": timing, "dash": fmt["url"] if fmt.get("dash") else None}
@@ -1241,15 +1214,15 @@ class Feed:
                        "-map", "[hi]", "-f", "rawvideo", "-pix_fmt", "rgb24", f"pipe:{hi_fd}"]
 
     def _feed_segments(self, proc, run):
-        """A run's input, in step: the stream's segments in order into ffmpeg's stdin (each is a whole MPEG-TS or
-        WebM file, so they simply join up), each one FEED_LEAD before its first frame is due on the wall (filmed +
-        the feed's delay), downloaded up to FETCH_LEAD before that. The playlist dates every segment (HLS and DASH
-        number them alike). The first run starts at what's due START_AHEAD from now (YouTube keeps a minute to an
-        hour of them, so that's at once, never a wait); later runs carry on from the next segment (_next_seq), so a
-        restart for more detail is seamless. Segments already too late are passed over. Ends the run (closing stdin)
-        on a break in the stream's timeline (a new run anchors on it), an expired URL, or an error."""
+        """A run's input: the stream's segments in order into ffmpeg's stdin (each is a whole MPEG-TS or WebM file,
+        so they simply join up), each as soon as it's on the playlist. The first run starts START_BACK_SEC behind the
+        newest segment (YouTube keeps a minute to an hour of them), so a feed comes up with that much video at once,
+        and from then on gets it as fast as it's filmed; the Pi plays it from its own buffer at an even rate. Later
+        runs carry on from the next segment (_next_seq), so a restart for more detail is seamless (HLS and DASH
+        number their segments alike). Ends the run (closing stdin) on a break in the stream's timeline (a new run
+        starts clean on it), an expired URL, or an error."""
         seg, sink = self._seg, proc.stdin
-        idx, got = {}, {}                     # seq -> Seg (from the playlist); seq -> its bytes, downloaded ahead
+        idx = {}                              # seq -> Seg (from the playlist)
         polled, prev = 0.0, None
         try:
             while proc.poll() is None:
@@ -1261,65 +1234,42 @@ class Feed:
                         continue
                     segs = get_playlist(seg["timing"])
                     polled = time.time()
-                    if not segs or any(s.pdt is None for s in segs):
-                        self._sync_broken, self._restart = True, True     # undated: ffmpeg opens it instead
-                        print(f"[webcams] no dated segments; not in step: {self.url[:80]}", flush=True)
+                    if not segs:
+                        self._seg_broken, self._restart = True, True      # no segments: ffmpeg opens it instead
+                        print(f"[webcams] no segments listed; ffmpeg opens {self.url[:80]}", flush=True)
                         return
                     idx.update((s.seq, s) for s in segs)
                     newest = segs[-1]
-                    if seg["dash"] and not run.get("checked"):     # DASH is dated by the HLS playlist: they must
-                        run["checked"] = True                     # number their segments alike (5 s ones do)
+                    if seg["dash"] and not run.get("checked"):     # DASH is numbered by the HLS playlist: they
+                        run["checked"] = True                     # must number their segments alike (5 s ones do)
                         head = seg_head(seg["dash"])
                         if abs(head - newest.seq) > 3:
                             self._dash_broken = self._restart = True
                             print(f"[webcams] DASH numbered unlike HLS ({head} vs {newest.seq}); HLS for "
                                   f"{self.url[:80]}", flush=True)
                             return
-                    self.latency = polled - (newest.pdt + newest.dur)
-                    want = max(delay_sec(), self.latency + newest.dur + DELAY_MARGIN)
-                    if self.delay is None or want > self.delay:   # (never shrinks while the feed runs: no jumps)
-                        self.delay = want
-                    if run["delay"] is None:
-                        run["delay"] = self.delay                 # fixed for the run (its frames' due times)
                     if n is None or (n not in idx and n < segs[0].seq):
-                        target = polled - run["delay"] + START_AHEAD
-                        pick = next((s for s in segs if s.pdt <= target < s.pdt + s.dur), None) or \
-                            (segs[0] if target < segs[0].pdt else newest)
-                        self._next_seq = pick.seq
+                        self._next_seq = start_seq(segs)
                     for k in [k for k in idx if k < (self._next_seq or 0) - 2]:
                         del idx[k]
                     continue
                 s = idx[n]
-                if prev is not None and (s.disc or abs(s.pdt - (prev.pdt + prev.dur)) > 1.0):
-                    self._restart = True                          # a break in the timeline: anchor a new run on s
+                if prev is not None and (s.disc or (s.pdt is not None and prev.pdt is not None
+                                                    and abs(s.pdt - (prev.pdt + prev.dur)) > 1.0)):
+                    self._restart = True                          # a break in the timeline: a new run starts on s
                     return
-                if s.pdt + s.dur + run["delay"] < now:            # too late for the wall already: pass it over
-                    got.pop(n, None)
-                    self._next_seq, prev = n + 1, s
-                    continue
-                feed_at = s.pdt + run["delay"] - FEED_LEAD
-                if now < feed_at - FETCH_LEAD:
-                    time.sleep(min(0.5, feed_at - FETCH_LEAD - now))
-                    continue
-                if n not in got:
-                    try:
-                        got[n] = seg_get(seg["dash"], n) if seg["dash"] else seg_get(s.url)
-                    except urllib.error.HTTPError as e:
-                        if e.code == 404:                         # gone (or never made): on to the next; ffmpeg's
-                            self._next_seq, prev = n + 1, s       # fps filter holds the picture over the gap
-                            continue
-                        if e.code == 403:                         # the URL expired: look the stream up again
-                            self._expired = self._restart = True
-                            return
-                        raise
-                    continue
-                if now < feed_at:
-                    time.sleep(min(0.25, feed_at - now))
-                    continue
-                if run["anchor"] is None:
-                    run["anchor"] = s.pdt                         # (before its frames can come out of ffmpeg)
                 try:
-                    write_all(sink, got.pop(n))
+                    data = seg_get(seg["dash"], n) if seg["dash"] else seg_get(s.url)
+                except urllib.error.HTTPError as e:
+                    if e.code == 404:                             # gone (or never made): on to the next; ffmpeg's
+                        self._next_seq, prev = n + 1, s           # fps filter holds the picture over the gap
+                        continue
+                    if e.code == 403:                             # the URL expired: look the stream up again
+                        self._expired = self._restart = True
+                        return
+                    raise
+                try:
+                    write_all(sink, data)
                 except (BrokenPipeError, ValueError):             # ffmpeg ended (or was stopped)
                     return
                 self._fed = True
@@ -1369,8 +1319,7 @@ class Feed:
         threading.Thread(target=self._watchdog, args=(proc,), daemon=True).start()
         got = False
         base = self.dseq                           # this run's frame n is dseq base + n, in both pictures
-        run = {"base": base, "anchor": None, "fps": max(1, self.fps), "delay": None}
-        self._runs.append(run)
+        run = {}                                   # this run's segment feeder's notes (DASH numbering checked)
         if piped:
             threading.Thread(target=self._feed_segments, args=(proc, run), daemon=True,
                              name="webcam-segments").start()
@@ -2136,15 +2085,8 @@ HEADER = 12                  # MAGIC, width u16, height u16, frame age in ms u32
 PLACEHOLDER_AGE = 0xFFFFFFFF  # the age of the still sent while a feed starts: a placeholder, not part of the video
 
 
-MAGIC_DUE = b"BSW2"
-HEADER_DUE = 20              # MAGIC_DUE, width u16, height u16, age ms u32, when it's due on the wall: epoch ms u64
-
-
-def pack(arr, age_ms=0, due=None) -> bytes:
-    """A frame for the Pi (display/modules/webcam.py Stream). ``due`` (epoch s): a frame in step, shown then."""
+def pack(arr, age_ms=0) -> bytes:
+    """A frame for the Pi (display/modules/webcam.py Stream)."""
     h, w = arr.shape[:2]
-    head = (MAGIC if due is None else MAGIC_DUE) + w.to_bytes(2, "big") + h.to_bytes(2, "big") \
-        + min(int(age_ms), 2**32 - 1).to_bytes(4, "big")
-    if due is not None:
-        head += max(0, int(due * 1000)).to_bytes(8, "big")
+    head = MAGIC + w.to_bytes(2, "big") + h.to_bytes(2, "big") + min(int(age_ms), 2**32 - 1).to_bytes(4, "big")
     return head + arr.tobytes()
