@@ -275,6 +275,19 @@ def _validate_map_extras(name, ex):
                 raise bad(f"{k} {s} must be true or false")
 
 
+def _validate_overlays(name, per):
+    """A webcam's captions of their own for sizes on the wall (webcam_caption.for_shape): {size: overlay}."""
+    if per is None:
+        return
+    from display.modules.webcam_caption import SIZES_ON_WALL
+    if not isinstance(per, dict) or any(k not in SIZES_ON_WALL for k in per):
+        raise ConfigError(f"webcam {name}: captions per size are for {', '.join(SIZES_ON_WALL)}")
+    for size, ov in per.items():
+        if not isinstance(ov, dict):
+            raise ConfigError(f"webcam {name}: the {size} caption must be an object")
+        _validate_overlay(f"{name} ({size})", ov)
+
+
 def _validate_overlay(name, ov):
     """A webcam's caption settings (display/modules/webcam_caption.py); the display also parses them defensively."""
     if ov is None:
@@ -382,6 +395,7 @@ def _validate_iss_map(m):
     if not isinstance(m.get("label", ""), str):
         raise ConfigError("ISS map: label must be text")
     _validate_overlay("ISS map", m.get("overlay"))
+    _validate_overlays("ISS map", m.get("overlays"))
     mp = m.get("map")
     if mp is not None:
         if not isinstance(mp, dict) or not set(mp) <= {"when_down", "fixed", "extras"} \
@@ -535,6 +549,7 @@ def _validate_webcams(wc):
             if not ok:
                 raise ConfigError(f"webcam {name}: fetch every must be 20-3600 s")
         _validate_overlay(name, cam.get("overlay"))
+        _validate_overlays(name, cam.get("overlays"))
         crops = cam.get("crops") or {}
         if not isinstance(crops, dict):
             raise ConfigError(f"webcam {name}: crops must be an object")

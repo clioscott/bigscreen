@@ -175,6 +175,9 @@ once (`hold: false`), so the rotation resumes by itself.
 - Display: `display/modules/webcam.py`, panels `webcam` (a side), `webcam_full`, `webcam_wall`; entry field `cam`.
   The Pi's reader thread runs on cores 0–1 and hangs up `IDLE_SEC` after the screen stops drawing it; a stream with no
   picture after `GIVE_UP_SEC` returns `"skip"` (display/rotation.py ends the screen at once).
+- Captions per size: `cams.<id>.overlays = {side|full|tall|wall: overlay}` (and `iss_map.overlays`) give a size its
+  own caption; `webcam_caption.for_shape(cam, shape)` is the webcam as that size sees it (cached), used by the Pi
+  (`_draw_cam`, `iss_panel`) and the hub's previews. The panel edits the size picked under On the wall.
 - Captions: `display/modules/webcam_caption.py` (its docstring lists every `overlay` key): one style, Tag, drawing
   `overlay.rows` (rows of pieces, a size per piece, separators as pieces; edited in `hub/web/ui/pages/caption_rows.js`). Sections (`Content`) are
   formatted once, then `_l_tag` draws the rows: an empty section drops with the separator before it; a row too wide

@@ -13,7 +13,7 @@ import os
 import time
 
 from display.gfx import graphics
-from display.modules.webcam_caption import FONTS, draw_caption
+from display.modules.webcam_caption import FONTS, draw_caption, for_shape
 
 DEFAULT_HUB = "http://192.168.1.111:8800"
 
@@ -26,7 +26,7 @@ def settings_of(modules) -> dict:
         cams = ((modules.get("webcams") or {}).get("cams") or {})
         cam = next((c for c in cams.values() if isinstance(c, dict) and c.get("space")), None) or {}
         s = {"label": cam.get("label") or "International Space Station", "overlay": cam.get("overlay") or {},
-             "map": cam.get("map") or {}}
+             "overlays": cam.get("overlays") or {}, "map": cam.get("map") or {}}
     out = {**s, "space": "iss"}
     out["map"] = {**(s.get("map") if isinstance(s.get("map"), dict) else {}), "when_down": True}
     return out
@@ -80,5 +80,8 @@ class IssMapPanel:
         issmap.draw_full(c, zone, data, now - space.LAG, fixed=bool(self.cam["map"].get("fixed")),
                          caption_box=self.boxes.get(key), extras=issmap.extras_of(self.cam),
                          live=issmap.live_from(self.hub))
-        self.boxes[key] = draw_caption(c, zone, self.cam, now - self.started[key], self.font, extra={"space": data})
+        p = entry.get("panel") or "iss_map"                 # the caption settings of the size it's drawn at
+        shape = {"iss_map_full": "full", "iss_map_tall": "tall", "iss_map_wall": "wall"}.get(p, "side")
+        cam = for_shape(self.cam, "left" if shape == "side" else shape)
+        self.boxes[key] = draw_caption(c, zone, cam, now - self.started[key], self.font, extra={"space": data})
         return None
