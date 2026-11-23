@@ -39,6 +39,8 @@ FRAME = (0, 0, 0)             # round the small map
 NIGHT = 0.45                  # how bright the night side is
 TWILIGHT = 6.0                # degrees of Sun below the horizon over which day fades to night
 TRAIL_SEC = 90 * 60
+ISS_LAT = 52.0                # the ISS never goes further north or south than this (51.6° orbit)
+BAND_MARGIN = 4               # px kept between the ISS's band and the caption (the icon is 5 px tall)
 SHADE_EVERY = 30.0
 COMPOSE_EVERY = 1.0
 CORNERS = ("tl", "tr", "bl", "br")
@@ -108,9 +110,13 @@ def link(pos):
 # --- projection ------------------------------------------------------------------------------------------------
 class View:
     """Where things go on a map w×h: an equirectangular world W px round (the zone's width, or wider when following
-    the ISS in a tall narrow zone, so the map keeps filling it), lat top..bot over mh rows from y0."""
+    the ISS in a tall narrow zone, so the map keeps filling it), lat top..bot over mh rows from y0.
 
-    def __init__(self, w, h, follow=True, small=False):
+    reserve (top px, bottom px): rows the caption covers. The ISS's whole band of latitudes (and so its trail) is
+    kept clear of them: the map is moved, and squashed from top to bottom only when the band doesn't otherwise fit.
+    The map still runs on under the caption."""
+
+    def __init__(self, w, h, follow=True, small=False, reserve=None):
         self.w, self.h, self.follow, self.small = w, h, follow, small
         if small:
             s, span = w / 360.0, 180.0
@@ -126,8 +132,17 @@ class View:
         bot = top - span
         if bot < -90.0:
             bot, top = -90.0, -90.0 + span
+        rt, rb = reserve or (0, 0)
+        avail = h - rt - rb - 2 * BAND_MARGIN
+        if not small and (rt or rb) and avail >= 12:
+            ys = min(self.mh / span, avail / (2 * ISS_LAT))         # px per degree of latitude
+            top = ISS_LAT + (rt + BAND_MARGIN) / ys                  # (past the pole: space above the map)
+            self.y0 = max(0, int(math.ceil((top - 90.0) * ys)))
+            top = min(90.0, top)
+            bot = max(-90.0, top - (h - self.y0) / ys)
+            self.mh = min(h - self.y0, max(4, int(round((top - bot) * ys))))
         self.top, self.bot = top, bot
-        self.key = (self.W, self.mh, round(top, 3), round(bot, 3))
+        self.key = (self.W, self.mh, self.y0, round(top, 3), round(bot, 3))
 
     def wx(self, lon):
         """World x (px, 0..W) of a longitude: arrays too."""
@@ -356,14 +371,22 @@ def _trail(img, v, left, track, t, pos):
     _seg_line(img, v, left, x[:-1], y[:-1], x[1:], y[1:], TRAIL, alpha)
 
 
-def render(w, h, data, t, full=True, fixed=False):
+def reserve_for(box, h):
+    """The rows a caption box (x0, y0, x1, y1) takes from a zone h tall: (top, bottom), from the side it's on."""
+    if not box:
+        return None
+    x0, y0, x1, y1 = box
+    return (int(y1) + 1, 0) if y0 < h - y1 else (0, h - int(y0) + 1)
+
+
+def render(w, h, data, t, full=True, fixed=False, reserve=None):
     """The map at time t (as filmed) as (h, w, 3) uint8. full: the full map (borders, stations, relays, links,
     the detailed ISS); else the small map (coastlines, trail, the tiny ISS). fixed (full map only): the world held
-    still with the ISS crossing it; else centred on the ISS."""
+    still with the ISS crossing it; else centred on the ISS. reserve: the caption's rows (see View)."""
     from display.modules.space import position
     if w < 8 or h < 4:
         return np.zeros((max(0, h), max(0, w), 3), np.uint8)
-    v = View(w, h, follow=not (full and fixed), small=not full)
+    v = View(w, h, follow=not (full and fixed), small=not full, reserve=reserve if full else None)
     track = (data or {}).get("track") if isinstance(data, dict) else None
     pos = position(track, t) if track else None
     left = v.left(pos[1] if pos else None)
@@ -400,22 +423,22 @@ def render(w, h, data, t, full=True, fixed=False):
 _cache: dict = {}
 
 
-def cached(w, h, data, t, full=True, fixed=False):
+def cached(w, h, data, t, full=True, fixed=False, reserve=None):
     """render(), redone every COMPOSE_EVERY (and when the data or the settings change)."""
-    key = (w, h, full, fixed)
+    key = (w, h, full, fixed, tuple(reserve or ()))
     slot = (int(t // COMPOSE_EVERY), id(data))
     hit = _cache.get(key)
     if hit is None or hit[0] != slot:
         if len(_cache) > 8:
             _cache.clear()
-        hit = _cache[key] = (slot, render(w, h, data, t, full, fixed))
+        hit = _cache[key] = (slot, render(w, h, data, t, full, fixed, reserve))
     return hit[1]
 
 
-def draw_full(c, zone, data, t, fixed=False):
-    """The full map over the whole zone."""
+def draw_full(c, zone, data, t, fixed=False, caption_box=None):
+    """The full map over the whole zone, the ISS's band clear of the caption (its box in the zone, if any)."""
     x, y, w, h = zone
-    c.Blit(cached(w, h, data, t, True, fixed), x, y)
+    c.Blit(cached(w, h, data, t, True, fixed, reserve_for(caption_box, h)), x, y)
 
 
 def small_size(w, h):
