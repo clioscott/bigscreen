@@ -348,7 +348,7 @@ def _playlist(first_seq, t0, n, dur=5.0):
     return [wc.Seg((first_seq + i, t0 + i * dur, dur, f"https://h/{first_seq + i}.ts", False)) for i in range(n)]
 
 
-def _feeder(monkeypatch, segs, now, seg=None, delay=35.0, get=None):
+def _feeder(monkeypatch, segs, now, seg=None, get=None):
     """A feed shell with a fake clock, playlist and segment fetch; returns (feed, run, clock)."""
     clock = _Clock(now)
     monkeypatch.setattr(wc, "time", clock)
@@ -359,70 +359,63 @@ def _feeder(monkeypatch, segs, now, seg=None, delay=35.0, get=None):
             return get(url, n)
         return (f"d{n}" if n is not None else url.rsplit("/", 1)[1]).encode() + b"|"
     monkeypatch.setattr(wc, "seg_get", seg_get)
-    monkeypatch.setattr(wc, "config_delay", lambda: delay)
     f = _feed_shell()
     f._seg = seg or {"timing": "https://h/index.m3u8", "dash": None}
-    f._next_seq = f.delay = f.latency = None
-    f._restart = f._expired = f._sync_broken = f._dash_broken = False
+    f._next_seq = None
+    f._restart = f._expired = f._seg_broken = f._dash_broken = False
     f._fed, f._seg_error = False, ""
-    run = {"base": 0, "anchor": None, "fps": 30, "delay": None}
-    f._runs = collections.deque([run])
-    return f, run, clock
+    return f, {}, clock
 
 
-def _timed_proc(clock, stop_after):
-    """A _FakeProc that notes the time each segment starts going in."""
-    p = _FakeProc(stop_after)
-    p.times = []
-    orig = p.write
-
-    def timed(b):
-        if not p.written or p.written[-1].endswith(b"|"):
-            p.times.append(clock.t)
-        return orig(b)
-    p.write = timed
-    return p
-
-
-def test_in_step_a_feed_starts_at_once_on_what_is_due_now_and_feeds_each_segment_when_due(monkeypatch):
+def test_a_feed_starts_a_buffer_back_and_sends_every_segment_at_once(monkeypatch):
     now = 1_000_000.0
     f, run, clock = _feeder(monkeypatch, _playlist(100, now - 60, 12), now)   # the last minute of the stream
-    p = _timed_proc(clock, 3)
+    p = _FakeProc(3)
     f._feed_segments(p, run)
-    assert run["delay"] == 35.0 and f.latency == 0.0
-    # due now + 1.5 = filmed now - 33.5: segment 105 (filmed now - 35 .. now - 30)
-    assert p.written == [b"105.ts|", b"106.ts|", b"107.ts|"] and run["anchor"] == now - 35
-    assert p.times[0] == now                                              # at once: no waiting to buffer
-    assert p.times[1] == now                                              # (due in 5 s: under FEED_LEAD away)
-    assert abs(p.times[2] - (now - 25 + 35 - wc.FEED_LEAD)) < 0.6         # then each FEED_LEAD before it's due
-    assert f.due_of(1) == now and abs(f.due_of(31) - (now + 1)) < 1e-6   # frame k: filmed + delay
-    assert f._fed and f._next_seq == 108
+    # START_BACK_SEC (15 s) back from the end of the newest (111): 109, 110, 111, all straight away
+    assert p.written == [b"109.ts|", b"110.ts|", b"111.ts|"]
+    assert clock.t - now < 0.1                                            # no waiting for any of them
+    assert f._fed and f._next_seq == 112
 
 
-def test_a_stream_lagging_more_than_the_delay_plays_later_than_the_rest(monkeypatch):
+def test_a_new_segment_goes_in_as_soon_as_it_is_listed(monkeypatch):
     now = 1_000_000.0
-    f, run, clock = _feeder(monkeypatch, _playlist(100, now - 30 - 60, 12), now)   # its newest ends 30 s ago
-    f._feed_segments(_FakeProc(1), run)
-    assert f.latency == 30.0 and run["delay"] == 30.0 + 5.0 + wc.DELAY_MARGIN
+    segs = _playlist(100, now - 60, 12)
+    f, run, clock = _feeder(monkeypatch, segs, now)
+    f._next_seq = 112                                                     # caught up: 112 isn't listed yet
+    calls = {"n": 0}
+
+    def playlist(url):
+        calls["n"] += 1
+        return segs if calls["n"] < 3 else segs + _playlist(112, now - 0, 1)
+    monkeypatch.setattr(wc, "get_playlist", playlist)
+    p = _FakeProc(1)
+    f._feed_segments(p, run)
+    assert p.written == [b"112.ts|"] and clock.t - now < 5               # read again after ~1 s, sent at once
 
 
 def test_a_break_in_the_streams_timeline_starts_a_new_run_on_it(monkeypatch):
     now = 1_000_000.0
     segs = _playlist(100, now - 60, 12)
-    segs[6] = wc.Seg((106, now - 20, 5.0, "https://h/106.ts", True))     # the encoder restarted: a new timeline
+    segs[10] = wc.Seg((110, now - 10, 5.0, "https://h/110.ts", True))     # the encoder restarted: a new timeline
     f, run, clock = _feeder(monkeypatch, segs, now)
     p = _FakeProc(9)
     f._feed_segments(p, run)
-    assert p.written == [b"105.ts|"] and f._restart and f._next_seq == 106
+    assert p.written == [b"109.ts|"] and f._restart and f._next_seq == 110
 
 
-def test_segments_too_late_for_the_wall_are_passed_over(monkeypatch):
+def test_after_a_long_pause_a_feed_carries_on_from_the_next_segment_still_listed(monkeypatch):
     now = 1_000_000.0
     f, run, clock = _feeder(monkeypatch, _playlist(100, now - 60, 12), now)
-    f._next_seq = 101                                                     # resuming after a long pause
-    p = _FakeProc(1)
+    f._next_seq = 104                                                     # a restart for more detail: seamless
+    p = _FakeProc(2)
     f._feed_segments(p, run)
-    assert p.written == [b"104.ts|"]                                      # 101-103 ended before now - 35
+    assert p.written == [b"104.ts|", b"105.ts|"]                          # nothing passed over
+    f2, run2, _ = _feeder(monkeypatch, _playlist(100, now - 60, 12), now)
+    f2._next_seq = 40                                                     # long gone from the playlist
+    p2 = _FakeProc(1)
+    f2._feed_segments(p2, run2)
+    assert p2.written == [b"109.ts|"]                                     # starts a buffer back again
 
 
 def test_an_expired_url_ends_the_run_and_looks_the_stream_up_again(monkeypatch):
@@ -437,13 +430,20 @@ def test_an_expired_url_ends_the_run_and_looks_the_stream_up_again(monkeypatch):
     assert p.closed and p.written == [] and f._expired and f._restart and not f._fed
 
 
-def test_a_stream_without_dated_segments_is_not_in_step(monkeypatch):
+def test_undated_segments_play_the_same(monkeypatch):
     now = 1_000_000.0
     undated = [wc.Seg((s.seq, None, s.dur, s.url, False)) for s in _playlist(100, now - 60, 12)]
     f, run, clock = _feeder(monkeypatch, undated, now)
+    p = _FakeProc(2)
+    f._feed_segments(p, run)
+    assert p.written == [b"109.ts|", b"110.ts|"] and not f._seg_broken
+
+
+def test_an_empty_playlist_hands_the_stream_to_ffmpeg(monkeypatch):
+    f, run, clock = _feeder(monkeypatch, [], 1_000_000.0)
     p = _FakeProc(1)
     f._feed_segments(p, run)
-    assert f._sync_broken and f._restart and p.written == []
+    assert f._seg_broken and f._restart and p.written == []
 
 
 def test_dash_segments_are_fetched_by_number_and_checked_against_the_hls_numbering(monkeypatch):
@@ -453,12 +453,11 @@ def test_dash_segments_are_fetched_by_number_and_checked_against_the_hls_numberi
                             seg={"timing": "t", "dash": "https://v/2160?x=1"})
     p = _FakeProc(1)
     f._feed_segments(p, run)
-    assert p.written == [b"d105|"]
+    assert p.written == [b"d109|"]
     monkeypatch.setattr(wc, "seg_head", lambda url: 400)                  # numbered differently: HLS instead
     f._next_seq, f._restart = None, False
-    run2 = {"base": 0, "anchor": None, "fps": 30, "delay": None}
     p2 = _FakeProc(1)
-    f._feed_segments(p2, run2)
+    f._feed_segments(p2, {})
     assert f._dash_broken and f._restart and p2.written == []
 
 
@@ -487,10 +486,8 @@ def test_the_playlist_dates_every_segment():
     assert segs[2].disc and abs(segs[2].pdt - (t0 + 44.868)) < 1e-3
 
 
-def test_frames_in_step_carry_when_they_are_due():
+def test_every_frame_has_the_plain_header():
     arr = np.zeros((2, 3, 3), np.uint8)
-    b = wc.pack(arr, 0, due=1_795_331_517.25)
-    assert b[:4] == b"BSW2" and int.from_bytes(b[12:20], "big") == 1_795_331_517_250 and len(b) == 20 + 18
     assert wc.pack(arr)[:4] == b"BSWC" and len(wc.pack(arr)) == 12 + 18
 
 

@@ -4,11 +4,9 @@ The hub decodes the stream (hub/webcams.py) and sends frames already cropped and
 only copies them to the canvas: no decoding here, ever. A reader thread per playing webcam keeps the newest
 frame; it hangs up a few seconds after the screen stops drawing it, and the hub then stops ffmpeg.
 
-Smooth first: video plays from a deep buffer here (PLAY_BUFFER_SEC) at exactly the feed's rate by the draw clock, so a
-busy hub or a slow network never shows as a freeze or a catch-up; how far behind live that is, nobody can tell. Only
-webcams set to play in step (``sync``: cameras looking at the same street, so a train crossing from one view to the
-next lines up when the wall cuts between them) show each frame at a fixed delay after it was filmed instead, at the
-cost of a freeze when a frame comes late. While video is on screen display/main.py draws at 30 Hz (one draw per frame).
+Smooth, nothing else: video plays from a deep buffer here (PLAY_BUFFER_SEC) at exactly the feed's rate by the draw
+clock, never faster or slower, so a busy hub or a slow network never shows as a freeze or a catch-up. Each webcam is
+as far behind live as it happens to be; nothing keeps them in line with each other.
 
 On top goes a caption saying what the feed is and where it comes from, styled per webcam (``overlay``): see
 display/modules/webcam_caption.py for the sections and layouts.
@@ -53,15 +51,12 @@ DEFAULT_HUB = "http://192.168.1.111:8800"
 IDLE_SEC = 3.0               # hang up when the screen hasn't drawn this webcam for this long
 PLAY_START_SEC = 4.0         # after running dry, video plays again once this much is buffered here; the first start
                              # waits for the full PLAY_BUFFER_SEC ("Loading webcam feeds" meanwhile, unless prerolled)
-PLAY_BUFFER_SEC = 12.0       # … and settles at this depth, played at exactly the feed's rate by this clock: a busy hub
-                             # (Plex) and the network never show. YouTube's frames come 5 s at a time (a segment), so it
-                             # swings 7-12 s: a hub ~7 s late is still unseen (seconds behind live: nobody minds)
+PLAY_BUFFER_SEC = 12.0       # … and starts at this depth, then plays at exactly the feed's rate by this clock (every
+                             # frame for the same time, never sped up or slowed down): a busy hub (Plex) and the network
+                             # never show. YouTube's frames come 5 s at a time (a segment), so it swings 7-12 s: a hub
+                             # ~7 s late is still unseen (seconds behind live: nobody minds)
 PLAY_MAX_SEC = 20.0          # kept at most (only a far worse stall than seen drops anything)
 PREROLL_KEEP_SEC = 2.0       # a stream not playing yet (prerolled) keeps at most this much beyond PLAY_BUFFER_SEC (memory)
-FILL_AVG_SEC = 20.0          # the buffer's depth is averaged over this long; while that's within DRIFT_BAND of
-DRIFT_BAND = 0.45            # PLAY_BUFFER_SEC the video plays at exactly 1.0 (every frame for the same time); beyond it,
-DRIFT_MAX = 0.01             # 1 % faster or slower until it's back within DRIFT_SETTLE (one frame in 100: unseen). Wide:
-DRIFT_SETTLE = 0.25          # 5 s segments keep the average ~20 % under the target, and a stall's dip refills by itself
 WARM_EVERY = 10.0            # while a webcam is next in the rotation, ask the hub to keep its feed going this often
 WEBCAM_SEC = 40.0            # how long a webcam in the list shows when it doesn't say (the panel's default for a new one)
 GIVE_UP_SEC = 25.0           # no picture this long after the play started: skip to the next screen
@@ -75,10 +70,6 @@ BLACK_SEC = 4.0              # a picture black for this long: the feed is down
 BAD_SEC = 600.0              # a webcam found down while playing sits out this long (the hub's checks may clear it)
 RETRY_DOWN_SEC = 1800.0      # a feed's "down" this old: try it again (only a play can say it's back)
 MAGIC = b"BSWC"
-MAGIC_DUE = b"BSW2"          # hub/webcams.py pack: a frame in step, its header followed by when it's due (epoch ms u64)
-HOLD_LATE_SEC = 0.5          # in step: frames due longer ago than this are let go (one is always kept to show)
-LATE_SHIFT_MAX = 10.0        # in step: a webcam whose frames start coming late plays up to this much later instead of
-                             # freezing (out of step with the rest until it's shown again)
 PLACEHOLDER_AGE = 0xFFFFFFFF  # hub/webcams.py: a frame with this age is the still sent while a feed starts
 GRID_MAGIC = b"BSG2"
 GRID_ROWS = 2                # the camera grid's rows by default; its columns fit the frame
@@ -201,15 +192,6 @@ def crop_for(cam: dict, shape: str, w: int, h: int):
     return {"x": round(max(0.0, x), 5), "y": round(y, 5), "w": round(cw, 5)}
 
 
-def in_step(cam: dict) -> bool:
-    """Does this webcam play in step with the others (``sync``, off by default)? In step, every frame shows a fixed
-    delay after it was filmed, the same for every webcam, so cameras side by side line up when the wall cuts between
-    them (a train leaving one view enters the next); but a frame that comes late freezes the picture and the video
-    then skips to catch up. Off, the video plays from a deep buffer at its own steady rate and nothing the hub or the
-    network does shows. Only worth it for cameras looking at the same place."""
-    return bool((cam or {}).get("sync"))
-
-
 def stream_query(cam: dict, shape: str, w: int, h: int) -> dict:
     """What the hub needs to make this zone's frames (hub/app.py /api/webcams/frames)."""
     src = cam.get("source") or {}
@@ -217,8 +199,6 @@ def stream_query(cam: dict, shape: str, w: int, h: int) -> dict:
          "w": int(w), "h": int(h)}
     if src.get("type") == "drivebc":
         q["id"] = int(src.get("id") or 0)
-    if src.get("type") == "youtube" and in_step(cam):
-        q["sync"] = 1                                 # in step: frames say when they're due (hub/webcams.py)
     if skips_plain(cam):
         q["flat"] = 1                                  # a plain screen (a "loss of signal" slate) counts as down
     try:
@@ -244,15 +224,8 @@ def stream_query(cam: dict, shape: str, w: int, h: int) -> dict:
 class Stream:
     """Reads one frame stream from the hub on its own thread; ``frame`` is the newest (h, w, 3) uint8."""
     dry_runs = 0                               # times playback ran out of frames (a freeze while it refills)
-    skipped = 0                                # frames passed over (two due in one draw: a late frame)
+    skipped = 0                                # frames passed over (two due in one draw: the draws fell behind)
     shown = 0
-    in_step = False                            # (set per stream by its first frame in step)
-    late = 0
-    _holding = False
-    _shown_due = None
-    shift = 0.0                                # in step: how much later than its due times this stream plays
-    _on_time = False                           # in step: a frame has come well before it was due
-    _drift = 0.0
 
     def __init__(self, hub_url: str, query: dict):
         self.hub = urlparse(hub_url)
@@ -271,19 +244,8 @@ class Stream:
         self._play_k, self._play_pos, self._play_last = 0, 0.0, 0.0
         self._shown = None
         self._played = False                   # started playing at least once (the first start waits for a full buffer)
-        self._fill_avg = None                  # the buffer's depth averaged over ~FILL_AVG_SEC (steers the drift)
-        self._drift = 0.0                      # the speed's correction now: 0, or ±DRIFT_MAX while the depth is far off
         self._buffer_since = time.time()       # when it last began buffering (the panel gives up on one that never fills)
-        # in step (hub/webcams.py: YouTube): each frame says when it's due on the wall, the same delay behind real
-        # time for every webcam; it's shown then, whatever the network or the hub did on the way
-        self.in_step = False
-        self._tq = collections.deque()         # (due, frame), oldest first
-        self._tlock = threading.Lock()
-        self._shown_due = None
-        self._holding = False                  # the newest frame is overdue: holding it until more come
-        self.late = 0                          # frames that came after they were due (passed over)
         self.black_since = None                # when the picture went black, or plain (None: it isn't)
-        self._marks = collections.deque(maxlen=64)   # in step: (due, blank) once a second, for what's on screen
         self.skip_plain = bool(self.query.get("flat"))   # a plain screen counts as black (skips_plain)
         self._black_checked = 0.0
         self.last_use = time.time()
@@ -297,16 +259,12 @@ class Stream:
         self.last_use = max(self.last_use, time.time() + hold)
 
     def current(self, now=None):
-        """The frame to show now. Video plays from the buffer by this clock at the feed's own speed, never skipping:
-        the first start waits for a full PLAY_BUFFER_SEC, later ones (after running dry) for PLAY_START_SEC. The
-        speed is exactly 1.0 while the buffer's averaged depth is near PLAY_BUFFER_SEC (DRIFT_BAND); only when it
-        wanders further is it eased back at DRIFT_MAX (1 %), so a backlog after a stall drains over minutes instead of
-        being thrown away, and a steady feed never has a frame doubled or dropped. Stills: the newest."""
+        """The frame to show now. Video plays from the buffer by this clock at exactly the feed's own speed, one frame
+        after another: the first start waits for a full PLAY_BUFFER_SEC, later ones (after running dry: the picture
+        holds meanwhile) for PLAY_START_SEC. Stills: the newest."""
         if not self.video:
             return self.frame
         now = time.time() if now is None else now
-        if self.in_step:
-            return self._current_in_step(now)
         q = self._q
         target = max(1, int(self.fps * PLAY_BUFFER_SEC))
         start = max(1, int(self.fps * PLAY_START_SEC)) if self._played else target   # first start: a full buffer
@@ -323,22 +281,9 @@ class Stream:
             self.shown += 1
             self._play_t0, self._play_k, self._play_pos, self._play_last = now, 0, 0.25, now
             self._played = True
-            self._fill_avg, self._drift = None, 0.0
         dt = min(0.25, max(0.0, now - self._play_last))
         self._play_last = now
-        # the speed is the feed's own: exactly 1.0, every frame for the same time. YouTube's segments (5 s at a
-        # time) swing the depth by seconds, so it's averaged over ~20 s, and only a depth well off the target
-        # (DRIFT_BAND) is eased back, at 1 %, until it's close again (DRIFT_SETTLE). Steering by the depth all the
-        # time doubled or dropped a frame every second or two: a steady judder.
-        k = min(1.0, dt / FILL_AVG_SEC)
-        self._fill_avg = len(q) if self._fill_avg is None else self._fill_avg + (len(q) - self._fill_avg) * k
-        dev = self._fill_avg / target - 1.0
-        if abs(dev) >= DRIFT_BAND:
-            self._drift = DRIFT_MAX if dev > 0 else -DRIFT_MAX
-        elif abs(dev) <= DRIFT_SETTLE:
-            self._drift = 0.0
-        rate = 1.0 + self._drift
-        self._play_pos += dt * self.fps * rate
+        self._play_pos += dt * self.fps                        # exactly the feed's rate: never sped up or slowed down
         due = int(self._play_pos)
         step = 0
         while self._play_k < due and q:
@@ -353,104 +298,28 @@ class Stream:
             self.dry_runs += 1
         return self._shown
 
-    # in step ------------------------------------------------------------------------------------------------
-    def _add_due(self, due, frame, now):
-        """The reader's side: queue a frame by when it's due. A frame due no later than ones already queued comes
-        from a restarted run on the hub (more detail, a new URL): it replaces them from there on."""
-        self.in_step = True
-        if due >= now + 1.0:
-            self._on_time = True
-        elif self._on_time and due + self.shift < now - 0.05:
-            # it was coming on time and now isn't (a busy hub): play it later, smoothly, rather than freeze and skip.
-            # (The first frames of a stream are always a little late: those don't count.)
-            self.shift = min(LATE_SHIFT_MAX, max(self.shift, now - due + 1.0))
-        due += self.shift
-        with self._tlock:
-            q = self._tq
-            while q and q[-1][0] >= due:
-                q.pop()
-            q.append((due, frame))
-            if due < now:
-                self.late += 1
-            while len(q) > 1 and q[1][0] <= now - HOLD_LATE_SEC:   # long gone (a prerolled stream isn't drawn)
-                q.popleft()
-            while len(q) > self._q.maxlen:
-                q.popleft()
-
-    def _current_in_step(self, tick):
-        """The frame due at this draw. Draws come on a fixed 1/60 s grid and frames every 1/30 s; each frame's time
-        is shifted (by under one draw, the same for all of a feed's frames) to fall halfway between two draws, so
-        a little jitter never shows one a draw early or late: every frame shows for exactly two draws."""
-        period = CLOCK.get("period") or 1 / 60
-        with self._tlock:
-            q = self._tq
-            if not q:
-                return self._shown if self._shown is not None else self.frame
-            t = tick + (q[0][0] - tick - period / 2) % period
-            popped = 0
-            while len(q) > 1 and q[1][0] <= t:
-                q.popleft()
-                popped += 1
-            due, frame = q[0]
-            if due <= t:
-                if due != self._shown_due:
-                    self._shown, self._shown_due = frame, due
-                    self.shown += 1
-                    self.skipped += max(0, popped - 1)
-                hold = len(q) == 1 and t - due > 2.5 / self.fps      # nothing after it yet: holding the picture
-                if hold and not self._holding:
-                    self.dry_runs += 1
-                self._holding = hold
-            elif self._shown is None:
-                self._shown = frame                          # the first one early: a still until it's due
-            return self._shown
-
-    def overdue(self, now=None):
-        """In step: how long the newest frame has been due with nothing after it (0 while frames are coming)."""
-        now = now or time.time()
-        with self._tlock:
-            if not self._tq:
-                return 0.0 if self._shown is None else now - (self._shown_due or now)
-            return max(0.0, now - self._tq[-1][0])
-
-    def ahead(self, now=None):
-        """In step: how many seconds of video are here beyond now."""
-        now = now or time.time()
-        with self._tlock:
-            return max(0.0, self._tq[-1][0] - now) if self._tq else 0.0
-
     def showable(self, now=None):
-        """There's a picture to draw: in step, any frame at all (a late one is held); else a recent frame."""
+        """There's a picture to draw: one has come, and recently (or video is playing from the buffer)."""
         now = now or time.time()
-        if self.in_step:
-            return self._shown is not None or bool(self._tq)
+        if self.video and self._play_t0 is not None:
+            return True
         return self.frame is not None and now - self.frame_t < 10
 
     _last_sub = None
 
-    def check_blank(self, frame, t, due=None):
-        """Note whether the video is down while still sending (blank), from when; in step also by when that frame is
-        on screen (due)."""
+    def check_blank(self, frame, t):
+        """Note whether the video is down while still sending (blank), from when."""
         b = self.blank(frame)
-        if due is not None:
-            self._marks.append((due, b))
         if not b:
             self.black_since = None
         elif self.black_since is None:
             self.black_since = t
 
     def blank_on_screen(self, now=None, hold=BLACK_SEC):
-        """The picture on screen now has been blank (black; plain or frozen for skip_plain) for ``hold`` seconds. In
-        step, by when the checked frames are due (they arrive seconds early); else since they came."""
+        """The picture has been blank (black; plain or frozen for skip_plain) for ``hold`` seconds, since the frames
+        came (it's on screen a buffer's depth later)."""
         now = now or time.time()
-        if not self.in_step or not self._marks:
-            return self.black_since is not None and now - self.black_since >= hold
-        since = None
-        for due, b in list(self._marks):
-            if due > now:
-                break
-            since = (due if since is None else since) if b else None
-        return since is not None and now - since >= hold
+        return self.black_since is not None and now - self.black_since >= hold
 
     def blank(self, frame) -> bool:
         """Down while still sending: black, or for a webcam that asks (skip_plain) a plain screen or a frozen picture.
@@ -468,26 +337,17 @@ class Stream:
         d = {"w": self.w, "h": self.h, "fps": self.fps, "url": self.query.get("url") or self.query.get("id"),
              "playing": self._play_t0 is not None, "buffered_sec": round(len(self._q) / self.fps, 1),
              "shown": self.shown, "skipped": self.skipped, "dry_runs": self.dry_runs, "error": self.error,
-             "in_step": self.in_step, "drift": self._drift}
-        if self.in_step:
-            d.update(playing=not self._holding, buffered_sec=round(self.ahead(), 1), late=self.late,
-                     shift=round(self.shift, 1))
+             "started_playing": self._played}
         return d
 
     def buffering(self):
-        """Video that isn't playing yet (filling its buffer, or filling again after running dry). In step: only
-        before the first frame (it's then held while late, never "loading")."""
-        if self.in_step:
-            return self._shown is None and not self._tq
+        """Video that isn't playing yet (filling its buffer, or filling again after running dry)."""
         return self.video and self._play_t0 is None
 
     def buffered(self):
-        """Ready to play smoothly from the start: playing, or a full buffer waiting (a prerolled stream). In step:
-        the next second is here."""
+        """Ready to play smoothly from the start: playing, or a full buffer waiting (a prerolled stream)."""
         if not self.video:
             return True
-        if self.in_step:
-            return self.ahead() >= 1.0
         return self._play_t0 is not None or len(self._q) >= max(1, int(self.fps * PLAY_BUFFER_SEC))
 
     def ready(self):
@@ -496,12 +356,9 @@ class Stream:
             and self.buffered()
 
     def down(self, now=None):
-        """Down beyond doubt: black for BLACK_SEC, or no picture GIVE_UP_SEC after opening (a hiccup mid-play isn't);
-        in step, also nothing new for GIVE_UP_SEC past the last frame."""
+        """Down beyond doubt: black for BLACK_SEC, or no picture GIVE_UP_SEC after opening (a hiccup mid-play isn't)."""
         now = now or time.time()
         if self.black_since is not None and now - self.black_since >= BLACK_SEC:
-            return True
-        if self.in_step and self.overdue(now) > GIVE_UP_SEC:
             return True
         return self.frame is None and now - self.started > GIVE_UP_SEC
 
@@ -553,14 +410,8 @@ class Stream:
         n = self.w * self.h * 3
         while self.alive and time.time() - self.last_use < IDLE_SEC:
             head = r.read(12)
-            if len(head) < 12 or head[:4] not in (MAGIC, MAGIC_DUE):
+            if len(head) < 12 or head[:4] != MAGIC:
                 raise RuntimeError("stream ended")
-            due = None
-            if head[:4] == MAGIC_DUE:                           # a frame in step: shown when it's due
-                more = r.read(8)
-                if len(more) < 8:
-                    raise RuntimeError("stream ended")
-                due = int.from_bytes(more, "big") / 1000.0
             w, h = int.from_bytes(head[4:6], "big"), int.from_bytes(head[6:8], "big")
             raw_age = int.from_bytes(head[8:12], "big")
             placeholder = raw_age == PLACEHOLDER_AGE                # the hub's still while the feed starts
@@ -572,9 +423,7 @@ class Stream:
                 raise RuntimeError("stream ended")
             self.frame = np.frombuffer(body, np.uint8).reshape(h, w, 3)
             self.frame_t = time.time()
-            if due is not None and not placeholder:
-                self._add_due(due, self.frame, self.frame_t)
-            elif self.video and not placeholder:                # the placeholder shows while loading, never in the video
+            if self.video and not placeholder:                # the placeholder shows while loading, never in the video
                 self._q.append(self.frame)
                 if self._play_t0 is None:                       # prerolled (not playing yet): only what the start keeps
                     keep = int(self.fps * (PLAY_BUFFER_SEC + PREROLL_KEEP_SEC))
@@ -582,8 +431,7 @@ class Stream:
                         self._q.popleft()
             if not placeholder and self.frame_t - self._black_checked >= 1.0:   # on the reader's core, once a second
                 self._black_checked = self.frame_t              # (the hub's still while a feed starts says nothing
-                self.check_blank(self.frame, self.frame_t,      # about the video: it isn't checked)
-                                 None if due is None else due + self.shift)
+                self.check_blank(self.frame, self.frame_t)      # about the video: it isn't checked)
             self.age = age
             self.error = ""
 
@@ -755,8 +603,6 @@ class WebcamPanel:
         loss-of-signal card, frozen), or the feed stalled (nothing new for STALL_SEC)."""
         if not st.showable(now) or st.buffering() or st.blank_on_screen(now):
             return True
-        if st.in_step:
-            return st.overdue(now) > STALL_SEC
         return now - st.frame_t > STALL_SEC
 
     def _mark_bad(self, cid, why=""):
@@ -967,16 +813,14 @@ class WebcamPanel:
         if not mapped and black_skips and st.black_since is not None and now - st.black_since >= BLACK_SEC:
             self._mark_bad(entry.get("cam"), "black")         # down but still sending: on to the next screen
             return "skip"
-        if not mapped and st.in_step and st.overdue(now) > GIVE_UP_SEC:   # in step, nothing new this long: gone
-            self._mark_bad(entry.get("cam"), st.error or "stopped")
-            return "skip"
         if st.showable(now):
             c.Blit(st.current(CLOCK["tick"] or now), x, y)
             if getattr(st, "video", True):
                 CLOCK["video_at"] = now                        # main.py: the loop runs at the video rate meanwhile
-            if st.buffering():                                 # not prepared ahead (played by hand): load, then play
-                _shade(c, x, y, w, h, 0.6)
-                self._centre(c, zone, "Loading webcam feeds" + "." * (1 + int(now * 2) % 3), Color(225, 225, 225))
+            if st.buffering():                                 # not prepared ahead (played by hand): load, then play;
+                if not st._played:                             # one that ran dry mid-play just holds its picture
+                    _shade(c, x, y, w, h, 0.6)
+                    self._centre(c, zone, "Loading webcam feeds" + "." * (1 + int(now * 2) % 3), Color(225, 225, 225))
                 if now - st._buffer_since > GIVE_UP_SEC:       # it never fills: on to the next screen
                     self._mark_bad(entry.get("cam"), st.error or "too slow to buffer")
                     return "skip"

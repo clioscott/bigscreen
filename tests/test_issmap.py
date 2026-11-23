@@ -90,15 +90,6 @@ def test_the_small_map_goes_above_a_caption_in_its_corner_and_below_one_on_top()
     assert (x, y) == (4, 4)
 
 
-def test_blank_on_screen_goes_by_when_the_frames_show():
-    st = webcam.Stream.__new__(webcam.Stream)
-    st.in_step, st.black_since = True, 100.0
-    st._marks = __import__("collections").deque([(100.0, False), (110.0, True), (111.0, True), (120.0, False)])
-    assert not st.blank_on_screen(112.0)                                # blank on screen for 2 s
-    assert st.blank_on_screen(116.0)
-    assert not st.blank_on_screen(121.0)                                # the picture is back on screen
-
-
 def _panel(cam):
     cfg = SimpleNamespace(modules={"webcams": {"cams": {"iss": cam}, "playlist": [{"cam": "iss", "sec": 60}]}})
     p = webcam.WebcamPanel(cfg)
@@ -125,7 +116,7 @@ def test_the_full_map_plays_in_the_turn_while_there_is_no_picture(monkeypatch):
     cam = {"space": "iss", "label": "ISS", "source": {"type": "youtube", "url": "x"}, "overlay": {"style": "none"}}
     p = _panel(cam)
     fake = SimpleNamespace(showable=lambda now=None: False, buffering=lambda: True, blank_on_screen=lambda now=None: False,
-                           black_since=None, in_step=False, error="", frame_t=0.0)
+                           black_since=None, error="", frame_t=0.0)
     monkeypatch.setattr(p, "_stream", lambda *a, **k: fake)
     p._iss = {"track": [[time.time() - 6000 + i * 10, 10.0, (i * 0.6) % 360 - 180, 1] for i in range(1300)]}
     c = Canvas(448, 130)
@@ -142,7 +133,7 @@ def test_map_settings_are_checked_in_the_config():
 
 def _fake_stream(**kw):
     d = dict(showable=lambda now=None: True, buffering=lambda: False, blank_on_screen=lambda now=None: False,
-             black_since=None, in_step=True, overdue=lambda now=None: 0.0, error="", frame_t=time.time(),
+             black_since=None, error="", frame_t=time.time(),
              current=lambda now=None: np.zeros((130, 448, 3), np.uint8))
     d.update(kw)
     return SimpleNamespace(**d)
@@ -156,7 +147,7 @@ def test_in_the_list_a_blank_or_stalled_iss_shows_its_map_instead_of_ending_the_
     p = _panel(cam)
     p._iss = {"track": [[now - 6000 + i * 10, 10.0, (i * 0.6) % 360 - 180, 1] for i in range(1300)]}
     if why == "stalled":
-        st = _fake_stream(overdue=lambda now=None: webcam.GIVE_UP_SEC + 5)
+        st = _fake_stream(frame_t=now - webcam.GIVE_UP_SEC - 5)          # nothing new for a while
     else:                                              # black by arrival (BLACK_SEC ago), not yet on screen
         st = _fake_stream(black_since=now - webcam.BLACK_SEC - 1)
     monkeypatch.setattr(p, "_stream", lambda *a, **k: st)
