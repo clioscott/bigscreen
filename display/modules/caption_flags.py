@@ -1,4 +1,5 @@
-"""Flags on a webcam's caption: a row of pixel flags in any corner, stacked on the caption when they share its corner.
+"""Flags on a webcam's caption: a row of pixel flags in any corner, stacked on the caption when they share its corner,
+or beside it.
 
 The flag set itself isn't in the repo (it includes artwork whose licence doesn't allow publishing it): it lives in the
 hub's runtime data, ``<data>/flags/`` (synced to the Pi like the other data), as ``index.json`` and one PNG per flag
@@ -120,7 +121,8 @@ def draw(zc, anchor, w, h, ov, ids, box, place, main=None, beside=None):
     """Draw the row of flags ``ids`` in the zone canvas zc (w × h). ``anchor``: the caption's box (x0, y0, x1, y1),
     with the Japanese caption when that sits on it, or None. ``box(zc, x, y, w, h, rgb, opacity)`` draws a background
     box, ``place(corner, bw, bh)`` gives a box's top-left in a corner. ``main``: the caption's own box; ``beside``:
-    it with its weather icon (the left / right positions go beside that). Returns the row's box, or None."""
+    it with its weather icon, and as wide as a Japanese caption stacked on it (the left / right positions go beside
+    that). Returns the row's box, or None."""
     if not ids:
         return None
     fs = flags_of(ov)

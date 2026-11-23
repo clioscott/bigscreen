@@ -159,3 +159,11 @@ def test_left_of_a_caption_on_the_right(flag_set):
     capt = _where(buf, (255, 255, 255))
     assert blue[3] < capt[2]                                # left of the caption's text
     assert _where(buf, (255, 0, 0))[0] <= 4                 # tops together, at the top
+
+
+def test_beside_keeps_clear_of_a_wide_japanese_caption(flag_set):
+    jp = {"on": True, "text": "歌舞伎町一番街のとても長い日本語のキャプション"}
+    buf, box = _draw({"corner": "bl", "jp_caption": jp, "flags": {"corner": "right"}})
+    red = _where(buf, (255, 0, 0))
+    _, plain = _draw({"corner": "bl", "flags": {"corner": "right"}})
+    assert red[2] > plain[2]                                # pushed past the Japanese caption's right edge

@@ -845,6 +845,8 @@ def _layer(style, ov, ct, w, h, font_for):
             anchor = main
             if jp and main and jp_caption_of(ov).get("corner") not in ("tl", "tc", "tr", "bl", "bc", "br"):
                 anchor = (min(main[0], jp[0]), min(main[1], jp[1]), max(main[2], jp[2]), max(main[3], jp[3]))
+                if beside:                                 # the row, taller than the caption, reaches its band
+                    beside = (min(beside[0], jp[0]), beside[1], max(beside[2], jp[2]), beside[3])
             from display.modules import caption_flags
             caption_flags.draw(zc, anchor, w, h, ov, ct.flag_ids, _box,
                                lambda corner, bw, bh: Ctx(zc, (0, 0, w, h), {**ov, "corner": corner}, fl).place(bw, bh, 2),

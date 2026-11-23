@@ -1801,7 +1801,7 @@ const WebcamEditor = {
                       <span style="font-size:10px; max-width:80px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ f.name }}</span></button>
                   </div>
                 </template>
-                <Field label="Position" hint="On the caption: above it in a bottom corner, below it in a top one (above the Japanese caption, if it's there). Left / right of caption: beside it, lined up with its outer edge (above it when there's no room on that side)">
+                <Field label="Position" hint="On the caption: above it in a bottom corner, below it in a top one (above the Japanese caption, if it's there). Left / right of caption: beside it, lined up with its outer edge (above / below it when there's no room on that side)">
                   <Seg :modelValue="fl.corner || 'auto'" @update:modelValue="v => fl.corner = v" :options="FLAG_POSITIONS"/></Field>
                 <div class="row" style="gap:16px; align-items:flex-start">
                   <Field label="Size" hint="Auto: countries at 23 px, the rest at 18 px">
