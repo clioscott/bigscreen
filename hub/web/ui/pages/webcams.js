@@ -1247,6 +1247,18 @@ const WebcamEditor = {
     });
     const flagSrc = (fid, size = "auto") => `/api/flags/img/${fid}/${size}`;
     const flagName = (fid) => flagById.value[fid]?.name || fid;
+    // the codes are only stored once they're whole (a half-typed one would stop the save), prefectures as two digits
+    const setCountry = (v) => {
+      v = v.trim().toLowerCase();
+      if (!v) delete cam.value.country;
+      else if (/^[a-z]{2}$/.test(v)) cam.value.country = v;
+    };
+    const setRegion = (v) => {
+      v = v.trim().toUpperCase();
+      if (!v) delete cam.value.region;
+      else if (/^[A-Z]{2}$/.test(v)) cam.value.region = v;
+      else if (/^\d{1,2}$/.test(v)) cam.value.region = v.padStart(2, "0");
+    };
     const setFlagMode = (m) => { fl.value.ids = m === "auto" ? null : [...flagIds.value]; };
     const addFlag = (fid) => {
       const ids = Array.isArray(fl.value.ids) ? fl.value.ids : (fl.value.ids = [...flagIds.value]);
@@ -1476,7 +1488,7 @@ const WebcamEditor = {
     return { mapFound, ISS_MAP_SHAPES, issMapEntry, inRows, setSpace, previewMap, setMap, setMinimap, SPACE_GROUPS, toggleHours, hoursNote, id, cam, shape, WEBCAM_SEC, zone, ov, colour, DEFAULT_SHARPEN, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
       orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, hasText, customCols, SHIELD_PRESETS, SHIELD_KINDS, SHIELD_PLACES, SHIELD_SIZES, SHIELD_STYLES, shieldSrc, signMissing, presetShown, presetDone,
       CONTAINERS, feedFor, feedPill, healthFor, downPill, local, cityQ, cityHits, citySearching, searchCity, pickCity, clearCity, cityLabel, wxPoint, jpFaces, jpSample, jc, jcSizes, jcSetFace, jcSample, JC_POSITIONS,
-      flagSet, fl, flagAuto, FLAG_GROUPS, FLAG_POSITIONS, FLAG_SIZES, flagQ, flagGroup, flagIds, flagHits, flagSrc, flagName, setFlagMode, addFlag, removeFlag, moveFlag, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
+      flagSet, fl, flagAuto, FLAG_GROUPS, FLAG_POSITIONS, FLAG_SIZES, flagQ, flagGroup, flagIds, flagHits, flagSrc, flagName, setFlagMode, addFlag, removeFlag, moveFlag, setCountry, setRegion, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
   },
   template: `<div class="page" v-if="cam">
     <div class="page-head" v-if="mapMode"><div class="grow"><h1>ISS map</h1>
@@ -1794,9 +1806,9 @@ const WebcamEditor = {
                   <Seg :modelValue="fl.size ?? 'auto'" @update:modelValue="v => fl.size = v" :options="FLAG_SIZES"/></Field>
                 <div class="row" style="gap:12px; align-items:flex-end" v-if="!mapMode">
                   <Field label="Country code" hint="Overrides where the webcam is: ca, us, jp…"><input class="input" style="width:70px" :value="cam.country || ''"
-                    @input="cam.country = $event.target.value.trim().toLowerCase() || undefined" maxlength="2" placeholder="auto"></Field>
+                    @input="setCountry($event.target.value)" maxlength="2" placeholder="auto"></Field>
                   <Field label="Province / state / prefecture" hint="BC, MA, 13 (Tokyo)…"><input class="input" style="width:70px" :value="cam.region || ''"
-                    @input="cam.region = $event.target.value.trim().toUpperCase() || undefined" maxlength="3" placeholder="auto"></Field>
+                    @input="setRegion($event.target.value)" maxlength="3" placeholder="auto"></Field>
                 </div>
               </template>
             </template>

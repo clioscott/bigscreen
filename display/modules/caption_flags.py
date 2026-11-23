@@ -30,7 +30,7 @@ SIZES = (18, 23)
 GAP = 2                       # between flags (each has a 1 px outline in the caption's background colour)
 MAX_FLAGS = 6
 
-_index = {"path": None, "mtime": None, "flags": {}}
+_index = {"path": None, "mtime": None, "flags": {}}      # mtime: the index's and its folder's (a replaced PNG)
 _images: dict = {}
 
 
@@ -44,7 +44,7 @@ def index() -> dict:
     for d in FLAG_DIRS:
         p = os.path.join(d, "index.json")
         try:
-            mt = os.path.getmtime(p)
+            mt = (os.path.getmtime(p), os.path.getmtime(d))   # the folder changes when rsync puts a new PNG in place
         except OSError:
             continue
         if _index["path"] != p or _index["mtime"] != mt:

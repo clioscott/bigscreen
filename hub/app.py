@@ -1509,8 +1509,15 @@ def flags_list():
     idx = _caption_flags.index()
     out = [{"id": fid, "name": e.get("name") or fid, "group": e.get("group") or "", "country": e.get("country") or "",
             "region": e.get("region") or "", "default": e.get("default") or 18,
-            "sizes": sorted(int(s) for s in (e.get("files") or {}))} for fid, e in idx.items()]
+            "sizes": _flag_sizes(e)} for fid, e in idx.items()]
     return {"flags": out, "have": bool(out)}
+
+
+def _flag_sizes(e):
+    """The sizes of a flag that are really on disk (the index may list one not fetched yet)."""
+    base = os.path.dirname(_caption_flags._index["path"] or "")
+    return sorted(int(s) for s, fn in (e.get("files") or {}).items()
+                  if s in ("18", "23") and isinstance(fn, str) and os.path.isfile(os.path.join(base, fn)))
 
 
 @app.get("/api/flags/img/{fid}/{size}")

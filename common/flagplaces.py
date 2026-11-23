@@ -36,6 +36,11 @@ JP_PLACES = {"tokyo": "13", "shinjuku": "13", "shibuya": "13", "minato": "13", "
              "osaka": "27", "yokohama": "14", "kawasaki": "14", "kanagawa": "14", "sapporo": "01", "hokkaido": "01",
              "fukuoka": "40", "saitama": "11", "kyoto": "26", "nagoya": "23"}
 TOKYO_WARDS = (35.52, 35.83, 139.56, 139.93)      # lat0, lat1, lon0, lon1: the 23 wards, roughly
+KNOWN_COUNTRIES = set(COUNTRY_NAMES.values()) | set(COUNTRY_TZ.values()) | {"ca", "us"}
+
+
+def _us_zone(tz: str) -> bool:
+    return tz in US_TZ or tz.startswith(("America/Indiana/", "America/Kentucky/", "America/North_Dakota/"))
 
 
 def locate(cam: dict) -> tuple[str, str]:
@@ -50,13 +55,15 @@ def locate(cam: dict) -> tuple[str, str]:
     if not country:
         if tail.lower() in COUNTRY_NAMES:
             country = COUNTRY_NAMES[tail.lower()]
-        elif tail.upper() in CA_REGIONS and tz not in US_TZ:
+        elif tail.upper() in CA_REGIONS and (not tz or tz in CA_TZ):   # "NL" in Amsterdam's zone is the Netherlands
             country, region = "ca", region or tail.upper()
-        elif tail.upper() in US_REGIONS and tz not in CA_TZ:
+        elif tail.upper() in US_REGIONS and (not tz or _us_zone(tz)):  # "DE" in Berlin's zone is Germany
             country, region = "us", region or tail.upper()
+        elif len(tail) == 2 and tail.lower() in KNOWN_COUNTRIES:   # "Berlin, DE"
+            country = tail.lower()
         elif tz in CA_TZ:
             country = "ca"
-        elif tz in US_TZ:
+        elif _us_zone(tz):
             country = "us"
         elif tz in COUNTRY_TZ:
             country = COUNTRY_TZ[tz]
@@ -80,6 +87,8 @@ def locate(cam: dict) -> tuple[str, str]:
                         region = "13"
                 except (TypeError, ValueError):
                     pass
+    if region.isdigit():                                  # Japanese prefectures are two digits ("1" is "01")
+        region = region.zfill(2)
     return country, region
 
 

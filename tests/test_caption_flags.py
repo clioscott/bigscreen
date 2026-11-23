@@ -23,6 +23,11 @@ from display.modules import webcam_caption as cap
     ({"place": "Somewhere", "tz": "Asia/Tokyo", "lat": 43.06, "lon": 141.35}, ("jp", "")),   # outside central Tokyo
     ({"place": "Kilpisjärvi, Finland", "tz": "Europe/Helsinki"}, ("fi", "")),
     ({"place": "Halifax", "tz": "America/Halifax", "country": "ca", "region": "pe"}, ("ca", "PE")),   # set by hand
+    ({"place": "Berlin, DE", "tz": "Europe/Berlin"}, ("de", "")),                    # a country code, not Delaware
+    ({"place": "Amsterdam, NL", "tz": "Europe/Amsterdam"}, ("", "")),                # not Newfoundland
+    ({"place": "Lima, PE", "tz": "America/Lima"}, ("", "")),                         # not Prince Edward Island
+    ({"place": "Indianapolis, IN", "tz": "America/Indiana/Indianapolis"}, ("us", "IN")),
+    ({"place": "Sapporo", "tz": "Asia/Tokyo", "region": "1"}, ("jp", "01")),          # prefectures are two digits
     ({"label": "International Space Station", "space": "iss"}, ("", "")),
     ({"place": "", "tz": ""}, ("", "")),
 ])
