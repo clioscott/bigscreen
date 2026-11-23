@@ -87,7 +87,10 @@ and `assets/data`. Attribution is shown on screen where the provider asks for it
   zone below from [timezonefinder](https://github.com/jannikmi/timezonefinder) (MIT; data © timezone-boundary-builder,
   ODbL), the orbit computed with [sgp4](https://pypi.org/project/sgp4/) (MIT). Pixel flags are drawn in code. The ISS maps'
   coastlines and borders: `assets/maps/world_110m.json`, Natural Earth 1:110m (public domain), built by
-  `tools/build_world_lines.py`; ground station and TDRS positions are public, the links between them simulated.
+  `tools/build_world_lines.py`. Relay positions (TDRS, Luch-5) and Tiangong from CelesTrak; live signal and
+  telemetry from NASA's public ISS Live feed (via Lightstreamer); docked spacecraft from corquaid's ISS APIs; aurora
+  from NOAA SWPC (OVATION); city lights from NASA's Black Marble (VIIRS) via NASA GIBS. Which relay carries the link,
+  and the Russian segment's links, are estimated from geometry.
 - Time zone map: rules from the [IANA tz database](https://www.iana.org/time-zones) (public domain, via the
   [tzdata](https://pypi.org/project/tzdata/) package) and zone boundaries from
   [timezone-boundary-builder](https://github.com/evansiroky/timezone-boundary-builder) by Evan Siroky, built from

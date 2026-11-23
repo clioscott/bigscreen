@@ -145,10 +145,14 @@ once (`hold: false`), so the rotation resumes by itself.
   coordinates every frame. Flags are colour glyphs (`display/modules/flags.py`, `gfx.COLOR_GLYPHS`) drawn by DrawText.
 - ISS maps (`display/modules/issmap.py`): the full map plays in the ISS's turn while its video is unusable (night side
   with `daylight_only`, a blank/plain/frozen picture by when it's on screen — `Stream.blank_on_screen` — or no picture);
-  `cams.<id>.map = {when_down (default on: never down/skipped), fixed (off: centred on the ISS)}`. Small map:
-  `overlay.minimap = {on, corner}`, moved above/below the caption box (`draw_caption` returns it) when they'd overlap.
-  Coastlines/borders: `assets/maps/world_110m.json` (`tools/build_world_lines.py`); sun maths in `common/orbit.py`
-  (shared with the job, which keeps 95 min of past track for the trail). Lines wrap the short way (`_unwrap`).
+  `cams.<id>.map = {when_down (default on: never down/skipped), fixed (off: centred on the ISS), extras}`. The ISS's
+  52° band stays clear of the caption (`View(reserve=)`). Small map: `overlay.minimap = {on, corner}`.
+  Links are the real network: NASA = ISS → the newest TDRS that the ISS and a terminal see → White Sands/Guam, drawn
+  only at AOS (NASA ISS Live via `hub/iss_live.py`, a hub thread on Lightstreamer's public ISSLIVE feed, served at
+  `/api/iss/live`, polled by the Pi while the map is up); Russia (inferred) = straight down to a Russian station,
+  else via Luch-5 to Shchyolkovo. Relay positions, Tiangong, docked ships: `hub/jobs/iss.py` → iss.json; aurora and
+  city lights: `data/issmap/*.bin`. Extras (`issmap.EXTRAS`, panel `pages/iss_map_extras.js`) each on/off with
+  settings; full-width zones (≥ `BIG_W`) get the big icons; the moving link data is drawn per frame (`issmap.flow`).
 - 4K: YouTube's live HLS stops at 1080p; 1440p/4K exist only as DASH (VP9 WebM segments by sequence number). The
   lookup passes `youtube:formats=incomplete` to list them, which needs a current yt-dlp with yt-dlp-ejs and deno
   (`~/.deno/bin/deno` on the server, found by `deno_path`). They're used only when a crop needs more than the HLS

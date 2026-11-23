@@ -7,6 +7,7 @@ import { GALLERY, CITIES, CATS, snap, thumb } from "./webcam_gallery.js";
 import { CameraMap } from "./cameramap.js";
 import { useSlippyMap } from "./slippymap.js";
 import { CaptionRows } from "./caption_rows.js";
+import { IssMapExtras } from "./iss_map_extras.js";
 
 const DEFAULT_SHARPEN = 0.5;          // hub/webcams.py DEFAULT_SHARPEN: a webcam with no Sharpness of its own
 export const SHAPES = {
@@ -1128,7 +1129,7 @@ const WallPreview = {
 
 // --- editor -------------------------------------------------------------------------------------------------------
 const WebcamEditor = {
-  components: { CropEditor, WallPreview, CaptionRows },
+  components: { CropEditor, WallPreview, CaptionRows, IssMapExtras },
   setup() {
     seedWebcams();
     const id = computed(() => store.route.params[0]);
@@ -1472,6 +1473,9 @@ const WebcamEditor = {
               <Seg :modelValue="cam.map?.fixed ? 'fixed' : 'follow'" @update:modelValue="v => setMap('fixed', v === 'fixed')"
                 :options="[{ value: 'follow', label: 'Follow the ISS' }, { value: 'fixed', label: 'Fixed world' }]"/>
               <span class="faint" style="font-size:12px">{{ cam.map?.fixed ? 'the world stays put and the ISS crosses it' : 'the ISS stays in the middle and the world turns under it' }}</span></div>
+            <details class="wc-rot isx-box" v-if="cam.space && cam.map?.when_down !== false"><summary><Icon name="Layers" :size="15"/><b>Map extras</b>
+              <span class="faint" style="font-size:12px">what else the map shows; preview it with Preview → Map</span></summary>
+              <IssMapExtras :cam="cam"/></details>
             <div class="wc-rot"><Icon name="MonitorOff" :size="15"/>
               <Toggle :modelValue="cam.skip_plain ?? !!cam.space" @update:modelValue="v => cam.skip_plain = v" title="Skip a stand-in picture"/>
               <span>Skip it when the picture is frozen or one plain colour</span>

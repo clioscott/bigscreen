@@ -557,6 +557,9 @@ class WebcamPanel:
     def __init__(self, cfg, data_dir=None):
         s = cfg.modules.get("webcams") or {}
         self.data_dir = data_dir
+        if data_dir:
+            from display.modules import issmap
+            issmap.DATA_DIR = data_dir                        # (the ISS map's city lights and aurora)
         self.weather, self._wx_mtime, self._wx_checked = {}, None, 0.0
         self.cams = s.get("cams") or {}
         self.hub = s.get("hub_url") or DEFAULT_HUB
@@ -914,7 +917,8 @@ class WebcamPanel:
                 boxes = self.__dict__.setdefault("_map_caption", {})   # the caption's box last frame: the map keeps
                 bk = (entry.get("cam"), w, h)                         # the ISS clear of it
                 issmap.draw_full(c, zone, data, t, fixed=bool((cam.get("map") or {}).get("fixed")),
-                                 caption_box=boxes.get(bk))
+                                 caption_box=boxes.get(bk), extras=issmap.extras_of(cam),
+                                 live=issmap.live_from(self.hub))
                 boxes[bk] = draw_caption(c, zone, cam, now - started, self.font, extra={"space": data})
                 return None
         else:
@@ -1307,8 +1311,11 @@ def render_preview(cam: dict, frame, shape_zone, elapsed=0.0, wx=None, extra=Non
     if full_map:
         from display.modules import issmap, space
         box = draw_caption(Canvas(w, h), (0, 0, w, h), cam, elapsed, font_for, wx=wx, extra=extra)   # (where it goes)
-        c.Blit(issmap.render(w, h, space_data, time.time() - space.LAG, True,
-                             bool((cam.get("map") or {}).get("fixed")), issmap.reserve_for(box, h)), 0, 0)
+        ex = issmap.extras_of(cam)
+        img, paths = issmap.render(w, h, space_data, time.time() - space.LAG, True, bool((cam.get("map") or {}).get("fixed")),
+                                   issmap.reserve_for(box, h), ex, (extra or {}).get("iss_live"))
+        c.Blit(img, 0, 0)
+        issmap.flow(c.buf, paths, time.time(), ex, w >= issmap.BIG_W)
     elif frame is not None:
         c.Blit(frame, 0, 0)
     box = draw_caption(c, (0, 0, w, h), cam, elapsed, font_for, wx=wx, extra=extra)

@@ -203,6 +203,125 @@ def crew():
     return c, m
 
 
+# --- the ISS map's extras (display/modules/issmap.py) ---------------------------------------------------------
+CELESTRAK = "https://celestrak.org/NORAD/elements/gp.php"
+CSS_ID = 48274                      # Tiangong (Tianhe core module)
+RELAY_TTL = 12 * 3600
+DOCKED_URL = "https://corquaid.github.io/international-space-station-APIs/JSON/iss-docked-spacecraft.json"
+OVATION_URL = "https://services.swpc.noaa.gov/json/ovation_aurora_latest.json"
+LIGHTS_URL = ("https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0"
+              "&LAYERS=VIIRS_Black_Marble&CRS=EPSG:4326&BBOX=-90,-180,90,180&WIDTH=1440&HEIGHT=720&FORMAT=image/png"
+              "&STYLES=")
+LIGHTS_TTL = 90 * 86400
+
+
+def _tles(text):
+    """[(name, line 1, line 2)] from a 3-line TLE listing."""
+    ls = [x.rstrip() for x in text.splitlines() if x.strip()]
+    out = []
+    for i in range(len(ls) - 2):
+        if ls[i + 1].startswith("1 ") and ls[i + 2].startswith("2 "):
+            out.append((ls[i].strip(), ls[i + 1], ls[i + 2]))
+    return out
+
+
+def relays(now):
+    """The relay satellites, where they are now: NASA's TDRS fleet and Russia's Luch-5 (geostationary, so their
+    positions barely move between runs). [{"name", "net": "tdrs"|"luch", "lat", "lon"}]"""
+    from sgp4.api import Satrec
+    out = []
+    for net, url, keep in (("tdrs", CELESTRAK + "?GROUP=tdrss&FORMAT=tle", lambda n: n.startswith("TDRS")),
+                           ("luch", CELESTRAK + "?NAME=LUCH-5&FORMAT=tle", lambda n: n in ("LUCH-5A", "LUCH-5B", "LUCH-5V"))):
+        try:
+            got = _tles(_cached_get(f"relays_{net}.tle", url, RELAY_TTL))
+        except Exception:
+            continue
+        for name, l1, l2 in got:
+            if not keep(name):
+                continue
+            sat = Satrec.twoline2rv(l1, l2)
+            jd = julian(now)
+            e, r, _v = sat.sgp4(int(jd), jd - int(jd))
+            if e or abs(sat.no_kozai * 1440 / (2 * math.pi) - 1.0027) > 0.01:   # (geostationary only)
+                continue
+            lat, lon = ground(r, jd)
+            out.append({"name": name.title().replace("Tdrs", "TDRS"), "net": net, "lat": round(lat, 2),
+                        "lon": round(lon, 2)})
+    return out
+
+
+def css_track(now):
+    """Tiangong's track over the same span as the ISS's ([[t, lat, lon, lit], …] every 20 s), or None."""
+    try:
+        got = _tles(_cached_get("css.tle", f"{CELESTRAK}?CATNR={CSS_ID}&FORMAT=tle", TLE_TTL))
+        _n, l1, l2 = got[0]
+        return track(l1, l2, now - BACK, horizon=HORIZON + BACK, step=20)
+    except Exception:
+        return None
+
+
+def docked(now):
+    """The spacecraft docked to the ISS: [{"name", "flag", "docked" (unix), "port"}], or None."""
+    try:
+        d = json.loads(_cached_get("docked.json", DOCKED_URL, CREW_TTL))
+    except Exception:
+        return None
+    return [{"name": str(x.get("name") or ""), "flag": str(x.get("flag_code") or "").lower()[:2],
+             "docked": x.get("docked"), "port": x.get("docking_port")}
+            for x in d.get("spacecraft") or [] if x.get("iss") and x.get("name")]
+
+
+def _write_grid(path, magic, grid):
+    import numpy as np
+    g = np.ascontiguousarray(grid, np.uint8)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_bytes(magic + int(g.shape[1]).to_bytes(2, "big") + int(g.shape[0]).to_bytes(2, "big") + g.tobytes())
+    tmp.replace(path)
+
+
+def aurora(out_dir):
+    """NOAA's OVATION aurora forecast → issmap/aurora.bin: 181 rows (lat -90..90) × 360 (lon 0..359), 0-100."""
+    import numpy as np
+    r = requests.get(OVATION_URL, headers=UA, timeout=60)
+    r.raise_for_status()
+    d = r.json()
+    g = np.zeros((181, 360), np.uint8)
+    for lo, la, v in d.get("coordinates") or []:
+        g[int(la) + 90, int(lo) % 360] = max(0, min(100, int(v)))
+    _write_grid(out_dir / "aurora.bin", b"ISA1", g)
+    return d.get("Forecast Time")
+
+
+def city_lights(out_dir):
+    """NASA's Black Marble (VIIRS city lights, via GIBS) → issmap/lights.bin, 720×360 (lat 90..-90), each pixel the
+    brightest of its 2×2 (small towns stay); fetched once every LIGHTS_TTL."""
+    import numpy as np
+    from PIL import Image
+    p = out_dir / "lights.bin"
+    if p.exists() and time.time() - p.stat().st_mtime < LIGHTS_TTL:
+        return False
+    r = requests.get(LIGHTS_URL, headers=UA, timeout=120)
+    r.raise_for_status()
+    img = np.asarray(Image.open(io.BytesIO(r.content)).convert("L"), np.uint8)
+    h, w = img.shape
+    img = img[:h // 2 * 2, :w // 2 * 2].reshape(h // 2, 2, w // 2, 2).max(axis=(1, 3))
+    _write_grid(p, b"ISL1", img)
+    return True
+
+
+def extras(now):
+    """Everything the map's extras need; each part on its own (one failing leaves the rest)."""
+    out = {"relays": relays(now), "css": css_track(now), "docked": docked(now)}
+    d = paths.DATA_DIR / "issmap"
+    d.mkdir(parents=True, exist_ok=True)
+    for name, fn in (("aurora", aurora), ("lights", city_lights)):
+        try:
+            out[name] = fn(d)
+        except Exception as e:
+            out[name] = f"failed: {str(e)[:120]}"
+    return out
+
+
 def run(cfg):
     from hub.util import atomic_write_json
     cams = (((cfg.get("modules") or {}).get("webcams") or {}).get("cams") or {})
@@ -219,10 +338,13 @@ def run(cfg):
         over.append([row[0], below.name(row[1], row[2])])
         tz.append([row[0], below.zone(row[1], row[2])])
     c, m = crew()
+    x = extras(now)
     out = {"at": now, "elements": [l1, l2], "track": tr, "events": events(tr), "over": over, "tz": tz,
-           "crew": c, "mission": m}
+           "crew": c, "mission": m, "relays": x["relays"], "css": x["css"], "docked": x["docked"]}
     atomic_write_json(paths.DATA_DIR / "iss.json", out)
-    return {"ok": True, "points": len(tr), "events": len(out["events"]), "crew": (c or {}).get("count")}
+    return {"ok": True, "points": len(tr), "events": len(out["events"]), "crew": (c or {}).get("count"),
+            "relays": len(x["relays"]), "css": bool(x["css"]), "docked": len(x["docked"] or []),
+            "aurora": x["aurora"], "lights": x["lights"]}
 
 
 if __name__ == "__main__":
