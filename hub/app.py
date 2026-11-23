@@ -1414,6 +1414,23 @@ def iss_live_now():
     return iss_live.snapshot()
 
 
+@app.post("/api/iss-map/preview.png")
+def iss_map_preview(payload: dict):
+    """The ISS map entry as the wall would draw it now (display/modules/iss_panel.py), for the draft settings:
+    {"settings": modules.iss_map, "shape": left|right|full|tall|wall}."""
+    from display.modules import iss_panel, webcam as wc
+    zones = _webcam_zones()
+    shape = payload.get("shape") if payload.get("shape") in zones else "tall"
+    s = payload.get("settings")
+    cam = iss_panel.settings_of({"iss_map": s if isinstance(s, dict) else None,
+                                 "webcams": (config.load().get("modules") or {}).get("webcams")})
+    img = wc.render_preview(cam, None, tuple(zones[shape]), elapsed=30.0,
+                            extra={"space": _iss_data(), "iss_live": _iss_live()}, show_map=True)
+    out = io.BytesIO()
+    Image.fromarray(img).save(out, "PNG", compress_level=1)
+    return Response(out.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
 @app.get("/api/webcams/status")
 def webcams_status():
     return {"feeds": webcams.describe(), "zones": _webcam_zones(), "max_feeds": webcams.MAX_FEEDS,

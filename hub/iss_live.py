@@ -44,11 +44,11 @@ def log(msg):
 
 
 def wanted() -> bool:
-    """A webcam is in space."""
+    """The ISS is on the wall somewhere (hub/jobs/iss.py wanted: a webcam in space, or the ISS map)."""
     try:
         from hub import config
-        cams = ((config.load().get("modules") or {}).get("webcams") or {}).get("cams") or {}
-        return any(isinstance(c, dict) and c.get("space") for c in cams.values())
+        from hub.jobs.iss import wanted as iss_wanted
+        return iss_wanted(config.load())
     except Exception:
         return False
 

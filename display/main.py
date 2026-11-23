@@ -350,6 +350,12 @@ class Screen:
         self.panels["timezones"] = self.tzmap.draw
         self.full_panels["timezones_full"] = self.tzmap.draw
         self.takeover_panels["timezones_wall"] = self.tzmap.draw
+        from display.modules.iss_panel import IssMapPanel     # the ISS map on its own (control panel → ISS map)
+        self.iss_map = keep("iss_map", ("iss_map", "webcams"), lambda: IssMapPanel(cfg, getattr(loader, "data_dir", None)))
+        self.panels["iss_map"] = self.iss_map.draw
+        self.full_panels["iss_map_full"] = self.iss_map.draw
+        self.tall_panels["iss_map_tall"] = self.iss_map.draw
+        self.takeover_panels["iss_map_wall"] = self.iss_map.draw
         from display.modules.webcam import WebcamPanel        # live video decoded by the hub (control panel → Webcams)
         self.webcam = keep("webcam", ("webcams",), lambda: WebcamPanel(cfg, getattr(loader, "data_dir", None)))
         self.panels["webcam"] = self.webcam.draw
