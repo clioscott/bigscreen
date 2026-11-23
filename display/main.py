@@ -29,7 +29,9 @@ from display.gfx import Canvas, Color, graphics
 
 DATA_DIR = os.environ.get("BIGSCREEN_DATA_DIR", "/dev/shm/bigscreen")
 BOTTOM_STRIP_PX = 17
-STREAM_AHEAD = 12.0          # a webcam this close: the Pi opens its stream and fills its buffer (webcam.py warm)
+STREAM_AHEAD = 16.0          # a webcam this close: the Pi opens its stream and fills its buffer (webcam.py warm)
+VIDEO_FPS = 30               # the loop's rate while webcam video is on screen (system.display.video_fps): App._period
+VIDEO_HOLD_SEC = 0.5         # … from the last draw of video this long ago
 GRID_WARM_AHEAD = 120.0      # the camera grid's tiles are fetched this far ahead of its turn (s)
 TILE_W, TILE_H = 64, 16      # dirty-tile granularity for pushing frames to the panels
 BLACK = Color(0, 0, 0)
@@ -546,7 +548,7 @@ class App:
         tick = time.time()             # when this frame was due: frames run on a fixed grid of 1/fps
         while not self.restart_requested:
             t0 = time.time()
-            period = 1.0 / max(1, self.cfg.system.get("display", {}).get("fps", 60))
+            period = self._period(t0, webcam.CLOCK.get("video_at"))
             webcam.CLOCK["tick"] = tick    # video picks its frame by the grid, so each one shows for the same time
             webcam.CLOCK["period"] = period
             try:
@@ -579,6 +581,17 @@ class App:
             elif tick - t2 > 0.002:
                 time.sleep(tick - t2)
         sys.exit(3)       # systemd restarts us with the new panel settings
+
+    def _period(self, now, video_at):
+        """The loop's frame time: 1 / system.display.fps (60), or while webcam video is on screen (drawn in the last
+        VIDEO_HOLD_SEC) 1 / video_fps (30). Video is 30 fps: at 60 Hz each frame had to show for exactly two draws, and
+        a draw plus pushing a frame (~19 ms) overran 16.7 ms, so frames showed for uneven times (judder); at 30 Hz
+        every draw is a new frame with ~14 ms to spare. The ticker and clock move by time, so they look the same."""
+        d = self.cfg.system.get("display", {})
+        fps = d.get("fps", 60)
+        if video_at is not None and now - video_at < VIDEO_HOLD_SEC:
+            fps = min(fps, d.get("video_fps", VIDEO_FPS))
+        return 1.0 / max(1, fps)
 
     def snapshot_frame(self):
         """Latest complete frame for the mirror. Asking keeps the render loop copying frames for 5 s."""

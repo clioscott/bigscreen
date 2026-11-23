@@ -13,8 +13,9 @@ picture is just the region the crops cover.
 In step: a live YouTube feed doesn't hand ffmpeg a URL. Feed._feed_segments reads the HLS playlist, which dates every
 segment, and feeds each segment into ffmpeg's stdin a little before it's due: every frame plays DELAY_SEC after it
 was filmed, the same for every webcam, so nearby cameras line up when the wall cuts between them, a feed comes up at
-once (YouTube keeps the last minute or hour of segments) and a restart is seamless. The Pi shows each frame when it's
-due (pack: BSW2 frames carry the time).
+once (YouTube keeps the last minute or hour of segments) and a restart is seamless. For webcams set to play in step
+(``sync``) the Pi shows each frame when it's due (pack: BSW2 frames carry the time); the rest it plays from its own
+deep buffer at an even rate, which no late frame can disturb.
 
 YouTube's live HLS stops at 1080p; a live stream's 1440p and 4K exist only as DASH segments (VP9 WebM, numbered like
 the HLS ones). Those are used only when a crop needs more than the HLS has, and only on the video engine, which also
@@ -792,6 +793,7 @@ class Feed:
         self.refresh = refresh
         self._still = None
         self.consumers = {}              # key -> Consumer (Feed.consumer)
+        self._expected = {}              # key -> ((w, h, crop), until): a wall zone about to play it (expect)
         self.formats = []                # YouTube: every resolution the stream has (lookup)
         self.native = None               # the stream's own resolution: {"w", "h", "fps", "vcodec"}
         self.source = None               # what's being decoded now: {"w", "h", "fps", "vcodec"}
@@ -886,12 +888,27 @@ class Feed:
                     if v is c:
                         del self.consumers[k]
 
-    def live_wants(self):
-        """The zones playing this feed now (the wall's, a preview's draft once it's held still), each once: what the
-        hi picture is cut for. Planning it for every saved zone instead made it the whole frame, scaled down to fit:
-        no Whole pixels crop was exact any more."""
+    def expect(self, w, h, crop=None):
+        """The wall will play this feed in a zone of this size and crop soon (hub/app.py warm): it counts as playing it
+        (live_wants) for GRACE_SEC, so the first run already decodes the detail it needs. Before, a warmed feed started
+        with the 640-wide picture only and restarted for more as the wall's stream opened, just as it came on screen."""
+        key = _key_of(w, h, crop, None)
         with self._lock:
+            if not hasattr(self, "_expected"):
+                self._expected = {}
+            self._expected[key] = ((int(w), int(h), crop), time.time() + GRACE_SEC)
+
+    def live_wants(self):
+        """The zones playing this feed now (the wall's, a preview's draft once it's held still) or about to (expect),
+        each once: what the hi picture is cut for. Planning it for every saved zone instead made it the whole frame,
+        scaled down to fit: no Whole pixels crop was exact any more."""
+        now = time.time()
+        with self._lock:
+            expected = getattr(self, "_expected", {})
+            for k in [k for k, (_, until) in expected.items() if until < now]:
+                del expected[k]
             wall = [c.want() for c in self.consumers.values() if not c.draft]
+            wall += [want for want, _ in expected.values()]
             drafts = [c.want() for c in self.consumers.values() if c.draft and c.settled()]
         # the wall's zones when it plays this feed: a panel preview of another crop then comes out of lo (cutting one
         # region for both and scaling it here for each took ~1 core of the hub's and starved the other feeds)

@@ -603,7 +603,7 @@ const PlaylistTab = {
         <Field label="Each turn starts" hint="At the top, or where the last turn stopped">
           <Seg :modelValue="wc.from_top === false ? 'carry' : 'top'" @update:modelValue="v => wc.from_top = v !== 'carry'"
             :options="[{ value: 'top', label: 'At the top' }, { value: 'carry', label: 'Where it stopped' }]"/></Field>
-        <Field label="Behind live" hint="Every webcam plays this far behind real time, so nearby cameras line up when the wall cuts between them">
+        <Field label="Behind live" hint="Webcams set to play in step (on each webcam's page) play this far behind real time, so nearby cameras line up when the wall cuts between them; the rest play from a deep buffer for the smoothest picture">
           <Stepper :modelValue="wc.delay_sec || WEBCAM_DELAY" @update:modelValue="v => wc.delay_sec = v" :min="10" :max="120" :step="5" unit=" s"/></Field>
         <div class="faint" style="font-size:12.5px; padding-bottom:6px">{{ on.length }} of {{ list.length }} on · the whole list takes {{ mins(total) }}</div>
       </div>
@@ -1476,6 +1476,10 @@ const WebcamEditor = {
               <Toggle :modelValue="cam.skip_plain ?? !!cam.space" @update:modelValue="v => cam.skip_plain = v" title="Skip a stand-in picture"/>
               <span>Skip it when the picture is frozen or one plain colour</span>
               <span class="faint" style="font-size:12px">a "loss of signal" card instead of the video (NASA's ISS stream has one); passed over like a black picture</span></div>
+            <div class="wc-rot" v-if="(cam.source || {}).type === 'youtube'"><Icon name="Link2" :size="15"/>
+              <Toggle :modelValue="!!cam.sync" @update:modelValue="v => cam.sync = v" title="In step with nearby webcams"/>
+              <span>In step with nearby webcams</span>
+              <span class="faint" style="font-size:12px">plays exactly as far behind live as the others in step, so cameras looking at the same street line up when the wall cuts between them; a late frame then shows as a freeze. Off: the smoothest playback</span></div>
             <div class="faint" style="font-size:12px" v-if="used.length">Also its own rotation entry ({{ used.map(u => u.side).join(', ') }}):
               <a href="#/webcams">combine it into the list</a> on the Webcams page.</div>
           </div></div>
