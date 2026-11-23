@@ -158,3 +158,27 @@ def test_the_small_map_stays_inside_small_zones_or_is_left_out():
         x, y, sw, sh = issmap.small_box(w, h, "br")
         assert sw == 0 or (x >= 1 and y >= 1 and x + sw < w and y + sh < h)
     assert issmap.render(0, 0, _track(), T0).shape == (0, 0, 3)
+
+
+@pytest.mark.parametrize("w,h", [(448, 192), (448, 175), (448, 134), (448, 130), (295, 130), (152, 130)])
+@pytest.mark.parametrize("reserve", [(0, 34), (0, 50), (30, 0)])
+def test_the_iss_band_stays_clear_of_the_caption(w, h, reserve):
+    for follow in (True, False):
+        v = issmap.View(w, h, follow=follow, reserve=reserve)
+        top, bot = float(v.y(issmap.ISS_LAT)), float(v.y(-issmap.ISS_LAT))
+        assert top - 3 >= reserve[0] and bot + 3 <= h - reserve[1]
+        assert v.y0 + v.mh >= h - 1 or v.bot == -90.0                       # the map runs on under the caption
+
+
+def test_the_iss_is_never_drawn_under_the_caption():
+    from display.gfx import Canvas
+    cam = {"space": "iss", "label": "International Space Station", "overlay": {"font": "medium"}}
+    data = {"track": [[time.time() - 6000 + i * 10, -51.5 + 103 * abs(((i / 553) % 2) - 1), (i * 0.6) % 360 - 180, 1]
+                      for i in range(1300)]}
+    img = webcam.render_preview(cam, None, (448, 134), elapsed=30, extra={"space": data}, show_map=True)
+    from display.modules.webcam_caption import draw_caption
+    box = draw_caption(Canvas(448, 134), (0, 0, 448, 134), cam, 30, webcam._preview_font, extra={"space": data})
+    assert box
+    gold = (img == issmap.PAL["G"]).all(axis=2)
+    ys = np.flatnonzero(gold.any(axis=1))
+    assert ys.size and ys.max() < box[1]                                   # the ISS is above the caption box

@@ -911,8 +911,11 @@ class WebcamPanel:
             if not (night and dark(t + STREAM_AHEAD_SEC)):    # the stream only from shortly before sunrise
                 st = self._stream(cam, self.shape_for(entry, zone), w, h)
             if night or st is None or self._unusable(st, now):
-                issmap.draw_full(c, zone, data, t, fixed=bool((cam.get("map") or {}).get("fixed")))
-                draw_caption(c, zone, cam, now - started, self.font, extra={"space": data})
+                boxes = self.__dict__.setdefault("_map_caption", {})   # the caption's box last frame: the map keeps
+                bk = (entry.get("cam"), w, h)                         # the ISS clear of it
+                issmap.draw_full(c, zone, data, t, fixed=bool((cam.get("map") or {}).get("fixed")),
+                                 caption_box=boxes.get(bk))
+                boxes[bk] = draw_caption(c, zone, cam, now - started, self.font, extra={"space": data})
                 return None
         else:
             st = self._stream(cam, self.shape_for(entry, zone), w, h)
@@ -1289,15 +1292,6 @@ def render_preview(cam: dict, frame, shape_zone, elapsed=0.0, wx=None, extra=Non
     from display.gfx import Canvas
     w, h = shape_zone
     c = Canvas(w, h)
-    space_data = (extra or {}).get("space")
-    full_map = bool(cam.get("space")) and (show_map or frame is None) \
-        and (cam.get("map") or {}).get("when_down", True) is not False
-    if full_map:
-        from display.modules import issmap, space
-        c.Blit(issmap.render(w, h, space_data, time.time() - space.LAG, True,
-                             bool((cam.get("map") or {}).get("fixed"))), 0, 0)
-    elif frame is not None:
-        c.Blit(frame, 0, 0)
     fonts = {}
 
     def font_for(size):
@@ -1307,6 +1301,16 @@ def render_preview(cam: dict, frame, shape_zone, elapsed=0.0, wx=None, extra=Non
             f.LoadFont(FONTS.get(size, size))
         return f
 
+    space_data = (extra or {}).get("space")
+    full_map = bool(cam.get("space")) and (show_map or frame is None) \
+        and (cam.get("map") or {}).get("when_down", True) is not False
+    if full_map:
+        from display.modules import issmap, space
+        box = draw_caption(Canvas(w, h), (0, 0, w, h), cam, elapsed, font_for, wx=wx, extra=extra)   # (where it goes)
+        c.Blit(issmap.render(w, h, space_data, time.time() - space.LAG, True,
+                             bool((cam.get("map") or {}).get("fixed")), issmap.reserve_for(box, h)), 0, 0)
+    elif frame is not None:
+        c.Blit(frame, 0, 0)
     box = draw_caption(c, (0, 0, w, h), cam, elapsed, font_for, wx=wx, extra=extra)
     if not full_map:
         draw_small_map(c, (0, 0, w, h), cam, space_data, time.time(), box)

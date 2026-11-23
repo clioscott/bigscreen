@@ -1400,7 +1400,8 @@ def test_the_list_passes_over_a_webcam_outside_its_hours(monkeypatch):
     monkeypatch.setattr(p, "_health", lambda now: {})
     noon = 1_795_348_800.0                                                     # 2026-11-22 12:00 UTC
     assert p.is_down("aurora", noon) and not p.is_down("aurora", noon + 10 * 3600)
-    assert p._next_up(0, ()) in ("a",) or p.is_down("aurora")
+    monkeypatch.setattr(wm.time, "time", lambda: noon)                        # (the list asks for now: noon)
+    assert p._next_up(0, ()) == "a"
 
 
 def test_the_hubs_placeholder_while_a_feed_starts_never_counts_as_a_black_picture():
