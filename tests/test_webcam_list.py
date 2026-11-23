@@ -22,7 +22,7 @@ def _panel(webcams, monkeypatch, clock):
     drawn = []
     p._draw_cam = lambda c, zone, entry, transition, **kw: drawn.append(entry["cam"])
     p._preroll = lambda cid, shape, zone: _Ready()                     # the next webcam's stream: has a picture
-    p._warm_hub = lambda cid: None
+    p._warm_hub = lambda cid, *a: None
     return p, drawn
 
 
@@ -492,7 +492,7 @@ def test_the_current_webcam_stays_up_until_the_next_has_a_picture(monkeypatch):
                        "playlist": [{"cam": "a", "sec": 20}, {"cam": "b", "sec": 20}]}, monkeypatch, clock)
     slow, warmed = _Slow(), []
     p._preroll = lambda cid, shape, zone: slow
-    p._warm_hub = lambda cid: warmed.append(cid)
+    p._warm_hub = lambda cid, *a: warmed.append(cid)
     c, z, entry = Canvas(448, 130), (0, 0, 448, 130), {"panel": "webcam_full", "_play": 1}
     p.draw(c, z, entry, True)
     clock[0] += 6                                                       # 14 s to go: the hub has started b's feed
@@ -1001,19 +1001,20 @@ def _fresh_stream(fps=30):
 
 def test_video_starts_only_with_a_full_buffer():
     st = _fresh_stream()
-    frames = [np.full((1, 1, 3), i % 256, np.uint8) for i in range(400)]
-    for fr in frames[:90]:                                              # 3 s in: not enough to start smoothly
+    full = int(30 * wm.PLAY_BUFFER_SEC)
+    frames = [np.full((1, 1, 3), i % 256, np.uint8) for i in range(full * 2)]
+    for fr in frames[:full // 2]:                                       # half full: not enough to start smoothly
         st._q.append(fr)
-    st.frame, st.frame_t = frames[89], 1e12
+    st.frame, st.frame_t = frames[full // 2 - 1], 1e12
     assert st.current(10.0) is frames[0] and st.buffering() and not st.ready()
-    for fr in frames[90:180]:                                           # 6 s: plays
+    for fr in frames[full // 2:full]:                                   # full: plays
         st._q.append(fr)
     st.current(10.1)
     assert not st.buffering() and st.ready()
     pre = _fresh_stream()                                               # prerolled: full before it comes up
-    for fr in frames[:300]:
+    for fr in frames[:full + 100]:
         pre._q.append(fr)
-    pre.frame, pre.frame_t = frames[299], 1e12
+    pre.frame, pre.frame_t = frames[full + 99], 1e12
     assert pre.ready()
     pre.current(0.0)
     assert not pre.buffering() and len(pre._q) <= int(30 * wm.PLAY_BUFFER_SEC)   # starts at the buffer's depth
@@ -1058,7 +1059,7 @@ def test_short_turns_prepare_several_webcams_at_once(monkeypatch):
                        "playlist": [{"cam": k, "sec": 5} for k in "abcdef"]}, monkeypatch, clock)
     streams, warmed = [], []
     p._preroll = lambda cid, shape, zone: streams.append(cid) or _Ready()
-    p._warm_hub = lambda cid: warmed.append(cid)
+    p._warm_hub = lambda cid, *a: warmed.append(cid)
     c, z, entry = Canvas(448, 130), (0, 0, 448, 130), {"panel": "webcam_full", "_play": 1}
     p.draw(c, z, entry, True)                                           # a on screen, 5 s each
     assert streams == ["b", "c"] and warmed == ["d"]                    # two buffering here, one more at the hub
@@ -1076,7 +1077,7 @@ def test_long_turns_still_prepare_just_the_next_one(monkeypatch):
                        "playlist": [{"cam": k, "sec": 60} for k in "abcd"]}, monkeypatch, clock)
     streams, warmed = [], []
     p._preroll = lambda cid, shape, zone: streams.append(cid) or _Ready()
-    p._warm_hub = lambda cid: warmed.append(cid)
+    p._warm_hub = lambda cid, *a: warmed.append(cid)
     c, z, entry = Canvas(448, 130), (0, 0, 448, 130), {"panel": "webcam_full", "_play": 1}
     p.draw(c, z, entry, True)
     assert streams == [] and warmed == []                               # 60 s to go: nothing yet

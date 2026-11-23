@@ -4,6 +4,12 @@ The hub decodes the stream (hub/webcams.py) and sends frames already cropped and
 only copies them to the canvas: no decoding here, ever. A reader thread per playing webcam keeps the newest
 frame; it hangs up a few seconds after the screen stops drawing it, and the hub then stops ffmpeg.
 
+Smooth first: video plays from a deep buffer here (PLAY_BUFFER_SEC) at exactly the feed's rate by the draw clock, so a
+busy hub or a slow network never shows as a freeze or a catch-up; how far behind live that is, nobody can tell. Only
+webcams set to play in step (``sync``: cameras looking at the same street, so a train crossing from one view to the
+next lines up when the wall cuts between them) show each frame at a fixed delay after it was filmed instead, at the
+cost of a freeze when a frame comes late. While video is on screen display/main.py draws at 30 Hz (one draw per frame).
+
 On top goes a caption saying what the feed is and where it comes from, styled per webcam (``overlay``): see
 display/modules/webcam_caption.py for the sections and layouts.
 
@@ -45,18 +51,22 @@ from display.modules.webcam_caption import (DEFAULT_OVERLAY, FONTS, INTRO_SEC, L
 
 DEFAULT_HUB = "http://192.168.1.111:8800"
 IDLE_SEC = 3.0               # hang up when the screen hasn't drawn this webcam for this long
-PLAY_START_SEC = 2.0         # after running dry, video plays again once this much is buffered here; the first start
+PLAY_START_SEC = 4.0         # after running dry, video plays again once this much is buffered here; the first start
                              # waits for the full PLAY_BUFFER_SEC ("Loading webcam feeds" meanwhile, unless prerolled)
-PLAY_BUFFER_SEC = 6.0        # … and settles at this depth, played at its own rate by this clock: the hub's (a busy
-                             # server's) and the network's unevenness never shows (seconds behind live: nobody minds)
-PLAY_MAX_SEC = 15.0          # kept at most (only a far worse stall than seen drops anything)
-FILL_AVG_SEC = 20.0          # the speed follows the buffer's depth averaged over this long …
-DRIFT_MAX = 0.02             # … by at most this much (2 %: not something anyone sees)
+PLAY_BUFFER_SEC = 12.0       # … and settles at this depth, played at exactly the feed's rate by this clock: a busy hub
+                             # (Plex) and the network never show. YouTube's frames come 5 s at a time (a segment), so it
+                             # swings 7-12 s: a hub ~7 s late is still unseen (seconds behind live: nobody minds)
+PLAY_MAX_SEC = 20.0          # kept at most (only a far worse stall than seen drops anything)
+PREROLL_KEEP_SEC = 2.0       # a stream not playing yet (prerolled) keeps at most this much beyond PLAY_BUFFER_SEC (memory)
+FILL_AVG_SEC = 20.0          # the buffer's depth is averaged over this long; while that's within DRIFT_BAND of
+DRIFT_BAND = 0.45            # PLAY_BUFFER_SEC the video plays at exactly 1.0 (every frame for the same time); beyond it,
+DRIFT_MAX = 0.01             # 1 % faster or slower until it's back within DRIFT_SETTLE (one frame in 100: unseen). Wide:
+DRIFT_SETTLE = 0.25          # 5 s segments keep the average ~20 % under the target, and a stall's dip refills by itself
 WARM_EVERY = 10.0            # while a webcam is next in the rotation, ask the hub to keep its feed going this often
 WEBCAM_SEC = 40.0            # how long a webcam in the list shows when it doesn't say (the panel's default for a new one)
 GIVE_UP_SEC = 25.0           # no picture this long after the play started: skip to the next screen
 PREROLL_SEC = 30.0           # the hub starts the next webcam's feed this long before it's due (~5-10 s from cold)
-STREAM_AHEAD_SEC = 12.0      # … and the Pi opens its own stream this long before: its buffer is full when it's due
+STREAM_AHEAD_SEC = 16.0      # … and the Pi opens its own stream this long before: its buffer is full when it's due
 HOLD_MAX_SEC = 15.0          # the current webcam stays up at most this much longer while the next one isn't buffered
 LOOKAHEAD = 3                # the list prepares this many webcams ahead, each by how soon its turn is (short turns:
 PREROLL_STREAMS = 2          # several at once); at most this many of them also have the Pi's stream open (buffering)
@@ -77,7 +87,9 @@ GRID_VIEW_MS = 1000          # an intersection's tile shows each of its views th
 GRID_ASPECT = 1.1           # auto columns keep each tile about this much wider than tall (6 across full width)
 _list_pos = {"i": -1}        # where the Webcams list is (survives config reloads, which rebuild the panel)
 CLOCK = {"tick": None}       # when the frame being drawn is due (display/main.py's fixed grid): video goes by this, so
-                             # at 60 Hz each 30 fps frame shows for exactly two frames whatever the drawing costs
+                             # each frame shows for the same number of draws whatever the drawing costs. "video_at":
+                             # when video was last drawn (main.py then runs at system.display.video_fps, 30 by default:
+                             # one draw per frame with time to spare, where 60 Hz overran and showed frames unevenly)
 
 
 def is_black(frame) -> bool:
@@ -189,6 +201,15 @@ def crop_for(cam: dict, shape: str, w: int, h: int):
     return {"x": round(max(0.0, x), 5), "y": round(y, 5), "w": round(cw, 5)}
 
 
+def in_step(cam: dict) -> bool:
+    """Does this webcam play in step with the others (``sync``, off by default)? In step, every frame shows a fixed
+    delay after it was filmed, the same for every webcam, so cameras side by side line up when the wall cuts between
+    them (a train leaving one view enters the next); but a frame that comes late freezes the picture and the video
+    then skips to catch up. Off, the video plays from a deep buffer at its own steady rate and nothing the hub or the
+    network does shows. Only worth it for cameras looking at the same place."""
+    return bool((cam or {}).get("sync"))
+
+
 def stream_query(cam: dict, shape: str, w: int, h: int) -> dict:
     """What the hub needs to make this zone's frames (hub/app.py /api/webcams/frames)."""
     src = cam.get("source") or {}
@@ -196,8 +217,8 @@ def stream_query(cam: dict, shape: str, w: int, h: int) -> dict:
          "w": int(w), "h": int(h)}
     if src.get("type") == "drivebc":
         q["id"] = int(src.get("id") or 0)
-    if src.get("type") == "youtube":
-        q["sync"] = 1                                  # in step: frames say when they're due (hub/webcams.py)
+    if src.get("type") == "youtube" and in_step(cam):
+        q["sync"] = 1                                 # in step: frames say when they're due (hub/webcams.py)
     if skips_plain(cam):
         q["flat"] = 1                                  # a plain screen (a "loss of signal" slate) counts as down
     try:
@@ -231,6 +252,7 @@ class Stream:
     _shown_due = None
     shift = 0.0                                # in step: how much later than its due times this stream plays
     _on_time = False                           # in step: a frame has come well before it was due
+    _drift = 0.0
 
     def __init__(self, hub_url: str, query: dict):
         self.hub = urlparse(hub_url)
@@ -250,6 +272,7 @@ class Stream:
         self._shown = None
         self._played = False                   # started playing at least once (the first start waits for a full buffer)
         self._fill_avg = None                  # the buffer's depth averaged over ~FILL_AVG_SEC (steers the drift)
+        self._drift = 0.0                      # the speed's correction now: 0, or ±DRIFT_MAX while the depth is far off
         self._buffer_since = time.time()       # when it last began buffering (the panel gives up on one that never fills)
         # in step (hub/webcams.py: YouTube): each frame says when it's due on the wall, the same delay behind real
         # time for every webcam; it's shown then, whatever the network or the hub did on the way
@@ -276,8 +299,9 @@ class Stream:
     def current(self, now=None):
         """The frame to show now. Video plays from the buffer by this clock at the feed's own speed, never skipping:
         the first start waits for a full PLAY_BUFFER_SEC, later ones (after running dry) for PLAY_START_SEC. The
-        speed is 1.0 but for a slow, invisible drift correction (DRIFT_MAX) by the buffer's averaged depth, so a
-        backlog after a stall drains over minutes instead of being thrown away. Stills: the newest."""
+        speed is exactly 1.0 while the buffer's averaged depth is near PLAY_BUFFER_SEC (DRIFT_BAND); only when it
+        wanders further is it eased back at DRIFT_MAX (1 %), so a backlog after a stall drains over minutes instead of
+        being thrown away, and a steady feed never has a frame doubled or dropped. Stills: the newest."""
         if not self.video:
             return self.frame
         now = time.time() if now is None else now
@@ -293,18 +317,27 @@ class Stream:
                 return self._shown if self._shown is not None else self.frame
             while len(q) > target:                             # a prerolled backlog: start at the buffer's depth
                 q.popleft()
-            # a quarter frame in: on the 60 Hz grid the frame changes halfway between two draws, never on one
+            # from the frame it carries on from (the still shown while buffering was the oldest, which then jumped
+            # seconds ahead); a quarter frame in: on the draw grid the frame changes between two draws, never on one
+            self._shown = q.popleft()
+            self.shown += 1
             self._play_t0, self._play_k, self._play_pos, self._play_last = now, 0, 0.25, now
             self._played = True
-            self._fill_avg = None
+            self._fill_avg, self._drift = None, 0.0
         dt = min(0.25, max(0.0, now - self._play_last))
         self._play_last = now
-        # the speed is the feed's own: 1.0, but for a correction too small to see (±2 %) by the buffer's depth
-        # averaged over ~20 s. YouTube's chunks (2-4 s at a time) swing the depth by seconds; following that
-        # visibly sped the video up and slowed it down.
+        # the speed is the feed's own: exactly 1.0, every frame for the same time. YouTube's segments (5 s at a
+        # time) swing the depth by seconds, so it's averaged over ~20 s, and only a depth well off the target
+        # (DRIFT_BAND) is eased back, at 1 %, until it's close again (DRIFT_SETTLE). Steering by the depth all the
+        # time doubled or dropped a frame every second or two: a steady judder.
         k = min(1.0, dt / FILL_AVG_SEC)
         self._fill_avg = len(q) if self._fill_avg is None else self._fill_avg + (len(q) - self._fill_avg) * k
-        rate = min(1.0 + DRIFT_MAX, max(1.0 - DRIFT_MAX, 1.0 + 0.1 * (self._fill_avg / target - 1.0)))
+        dev = self._fill_avg / target - 1.0
+        if abs(dev) >= DRIFT_BAND:
+            self._drift = DRIFT_MAX if dev > 0 else -DRIFT_MAX
+        elif abs(dev) <= DRIFT_SETTLE:
+            self._drift = 0.0
+        rate = 1.0 + self._drift
         self._play_pos += dt * self.fps * rate
         due = int(self._play_pos)
         step = 0
@@ -435,7 +468,7 @@ class Stream:
         d = {"w": self.w, "h": self.h, "fps": self.fps, "url": self.query.get("url") or self.query.get("id"),
              "playing": self._play_t0 is not None, "buffered_sec": round(len(self._q) / self.fps, 1),
              "shown": self.shown, "skipped": self.skipped, "dry_runs": self.dry_runs, "error": self.error,
-             "in_step": self.in_step}
+             "in_step": self.in_step, "drift": self._drift}
         if self.in_step:
             d.update(playing=not self._holding, buffered_sec=round(self.ahead(), 1), late=self.late,
                      shift=round(self.shift, 1))
@@ -543,6 +576,10 @@ class Stream:
                 self._add_due(due, self.frame, self.frame_t)
             elif self.video and not placeholder:                # the placeholder shows while loading, never in the video
                 self._q.append(self.frame)
+                if self._play_t0 is None:                       # prerolled (not playing yet): only what the start keeps
+                    keep = int(self.fps * (PLAY_BUFFER_SEC + PREROLL_KEEP_SEC))
+                    while len(self._q) > keep:
+                        self._q.popleft()
             if not placeholder and self.frame_t - self._black_checked >= 1.0:   # on the reader's core, once a second
                 self._black_checked = self.frame_t              # (the hub's still while a feed starts says nothing
                 self.check_blank(self.frame, self.frame_t,      # about the video: it isn't checked)
@@ -624,28 +661,37 @@ class WebcamPanel:
                     first.append(k)
                 if len(first) >= LOOKAHEAD:
                     break
+            shape = self.shape_for(entry, zone) if zone is not None else None
             for i, k in enumerate(first):                     # the first ones' streams too (short turns), the rest
                 if soon and zone is not None and i < PREROLL_STREAMS:    # at the hub
-                    self._preroll(k, self.shape_for(entry, zone), zone)
+                    self._preroll(k, shape, zone)
                 else:
-                    self._warm_hub(k)
+                    self._warm_hub(k, shape, zone)
             return
+        shape = self.shape_for(entry, zone) if zone is not None else None
         if soon and zone is not None and cid in self.cams:
-            self._preroll(cid, self.shape_for(entry, zone), zone)
+            self._preroll(cid, shape, zone)
         else:
-            self._warm_hub(cid)
+            self._warm_hub(cid, shape, zone)
 
-    def _warm_hub(self, cid):
-        """Ask the hub to start (or keep up) this webcam's feed, at most every WARM_EVERY; in the background."""
+    def _warm_hub(self, cid, shape=None, zone=None):
+        """Ask the hub to start (or keep up) this webcam's feed, at most every WARM_EVERY; in the background. With the
+        zone it will play in, the hub decodes the detail that zone's crop needs from the start: without it the feed
+        started 640 wide and restarted for more detail just as the webcam came up."""
         cam = self.cams.get(cid)
         if not cam:
             return
-        q = {k: v for k, v in stream_query(cam, "full", 8, 8).items() if k in ("type", "url", "id", "refresh", "fps")}
+        source = ("type", "url", "id", "refresh", "fps")
+        if zone is not None and shape:
+            q = {k: v for k, v in stream_query(cam, shape, zone[2], zone[3]).items()
+                 if k in source + ("w", "h", "x", "y", "cw", "px")}
+        else:
+            q = {k: v for k, v in stream_query(cam, "full", 8, 8).items() if k in source}
         key = tuple(sorted(q.items()))
         now = time.time()
         if now - self._warmed.get(key, 0) < WARM_EVERY:
             return
-        if any(st.alive and all(st.query.get(k) == v for k, v in q.items()) for st in self.streams.values()):
+        if any(st.alive and all(st.query.get(k) == q[k] for k in source if k in q) for st in self.streams.values()):
             return                                            # already open here: that stream keeps it going
         self._warmed[key] = now
         hub = urlparse(self.hub)
@@ -872,7 +918,7 @@ class WebcamPanel:
                         bad = (cid, st)
                         break
                 elif lead <= PREROLL_SEC:
-                    self._warm_hub(cid)
+                    self._warm_hub(cid, shape, zone)
             if bad is None:
                 t["next"] = ahead[0][0]
                 return t["next"]
@@ -927,6 +973,8 @@ class WebcamPanel:
             return "skip"
         if st.showable(now):
             c.Blit(st.current(CLOCK["tick"] or now), x, y)
+            if getattr(st, "video", True):
+                CLOCK["video_at"] = now                        # main.py: the loop runs at the video rate meanwhile
             if st.buffering():                                 # not prepared ahead (played by hand): load, then play
                 _shade(c, x, y, w, h, 0.6)
                 self._centre(c, zone, "Loading webcam feeds" + "." * (1 + int(now * 2) % 3), Color(225, 225, 225))
