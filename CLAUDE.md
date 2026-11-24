@@ -161,7 +161,9 @@ once (`hold: false`), so the rotation resumes by itself.
   0.1-1, default 0.8: blended over the video, the outline fading with them): a row of pixel flags in a corner,
   stacked on the caption (and its Japanese caption), or beside it (`corner: left | right`). `ids: null` is
   automatic: `common/flagplaces.py` works out the country and province/state/prefecture from the webcam's
-  `country`/`region`, place text, time zone and coordinates. The flag set is **not in git** (r74n's state flags
+  `country`/`region`, place text, time zone and coordinates, then picks the flags: in Canada/US/Japan the region's
+  flag + the city's (a `city` flag whose name matches the place's first part), never the country's; Ireland: `ie` +
+  Dublin's; elsewhere the country's. Defaults: 18 px, bottom right. The flag set is **not in git** (r74n's state flags
   and some city/emblem artwork can't be published): `~/bigscreen-state/data/flags/` (`index.json` +
   `<id>_<18|23>.png`), synced to the Pi. It's made on Scott's PC
   (Pictures/pixel-flags-icons/mockups/tool/export_flagset.py) and copied there.

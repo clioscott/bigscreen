@@ -9,6 +9,9 @@ central Tokyo. Countries are lower-case ISO codes ("ca", "jp"); regions are uppe
 
 from __future__ import annotations
 
+import re
+import unicodedata
+
 CA_REGIONS = {"BC", "AB", "SK", "MB", "ON", "QC", "NB", "NS", "PE", "NL", "YT", "NT", "NU"}
 US_REGIONS = {"AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY",
               "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND",
@@ -92,13 +95,54 @@ def locate(cam: dict) -> tuple[str, str]:
     return country, region
 
 
+# countries whose own flag is left out: the province / state / prefecture flag (and the city's) says enough
+REGION_ONLY = {"ca", "us", "jp"}
+WITH_CITY = REGION_ONLY | {"ie"}          # where the city's flag follows (Dublin); elsewhere the country's flag alone
+
+
+def _norm(name: str) -> str:
+    """A place name for comparing: no accents, case, "(...)" notes, "-ku" / "City" / "Ward" or punctuation."""
+    s = unicodedata.normalize("NFKD", name.split("(")[0])
+    s = "".join(ch for ch in s if not unicodedata.combining(ch)).lower()
+    s = re.sub(r"[^a-z0-9]+", " ", s).strip()
+    return re.sub(r"(?: ku| city| ward)$", "", s).strip()
+
+
+def city_id(cam: dict, country: str, region: str, known) -> str:
+    """The city flag for a webcam's place ("Shibuya-ku", "Dublin, Ireland", "North Vancouver, BC"): a flag in the
+    ``city`` group of ``known`` (the flag index: {id: entry}) in the same country and region whose name is the
+    place's first part. "" when there's none (or ``known`` has no entries to look in)."""
+    if not isinstance(known, dict):
+        return ""
+    head = _norm(str(cam.get("place") or "").split(",")[0])
+    if not head:
+        return ""
+    hits = [fid for fid, e in known.items()
+            if isinstance(e, dict) and e.get("group") == "city" and str(e.get("country") or "").lower() == country
+            and str(e.get("region") or "").upper().zfill(2 if region.isdigit() else 0) == region
+            and _norm(str(e.get("name") or "")) == head]
+    hits.sort(key=lambda fid: "(" in str(known[fid].get("name") or ""))   # "Niagara Falls" before its "(logo)"
+    return hits[0] if hits else ""
+
+
 def default_ids(cam: dict, known=None) -> list[str]:
-    """The flag ids a webcam shows by default: its country's and its province's / state's / prefecture's, those that
-    exist in ``known`` (a collection of ids; None: no check)."""
+    """The flag ids a webcam shows by default, those that exist in ``known`` (a collection of ids, or the flag index
+    {id: entry}, which also finds city flags; None: no check).
+
+    Canada, the US and Japan: the province / state / prefecture flag and the city's when there is one, not the
+    country's (the country's only when the region isn't known). Ireland: the country's and the city's (Dublin).
+    Anywhere else: the country's flag alone."""
     country, region = locate(cam)
+    if not country:
+        return []
     ids = []
-    if country:
+    if country in REGION_ONLY and region:
+        ids.append(f"{country}-{region.lower()}")
+        if known is not None and ids[0] not in known:   # no flag for that region: fall back to the country's
+            ids = [country]
+    else:
         ids.append(country)
-        if region:
-            ids.append(f"{country}-{region.lower()}")
+    city = country in WITH_CITY and city_id(cam, country, region if country in REGION_ONLY else "", known)
+    if city:
+        ids.append(city)
     return [i for i in ids if known is None or i in known]
