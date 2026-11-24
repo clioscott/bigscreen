@@ -886,13 +886,14 @@ class WebcamPanel:
             if getattr(st, "video", True):
                 CLOCK["video_at"] = now                        # main.py: the loop runs at the video rate meanwhile
             if st.buffering():                                 # not prepared ahead (played by hand): load, then play;
-                if not st._played:                             # one that ran dry mid-play just holds its picture
-                    _shade(c, x, y, w, h, 0.6)
-                    self._centre(c, zone, "Loading webcam feeds" + "." * (1 + int(now * 2) % 3), Color(225, 225, 225))
                 if now - st._buffer_since > GIVE_UP_SEC:       # it never fills: on to the next screen
                     self._mark_bad(entry.get("cam"), st.error or "too slow to buffer")
                     return "skip"
-                return None
+                if not st._played:
+                    _shade(c, x, y, w, h, 0.6)
+                    self._centre(c, zone, "Loading webcam feeds" + "." * (1 + int(now * 2) % 3), Color(225, 225, 225))
+                    return None
+                # one that ran dry mid-play just holds its picture, caption and all
         else:
             c.FillRect(x, y, w, h, Color(0, 0, 0))
             label = " ".join(str(cam.get("label") or entry.get("cam")).split())      # (a name may have lines)
