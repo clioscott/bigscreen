@@ -190,7 +190,7 @@ def test_sparklines_and_spacewalk_only_panels():
     p = mappanels.panels_of({"panels": [{"pos": "tr", "fields": ["co2", "eva"], "sparks": ["co2"], "spark_w": 24,
                                          "spark_min": 30}]})[0]
     m = mappanels.measure(p, ctx, 300)
-    assert m["sw"] == 24 and m["sers"][0] is not None and m["lines"][1][1].startswith("1h")
+    assert m["sw"] == 24 and m["sers"][0] is not None and m["lines"][1][1].startswith("01:")
     img = np.zeros((40, 200, 3), np.uint8)
     mappanels.draw(img, [(p, m, 0, 0)])
     assert (img == (255, 214, 90)).all(axis=2).sum() > 10                  # the line is drawn
@@ -247,8 +247,9 @@ def test_the_space_map_video_shows_only_a_usable_picture(monkeypatch):
     assert p._video(dark, time.time()) is None and p.stream is None        # (night side: closed)
 
 
-def test_durations_have_lower_case_units_drawn_dimmer():
-    assert [mappanels._countdown(x) for x in (42, 245, 5420, 2 * 86400 + 3 * 3600)] == ["42s", "4m05s", "1h30m20s", "2d3h"]
+def test_durations_are_clocks_with_lower_case_days_drawn_dimmer():
+    assert [mappanels._countdown(x) for x in (42, 245, 5420, 2 * 86400 + 3 * 3600, -5)] == [
+        "00:00:42", "00:04:05", "01:30:20", "2d 03:00:00", "00:00:00"]
     img = np.zeros((8, 80, 3), np.uint8)
     mappanels.draw_value(img, 0, 0, "1h30m", (255, 255, 255), (0, 255, 0))
     assert (img == (255, 255, 255)).all(axis=2).any() and (img == (0, 255, 0)).all(axis=2).any()
