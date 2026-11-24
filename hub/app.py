@@ -85,7 +85,10 @@ def put_config(payload: dict = Body(...)):
     sources = lambda c: {k: (v or {}).get("source") for k, v in (((c["modules"].get("webcams") or {}).get("cams")) or {}).items()}
     if sources(before) != sources(saved):           # a webcam added, removed or pointed elsewhere: check them now
         _sched().run_now("webcam_health")
-    sync.push_data()          # config.json rides along; the v2 display hot-reloads it
+    sats = lambda c: ((((c["modules"].get("iss_map") or {}).get("map")) or {}).get("sats"))
+    if sats(before) != sats(saved):                 # a satellite layer switched on or off: fetch it (or drop it) now
+        _sched().run_now("sats")
+    sync.push_data()         # config.json rides along; the v2 display hot-reloads it
     return {"config": saved, "display_in_sync": pi.display_in_sync(saved)[0]}
 
 

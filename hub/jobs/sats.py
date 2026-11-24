@@ -59,10 +59,11 @@ def elements(key):
     if not (p.exists() and time.time() - p.stat().st_mtime < TLE_TTL):
         try:
             r = requests.get(f"{CELESTRAK}?{LAYERS[key]['query']}&FORMAT=tle", headers=UA, timeout=60)
-            r.raise_for_status()
-            text = r.text
-            if "No GP data found" in text:                 # (a layer with nothing in orbit yet)
+            if "No GP data found" in r.text:               # a layer with nothing in orbit yet (CelesTrak says 404)
                 text = ""
+            else:
+                r.raise_for_status()
+                text = r.text
             p.write_text(text)
         except Exception:
             if not p.exists():
