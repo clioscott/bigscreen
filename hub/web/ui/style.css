@@ -455,6 +455,9 @@ select.input { appearance: none; padding-right: 30px; background-image: url("dat
 .wc-rot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; background: var(--bg-2); border: 1px solid var(--line-2); font-size: 13px; }
 .wc-rot > .icon, .wc-rot > svg { color: var(--accent); }
 .wc-list-row { gap: 10px; }
+.wc-row-flags { display: inline-flex; gap: 4px; align-items: center; flex: none; }
+.wc-row-flags img { height: 36px; image-rendering: pixelated; display: block; }
+@media (max-width: 700px) { .wc-row-flags img { height: 18px; } .wc-row-flags img:nth-child(n+3) { display: none; } }
 .wc-list-row .handle { cursor: grab; color: var(--text-3); display: inline-flex; }
 .wc-list-row.off .wc-row-thumb, .wc-list-row.off b { opacity: .45; }
 .wc-kind { display: inline-block; padding: 0 5px; margin-right: 4px; border-radius: 4px; font-size: 10.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }

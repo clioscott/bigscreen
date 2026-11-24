@@ -546,6 +546,25 @@ const PlaylistTab = {
     const cams = computed(() => wc.cams || {});
     const list = computed(() => wc.playlist);
     const { feedFor, healthFor } = useStatus();
+    // each webcam's flags as the wall shows them at full width (the hub works out the automatic ones), refreshed when
+    // anything that decides them changes: place, time zone, location, codes or the flag settings
+    const shownFlags = ref({});
+    const flagNames = ref({});
+    api("/api/flags").then((r) => { flagNames.value = Object.fromEntries((r.flags || []).map((f) => [f.id, f.name])); }).catch(() => {});
+    const flagInputs = computed(() => JSON.stringify(Object.fromEntries(Object.entries(cams.value).map(([id, c]) => [id,
+      { place: c.place, tz: c.tz, lat: c.lat, lon: c.lon, country: c.country, region: c.region, space: c.space,
+        overlay: { flags: c.overlay?.flags }, overlays: c.overlays?.full ? { full: { flags: c.overlays.full.flags } } : undefined }]))));
+    let flagTimer = null, flagAsk = 0;
+    watch(flagInputs, (body) => {
+      clearTimeout(flagTimer);
+      flagTimer = setTimeout(() => {
+        const n = ++flagAsk;                                   // only the latest answer counts
+        api("/api/webcams/flags_shown", { json: JSON.parse(body) })
+          .then((r) => { if (n === flagAsk) shownFlags.value = r || {}; }).catch(() => {});
+      }, 400);
+    }, { immediate: true });
+    onBeforeUnmount(() => clearTimeout(flagTimer));
+    const flagsOf = (id) => shownFlags.value[id] || [];
     // "Fetch all feeds": the hub looks every webcam up, one at a time (POST starts it, GET follows it)
     const fetchState = ref({ running: false, done: 0, total: 0, results: {} });
     const fetching = computed(() => fetchState.value.running);
@@ -589,7 +608,7 @@ const PlaylistTab = {
     const srcHost = (s) => (s?.type === "drivebc" ? `DriveBC camera ${s.id}` : host(s?.url));
     const kindOf = (s) => (STILL.includes(s?.type) ? "Still" : "Live");
     const mins = (s) => (s >= 90 ? `${Math.round(s / 6) / 10} min` : `${s} s`);
-    return { LIST_SHAPES, WEBCAM_SEC, wc, cams, list, on, total, found, single, combine, feedFor, feedPill, healthFor, downPill, fetchAll, fetching, fetchState, fetchResult, srcHost, kindOf, hasSource, mins, go };
+    return { LIST_SHAPES, WEBCAM_SEC, wc, cams, list, on, total, found, single, combine, feedFor, feedPill, healthFor, downPill, fetchAll, fetching, fetchState, fetchResult, srcHost, kindOf, hasSource, mins, go, flagsOf, flagNames };
   },
   template: `<div class="stack">
     <div class="card"><div class="card-body stack" style="gap:10px">
@@ -626,6 +645,8 @@ const PlaylistTab = {
           <div class="grow" style="min-width:0; cursor:pointer" @click="go('webcams/' + it.cam)"><b>{{ cams[it.cam]?.label || it.cam }}</b>
             <div class="faint ellipsis" style="font-size:12.5px"><span class="wc-kind" :class="kindOf(cams[it.cam]?.source).toLowerCase()">{{ kindOf(cams[it.cam]?.source) }}</span>
               {{ [cams[it.cam]?.place, srcHost(cams[it.cam]?.source)].filter(Boolean).join(' · ') }}</div></div>
+          <span v-if="flagsOf(it.cam).length" class="wc-row-flags" :title="'Flags at full width: ' + flagsOf(it.cam).map(f => flagNames[f] || f).join(', ')">
+            <img v-for="f in flagsOf(it.cam)" :key="f" :src="'/api/flags/img/' + f + '/18'" :alt="flagNames[f] || f"></span>
           <span v-if="fetchResult(it.cam)" class="pill" :class="fetchResult(it.cam).ok ? 'ok' : 'bad'" :title="fetchResult(it.cam).msg">{{ fetchResult(it.cam).ok ? 'fetched' : 'fetch failed' }}</span>
           <span v-if="downPill(healthFor(it.cam))" class="pill bad" :title="downPill(healthFor(it.cam)).title">{{ downPill(healthFor(it.cam)).text }}</span>
           <span v-else class="pill" :class="feedPill(feedFor(cams[it.cam])).cls">{{ feedPill(feedFor(cams[it.cam])).text }}</span>

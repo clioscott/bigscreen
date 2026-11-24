@@ -237,3 +237,15 @@ def test_beside_keeps_clear_of_a_wide_japanese_caption(flag_set):
     red = _where(buf, (255, 0, 0))
     _, plain = _draw({"corner": "bl", "flags": {"corner": "right"}})
     assert red[2] > plain[2]                                # pushed past the Japanese caption's right edge
+
+
+def test_the_panel_list_gets_each_webcams_flags_at_full_width(flag_set):
+    from hub.app import webcams_flags_shown
+    got = webcams_flags_shown({
+        "auto": {"place": "Toronto, ON", "tz": "America/Toronto"},
+        "chosen": {"place": "Toronto, ON", "overlay": {"flags": {"ids": ["ca", "ca-on"]}}},
+        "off": {"place": "Toronto, ON", "overlay": {"flags": {"on": False}}},
+        "full_own": {"place": "Toronto, ON", "overlay": {"flags": {"on": False}},
+                     "overlays": {"full": {"flags": {"ids": ["ca"]}}}},
+        "nowhere": {"place": "", "tz": ""}})
+    assert got == {"auto": ["ca-on"], "chosen": ["ca", "ca-on"], "off": [], "full_own": ["ca"], "nowhere": []}
