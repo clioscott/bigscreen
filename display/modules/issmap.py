@@ -1208,9 +1208,14 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
         _text(img, X, Y + 1, lab_, AOS_C if aos else LOS_C)
     _sprite(img, art["iss"], ix, iy, v, left, clamp_y=True)  # (last: nothing ever covers the ISS)
     if pboxes:
+        solid = [b for (q, m, _x, _y), b in zip(placed, pboxes) if m.get("video")]
+        seen = [(*b, 1 - max(0.0, min(1.0, float(q.get("opacity", 0.72))))) for (q, m, _x, _y), b in zip(placed, pboxes)
+                if not m.get("video")]
         for p in paths:
-            if p.get("kind") != "video":
+            if p.get("kind") == "pulse":
                 p["skip"] = pboxes
+            elif p.get("kind") != "video":                 # the data runs on under see-through panels, as dim as the
+                p["skip"], p["under"] = solid, seen        # line shows there (_put)
     return img, paths
 
 
@@ -1228,8 +1233,31 @@ def _along(xs, ys, s, cum, seg):
     return xs[k] + (xs[k + 1] - xs[k]) * f, ys[k] + (ys[k + 1] - ys[k]) * f, k
 
 
+PANEL_INK = 100                 # a pixel this bright under a panel is its text (the map there is darkened)
+
+
 def _put(buf, p, px, py, col, alpha=None):
-    ok = _keep(np.rint((px - p["left"]) % p["W"]), np.rint(py), p.get("skip"))
+    """Points of the moving data onto the map: kept off the video, and under a see-through panel dimmed by its
+    opacity and kept off its text."""
+    sx, sy = np.rint((px - p["left"]) % p["W"]), np.rint(py)
+    ok = _keep(sx, sy, p.get("skip"))
+    under = p.get("under")
+    if under:
+        a = np.broadcast_to(np.float32(1.0) if alpha is None else np.asarray(alpha, np.float32), px.shape).copy()
+        h, w = buf.shape[:2]
+        dimmed = False
+        for x0, y0, x1, y1, k in under:
+            inb = ok & (sx >= x0) & (sx < x1) & (sy >= y0) & (sy < y1)
+            if inb.any():
+                xi, yi = sx[inb].astype(np.int64), sy[inb].astype(np.int64)
+                on = (xi >= 0) & (xi < w) & (yi >= 0) & (yi < h)
+                ink = np.zeros(xi.shape, bool)
+                ink[on] = buf[yi[on], xi[on]].max(axis=1) > PANEL_INK
+                idx = np.flatnonzero(inb)
+                ok[idx[ink]] = False
+                a[idx] *= k
+                dimmed = True
+        alpha = a if (dimmed or alpha is not None) else None
     if alpha is not None:
         alpha = np.asarray(alpha, np.float32)[ok]
     if ok.any():
@@ -1239,7 +1267,8 @@ def _put(buf, p, px, py, col, alpha=None):
 def flow(buf, paths, now, ex, big=False):
     """The data moving along the links (drawn every frame over the map), in each network's style: dots, dashes,
     comets (a bright head with a fading tail) or a pulse of light running along the line; down (ISS to ground), up
-    or both ways; kept off the icons at the ends and the relay, and off the panels."""
+    or both ways; kept off the icons at the ends and the relay and off the video, and dimmed under see-through panels
+    (_put)."""
     if not paths or not _on(ex, "flow"):
         return
     clear = 7 if big else 4

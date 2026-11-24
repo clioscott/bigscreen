@@ -253,3 +253,26 @@ def test_durations_are_clocks_with_lower_case_days_drawn_dimmer():
     img = np.zeros((8, 80, 3), np.uint8)
     mappanels.draw_value(img, 0, 0, "1h30m", (255, 255, 255), (0, 255, 0))
     assert (img == (255, 255, 255)).all(axis=2).any() and (img == (0, 255, 0)).all(axis=2).any()
+
+
+def test_the_data_runs_on_dimmed_under_see_through_panels_but_never_over_their_text():
+    from display.modules import issmap
+    W = 448
+    p = {"kind": "link", "xs": [0.0, 200.0], "ys": [20.0, 20.0], "cols": [(0, 200, 255)], "left": 0, "W": W,
+         "style": "dots", "speed": "normal", "direction": "down"}
+    ex = {"flow": {"on": True}}
+
+    def run(**extra):
+        buf = np.zeros((40, W, 3), np.uint8)
+        buf[20, 150:160] = 200                                         # the panel's text
+        issmap.flow(buf, [{**p, **extra}], 0.37, ex)
+        return buf
+
+    free = run()
+    panel = run(skip=[], under=[(100, 10, 200, 30, 0.28)])
+    video = run(skip=[(100, 10, 200, 30)])
+    lit = lambda b, x0, x1: b[20, x0:x1][(b[20, x0:x1] > 0).any(axis=1) & (b[20, x0:x1] != 200).any(axis=1)]
+    assert len(lit(panel, 100, 190)) and lit(panel, 100, 190).max() < lit(free, 100, 190).max() * 0.5   # dim, not gone
+    assert (panel[20, 150:160] == 200).all()                            # the text untouched
+    assert not len(lit(video, 100, 190))                                # and none over the video
+    assert len(lit(panel, 10, 90)) == len(lit(free, 10, 90))            # outside the panel as before
