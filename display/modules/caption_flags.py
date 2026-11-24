@@ -8,13 +8,14 @@ files: {"18": file, "23": file}}}}. Countries are drawn at 23 px by default and 
 
 ``overlay.flags`` in a webcam's config (DEFAULT_FLAGS fills the gaps):
     on       show flags
-    ids      the flags, left to right; null: automatic (the webcam's country, then its province / state / prefecture,
-             common/flagplaces.py), so a webcam with a known place shows its flags without being set up
-    corner   tl (default) | auto (the caption's corner) | tc tr / bl bc br | left | right. In the caption's corner the row sits
+    ids      the flags, left to right; null: automatic (common/flagplaces.py: in Canada, the US and Japan the province /
+             state / prefecture flag and the city's, in Ireland the country's and Dublin's, elsewhere the country's),
+             so a webcam with a known place shows its flags without being set up
+    corner   br (default) | tl | auto (the caption's corner) | tc tr / bl bc br | left | right. In the caption's corner the row sits
              right against the caption: above it in a bottom corner, below it in a top one, lined up with its outer
              edge. left / right: beside the caption (and its weather icon), lined up with the caption's outer edge
              (bottoms together in a bottom corner, tops in a top one); with no room on that side, above / below it
-    size     auto (each flag's own default) | 18 | 23
+    size     18 (default) | 23 | auto (each flag's own default: countries 23, the rest 18)
     opacity  0.1-1: how solid the flags are (the video shows through the rest); their outline fades with them
 """
 
@@ -28,7 +29,7 @@ import numpy as np
 from common import flagplaces
 
 FLAG_DIRS = [os.path.join(os.environ.get("BIGSCREEN_DATA_DIR", "/dev/shm/bigscreen"), "flags")]
-DEFAULT_FLAGS = {"on": True, "ids": None, "corner": "tl", "size": "auto", "opacity": 0.8}
+DEFAULT_FLAGS = {"on": True, "ids": None, "corner": "br", "size": 18, "opacity": 0.8}
 CORNERS = ("tl", "tc", "tr", "bl", "bc", "br")
 BESIDE = ("left", "right")
 SIZES = (18, 23)

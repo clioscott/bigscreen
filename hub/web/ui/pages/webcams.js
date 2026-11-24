@@ -67,7 +67,7 @@ const DEFAULT_OVERLAY = { style: "tag", corner: "bl", when: "always", font: "sma
   bg: "#000000", opacity: 0.7, time_format: "24h", fade: true, show_sec: 12, every_min: 3, custom_text: "", headline: "name",
   lines: "auto", separator: "space", uppercase: false, order: [...ORDERABLE], jp_font: "auto", jp_face: "auto", place_beside: false, wx_beside: false, wx_beside_box: false, temp_icon: false,
   jp_caption: { on: false, text: "", face: "k8x12", size: 12, corner: "auto" },
-  flags: { on: true, ids: null, corner: "tl", size: "auto", opacity: 0.8 },
+  flags: { on: true, ids: null, corner: "br", size: 18, opacity: 0.8 },
   show: { name: true, place: true, time: true, date: false, offset: false, daynight: false, weather: true, sun: false,
     age: false, live: true, credit: false, custom: false, shield: false, conditions: false, feels: false, hilo: false, wind: false, humidity: false },
   shield: { route: "99", kind: "auto", style: "pixel", place: "inside", size: "box" } };
@@ -1718,14 +1718,14 @@ const WebcamEditor = {
               <div v-if="flagSet && !flagSet.have" class="faint" style="font-size:12px">The flag set isn't on the hub yet: it goes in the state folder's data/flags
                 (index.json and the PNGs). It isn't in the repo, since some of the artwork can't be published.</div>
               <ToggleRow :modelValue="fl.on !== false" @update:modelValue="v => fl.on = v" label="Show flags"
-                hint="A row of pixel flags: countries at 23 px, provinces, states, prefectures and cities at 18 px"/>
+                hint="A row of pixel flags, 18 px unless you pick another size"/>
               <template v-if="fl.on !== false">
                 <Field label="Which flags">
                   <Seg :modelValue="Array.isArray(fl.ids) ? 'choose' : 'auto'" @update:modelValue="setFlagMode"
                     :options="[{value:'auto', label:'Automatic'}, {value:'choose', label:'Choose'}]"/></Field>
                 <div v-if="!Array.isArray(fl.ids)" class="faint" style="font-size:12px">
                   <template v-if="flagAuto && flagAuto.country">This webcam is in {{ flagAuto.country.toUpperCase() }}{{ flagAuto.region ? ' · ' + flagAuto.region : '' }}
-                    (from its place, time zone and location), so it shows its country's flag{{ flagAuto.region ? ' and its province / state / prefecture flag' : '' }}.</template>
+                    (from its place, time zone and location), so it shows {{ flagAuto.ids.length ? flagAuto.ids.map(flagName).join(' + ') : 'no flags (none in the set for it)' }}.</template>
                   <template v-else>Where this webcam is isn't known, so it shows no flags. Give it a place like “Toronto, ON” or “Dublin, Ireland”, a time zone, or set the codes below.</template></div>
                 <div class="row" style="gap:10px; flex-wrap:wrap; align-items:flex-end">
                   <div v-for="(fid, i) in flagIds" :key="fid" class="stack" style="gap:3px; align-items:center">
@@ -1753,10 +1753,10 @@ const WebcamEditor = {
                   </div>
                 </template>
                 <Field label="Position" hint="On the caption: above it in a bottom corner, below it in a top one (above the Japanese caption, if it's there). Left / right of caption: beside it, lined up with its outer edge (above / below it when there's no room on that side)">
-                  <Seg :modelValue="fl.corner || 'tl'" @update:modelValue="v => fl.corner = v" :options="FLAG_POSITIONS"/></Field>
+                  <Seg :modelValue="fl.corner || 'br'" @update:modelValue="v => fl.corner = v" :options="FLAG_POSITIONS"/></Field>
                 <div class="row" style="gap:16px; align-items:flex-start">
                   <Field label="Size" hint="Auto: countries at 23 px, the rest at 18 px">
-                    <Seg :modelValue="fl.size ?? 'auto'" @update:modelValue="v => fl.size = v" :options="FLAG_SIZES"/></Field>
+                    <Seg :modelValue="fl.size ?? 18" @update:modelValue="v => fl.size = v" :options="FLAG_SIZES"/></Field>
                   <Field label="Opacity" hint="Lower lets the video show through"><div style="width:150px">
                     <Slider :modelValue="fl.opacity ?? 0.8" @update:modelValue="v => fl.opacity = v" :min="0.1" :max="1" :step="0.05" :format="v => Math.round(v * 100) + '%'"/></div></Field>
                 </div>

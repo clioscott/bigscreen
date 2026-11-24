@@ -37,8 +37,51 @@ def test_where_a_webcam_is(cam, want):
 
 def test_default_ids_only_lists_flags_that_exist():
     cam = {"place": "Peggys Cove, NS", "tz": "America/Halifax"}
-    assert flagplaces.default_ids(cam) == ["ca", "ca-ns"]
-    assert flagplaces.default_ids(cam, {"ca"}) == ["ca"]
+    assert flagplaces.default_ids(cam) == ["ca-ns"]                  # the province, not Canada
+    assert flagplaces.default_ids(cam, {"ca"}) == ["ca"]             # no Nova Scotia flag: Canada's instead
+
+
+def _entry(name, group, country, region=""):
+    return {"name": name, "group": group, "country": country, "region": region}
+
+
+INDEX = {"ca": _entry("Canada", "country", "ca"), "ca-bc": _entry("British Columbia", "province", "ca", "BC"),
+         "ca-on": _entry("Ontario", "province", "ca", "ON"),
+         "ca-bc-north-vancouver": _entry("North Vancouver (City)", "city", "ca", "BC"),
+         "ca-bc-north-vancouver-district": _entry("North Vancouver (District)", "city", "ca", "BC"),
+         "ca-bc-white-rock": _entry("White Rock", "city", "ca", "BC"),
+         "ca-on-niagara-falls-logo": _entry("Niagara Falls (logo)", "city", "ca", "ON"),
+         "ca-on-niagara-falls": _entry("Niagara Falls", "city", "ca", "ON"),
+         "us": _entry("United States", "country", "us"), "us-ma": _entry("Massachusetts", "state", "us", "MA"),
+         "us-nv": _entry("Nevada", "state", "us", "NV"), "us-ma-boston": _entry("Boston", "city", "us", "MA"),
+         "jp": _entry("Japan", "country", "jp"), "jp-13": _entry("Tokyo", "prefecture", "jp", "13"),
+         "jp-27": _entry("Osaka", "prefecture", "jp", "27"), "jp-13-koto": _entry("Kōtō", "city", "jp", "13"),
+         "jp-13-shibuya": _entry("Shibuya", "city", "jp", "13"),
+         "jp-13-shibuya-emblem": _entry("Shibuya", "emblem", "jp", "13"),
+         "jp-27-osaka-city": _entry("Osaka", "city", "jp", "27"),
+         "ie": _entry("Ireland", "country", "ie"), "ie-dublin": _entry("Dublin", "city", "ie"),
+         "fi": _entry("Finland", "country", "fi"), "gb": _entry("United Kingdom", "country", "gb"),
+         "gb-london": _entry("London", "city", "gb")}
+
+
+@pytest.mark.parametrize("cam, want", [
+    ({"place": "White Rock", "tz": "America/Vancouver"}, ["ca-bc", "ca-bc-white-rock"]),
+    ({"place": "North Vancouver, BC", "tz": "America/Vancouver"}, ["ca-bc", "ca-bc-north-vancouver"]),
+    ({"place": "Niagara Falls, ON", "tz": "America/Toronto"}, ["ca-on", "ca-on-niagara-falls"]),   # not the logo
+    ({"place": "Main/Terminal", "tz": "America/Vancouver"}, ["ca-bc"]),          # no city flag: the province alone
+    ({"place": "Boston, MA", "tz": "America/New_York"}, ["us-ma", "us-ma-boston"]),
+    ({"place": "Las Vegas, NV", "tz": "America/Los_Angeles"}, ["us-nv"]),
+    ({"place": "Shibuya-ku", "tz": "Asia/Tokyo"}, ["jp-13", "jp-13-shibuya"]),   # the city flag, not the emblem
+    ({"place": "Koto-ku", "tz": "Asia/Tokyo"}, ["jp-13", "jp-13-koto"]),
+    ({"place": "Osaka", "tz": "Asia/Tokyo"}, ["jp-27", "jp-27-osaka-city"]),
+    ({"place": "Tokyo Station", "tz": "Asia/Tokyo"}, ["jp-13"]),
+    ({"place": "Somewhere", "tz": "Asia/Tokyo", "lat": 43.06, "lon": 141.35}, ["jp"]),   # prefecture unknown
+    ({"place": "Dublin, Ireland", "tz": "Europe/London"}, ["ie", "ie-dublin"]),
+    ({"place": "Kilpisjärvi, Finland", "tz": "Europe/Helsinki"}, ["fi"]),
+    ({"place": "London, UK", "tz": "Europe/London"}, ["gb"]),                    # elsewhere: the country alone
+])
+def test_automatic_flags(cam, want):
+    assert flagplaces.default_ids(cam, INDEX) == want
 
 
 @pytest.fixture
@@ -72,7 +115,10 @@ def _draw(overlay, cam=None):
     from display.gfx import Canvas
     c = Canvas(448, 192)
     c.buf[:] = 60
-    overlay = {**overlay, "flags": {"opacity": 1, **overlay.get("flags", {})}}   # solid: the colours are exact
+    # solid, so the colours are exact; Canada and Ontario at their own sizes in the top left unless a test says
+    # otherwise ("ids": None: the automatic ones)
+    overlay = {**overlay, "flags": {"opacity": 1, "ids": ["ca", "ca-on"], "size": "auto", "corner": "tl",
+                                    **overlay.get("flags", {})}}
     cam = {"label": "Toronto Skyline", "place": "Toronto, ON", "tz": "America/Toronto", "overlay": overlay, **(cam or {})}
     box = cap.draw_caption(c, (0, 0, 448, 192), cam, 1.0, _font, now_local=datetime.now().astimezone())
     return c.buf, box
@@ -83,20 +129,19 @@ def _where(buf, rgb):
     return (ys.min(), ys.max(), xs.min(), xs.max()) if ys.size else None
 
 
-def test_flags_default_to_the_top_left(flag_set):
-    buf, _ = _draw({"corner": "br"})
-    red, blue = _where(buf, (255, 0, 0)), _where(buf, (0, 0, 255))
-    capt = _where(buf, (255, 255, 255))
-    assert red[0] <= 4 and red[2] <= 4                      # the top-left corner, Canada first
-    assert blue[2] > red[3]
-    assert capt[0] > 150                                    # the caption stays bottom right
+def test_automatic_flags_default_to_18px_bottom_right(flag_set):
+    buf, _ = _draw({"corner": "tl", "flags": dict(cf.DEFAULT_FLAGS, opacity=1)})
+    assert _where(buf, (255, 0, 0)) is None                 # Ontario only, no Canada
+    blue = _where(buf, (0, 0, 255))                         # its 18 px version
+    assert blue[1] - blue[0] == 17
+    assert blue[1] >= 186 and blue[3] >= 440                # the bottom-right corner
 
 
-def test_a_webcam_with_no_flag_settings_gets_the_top_left():
+def test_a_webcam_with_no_flag_settings_gets_the_bottom_right():
     from display.modules import caption_flags
-    o = cap.overlay_of({"overlay": {"corner": "br"}})
-    assert caption_flags.flags_of(o)["corner"] == "tl"
-    assert caption_flags.flags_of(cap.overlay_of({}))["corner"] == "tl"
+    o = cap.overlay_of({"overlay": {"corner": "tl"}})
+    assert caption_flags.flags_of(o)["corner"] == "br" and caption_flags.flags_of(o)["size"] == 18
+    assert caption_flags.flags_of(cap.overlay_of({}))["corner"] == "br"
 
 
 def test_automatic_flags_sit_on_the_caption(flag_set):
@@ -127,7 +172,7 @@ def test_own_corner_and_chosen_flags_and_size(flag_set):
 def test_flags_off_or_unknown_place_show_nothing(flag_set):
     buf, _ = _draw({"flags": {"on": False}})
     assert _where(buf, (255, 0, 0)) is None
-    buf, _ = _draw({}, {"place": "Somewhere", "tz": ""})
+    buf, _ = _draw({"flags": {"ids": None}}, {"place": "Somewhere", "tz": ""})
     assert _where(buf, (255, 0, 0)) is None
 
 
