@@ -276,3 +276,34 @@ def test_the_data_runs_on_dimmed_under_see_through_panels_but_never_over_their_t
     assert (panel[20, 150:160] == 200).all()                            # the text untouched
     assert not len(lit(video, 100, 190))                                # and none over the video
     assert len(lit(panel, 10, 90)) == len(lit(free, 10, 90))            # outside the panel as before
+
+
+def test_switching_a_satellite_layer_fetches_it_straight_away(monkeypatch):
+    from hub import app as hub_app
+    before = {"modules": {"iss_map": {"map": {"sats": {"gps": {"on": False}}}}}}
+    after = {"modules": {"iss_map": {"map": {"sats": {"gps": {"on": True}}}}}}
+    ran = []
+    monkeypatch.setattr(hub_app.config, "load", lambda: before)
+    monkeypatch.setattr(hub_app.config, "save", lambda cfg, reason="": cfg)
+    monkeypatch.setattr(hub_app, "_sched", lambda: type("S", (), {"run_now": lambda self, j: ran.append(j)})())
+    monkeypatch.setattr(hub_app.sync, "push_data", lambda: None)
+    monkeypatch.setattr(hub_app.pi, "display_in_sync", lambda c: (True, ""))
+    hub_app.put_config({"config": after})
+    assert ran == ["sats"]
+    ran.clear()
+    hub_app.put_config({"config": before})                 # (an unrelated save doesn't refetch)
+    assert ran == []
+
+
+def test_a_layer_with_nothing_in_orbit_yet_is_empty_not_an_error(tmp_path, monkeypatch):
+    from hub.jobs import sats
+
+    class R:
+        status_code, text = 404, "No GP data found"
+
+        def raise_for_status(self):
+            raise RuntimeError("404")
+
+    monkeypatch.setattr(sats, "cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(sats.requests, "get", lambda *a, **k: R())
+    assert sats.elements("lightspeed") == []
