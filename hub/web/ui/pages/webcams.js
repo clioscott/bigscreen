@@ -554,11 +554,14 @@ const PlaylistTab = {
     const flagInputs = computed(() => JSON.stringify(Object.fromEntries(Object.entries(cams.value).map(([id, c]) => [id,
       { place: c.place, tz: c.tz, lat: c.lat, lon: c.lon, country: c.country, region: c.region, space: c.space,
         overlay: { flags: c.overlay?.flags }, overlays: c.overlays?.full ? { full: { flags: c.overlays.full.flags } } : undefined }]))));
-    let flagTimer = null;
+    let flagTimer = null, flagAsk = 0;
     watch(flagInputs, (body) => {
       clearTimeout(flagTimer);
-      flagTimer = setTimeout(() => api("/api/webcams/flags_shown", { json: JSON.parse(body) })
-        .then((r) => { shownFlags.value = r || {}; }).catch(() => {}), 400);
+      flagTimer = setTimeout(() => {
+        const n = ++flagAsk;                                   // only the latest answer counts
+        api("/api/webcams/flags_shown", { json: JSON.parse(body) })
+          .then((r) => { if (n === flagAsk) shownFlags.value = r || {}; }).catch(() => {});
+      }, 400);
     }, { immediate: true });
     onBeforeUnmount(() => clearTimeout(flagTimer));
     const flagsOf = (id) => shownFlags.value[id] || [];
