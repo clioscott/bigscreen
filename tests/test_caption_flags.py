@@ -182,6 +182,15 @@ def test_opacity_lets_the_video_show_through(flag_set):
     assert _where(buf, (158, 30, 30))                       # half red, half the frame's grey (60)
 
 
+@pytest.mark.parametrize("shape, shown", [("full", True), ("tall", True), ("left", False), ("right", False),
+                                          ("wall", False)])
+def test_flags_only_at_full_width_and_above_the_clock(flag_set, shape, shown):
+    cam = {"place": "Toronto, ON", "tz": "America/Toronto", "overlay": {"flags": {"ids": ["ca-on"]}},
+           "overlays": {"side": {"flags": {"ids": ["ca-on"]}}}}
+    view = cap.for_shape(cam, shape)
+    assert bool(cf.ids_for(view, cap.overlay_of(view))) is shown
+
+
 def test_no_flag_set_draws_nothing(tmp_path, monkeypatch):
     monkeypatch.setattr(cf, "FLAG_DIRS", [str(tmp_path / "none")])
     cf._index.update(path=None, mtime=None, flags={})

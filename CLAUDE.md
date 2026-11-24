@@ -163,7 +163,8 @@ once (`hold: false`), so the rotation resumes by itself.
   automatic: `common/flagplaces.py` works out the country and province/state/prefecture from the webcam's
   `country`/`region`, place text, time zone and coordinates, then picks the flags: in Canada/US/Japan the region's
   flag + the city's (a `city` flag whose name matches the place's first part), never the country's; Ireland: `ie` +
-  Dublin's; elsewhere the country's. Defaults: 18 px, bottom right. The flag set is **not in git** (r74n's state flags
+  Dublin's; elsewhere the country's. Defaults: 18 px, bottom right. Flags draw only at full width and above the clock
+  (`caption_flags.FLAG_SIZES_ON_WALL`, from `for_shape`'s `_size`), never on the sides or the whole wall. The flag set is **not in git** (r74n's state flags
   and some city/emblem artwork can't be published): `~/bigscreen-state/data/flags/` (`index.json` +
   `<id>_<18|23>.png`), synced to the Pi. It's made on Scott's PC
   (Pictures/pixel-flags-icons/mockups/tool/export_flagset.py) and copied there.

@@ -1,5 +1,5 @@
 """Flags on a webcam's caption: a row of pixel flags in any corner, stacked on the caption when they share its corner,
-or beside it.
+or beside it. Only at full width and above the clock (FLAG_SIZES_ON_WALL): never on the sides or the whole wall.
 
 The flag set itself isn't in the repo (it includes artwork whose licence doesn't allow publishing it): it lives in the
 hub's runtime data, ``<data>/flags/`` (synced to the Pi like the other data), as ``index.json`` and one PNG per flag
@@ -35,6 +35,9 @@ BESIDE = ("left", "right")
 SIZES = (18, 23)
 GAP = 2                       # between flags (each has a 1 px outline in the caption's background colour)
 MAX_FLAGS = 6
+# the sizes on the wall that show flags (webcam_caption.for_shape's ``_size``): full width and above the clock, never
+# the half-width sides or the whole wall
+FLAG_SIZES_ON_WALL = ("full", "tall")
 
 _index = {"path": None, "mtime": None, "flags": {}}      # mtime: the index's and its folder's (a replaced PNG)
 _images: dict = {}
@@ -67,7 +70,7 @@ def index() -> dict:
 def ids_for(cam: dict, ov: dict) -> list[str]:
     """The flags this webcam's caption shows, left to right (none when they're off or the set isn't there)."""
     fs = flags_of(ov)
-    if not fs.get("on"):
+    if not fs.get("on") or cam.get("_size", "full") not in FLAG_SIZES_ON_WALL:
         return []
     known = index()
     if not known:

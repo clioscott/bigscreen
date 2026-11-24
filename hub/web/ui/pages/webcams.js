@@ -1717,6 +1717,8 @@ const WebcamEditor = {
             <template v-if="capTab === 'flags'">
               <div v-if="flagSet && !flagSet.have" class="faint" style="font-size:12px">The flag set isn't on the hub yet: it goes in the state folder's data/flags
                 (index.json and the PNGs). It isn't in the repo, since some of the artwork can't be published.</div>
+              <div v-if="!['full', 'tall'].includes(capSize)" class="faint" style="font-size:12px">Flags only show at full width and above the clock,
+                never on {{ SIZE_LABELS[capSize] }}.</div>
               <ToggleRow :modelValue="fl.on !== false" @update:modelValue="v => fl.on = v" label="Show flags"
                 hint="A row of pixel flags, 18 px unless you pick another size"/>
               <template v-if="fl.on !== false">
