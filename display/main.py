@@ -291,8 +291,9 @@ class Screen:
                     self.engines[side].reload(self.cycle_raw[side])
             self.prev_play = dict(prev.prev_play)
             self.prev = dict(prev.prev)
-        for eng in self.engines.values():
+        for side, eng in self.engines.items():
             eng.env, eng.passes_for = env, self._default_passes
+            eng.ready = lambda e, s=side: self._entry_ready(e, s)    # a webcam comes up only once it's buffered
         self._warm_t = 0.0                           # last look for a webcam to warm (draw)
         # panel name -> draw(canvas, zone, entry, transition) -> "done" | None
         self.panels = {
@@ -405,6 +406,14 @@ class Screen:
                     warm(nxt, self._zone_of(nxt.get("panel"), side), soon=soon)
             except Exception as e:                   # never cost a frame: the webcam just loads as before
                 print(f"[webcam] warm next on {side}: {e}")
+
+    def _entry_ready(self, entry, side):
+        """Whether the rotation's next entry would come up playing smoothly (webcam.py ready_for); True for anything
+        but a webcam."""
+        ready = getattr(getattr(self, "webcam", None), "ready_for", None)
+        if ready is None or not str(entry.get("panel", "")).startswith("webcam"):
+            return True
+        return ready(entry, self._zone_of(entry.get("panel"), side))
 
     def _zone_of(self, panel, side):
         """The area a panel draws in (as draw() hands it out): the whole wall, above the clock, full width or a side."""

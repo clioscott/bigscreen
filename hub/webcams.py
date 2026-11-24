@@ -63,6 +63,8 @@ BUFFER_SEC = 3.5             # playout buffer for HLS (YouTube): longer than a s
 BUFFER_SEC_LIVE = 0.3        # … for sources that already arrive in real time (RTSP, MJPEG)
 BUFFER_HEADROOM = 4.0        # frames kept beyond the buffer (about one long segment) before the oldest are dropped
 RECENT_FRAMES = 90           # published frames kept per feed (3 s at 30 fps) for viewers catching up
+BACKLOG_SEC = 16.0           # a wall zone's frames kept this long (Consumer): the Pi's stream, opened ~16 s before its
+                             # turn, gets its whole 12 s buffer at once, in full detail, from a feed warmed for the zone
 DECODED_SEC = 6.0            # decoded frames kept per feed for the wall's stream, which takes them as decoded (the
                              # Pi evens them out): a new viewer starts with these, a slow one catches up through them
 OPEN_SEC = 45.0              # … or no first frame this long after starting it
@@ -730,9 +732,17 @@ class Consumer:
             d, _, fr = self.frames[self._index(seq + 1)]
             return d, fr
 
-    def oldest(self):
+    def oldest(self, back=None, fps=15):
+        """The dseq a new stream starts after: just before the oldest kept, or (``back``: a stream reconnecting, its
+        last frame this many seconds ago) about where it left off, so it doesn't replay seconds it has shown. Decoded
+        frames come at the feed's fps (dseq counts them)."""
         with self.lock:
-            return self.frames[0][0] - 1 if self.frames else None
+            if not self.frames:
+                return None
+            first = self.frames[0][0] - 1
+            if back is None:
+                return first
+            return max(first, self.frames[-1][0] - int(max(0.0, back) * max(1, fps)))
 
     def for_dseq(self, dseq):
         """The render of decoded frame dseq with the current draft, or None (not rendered, or an older draft)."""
@@ -851,7 +861,8 @@ class Feed:
             c = self.consumers.get(key)
             new = c is None
             if new:
-                c = self.consumers[key] = Consumer(w, h, crop, colour, draft, maxlen=self.decoded.maxlen or 200)
+                keep = (self.decoded.maxlen or 200) if draft else int(BACKLOG_SEC * max(1, getattr(self, "fps", 15))) + 1
+                c = self.consumers[key] = Consumer(w, h, crop, colour, draft, maxlen=keep)
             c.refs += 1
             backlog = list(self.decoded) if new and not draft else []
         if backlog:                                         # what's already decoded, from lo (a new run renders hi)
@@ -873,27 +884,47 @@ class Feed:
                     if v is c:
                         del self.consumers[k]
 
-    def expect(self, w, h, crop=None):
-        """The wall will play this feed in a zone of this size and crop soon (hub/app.py warm): it counts as playing it
-        (live_wants) for GRACE_SEC, so the first run already decodes the detail it needs. Before, a warmed feed started
-        with the 640-wide picture only and restarted for more as the wall's stream opened, just as it came on screen."""
-        key = _key_of(w, h, crop, None)
+    def expect(self, w, h, crop=None, colour=None):
+        """The wall will play this feed in a zone of this size, crop and colour soon (hub/app.py warm): it counts as
+        playing it (live_wants) for GRACE_SEC, so the first run already decodes the detail it needs, and that zone's
+        frames are made and kept (BACKLOG_SEC) from now on, so the Pi's stream starts with a full buffer at once. (Before,
+        a warmed feed started with the 640-wide picture only and restarted for more as the wall's stream opened, and the
+        stream only had the few seconds decoded since.)"""
+        key = _key_of(w, h, crop, colour)
         with self._lock:
             if not hasattr(self, "_expected"):
                 self._expected = {}
-            self._expected[key] = ((int(w), int(h), crop), time.time() + GRACE_SEC)
+            had = self._expected.get(key)
+            if had is not None:
+                self._expected[key] = (had[0], time.time() + GRACE_SEC, had[2])
+                return
+        c = self.consumer(w, h, crop, colour, key=key) if hasattr(self, "consumers") else None
+        with self._lock:
+            had = self._expected.get(key)
+            self._expected[key] = ((int(w), int(h), crop), time.time() + GRACE_SEC, had[2] if had else c)
+        if had is not None and c is not None:                 # asked twice at once: one hold is enough
+            self.release(c)
+
+    def _expire(self, now=None):
+        """Expected zones past their time: no longer counted, their frames no longer kept for them."""
+        now = now or time.time()
+        with self._lock:
+            expected = getattr(self, "_expected", {})
+            gone = [k for k, v in expected.items() if v[1] < now]
+            held = [expected.pop(k)[2] for k in gone]
+        for c in held:
+            if c is not None:
+                self.release(c)
 
     def live_wants(self):
         """The zones playing this feed now (the wall's, a preview's draft once it's held still) or about to (expect),
         each once: what the hi picture is cut for. Planning it for every saved zone instead made it the whole frame,
         scaled down to fit: no Whole pixels crop was exact any more."""
-        now = time.time()
+        self._expire()
         with self._lock:
             expected = getattr(self, "_expected", {})
-            for k in [k for k, (_, until) in expected.items() if until < now]:
-                del expected[k]
             wall = [c.want() for c in self.consumers.values() if not c.draft]
-            wall += [want for want, _ in expected.values()]
+            wall += [v[0] for v in expected.values()]
             drafts = [c.want() for c in self.consumers.values() if c.draft and c.settled()]
         # the wall's zones when it plays this feed: a panel preview of another crop then comes out of lo (cutting one
         # region for both and scaling it here for each took ~1 core of the hub's and starved the other feeds)
@@ -923,6 +954,10 @@ class Feed:
         """Every consumer's frame for decoded frame dseq: from the hi picture when it covers the consumer, else
         from lo (``frame``; None: lo hasn't come, so only the ones hi covers). ``run``: (plan, source) of the
         ffmpeg run hi came from (a new run may have started meanwhile)."""
+        now = time.time()
+        if now - getattr(self, "_expired_t", 0.0) >= 1.0:       # (a warm that isn't asked again lapses)
+            self._expired_t = now
+            self._expire(now)
         with self._lock:
             todo = list(self.consumers.values())
         p, src = run or (self.hi, self.source)

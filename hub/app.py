@@ -1801,10 +1801,12 @@ def _num(v, default, lo, hi):
         return default
 
 
-async def _webcam_consumer_frames(f, take, fps, still=None, make_still=None):
+async def _webcam_consumer_frames(f, take, fps, still=None, make_still=None, back=None):
     """The wall's stream from a consumer (hub/webcams.py Feed.consumer): every frame as soon as it's decoded and
     rendered (from the hi picture when the crop needs it), starting with the few seconds already decoded; the Pi
-    plays them evenly from its own buffer. still(): a picture to send first while the feed has none yet."""
+    plays them evenly from its own buffer. still(): a picture to send first while the feed has none yet. back: the
+    Pi's stream reconnecting, its last frame this many seconds ago: it carries on about there instead of being sent
+    the whole backlog again (BACKLOG_SEC), which it has already shown."""
     loop = asyncio.get_running_loop()
     ev = asyncio.Event()
     f.attach()
@@ -1822,7 +1824,7 @@ async def _webcam_consumer_frames(f, take, fps, still=None, make_still=None):
             ev.clear()
             step = max(1, round(max(1, f.fps) / fps)) if fps else 1
             if dseq is None:
-                dseq = c.oldest()
+                dseq = c.oldest(back, f.fps)
             got = c.after(dseq + step - 1) if dseq is not None else None
             if got is not None:
                 dseq, frame = got
@@ -1847,7 +1849,7 @@ async def _webcam_consumer_frames(f, take, fps, still=None, make_still=None):
 async def webcams_frames(type: str, w: int, h: int, url: str = "", id: int | None = None, refresh: int | None = None,
                          fps: int = 15, x: float | None = None,
                          y: float | None = None, cw: float | None = None, b: float = 1.0, c: float = 1.0,
-                         s: float = 1.0, sh: float | None = None, px: int = 0):
+                         s: float = 1.0, sh: float | None = None, px: int = 0, back: float | None = None):
     """The Pi's feed: raw RGB frames already cropped and scaled to its zone (display/modules/webcam.py reads
     them), each behind a 12-byte header (hub/webcams.py pack)."""
     if not (8 <= w <= 448 and 8 <= h <= 192):
@@ -1867,7 +1869,7 @@ async def webcams_frames(type: str, w: int, h: int, url: str = "", id: int | Non
     if f.kind not in webcams.STILLS and hasattr(f, "consumer"):
         return StreamingResponse(_webcam_consumer_frames(f, lambda: f.consumer(w, h, crop, colour), fps,
                                                          still=lambda: webcams.still_for(src),
-                                                         make_still=make_still),
+                                                         make_still=make_still, back=back),
                                  media_type="application/octet-stream", headers={"Cache-Control": "no-store"})
     return StreamingResponse(_webcam_frames(f, make, fps=fps, still=lambda: webcams.still_for(src), direct=True,
                                             make_still=make_still),
@@ -1878,18 +1880,19 @@ async def webcams_frames(type: str, w: int, h: int, url: str = "", id: int | Non
 @app.get("/api/webcams/warm")
 def webcams_warm(type: str, url: str = "", id: int | None = None, refresh: int | None = None, fps: int = 15,
                  w: int | None = None, h: int | None = None, x: float | None = None, y: float | None = None,
-                 cw: float | None = None, px: int = 0):
+                 cw: float | None = None, px: int = 0, b: float = 1.0, c: float = 1.0, s: float = 1.0,
+                 sh: float | None = None):
     """Start (or keep alive) a webcam's feed before its screen comes up, so the screen opens on a picture instead of
     "loading". The display asks shortly before (display/modules/webcam.py warm); a feed outlives its last ask or viewer
-    by GRACE_SEC. With the zone it will play in (w, h and the crop), the feed decodes the detail that crop needs from
-    the start instead of restarting for it once the wall's stream opens. Never fails loudly: the screen itself reports
-    a source that won't come up."""
+    by GRACE_SEC. With the zone it will play in (w, h, the crop and the colour: what the stream will ask), the feed
+    decodes the detail that crop needs from the start, and keeps that zone's frames (BACKLOG_SEC), so the wall's
+    stream opens with a full buffer. Never fails loudly: the screen itself reports a source that won't come up."""
     try:
         f = webcams.feed({"type": type, "url": url, "id": id, "refresh_sec": refresh}, max(1, min(30, fps)))
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}
     if w and h and 8 <= w <= 448 and 8 <= h <= 192 and hasattr(f, "expect"):
-        f.expect(w, h, _consumer_args(cw, x, y, 1, 1, 1, None, px)[0])
+        f.expect(w, h, *_consumer_args(cw, x, y, b, c, s, sh, px))
     return {"ok": True, "state": f.state}
 
 

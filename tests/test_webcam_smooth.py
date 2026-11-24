@@ -113,7 +113,7 @@ def test_warming_tells_the_hub_the_zone(monkeypatch):
 def test_an_expected_zone_counts_as_playing_until_it_expires(monkeypatch):
     f = wc.Feed.__new__(wc.Feed)
     f._lock = threading.Lock()
-    f.consumers = {}
+    f.consumers, f.fps, f.decoded = {}, 30, collections.deque(maxlen=10)
     clock = [1000.0]
     monkeypatch.setattr(wc.time, "time", lambda: clock[0])
     f.expect(448, 175, {"x": 0.1, "y": 0.2, "w": 0.5})
@@ -121,7 +121,22 @@ def test_an_expected_zone_counts_as_playing_until_it_expires(monkeypatch):
     f.expect(448, 175, {"x": 0.1, "y": 0.2, "w": 0.5})               # asked again: still once
     assert len(f.live_wants()) == 1
     clock[0] += wc.GRACE_SEC + 1
-    assert f.live_wants() == []
+    assert f.live_wants() == [] and f.consumers == {}                # its frames aren't kept for it any more
+
+
+def test_a_warmed_zone_keeps_a_full_buffer_of_its_frames_for_the_wall(monkeypatch):
+    f = wc.Feed.__new__(wc.Feed)
+    f._lock = threading.Lock()
+    f.consumers, f.fps, f.decoded = {}, 30, collections.deque(maxlen=10)
+    f.hi, f.source = None, {"w": 640, "h": 360}
+    colour = {"brightness": 1.2, "contrast": 1, "saturation": 1}
+    f.expect(64, 32, None, colour)
+    for d in range(1, int(30 * wc.BACKLOG_SEC) + 50):                 # decoded while nobody watches yet
+        f._render_consumers(np.zeros((36, 64, 3), np.uint8), d)
+    c = f.consumer(64, 32, None, colour)                             # the wall's stream opens: the same frames
+    assert len(c.frames) >= 30 * wm.PLAY_BUFFER_SEC                   # a full buffer for the Pi at once
+    f.release(c)
+    assert f.consumers                                               # still held for the warm until it lapses
 
 
 def test_the_loop_runs_at_the_video_rate_while_video_is_on_screen():
@@ -137,3 +152,17 @@ def test_the_loop_runs_at_the_video_rate_while_video_is_on_screen():
     assert abs(app._period(now, now - 5) - 1 / 60) < 1e-9
     Cfg.system = {"display": {"fps": 60, "video_fps": 60}}
     assert abs(app._period(now, now) - 1 / 60) < 1e-9
+
+
+def test_a_reconnecting_stream_carries_on_where_it_left_off():
+    c = wc.Consumer(8, 8, maxlen=1000)
+    for d in range(1, 481):                                          # 16 s at 30 fps kept
+        c.add(d, 0, None)
+    assert c.oldest() == 0                                           # a new stream: the whole backlog
+    assert c.oldest(2.0, 30) == 480 - 60                             # its last frame 2 s ago: from there
+    assert c.oldest(60.0, 30) == 0
+    st = _stream()
+    st.path, st._got_t = "/api/webcams/frames?w=8", 0.0
+    assert st._path() == "/api/webcams/frames?w=8"
+    st._got_t = time.time() - 3
+    assert st._path().startswith("/api/webcams/frames?w=8&back=3")
