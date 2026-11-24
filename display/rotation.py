@@ -232,7 +232,10 @@ class Rotation:
                 self._pick(now)
             if self.cur is None:
                 return None
-            return {**self.cur["entry"], "_play": self.cur["id"]}
+            out = {**self.cur["entry"], "_play": self.cur["id"]}
+            if self.cur.get("held"):
+                out["_held"] = True                  # done, kept up while the next screen gets ready
+            return out
 
     def upcoming(self, now: float, ahead: float = WARM_AHEAD):
         """The entry that should play after the current screen, once that screen is near its end (under ``ahead``

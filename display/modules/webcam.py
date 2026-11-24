@@ -567,8 +567,8 @@ class WebcamPanel:
             if k not in self.cams or self._mapped(k) or (cid and self.is_down(k)):
                 return True
             st = self._open(k, shape, zone)
-            if st is not None and (st.ready() or st.down()):
-                return True
+            if st is not None and (st.ready() or (cid and st.down())):   # (one down on its own is passed over at
+                return True                                               # once; the list opens on a buffered one)
         return False
 
     def _warm_hub(self, cid, shape=None, zone=None):
@@ -723,7 +723,11 @@ class WebcamPanel:
         where = tuple(zone)                                   # each half of the wall has its own turn
         shape = self.shape_for(entry, zone)
         t = self._turns.get(where)
-        if transition or t is None or t["play"] != entry.get("_play"):
+        if t is not None and t.get("ended") and entry.get("_held") and t["play"] == entry.get("_play"):
+            # the turn is over but the rotation holds it while the screen after it buffers: the same webcam carries on
+            r = self._draw_cam(c, zone, {**entry, "cam": t["cam"]}, False, black_skips=True)
+            return r if r == "skip" else None
+        if transition or t is None or t["play"] != entry.get("_play") or t.get("ended"):
             t = self._turns[where] = {"play": entry.get("_play"), "cam": None, "t0": now, "shown": 0, "failed": 0,
                                       "next": None}
             if self.from_top and not self._other_turns(t):    # a new turn starts at the top (unless the other half
@@ -741,8 +745,8 @@ class WebcamPanel:
         due = t["t0"] + self._sec(t["cam"])
         last = t["shown"] + 1 >= min(t.get("limit") or 1, n)  # nothing after this one in this turn
         if last and now >= due:
-            self._turns.pop(where, None)                      # another pass of the same play starts afresh
-            return "done"
+            t["ended"] = True                                 # another pass of the same play starts afresh (unless
+            return "done"                                     # the rotation holds this one: see above)
         if not last and now >= due - PREROLL_SEC:
             nxt = self._lookahead(t, shape, zone, now, due)
             if nxt is None and now >= due:                    # nothing else is up: this one carries on (a slot all

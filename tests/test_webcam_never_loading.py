@@ -81,3 +81,36 @@ def test_a_list_turn_opens_on_its_first_buffered_webcam(monkeypatch):
     p._warm_hub = lambda *a: None
     p.draw(Canvas(448, 134), (0, 45, 448, 134), {"panel": "webcam_full", "_play": 1}, True)
     assert drawn == ["b"]
+
+
+def test_a_finished_list_held_by_the_rotation_keeps_its_webcam_instead_of_starting_over(monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(wm.time, "time", lambda: clock[0])
+    p = _panel(monkeypatch, {})
+    p.per_turn, p.from_top = 1, False
+    drawn = []
+    p._draw_cam = lambda c, zone, entry, transition, **kw: drawn.append(entry["cam"])
+    p._preroll = lambda cid, shape, zone: _St(True)
+    p._warm_hub = lambda *a: None
+    c, z, e = Canvas(448, 134), (0, 45, 448, 134), {"panel": "webcam_full", "_play": 1}
+    p.draw(c, z, e, True)
+    clock[0] += 20
+    assert p.draw(c, z, e, False) == "done"
+    assert p.draw(c, z, {**e, "_held": True}, False) is None          # held: the same webcam carries on
+    assert drawn[-1] == drawn[0] == "a"
+    p.draw(c, z, e, False)                                           # not held (another pass): a new turn
+    assert drawn[-1] == "b"
+
+
+def test_a_down_webcam_doesnt_make_the_list_ready(monkeypatch):
+    class Down(_St):
+        def down(self, now=None):
+            return True
+    p = _panel(monkeypatch, {"a": Down(False), "b": _St(False)})
+    assert not p.ready_for({"panel": "webcam_full"}, (0, 45, 448, 134))
+
+
+def test_the_rotation_marks_a_held_screen():
+    r = _rot(lambda e: e["panel"] != "webcam")
+    _run(r, 0, 11)
+    assert r.current(11)["_held"]
