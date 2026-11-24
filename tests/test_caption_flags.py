@@ -83,8 +83,17 @@ def _where(buf, rgb):
     return (ys.min(), ys.max(), xs.min(), xs.max()) if ys.size else None
 
 
+def test_flags_default_to_the_top_left(flag_set):
+    buf, _ = _draw({"corner": "br"})
+    red, blue = _where(buf, (255, 0, 0)), _where(buf, (0, 0, 255))
+    capt = _where(buf, (255, 255, 255))
+    assert red[0] <= 4 and red[2] <= 4                      # the top-left corner, Canada first
+    assert blue[2] > red[3]
+    assert capt[0] > 150                                    # the caption stays bottom right
+
+
 def test_automatic_flags_sit_on_the_caption(flag_set):
-    buf, box = _draw({"corner": "bl"})
+    buf, box = _draw({"corner": "bl", "flags": {"corner": "auto"}})
     red, blue = _where(buf, (255, 0, 0)), _where(buf, (0, 0, 255))
     assert red and blue                                     # Canada at 23 px, Ontario at 18 px
     assert red[1] - red[0] == 22 and blue[1] - blue[0] == 17
@@ -95,7 +104,7 @@ def test_automatic_flags_sit_on_the_caption(flag_set):
 
 
 def test_top_corner_puts_them_under_the_caption(flag_set):
-    buf, _ = _draw({"corner": "tr"})
+    buf, _ = _draw({"corner": "tr", "flags": {"corner": "auto"}})
     red = _where(buf, (255, 0, 0))
     capt = _where(buf, (255, 255, 255))
     assert red[0] > capt[0] and red[3] > 400                 # below the caption, on the right

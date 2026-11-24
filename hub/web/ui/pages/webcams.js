@@ -67,7 +67,7 @@ const DEFAULT_OVERLAY = { style: "tag", corner: "bl", when: "always", font: "sma
   bg: "#000000", opacity: 0.7, time_format: "24h", fade: true, show_sec: 12, every_min: 3, custom_text: "", headline: "name",
   lines: "auto", separator: "space", uppercase: false, order: [...ORDERABLE], jp_font: "auto", jp_face: "auto", place_beside: false, wx_beside: false, wx_beside_box: false, temp_icon: false,
   jp_caption: { on: false, text: "", face: "k8x12", size: 12, corner: "auto" },
-  flags: { on: true, ids: null, corner: "auto", size: "auto", opacity: 0.8 },
+  flags: { on: true, ids: null, corner: "tl", size: "auto", opacity: 0.8 },
   show: { name: true, place: true, time: true, date: false, offset: false, daynight: false, weather: true, sun: false,
     age: false, live: true, credit: false, custom: false, shield: false, conditions: false, feels: false, hilo: false, wind: false, humidity: false },
   shield: { route: "99", kind: "auto", style: "pixel", place: "inside", size: "box" } };
@@ -1753,7 +1753,7 @@ const WebcamEditor = {
                   </div>
                 </template>
                 <Field label="Position" hint="On the caption: above it in a bottom corner, below it in a top one (above the Japanese caption, if it's there). Left / right of caption: beside it, lined up with its outer edge (above / below it when there's no room on that side)">
-                  <Seg :modelValue="fl.corner || 'auto'" @update:modelValue="v => fl.corner = v" :options="FLAG_POSITIONS"/></Field>
+                  <Seg :modelValue="fl.corner || 'tl'" @update:modelValue="v => fl.corner = v" :options="FLAG_POSITIONS"/></Field>
                 <div class="row" style="gap:16px; align-items:flex-start">
                   <Field label="Size" hint="Auto: countries at 23 px, the rest at 18 px">
                     <Seg :modelValue="fl.size ?? 'auto'" @update:modelValue="v => fl.size = v" :options="FLAG_SIZES"/></Field>
