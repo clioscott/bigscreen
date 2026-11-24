@@ -1,6 +1,7 @@
-"""Tiny pixel flags (9 x 6) for captions: the countries people fly to the ISS from, redrawn by hand at LED size (flag
-designs are public domain). Each is a colour glyph (display/gfx.py COLOR_GLYPHS): ``flag_char("us")`` is a single
-character that DrawText draws as the flag, so a flag can sit anywhere in a line of text and widths stay right."""
+"""Tiny pixel flags (9 x 6) for captions: the countries people fly to the ISS from, and the EU for launches from
+Kourou, redrawn by hand at LED size (flag designs are public domain). Each is a colour glyph (display/gfx.py
+COLOR_GLYPHS): ``flag_char("us")`` is a single character that DrawText draws as the flag, so a flag can sit
+anywhere in a line of text and widths stay right."""
 
 import numpy as np
 
@@ -55,6 +56,7 @@ ART = {
     "kz": ["LLLLLLLLL", "LLLLYLLLL", "LLLYYYLLL", "LLLLYLLLL", "LLLLLLLLL", "LLLLLLLLL"],
     "il": ["WWWWWWWWW", "BBBBBBBBB", "WWWWBWWWW", "WWWBWBWWW", "BBBBBBBBB", "WWWWWWWWW"],
     "br": ["GGGGGGGGG", "GGGYYYGGG", "GGYYBYYGG", "GGYYBYYGG", "GGGYYYGGG", "GGGGGGGGG"],
+    "eu": ["BBBBBBBBB", "BBBYBYBBB", "BBYBBBYBB", "BBYBBBYBB", "BBBYBYBBB", "BBBBBBBBB"],  # Kourou (Ariane, Vega)
 }
 BASE = 0xE100                   # Unicode private use: one code point per flag
 

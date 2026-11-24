@@ -61,6 +61,7 @@ def test_flags_are_drawn_in_their_colours_inside_text_and_take_their_room():
     flag = c.buf[9 - 6:9, x:x + 9]
     assert tuple(flag[0, 0]) == (225, 225, 225) and tuple(flag[5, 0]) == (215, 30, 40)   # white over red: Russia
     assert flag_char("zz") == ""
+    assert flag_char("eu") and flag_char(iss.PAD_FLAG["gf"]) == flag_char("eu")   # launches from Kourou get one
 
 
 def test_the_orbit_ends_up_in_sunlight_or_shadow_and_over_the_right_place():
