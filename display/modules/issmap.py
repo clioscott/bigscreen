@@ -1203,7 +1203,8 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
         lab_ = "AOS" if aos else "LOS"
         X = IX + len(art["iss"][0]) // 2 + 3
         Y = max(0, min(h - 8, IY - 3))
-        img[Y:Y + 7, max(0, X - 1):X + _tw(lab_) + 1] = (img[Y:Y + 7, max(0, X - 1):X + _tw(lab_) + 1] * 0.3).astype(np.uint8)
+        x0, x1 = max(0, X - 1), X + _tw(lab_)               # 1 px each side of the ink (the width ends in a 1 px gap)
+        img[Y:Y + 7, x0:x1] = (img[Y:Y + 7, x0:x1] * 0.3).astype(np.uint8)
         _text(img, X, Y + 1, lab_, AOS_C if aos else LOS_C)
     _sprite(img, art["iss"], ix, iy, v, left, clamp_y=True)  # (last: nothing ever covers the ISS)
     if pboxes:
