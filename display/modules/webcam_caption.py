@@ -233,19 +233,21 @@ def shape_of_panel(panel, zone=None):
 
 
 def for_shape(cam: dict, shape) -> dict:
-    """The webcam with the caption settings of the size ``shape`` (left | right | full | tall | wall) is drawn at."""
-    per = cam.get("overlays") if isinstance(cam, dict) else None
+    """The webcam with the caption settings of the size ``shape`` (left | right | full | tall | wall) is drawn at,
+    and that size in ``_size`` (flags show only at some sizes: caption_flags.FLAG_SIZES_ON_WALL)."""
     size = SIZE_OF_SHAPE.get(shape)
-    if not isinstance(per, dict) or not isinstance(per.get(size), dict):
+    if not isinstance(cam, dict) or size is None:
         return cam
+    per = cam.get("overlays")
+    own = per.get(size) if isinstance(per, dict) and isinstance(per.get(size), dict) else None
     key = (id(cam), size)
     hit = _shaped.get(key)
-    if hit is not None and hit[0] is cam and hit[1] is per[size]:
+    if hit is not None and hit[0] is cam and hit[1] is own:
         return hit[2]
     if len(_shaped) > 256:
         _shaped.clear()
-    view = {**cam, "overlay": per[size]}
-    _shaped[key] = (cam, per[size], view)
+    view = {**cam, "_size": size, **({"overlay": own} if own is not None else {})}
+    _shaped[key] = (cam, own, view)
     return view
 
 

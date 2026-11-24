@@ -14,7 +14,8 @@ def test_each_size_gets_its_own_caption_or_the_shared_one():
         assert cap.overlay_of(cap.for_shape(CAM, shape))["font"] == "small"
     for shape in ("full", "tall", "wall", None):
         assert cap.overlay_of(cap.for_shape(CAM, shape))["font"] == "large"
-    assert cap.for_shape({"label": "x"}, "left") == {"label": "x"}
+    assert cap.for_shape({"label": "x"}, "left") == {"label": "x", "_size": "side"}
+    assert cap.for_shape({"label": "x"}, None) == {"label": "x"}
 
 
 def test_the_sized_view_is_cached_until_the_settings_change():

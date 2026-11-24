@@ -136,7 +136,7 @@ alignment, width, padding and distance from the edge. A ready-made gallery of ab
 be browsed by city and kind, as a grid or on a map. Each size on the wall (the sides, full width, above the clock, the whole wall) can have a caption of its own, set
 for one webcam or for every webcam at that size. A caption can carry a row of pixel flags, set by hand or worked out
 from where the webcam is (Canada, the US and Japan: the province, state or prefecture and the city when it has a flag;
-Dublin: Ireland and Dublin; anywhere else: the country), 18 px in the bottom-right corner by default, in any other
+Dublin: Ireland and Dublin; anywhere else: the country), 18 px in the bottom-right corner by default (only at full width and above the clock, never on the sides or the whole wall), in any other
 corner or stacked on the caption.
 
 **Intersection and traffic cameras**: about 2,500 stills from Metro Vancouver: the cities' own intersection cameras
