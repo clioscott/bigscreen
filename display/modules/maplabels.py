@@ -89,7 +89,8 @@ def draw(img, placed):
     h, w = img.shape[:2]
     for it, x, y, text, bw in placed:
         if it.get("backdrop", True):
-            x0, y0, x1, y1 = max(0, x - 1), max(0, y), min(w, x + bw), min(h, y + LH)
+            # 1 px each side of the ink: the text's width ends with the font's 1 px gap, which is the right margin
+            x0, y0, x1, y1 = max(0, x - 1), max(0, y), min(w, x + bw - 2), min(h, y + LH)
             if x1 > x0 and y1 > y0:
                 img[y0:y1, x0:x1] = (img[y0:y1, x0:x1] * 0.3).astype(np.uint8)
         draw_text(img, x, y + 1, text, it["rgb"])
