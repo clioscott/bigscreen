@@ -1638,6 +1638,18 @@ def webcams_flags_auto(cam: dict = Body(...)):
             "ids": flagplaces.default_ids(cam, _caption_flags.index() or None)}
 
 
+@app.post("/api/webcams/flags_shown")
+def webcams_flags_shown(cams: dict = Body(...)):
+    """The flags each webcam's caption shows at full width (the panel's webcam list): {id: [flag id, ...]}, from the
+    display's own code, so chosen flags, automatic ones and flags switched off all come out as the wall draws them."""
+    out = {}
+    for cid, cam in list(cams.items())[:500]:
+        if isinstance(cam, dict):
+            view = _webcam_caption.for_shape(cam, "full")
+            out[str(cid)] = _caption_flags.ids_for(view, _webcam_caption.overlay_of(view))
+    return out
+
+
 @app.get("/api/webcams/geocode")
 def webcams_geocode(name: str, count: int = 10):
     """Places called ``name`` (Open-Meteo's geocoding, free, no key), biggest first: [{name, admin1, country,
