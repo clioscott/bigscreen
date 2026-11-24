@@ -181,7 +181,7 @@ const SnapImg = {
           return;
         }
       } catch {}
-      const id = props.vid || (props.source.type === "youtube" ? youtubeId(props.source.url) : "");
+      const id = props.source.type !== "youtube" ? "" : props.vid || youtubeId(props.source.url);
       if (id) { url.value = thumb({ id }); state.value = "ok"; } else state.value = "none";
     };
     // only once it is on screen: a long gallery would otherwise queue a grab on the hub for every webcam in it
@@ -1478,13 +1478,14 @@ const WebcamEditor = {
       <div class="stack">
         <div class="card"><div class="card-head"><Icon name="Link" :size="16"/><h3>Source</h3></div>
           <div class="card-body stack">
-            <Seg v-model="cam.source.type" :options="[{value:'youtube', label:'YouTube live', icon:'Youtube'}, {value:'stream', label:'Stream URL', icon:'Radio'},
-              {value:'drivebc', label:'DriveBC camera', icon:'Cctv'}, {value:'image', label:'Still image', icon:'Image'}]"/>
+            <Seg v-model="cam.source.type" :options="[{value:'youtube', label:'YouTube live', icon:'Youtube'}, {value:'earthcam', label:'EarthCam', icon:'Webcam'},
+              {value:'stream', label:'Stream URL', icon:'Radio'}, {value:'drivebc', label:'DriveBC camera', icon:'Cctv'}, {value:'image', label:'Still image', icon:'Image'}]"/>
             <div class="row nowrap">
               <input v-if="cam.source.type === 'drivebc'" class="input grow" type="number" min="1" :value="cam.source.id ?? ''"
                      @change="cam.source.id = Number($event.target.value) || undefined" placeholder="DriveBC camera number, e.g. 18 (Lions Gate)">
               <input v-else class="input grow" v-model.lazy.trim="cam.source.url" :placeholder="cam.source.type === 'youtube' ? 'https://www.youtube.com/watch?v=…  or  …/@channel/live'
-                : cam.source.type === 'image' ? 'https://…/camera.jpg (any still image that updates)' : 'https://…/index.m3u8, an MJPEG URL, rtsp://…'">
+                : cam.source.type === 'image' ? 'https://…/camera.jpg (any still image that updates)'
+                : cam.source.type === 'earthcam' ? 'https://www.earthcam.com/…/?cam=…  (the camera's page)' : 'https://…/index.m3u8, an MJPEG URL, rtsp://…'">
               <button class="btn" :disabled="testing || !hasSource(cam.source)" @click="test"><Icon :name="testing ? 'LoaderCircle' : 'PlugZap'" :size="14" :class="{spin: testing}"/>Test</button></div>
             <div class="faint" style="font-size:12px" v-if="cam.source.type === 'drivebc'">Find cameras under Webcams → Traffic cams. DriveBC posts a new picture every few minutes.</div>
             <div v-if="probe" class="callout" :class="probe.ok ? 'ok' : 'bad'" style="font-size:12.5px">

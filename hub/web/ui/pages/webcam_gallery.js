@@ -1,10 +1,11 @@
 // Ready-made live webcams for the Webcams page: 24/7 YouTube live streams by city and kind, each checked live on
-// 2026-10-20 (yt-dlp from the hub) and its picture looked at. Mt Seymour, White Rock Pier and Tofino Harbour need deno
+// 2026-10-20 (yt-dlp from the hub) and its picture looked at. A few are EarthCam pages instead (their own `source`,
+// id "ec-<cam>"): the hub reads the stream from the page. Mt Seymour, White Rock Pier and Tofino Harbour need deno
 // on the hub, see hub/webcams.py deno_path.
 // A stream that restarts gets a new video id: if one stops working, Test on its page says so, and the channel
 // usually has the new one under /streams. A channel with one camera that restarts every day or so (`live`) is
 // played by its /live address, which follows the new stream.
-const yt = (c) => ({ type: "youtube", url: c.live ? `https://www.youtube.com/${c.live}/live` : `https://www.youtube.com/watch?v=${c.id}` });
+const yt = (c) => c.source || ({ type: "youtube", url: c.live ? `https://www.youtube.com/${c.live}/live` : `https://www.youtube.com/watch?v=${c.id}` });
 
 // kinds of webcam (the page's filter, the map's dot colours)
 export const CATS = {
@@ -59,6 +60,8 @@ export const CITIES = [
   ]},
   { key: "toronto", label: "Ontario & Québec", tz: "America/Toronto", cams: [
     { id: "LxluAbiabrQ", lat: 43.6370, lon: -79.4000, label: "Toronto Skyline", place: "Gardiner Expressway", cat: "skyline", credit: "Toronto Live View", live: "@TorontoLiveView", note: "Downtown towers from a condo above the Gardiner" },
+    { id: "ec-cntower1", lat: 43.6426, lon: -79.3871, label: "CN Tower East", place: "Toronto", cat: "skyline", credit: "EarthCam", note: "Downtown towers and the lake shore from the top of the CN Tower, looking east", source: { type: "earthcam", url: "https://www.earthcam.com/world/canada/toronto/cntower/?cam=cntower1" } },
+    { id: "ec-cntower2", lat: 43.6426, lon: -79.3871, label: "CN Tower West", place: "Toronto", cat: "skyline", credit: "EarthCam", note: "The Gardiner, Billy Bishop airport and the waterfront from the top of the CN Tower, looking west", source: { type: "earthcam", url: "https://www.earthcam.com/world/canada/toronto/cntower/?cam=cntower2" } },
     { id: "qx7gry390YA", lat: 43.0800, lon: -79.0750, label: "Niagara Falls", place: "Niagara Falls", cat: "water", credit: "EarthCam", note: "The Horseshoe Falls and the mist" },
     { id: "yF7XdpkL34w", lat: 42.8870, lon: -79.2500, label: "Welland Canal", place: "Port Colborne", cat: "transport", credit: "StreamTime Live", note: "Lake freighters entering the canal from Lake Erie" },
     { id: "g9hNGJxw6Yw", lat: 42.8980, lon: -78.9144, label: "Peace Bridge", place: "Fort Erie", cat: "transport", credit: "Peace Bridge Authority", note: "Trucks at the Canada-bound inspection plaza" },

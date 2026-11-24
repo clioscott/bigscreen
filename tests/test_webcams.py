@@ -40,7 +40,10 @@ def test_adjust_identity_and_clipping():
 
 def test_check_source():
     assert webcams.check_source({"type": "stream", "url": "rtsp://cam.example/live"}) == ("stream", "rtsp://cam.example/live")
-    for bad in ({"type": "stream", "url": "file:///etc/passwd"}, {"type": "x", "url": "https://a.b/"}, {"url": ""}, None):
+    page = "https://www.earthcam.com/world/canada/toronto/cntower/?cam=cntower1"
+    assert webcams.check_source({"type": "earthcam", "url": page}) == ("earthcam", page)
+    for bad in ({"type": "stream", "url": "file:///etc/passwd"}, {"type": "x", "url": "https://a.b/"}, {"url": ""}, None,
+                {"type": "earthcam", "url": "https://notearthcam.com/x"}, {"type": "earthcam", "url": "rtsp://www.earthcam.com/x"}):
         with pytest.raises(webcams.SourceError):
             webcams.check_source(bad)
 
@@ -180,9 +183,14 @@ def test_gallery_entries_are_valid_webcams():
     assert len(ids) >= 15
     assert len({i for i, _ in ids}) == len(ids) and len({lbl for _, lbl in ids}) == len(ids)
     cams = {f"c{n}": {"label": lbl, "source": {"type": "youtube", "url": f"https://www.youtube.com/watch?v={i}"}}
-            for n, (i, lbl) in enumerate(ids)}
+            for n, (i, lbl) in enumerate(ids) if not i.startswith("ec-")}
     config.validate(_cfg({"cams": cams}))
-    assert all(re.fullmatch(r"[A-Za-z0-9_-]{11}", i) for i, _ in ids)
+    assert all(re.fullmatch(r"[A-Za-z0-9_-]{11}", i) for i, _ in ids if not i.startswith("ec-"))
+    # EarthCam entries carry their own source: a page on earthcam.com, its id "ec-" + the page's ?cam=
+    ec = re.findall(r'\{ id: "ec-([^"]+)",[^\n]*source: \{ type: "earthcam", url: "([^"]+)" \} \}', js)
+    assert len(ec) == sum(i.startswith("ec-") for i, _ in ids)
+    for cam, url in ec:
+        assert webcams.check_source({"type": "earthcam", "url": url}) == ("earthcam", url) and url.endswith(f"?cam={cam}")
     # a channel that restarts its stream plays by its /live address: those URLs are what gets saved
     handles = re.findall(r'live: "(@[^"]+)"', js)
     assert handles and all(re.fullmatch(r"@[A-Za-z0-9._-]+", h) for h in handles)
@@ -892,3 +900,42 @@ def test_fetch_all_feeds_one_at_a_time_and_stops_at_a_bot_check(monkeypatch):
     asked.clear()
     st = run()
     assert asked == [] and not st["results"]["a"]["ok"] and "try again" in st["stopped"]   # paused: YouTube not asked
+
+
+EC_PAGE = r"""<script>var json_base = {"cam":{"cntower1":{"cam_name":"cntower1","title":"CN Tower Cam - East View",
+"liveon":"true","map_lat":"43.64","map_long":"-79.38","html5_streamingdomain":"https:\/\/videos-3.earthcam.com",
+"html5_streampath":"\/fecnetwork\/9299.flv\/playlist.m3u8?t=abc&td=1"},
+"off":{"cam_name":"off","title":"Dark","liveon":"false","html5_streamingdomain":"https:\/\/v.earthcam.com",
+"html5_streampath":"\/x.m3u8"}}};</script>"""
+
+
+def test_earthcam_page(monkeypatch):
+    """An EarthCam page's cameras: its signed HLS link, picked by ?cam=; a dark one or a missing one says so."""
+    cams = webcams.earthcam_cams(EC_PAGE)
+    assert [c["cam"] for c in cams] == ["cntower1", "off"]
+    assert cams[0]["url"] == "https://videos-3.earthcam.com/fecnetwork/9299.flv/playlist.m3u8?t=abc&td=1"
+    assert cams[0]["lat"] == 43.64 and cams[1]["url"] == ""
+
+    class R:
+        text = EC_PAGE
+
+        def raise_for_status(self):
+            pass
+    import requests
+    seen = []
+    monkeypatch.setattr(requests, "get", lambda url, **kw: seen.append(kw["headers"]) or R())
+    monkeypatch.setattr(webcams, "_earthcam", {})
+    base = "https://www.earthcam.com/world/canada/toronto/cntower/"
+    media, title = webcams.resolve("earthcam", base + "?cam=cntower1")
+    assert media.endswith("playlist.m3u8?t=abc&td=1") and title == "CN Tower Cam - East View"
+    assert seen[0]["Referer"] == webcams.EARTHCAM_REFERER
+    webcams.resolve("earthcam", base + "?cam=cntower1")
+    assert len(seen) == 1                                   # kept EARTHCAM_TTL
+    webcams.resolve("earthcam", base + "?cam=cntower1", fresh=True)
+    assert len(seen) == 2
+    assert webcams.resolve("earthcam", base)[1] == "CN Tower Cam - East View"     # no ?cam=: the first
+    for cam, why in (("off", "isn't live"), ("nope", "no camera 'nope'")):
+        with pytest.raises(webcams.SourceError, match=why):
+            webcams.resolve("earthcam", base + "?cam=" + cam)
+    assert webcams.http_args(media) == ["-referer", webcams.EARTHCAM_REFERER]
+    assert webcams.http_args("https://example.com/a.m3u8") == []

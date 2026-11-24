@@ -123,10 +123,10 @@ hot-reload on the wall, no restart needed.
 - **438 bitmap fonts**, always drawn at native size ([credits](assets/fonts/CREDITS.md)).
 <!-- /gen:features -->
 
-**Live webcams**: video from YouTube live streams or any HLS / MJPEG / RTSP camera. The rotation has one **Webcams**
+**Live webcams**: video from YouTube live streams, EarthCam pages or any HLS / MJPEG / RTSP camera. The rotation has one **Webcams**
 entry that plays the Webcams list (its order, which ones are on and how long each shows are set on the Webcams page),
 on one side, full width, above the clock (over the ticker; the clock and date stay) or the whole wall, at another size
-at set hours if you like. The hub decodes each stream with ffmpeg (yt-dlp finds the video behind a YouTube page) and
+at set hours if you like. The hub decodes each stream with ffmpeg (yt-dlp finds the video behind a YouTube page; an EarthCam page lists its own signed stream link) and
 sends the Pi frames already cropped to its zone, so the Pi never decodes video. Each webcam keeps its own crop for every
 place on the wall, colour adjustments, and a caption in one of thirteen layouts (tag, lower third, split bar with a big
 clock, world clock, departure board, ticker, underline and more) built from the sections you pick and order: name,
