@@ -1055,6 +1055,26 @@ def test_a_webcam_played_by_hand_says_it_is_loading(monkeypatch):
     assert p.draw(c, (0, 0, 448, 130), {"panel": "webcam_full", "cam": "a"}, False) == "skip"
 
 
+def test_the_caption_stays_up_while_a_webcam_refills(monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(wm.time, "time", lambda: clock[0])
+    captions = []
+    monkeypatch.setattr(wm, "draw_caption", lambda *a, **k: captions.append(1))
+    p = wm.WebcamPanel(_Cfg({"cams": {"a": {"label": "A"}}}))
+    st = _fresh_stream()
+    frame = np.full((130, 448, 3), 200, np.uint8)
+    st.frame, st.frame_t, st._buffer_since = frame, clock[0], clock[0]
+    st._q.append(frame)
+    p._stream = lambda cam, shape, w, h: st
+    c = Canvas(448, 130)
+    p.draw(c, (0, 0, 448, 130), {"panel": "webcam_full", "cam": "a"}, True)
+    assert captions == []                                               # "Loading…": no caption over it
+    st._played = True                                                   # ran dry mid-play: the picture holds…
+    assert st.buffering()
+    p.draw(c, (0, 0, 448, 130), {"panel": "webcam_full", "cam": "a"}, False)
+    assert captions == [1]                                              # …and so does its caption
+
+
 def test_tall_borrows_the_full_width_crop():
     cam = {"crops": {"full": {"x": 0.2, "y": 0.3, "w": 0.5}}}
     t = wm.crop_for(cam, "tall", 448, 175)
