@@ -893,7 +893,7 @@ class WebcamPanel:
                     _shade(c, x, y, w, h, 0.6)
                     self._centre(c, zone, "Loading webcam feeds" + "." * (1 + int(now * 2) % 3), Color(225, 225, 225))
                     return None
-                # one that ran dry mid-play (or came up a little short) just holds its picture, caption and all
+                # one that ran dry mid-play just holds its picture, caption and all
         else:
             c.FillRect(x, y, w, h, Color(0, 0, 0))
             label = " ".join(str(cam.get("label") or entry.get("cam")).split())      # (a name may have lines)
