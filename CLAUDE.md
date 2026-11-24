@@ -141,6 +141,11 @@ once (`hold: false`), so the rotation resumes by itself.
   exactly the feed's rate: never sped up or slowed down, nothing keeping webcams in line with each other or with live.
   (Deliberately dropped 2026-11: playing every webcam a fixed delay behind live froze and skipped whenever a frame
   came late. Don't bring back wall-clock due times or speed correction.)
+- Never loading on screen: a warm (with the zone, crop and colour) makes the hub keep that zone's frames
+  (`BACKLOG_SEC`), so the Pi's stream opens with a full buffer. The rotation keeps a finished screen up (at most
+  `rotation.HOLD_READY_SEC`) until the webcam after it is buffered (`WebcamPanel.ready_for`); a list turn opens on its
+  first buffered webcam, and passes a late one over for the next if that one is buffered (else the current one carries
+  on). A reconnecting stream sends `back=` so it isn't sent the backlog again.
   A detail ("hi") picture serving one crop is cut and scaled by ffmpeg (`plan` "exact"); several: their region.
 - YouTube bot checks ("Sign in to confirm you're not a bot"): the hub pauses lookups `BOT_COOL` and the Overview
   says so. Signing it in stops them: `python tools/youtube_signin.py` on Scott's PC opens Firefox in a profile of its

@@ -24,6 +24,8 @@ How it plays:
     carries on with the entry after it.
   * Config reloads keep the position and the screen that's playing.
   * A panel that can't show its entry (a webcam that won't come up) returns "skip": the screen ends at once.
+  * A screen that's done stays up (at most HOLD_READY_SEC more) while the next one isn't ready (``ready``: a webcam
+    still filling its buffer), so a webcam never comes up loading.
 """
 
 from __future__ import annotations
@@ -38,6 +40,7 @@ from display.rules import legacy_rules
 DEFAULT_DWELL = 30.0
 WARM_AHEAD = 30.0          # this close to the end of a screen, the next one may get its source ready (webcams)
 DEFAULT_CAP = 1800.0
+HOLD_READY_SEC = 15.0      # a screen that's done stays up at most this much longer while the next one isn't ready
 
 
 def entry_key(e: dict):
@@ -138,6 +141,7 @@ class Rotation:
         self._idle_t = 0.0
         self._last_t = None
         self._visible = True
+        self.ready = None                    # entry -> False while it isn't ready to come up (a webcam buffering)
         self._plays = 0
         self._lock = threading.RLock()
 
@@ -228,7 +232,10 @@ class Rotation:
                 self._pick(now)
             if self.cur is None:
                 return None
-            return {**self.cur["entry"], "_play": self.cur["id"]}
+            out = {**self.cur["entry"], "_play": self.cur["id"]}
+            if self.cur.get("held"):
+                out["_held"] = True                  # done, kept up while the next screen gets ready
+            return out
 
     def upcoming(self, now: float, ahead: float = WARM_AHEAD):
         """The entry that should play after the current screen, once that screen is near its end (under ``ahead``
@@ -247,16 +254,40 @@ class Rotation:
                 left = min(left, self._pass_len[_shape_key(e)] * self.need(e) - c["visible"])
             if left > ahead:
                 return None
-            # as it will play: its variant's panel (a webcam warmed at the size it comes up at)
-            for i in self.pending:
-                if i < len(self.entries) and self._allows(self.entries[i]):
-                    return self._shaped(self.entries[i])
-            n = len(self.entries)
-            for step in range(1, n + 1):
-                i = (self.pos + step) % n
-                if self._allows(self.entries[i]):
-                    return self._shaped(self.entries[i])
-            return None
+            return self._next_entry()
+
+    def _next_entry(self):
+        """The entry that will play after the current screen, as it will play: its variant's panel (a webcam warmed at
+        the size it comes up at)."""
+        for i in self.pending:
+            if i < len(self.entries) and self._allows(self.entries[i]):
+                return self._shaped(self.entries[i])
+        n = len(self.entries)
+        for step in range(1, n + 1):
+            i = (self.pos + step) % n
+            if self._allows(self.entries[i]):
+                return self._shaped(self.entries[i])
+        return None
+
+    def _hold_for_next(self, c, now):
+        """The current screen is done: keep it up while the next one isn't ready (at most HOLD_READY_SEC; asked at
+        most twice a second)."""
+        if self.ready is None:
+            return False
+        since = c.setdefault("done_since", now)
+        if now - since >= HOLD_READY_SEC:
+            return False
+        if now - c.get("ready_t", 0.0) < 0.5:
+            return c.get("held", False)
+        c["ready_t"] = now
+        nxt = self._next_entry()
+        try:
+            held = nxt is not None and self.ready(nxt) is False
+        except Exception as ex:                  # never stall the rotation over it
+            print(f"[rotation] ready: {ex}")
+            held = False
+        c["held"] = held
+        return held
 
     # -- progress ------------------------------------------------------------------------
     def need(self, e) -> int:
@@ -309,7 +340,7 @@ class Rotation:
             if self.preview and c["source"] == "preview":
                 if not self.preview["hold"] and self._done(c):
                     self._end_preview(now)
-            elif self._done(c):
+            elif self._done(c) and not self._hold_for_next(c, now):
                 self.cur = None
 
     # -- previews and controls ----------------------------------------------------------------

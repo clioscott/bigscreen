@@ -506,7 +506,7 @@ def test_the_current_webcam_stays_up_until_the_next_has_a_picture(monkeypatch):
     assert drawn[-1] == "b"
 
 
-def test_the_next_webcam_comes_up_after_a_while_even_without_a_picture(monkeypatch):
+def test_a_next_webcam_that_never_fills_its_buffer_never_comes_up_loading(monkeypatch):
     clock = [1000.0]
     p, drawn = _panel({"cams": {"a": {}, "b": {}}, "per_turn": 2,
                        "playlist": [{"cam": "a", "sec": 20}, {"cam": "b", "sec": 20}]}, monkeypatch, clock)
@@ -517,8 +517,26 @@ def test_the_next_webcam_comes_up_after_a_while_even_without_a_picture(monkeypat
     p.draw(c, z, entry, False)                                          # due: b has frames but isn't ready
     assert drawn[-1] == "a"
     clock[0] += wm.HOLD_MAX_SEC
+    p.draw(c, z, entry, False)                                          # still not: a carries on (it plays smoothly)
+    assert drawn[-1] == "a" and not p.is_down("b")
+    clock[0] += wm.GIVE_UP_SEC - wm.HOLD_MAX_SEC
+    p.draw(c, z, entry, False)                                          # never fills: b sits out, never shown
+    assert "b" not in drawn and p.is_down("b")
+
+
+def test_a_late_next_webcam_is_passed_over_for_a_buffered_one_after_it(monkeypatch):
+    clock = [1000.0]
+    p, drawn = _panel({"cams": {k: {} for k in "abc"}, "per_turn": 3,
+                       "playlist": [{"cam": k, "sec": 20} for k in "abc"]}, monkeypatch, clock)
+    p._preroll = lambda cid, shape, zone: _Slow() if cid == "b" else _Ready()
+    c, z, entry = Canvas(448, 130), (0, 0, 448, 130), {"panel": "webcam_full", "_play": 1}
+    p.draw(c, z, entry, True)
+    clock[0] += 20
     p.draw(c, z, entry, False)
-    assert drawn[-1] == "b"
+    assert drawn[-1] == "a"
+    clock[0] += wm.HOLD_MAX_SEC
+    p.draw(c, z, entry, False)
+    assert drawn[-1] == "c" and "b" not in drawn
 
 
 def test_webcams_the_hub_found_down_are_skipped(monkeypatch, tmp_path):
@@ -637,9 +655,8 @@ def test_a_next_webcam_that_never_sends_a_picture_is_passed_over(monkeypatch):
     clock[0] += 10
     p.draw(c, z, entry, False)                                          # b is due but has nothing: a stays
     clock[0] += wm.HOLD_MAX_SEC
-    p.draw(c, z, entry, False)                                          # b passed over, still on a
-    p.draw(c, z, entry, False)                                          # c has a picture: on to it
-    assert drawn[-1] == "c" and "b" not in drawn and p.is_down("b")
+    p.draw(c, z, entry, False)                                          # c is buffered: on to it, b passed over
+    assert drawn[-1] == "c" and "b" not in drawn
 
 
 def test_health_job_writes_what_it_checked_in_time(monkeypatch):
