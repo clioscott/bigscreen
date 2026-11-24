@@ -174,16 +174,12 @@ def _clock(t, tz=None, u=None):
 
 
 def _countdown(sec):
-    """A duration, its units in lower case ("1h30m20s", "4m05s", "2d3h"): the panels draw lower case dimmer
-    (draw_value), so the numbers stand out without spaces taking room."""
+    """A duration as a clock, hours:minutes:seconds ("00:04:05", "01:30:20"), with whole days in front ("2d 03:00:00");
+    the panels draw the lower-case d dimmer (draw_value)."""
     sec = max(0, int(sec))
-    if sec >= 86400:
-        return f"{sec // 86400}d{sec % 86400 // 3600}h"
-    if sec >= 3600:
-        return f"{sec // 3600}h{sec % 3600 // 60:02d}m{sec % 60:02d}s"
-    if sec >= 60:
-        return f"{sec // 60}m{sec % 60:02d}s"
-    return f"{sec}s"
+    d, sec = divmod(sec, 86400)
+    clock = f"{sec // 3600:02d}:{sec % 3600 // 60:02d}:{sec % 60:02d}"
+    return f"{d}d {clock}" if d else clock
 
 
 def _speed(kms, u):
