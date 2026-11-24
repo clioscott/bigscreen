@@ -1174,8 +1174,8 @@ const WebcamEditor = {
     const FLAG_GROUPS = [{ value: "all", label: "All" }, { value: "country", label: "Countries" }, { value: "province", label: "Provinces" },
       { value: "state", label: "States" }, { value: "prefecture", label: "Prefectures" }, { value: "city", label: "Cities" },
       { value: "emblem", label: "Emblems" }, { value: "symbol", label: "Symbols" }];
-    const FLAG_POSITIONS = [{ value: "auto", label: "On the caption" }, { value: "left", label: "Left of caption" },
-      { value: "right", label: "Right of caption" }, { value: "tl", label: "Top left" }, { value: "tc", label: "Top" },
+    const FLAG_POSITIONS = [{ value: "tl", label: "Top left" }, { value: "auto", label: "On the caption" },
+      { value: "left", label: "Left of caption" }, { value: "right", label: "Right of caption" }, { value: "tc", label: "Top" },
       { value: "tr", label: "Top right" }, { value: "bl", label: "Bottom left" }, { value: "bc", label: "Bottom" }, { value: "br", label: "Bottom right" }];
     const FLAG_SIZES = [{ value: "auto", label: "Auto" }, { value: 18, label: "18 px" }, { value: 23, label: "23 px" }];
     const flagQ = ref("");

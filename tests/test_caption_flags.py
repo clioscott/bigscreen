@@ -92,6 +92,13 @@ def test_flags_default_to_the_top_left(flag_set):
     assert capt[0] > 150                                    # the caption stays bottom right
 
 
+def test_a_webcam_with_no_flag_settings_gets_the_top_left():
+    from display.modules import caption_flags
+    o = cap.overlay_of({"overlay": {"corner": "br"}})
+    assert caption_flags.flags_of(o)["corner"] == "tl"
+    assert caption_flags.flags_of(cap.overlay_of({}))["corner"] == "tl"
+
+
 def test_automatic_flags_sit_on_the_caption(flag_set):
     buf, box = _draw({"corner": "bl", "flags": {"corner": "auto"}})
     red, blue = _where(buf, (255, 0, 0)), _where(buf, (0, 0, 255))
