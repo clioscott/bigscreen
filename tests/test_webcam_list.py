@@ -1417,3 +1417,32 @@ def test_the_hubs_placeholder_while_a_feed_starts_never_counts_as_a_black_pictur
     assert st.frame is not None and st.black_since is None                # shown, but never counted as black
     st.check_blank(dark, 5.0)
     assert st.black_since == 5.0                                          # a real black frame still counts
+
+
+def test_a_full_width_only_webcam_plays_full_width_but_never_on_one_side(monkeypatch):
+    clock = [1000.0]
+    s = {"cams": {"a": {}, "big": {"full_only": True}, "c": {}}, "per_turn": "all",
+         "playlist": [{"cam": "a", "sec": 10}, {"cam": "big", "sec": 10}, {"cam": "c", "sec": 10}]}
+    assert wm.fits({"full_only": True}, "full") and wm.fits({"full_only": True}, "wall")
+    assert not wm.fits({"full_only": True}, "left") and not wm.fits({"full_only": True}, "right") and wm.fits({}, "left")
+
+    def turn(panel, zone):
+        p, drawn = _panel(s, monkeypatch, clock)
+        c = Canvas(zone[2], zone[3])
+        entry = {"panel": panel, "_play": 1}
+        r, first = None, True
+        for _ in range(10):
+            r = p.draw(c, zone, entry, first)
+            first = False
+            if r == "done":
+                break
+            clock[0] += 10
+        return r, drawn
+
+    assert turn("webcam_full", (0, 0, 448, 130)) == ("done", ["a", "big", "c"])
+    assert turn("webcam", (0, 0, 224, 130)) == ("done", ["a", "c"])              # one side: passed over
+    p, _ = _panel(s, monkeypatch, clock)
+    assert p._list_first(shape="right") == ["a", "c"] and "big" in p._list_first(shape="full")
+    only = {"cams": {"big": {"full_only": True}}, "playlist": [{"cam": "big"}]}
+    p, drawn = _panel(only, monkeypatch, clock)                                   # nothing fits one side: skipped at once
+    assert p.draw(Canvas(224, 130), (224, 0, 224, 130), {"panel": "webcam", "_play": 1}, True) == "skip" and not drawn

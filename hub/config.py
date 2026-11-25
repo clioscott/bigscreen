@@ -659,6 +659,8 @@ def _validate_webcams(wc):
                 raise ConfigError(f'webcam {name}: hours must be {{"from": "HH:MM", "to": "HH:MM"}}')
         if not isinstance(cam.get("daylight_only", True), bool):
             raise ConfigError(f"webcam {name}: daylight_only must be true or false")
+        if not isinstance(cam.get("full_only", False), bool):
+            raise ConfigError(f"webcam {name}: full_only must be true or false")
         for key, pat in (("country", r"[A-Za-z]{2}"), ("region", r"[A-Za-z0-9]{1,3}")):
             v = cam.get(key)                               # where the webcam is (the caption's automatic flags)
             if v not in (None, "") and not (isinstance(v, str) and re.fullmatch(pat, v)):
