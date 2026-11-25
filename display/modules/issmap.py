@@ -152,7 +152,7 @@ EXTRAS = {
     "ahead": {"on": True, "minutes": 45},
     "sunlit": {"on": True, "shadow": "blue"},
     "tiangong": {"on": True, "trail": True, "label": True},
-    "signal": {"on": True, "tag": True},
+    "signal": {"on": True, "tag": True, "place": "right"},
     "russian": {"on": True},
     "flow": {"on": True, "speed": "normal", "direction": "both"},
     "telemetry": {"on": True, "corner": "tr", "rows": ["cabin_p", "cabin_t", "o2", "co2", "gyros", "water"]},
@@ -619,8 +619,10 @@ def _seg_line(img, v, left, x0, y0, x1, y1, rgb, alpha=None, per_sample=False):
 _sprites: dict = {}
 
 
-def _sprite_arrays(art):
-    hit = _sprites.get(id(art))
+def _sprite_arrays(art, outline=False):
+    """(rgb, mask) of an icon; with outline, a pixel bigger all round with a black edge (8-way) round the ink."""
+    key = (id(art), outline)
+    hit = _sprites.get(key)
     if hit is None:
         hh, ww = len(art), len(art[0])
         rgb = np.zeros((hh, ww, 3), np.uint8)
@@ -629,19 +631,46 @@ def _sprite_arrays(art):
             for i, ch in enumerate(row):
                 if ch != ".":
                     rgb[j, i], mask[j, i] = PAL[ch], True
-        hit = _sprites[id(art)] = (rgb, mask)
+        if outline:
+            m = np.pad(mask, 1)
+            grown = m.copy()
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    grown |= np.roll(np.roll(m, dy, 0), dx, 1)
+            rgb = np.pad(rgb, ((1, 1), (1, 1), (0, 0)))          # (the edge is black: rgb 0 where there's no ink)
+            mask = grown
+        hit = _sprites[key] = (rgb, mask)
     return hit
 
 
-def _sprite(img, art, wx, y, v, left, clamp_y=False):
-    """An icon centred on world x wx, row y (drawn again a world further along when it straddles the map's edge)."""
-    rgb, mask = _sprite_arrays(art)
+TAG_PLACES = ("right", "left", "above", "below", "above_right", "above_left", "below_right", "below_left")
+
+
+def tag_xy(place, IX, IY, art, tw, w, h):
+    """Where the AOS/LOS tag's text goes (its left column and the top row of its 7-row backdrop) for an ISS icon
+    centred on IX, IY: ``place`` one of TAG_PLACES (beside, above or below the icon, or off a corner), a pixel
+    clear of its black outline; kept on the map. tw: the text's width (_tw, ending in its 1 px gap)."""
+    place = place if place in TAG_PLACES else "right"
+    aw, ah = len(art[0]), len(art)
+    L, T = IX - aw // 2, IY - ah // 2                      # the icon's first column and row
+    R, B = L + aw - 1, T + ah - 1                          # its last (the outline is one further out)
+    vert, _, side = place.partition("_") if place not in ("left", "right") else ("", "", place)
+    X = {"right": R + 3, "left": L - 1 - tw}.get(side, IX - (tw - 1) // 2)
+    Y = {"above": T - 8, "below": B + 2}.get(vert, IY - 3)
+    return max(1, min(w - tw, X)), max(0, min(h - 8, Y))
+
+
+def _sprite(img, art, wx, y, v, left, clamp_y=False, outline=False):
+    """An icon centred on world x wx, row y (drawn again a world further along when it straddles the map's edge).
+    outline: a 1 px black edge round it (the ISS: it stays clear on a busy map); clamp_y keeps the icon itself in."""
+    rgb, mask = _sprite_arrays(art, outline)
     hh, ww = mask.shape
+    pad = 1 if outline else 0
     h, w = img.shape[:2]
-    y0 = int(round(y - hh / 2))
+    y0 = int(round(y - (hh - 2 * pad) / 2)) - pad
     if clamp_y:
-        y0 = max(0, min(h - hh, y0))
-    x = int(round((wx - left) % v.W - ww / 2))
+        y0 = max(-pad, min(h - hh + pad, y0))
+    x = int(round((wx - left) % v.W - (ww - 2 * pad) / 2)) - pad
     for xx in (x, x - v.W, x + v.W):
         X0, X1, Y0, Y1 = max(0, xx), min(w, xx + ww), max(0, y0), min(h, y0 + hh)
         if X1 <= X0 or Y1 <= Y0:
@@ -1070,7 +1099,7 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
         np.copyto(band, src, where=m)
     ix, iy = float(v.wx(pos[1])), float(v.y(pos[0]))
     if not full:
-        _sprite(img, SMALL_ART, ix, iy, v, left, clamp_y=True)
+        _sprite(img, SMALL_ART, ix, iy, v, left, clamp_y=True, outline=True)
         return img, paths
     IX, IY = _screen(v, left, ix, iy)
     hw = lambda a: (len(a[0]) // 2 + 1, len(a) // 2 + 1)
@@ -1247,22 +1276,21 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
     if iss_up:
         label("iss", "ISS", "ISS", (IX, IY), iss_half, None, 0,
               f" {n_crew} CREW" if lab["iss"].get("crew") and n_crew else "")
-    if _on(ex, "signal") and ex["signal"].get("tag", True) and aos is not None:   # (the AOS/LOS tag's room)
-        X = IX + len(art["iss"][0]) // 2 + 3
-        icons.append((X - 1, IY - 3, X + 14, IY + 4))
+    tag = _on(ex, "signal") and ex["signal"].get("tag", True) and aos is not None
+    if tag:                                                # (the AOS/LOS tag's room)
+        lab_ = "AOS" if aos else "LOS"
+        X, Y = tag_xy(ex["signal"].get("place"), IX, IY, art["iss"], _tw(lab_), w, h)
+        icons.append((X - 1, Y, X + _tw(lab_), Y + 7))
     if smap:
         obstacles = icons + pboxes + ([tuple(avoid)] if avoid else [])
         maplabels.draw(img, maplabels.place(label_items, obstacles, w, h))
         mappanels.draw(img, placed)
-    if _on(ex, "signal") and ex["signal"].get("tag", True) and aos is not None:
-        lab_ = "AOS" if aos else "LOS"
-        X = IX + len(art["iss"][0]) // 2 + 3
-        Y = max(0, min(h - 8, IY - 3))
+    if tag:
         x0, x1 = max(0, X - 1), X + _tw(lab_)               # 1 px each side of the ink (the width ends in a 1 px gap)
         img[Y:Y + 7, x0:x1] = (img[Y:Y + 7, x0:x1] * 0.3).astype(np.uint8)
         _text(img, X, Y + 1, lab_, AOS_C if aos else LOS_C)
     if iss_up:
-        _sprite(img, art["iss"], ix, iy, v, left, clamp_y=not home)   # (last: nothing ever covers the ISS)
+        _sprite(img, art["iss"], ix, iy, v, left, clamp_y=not home, outline=True)   # (last: nothing ever covers the ISS)
     if pboxes:
         solid = [b for (q, m, _x, _y), b in zip(placed, pboxes) if m.get("video")]
         seen = [(*b, 1 - max(0.0, min(1.0, float(q.get("opacity", 0.72))))) for (q, m, _x, _y), b in zip(placed, pboxes)
