@@ -192,10 +192,13 @@ once (`hold: false`), so the rotation resumes by itself.
   None and draws as it always did): `map.views.<size>` (zoom, stretch, lat or automatic, lon, clear: `issmap.View`;
   automatic reaches `TOP_MIN` north and keeps the ISS's band off the caption), `links.<nasa|ru|cn>` (colours, style
   dots/dashes/comet/pulse/still, speed, direction, line), `relays`/`ground` (always | linked | hidden), `labels.<kind>`
-  and `names` (`display/modules/maplabels.py`: name, flag, crew, place or auto = least overlap), `sats.<layer>`
+  and `names` (`display/modules/maplabels.py`: name, flag, crew, place or auto = least overlap, edge = a 1 px black
+  outline by default (icons are outlined too; no dark boxes); the ISS's: globe flag or US + Russian flags each in the
+  label or by the icon, own text with {exp}/{crew}; AOS/LOS tag any side, text or signal icon), `sats.<layer>`
   (`display/modules/mapsats.py` + `common/satlayers.py`; job `hub/jobs/sats.py` propagates CelesTrak groups with
   sgp4 every 10 min into `data/issmap/sats_<layer>.bin`, 30 s steps the Pi interpolates; laser trellis = likely
-  neighbour links, redrawn every 5 s from a cached mask), `panels` (`display/modules/mappanels.py`: any number, each
+  neighbour links, redrawn every 5 s from a cached mask; orbit tracks = `tracks` satellites' whole ground tracks from
+  `sats_<layer>.trk`, written by the job only when a map asks for them), `panels` (`display/modules/mappanels.py`: any number, each
   in one of nine places with its own fields from `FIELDS`, layout, font, colours, crew name style) and `units`.
   Its caption is its own (one line by default); the ISS webcam's is untouched. China's link: Tiangong → a Chinese
   station or a Tianlian II relay (inferred). Extra data in iss.json for the panels: `people`, `spacewx` (NOAA SWPC),
