@@ -206,6 +206,16 @@ once (`hold: false`), so the rotation resumes by itself.
   picture of the ISS webcam in one of the nine places (`iss_panel._video`: its own `webcam.Stream` at that size with
   the full-width crop), only while usable (daylight with `daylight_only`, not `WebcamPanel._unusable`); the map keeps
   room for it only then (`mapset["_video_up"]`). The ISS webcam's own screen is unaffected.
+- **Satellites Overhead** (panel page `#/sats-overhead`, the same `pages/space_map.js` via `makePage`; config
+  `modules.sats_overhead`, same shape as `iss_map` plus `home` [lat, lon] and `map.overhead` = `issmap.OVERHEAD_DEFAULTS`;
+  panels `sats_overhead*`, made for `_tall`): `IssMapPanel(key="sats_overhead")` draws the Space Map fixed over home
+  (`issmap.overhead_view`: centred, stretch 1/cos lat so circles stay round, zoomed so the horizon ring of
+  `overhead.layer` at `min_el` fits; `View` takes the computed `_zoom` past the Space Map's 4×). `mapset["_home"]` turns
+  on the ring and house marker, `mapsats.draw(observer=)` (satellites past the horizon at `outside` brightness, trellis
+  only between ones home sees, `near_km` from home, GPS lines from home, per-layer counts → panel fields `sats_up`,
+  `sats_up_total`), and hides the ISS while it's out of view. Home: its own `home`, else `data/issmap/overhead.json`
+  (`hub/jobs/sats.py` writes the weather alerts' home). Until saved it borrows the Space Map's satellites, links, labels
+  and caption look (one-line caption). Layer heights: `common/satlayers.py` `alt_km`. Layers on in either map are fetched.
 - 4K: YouTube's live HLS stops at 1080p; 1440p/4K exist only as DASH (VP9 WebM segments by sequence number). The
   lookup passes `youtube:formats=incomplete` to list them, which needs a current yt-dlp with yt-dlp-ejs and deno
   (`~/.deno/bin/deno` on the server, found by `deno_path`). They're used only when a crop needs more than the HLS

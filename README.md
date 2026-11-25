@@ -112,7 +112,7 @@ hot-reload on the wall, no restart needed.
   - `naad`: The stored NAAD messages (hub/bc/naad_listener.py) → data/naad.json
   - `news`: Headlines from publisher RSS/Atom feeds, grouped into categories
   - `quakes`: Quakes that matter in south-west BC → data/quakes.json
-  - `sats`: Satellite constellations for the Space Map (modules.iss_map.map.sats: Starlink, Amazon Leo, GPS, GOES…) →
+  - `sats`: Satellites for the Space Map and Satellites Overhead (Starlink, GPS, GOES…) → data/issmap/sats_<layer>.bin
   - `shield_signs`: The real highway signs the webcam captions use → data/shields/*.png (hub/shield_signs.py)
   - `timezones`: Time zone map: US/Canada offsets for a year from the newest tzdata, plus map rasters → data/tzmap.json
   - `tsunami`: NTWC bulletins for the BC coast → data/tsunami.json
