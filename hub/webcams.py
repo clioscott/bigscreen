@@ -22,6 +22,8 @@ crops and scales them (4K in software would take the N100's CPU).
 Sources (``modules.webcams.cams.<id>.source``):
     {"type": "youtube", "url": "https://www.youtube.com/watch?v=…"}   live stream; resolved with yt-dlp
     {"type": "stream",  "url": "https://…/index.m3u8"}                HLS, MP4, MJPEG, RTSP… anything ffmpeg opens
+    {"type": "earthcam", "url": "https://www.earthcam.com/…/?cam=…"}  an EarthCam page; its signed HLS link is read
+                                                                        from the page (earthcam_lookup)
     {"type": "drivebc", "id": 18}                                       a DriveBC highway camera (a still, every few min)
     {"type": "image",   "url": "https://…/cam.jpg", "refresh_sec": 60}  any still image, fetched again every refresh_sec
 Stills become a feed too: the latest image is published every second (so viewers know it's alive) and fetched again
@@ -103,8 +105,13 @@ def check_source(src) -> tuple[str, str]:
             raise SourceError("a DriveBC camera needs its numeric id")
         return kind, DRIVEBC_IMAGE.format(id=cid)
     url = str(src.get("url", "")).strip()
-    if kind not in ("youtube", "stream", "image"):
-        raise SourceError("source type must be youtube, stream, image or drivebc")
+    if kind not in ("youtube", "stream", "image", "earthcam"):
+        raise SourceError("source type must be youtube, earthcam, stream, image or drivebc")
+    if kind == "earthcam":
+        u = urlparse(url)
+        if u.scheme.lower() not in ("http", "https") or not is_earthcam(url):
+            raise SourceError("an EarthCam source is the camera's page on earthcam.com")
+        return kind, url
     schemes = {"http", "https"} if kind == "image" else SCHEMES
     if urlparse(url).scheme.lower() not in schemes or not urlparse(url).netloc:
         raise SourceError("an image URL must be http(s)" if kind == "image" else "source URL must be http(s), rtsp or rtmp")
@@ -173,6 +180,76 @@ def fetch_still(kind, url, known_at=None, meta=True):
         except (KeyError, TypeError, ValueError):
             at = time.time()
     return np.ascontiguousarray(np.asarray(img), dtype=np.uint8), min(at, time.time())
+
+
+# --- EarthCam --------------------------------------------------------------------------------------------------
+# An EarthCam page lists its cameras as JSON (one page can hold several views, picked by ?cam=). Each has a signed
+# HLS link (html5_streamingdomain + html5_streampath, ?t=…&td=…) that its servers only serve with an earthcam.com
+# Referer; the link is read again from the page every EARTHCAM_TTL, and at once after a run fails.
+EARTHCAM_REFERER = "https://www.earthcam.com/"
+EARTHCAM_TTL = 20 * 60.0
+_earthcam: dict = {}         # page url -> {"at", "url", "title"}
+_EC_CAM = re.compile(r'\{[^{}]*"cam_name"\s*:\s*"[^"]+"[^{}]*\}')
+
+
+def is_earthcam(url) -> bool:
+    host = (urlparse(str(url or "")).hostname or "").lower()
+    return host == "earthcam.com" or host.endswith(".earthcam.com")
+
+
+def earthcam_cams(html) -> list:
+    """Every camera on an EarthCam page: {"cam", "title", "url" (its HLS link, or "" when it isn't live), "lat",
+    "lon"}."""
+    import json
+    out = []
+    for m in _EC_CAM.finditer(html):
+        try:
+            d = json.loads(m.group(0))
+        except ValueError:
+            continue
+        dom, path = str(d.get("html5_streamingdomain") or ""), str(d.get("html5_streampath") or "")
+        live = str(d.get("liveon", "true")).lower() != "false" and dom.startswith("http") and ".m3u8" in path
+        try:
+            lat, lon = float(d.get("map_lat")), float(d.get("map_long"))
+        except (TypeError, ValueError):
+            lat = lon = None
+        cam = {"cam": d["cam_name"], "title": str(d.get("title") or d["cam_name"]), "url": dom + path if live else "",
+               "lat": lat, "lon": lon}
+        if not any(c["cam"] == cam["cam"] for c in out):
+            out.append(cam)
+    return out
+
+
+def earthcam_lookup(url, fresh=False, timeout=20) -> dict:
+    """{"url": the camera's HLS link, "title"} for an EarthCam page (its ?cam=, else the page's first camera)."""
+    from urllib.parse import parse_qs
+
+    import requests
+    hit = _earthcam.get(url)
+    if hit and not fresh and time.time() - hit["at"] < EARTHCAM_TTL:
+        return hit
+    try:
+        r = requests.get(url, timeout=timeout, headers={"User-Agent": UA["User-Agent"], "Referer": EARTHCAM_REFERER})
+        r.raise_for_status()
+    except requests.RequestException as e:
+        raise SourceError(f"couldn't open the EarthCam page: {e}"[:300])
+    cams = earthcam_cams(r.text)
+    if not cams:
+        raise SourceError("no EarthCam camera on that page")
+    want = (parse_qs(urlparse(url).query).get("cam") or [""])[0]
+    cam = next((c for c in cams if c["cam"] == want), None) if want else cams[0]
+    if cam is None:
+        raise SourceError(f"no camera '{want}' on that page (it has {', '.join(c['cam'] for c in cams)})")
+    if not cam["url"]:
+        raise SourceError(f"{cam['title']} isn't live")
+    hit = _earthcam[url] = {"at": time.time(), "url": cam["url"], "title": cam["title"]}
+    return hit
+
+
+def http_args(media) -> list:
+    """ffmpeg input options a media URL needs beyond the defaults (EarthCam: its Referer, which HLS passes on to
+    every playlist and segment request)."""
+    return ["-referer", EARTHCAM_REFERER] if is_earthcam(media) else []
 
 
 # --- resolving -----------------------------------------------------------------------------------------------
@@ -445,6 +522,9 @@ def quality_of(values):
 def resolve(kind, url, fresh=False, timeout=60, need_w=0.0, min_h=MIN_SOURCE_H) -> tuple[str, str]:
     """(media URL for ffmpeg, title). YouTube pages go through lookup(): the smallest stream that's at least need_w
     wide (pick_format), never a DASH one (ffmpeg can't open those by URL)."""
+    if kind == "earthcam":
+        hit = earthcam_lookup(url, fresh)
+        return hit["url"], hit["title"]
     if kind != "youtube":                               # streams and stills are used as given
         return url, ""
     info = lookup(url, fresh, timeout)
@@ -1052,6 +1132,8 @@ class Feed:
                 timing = fmt["url"] if not fmt.get("dash") else native_of(hls)["url"]
                 if is_hls(timing):
                     self._seg = {"timing": timing, "dash": fmt["url"] if fmt.get("dash") else None}
+        elif self.kind == "earthcam":
+            media, title = resolve(self.kind, self.url, fresh)   # (its size: once ffmpeg has opened it)
         else:
             media, title = self.url, ""                      # its size is known once ffmpeg has opened it once
         src = self.source or {}
@@ -1104,7 +1186,7 @@ class Feed:
                     continue
                 if got:
                     backoff = 0
-                fresh = self.kind == "youtube"         # a YouTube URL that stopped working may have expired
+                fresh = self.kind in ("youtube", "earthcam")   # a signed URL that stopped working may have expired
                 if not self.error:
                     self.error = "the stream ended"
             except BotCheck as e:                      # the hub is throttled, not the webcam: not "down"
@@ -1189,7 +1271,7 @@ class Feed:
             return self._filters(args, hi_fd)
         if scheme in ("http", "https"):
             args += ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
-                     "-user_agent", "BigScreen/2 (home LED wall)"]
+                     "-user_agent", "BigScreen/2 (home LED wall)", *http_args(media)]
             if self.kind == "youtube" or ".m3u8" in media:
                 # HLS arrives a segment (2-5 s) at a time and ffmpeg decodes each as soon as it lands: the pacer
                 # (_pace) evens that out from a buffer. Starting two segments back fills the buffer at once; a run
@@ -1742,7 +1824,7 @@ def grab_frame(kind, url, timeout=40) -> np.ndarray:
     media, _ = resolve(kind, url, timeout=timeout, need_w=480, min_h=0)   # one small picture
     args = ["ffmpeg", "-hide_banner", "-nostdin", "-nostats", "-loglevel", "error", "-protocol_whitelist", PROTOCOLS]
     if urlparse(media).scheme.lower() in ("http", "https"):
-        args += ["-rw_timeout", "15000000"]
+        args += ["-rw_timeout", "15000000", *http_args(media)]
     if kind == "youtube" or ".m3u8" in media:
         args += ["-live_start_index", "-1"]
     args += ["-i", media, "-frames:v", "1", "-vf", "scale=480:-2", "-f", "image2", "-c:v", "mjpeg", "-q:v", "4", "pipe:1"]
@@ -1860,6 +1942,9 @@ def _fetch_all_run(todo):
                     res = {"ok": True, "msg": "ready" + (f": {title}"[:120] if "not live" in title else "")}
                     if "not live" not in title:
                         note_health(kind, url, True)        # it came up: no longer "down"
+                elif kind == "earthcam":
+                    _, title = resolve(kind, url, fresh=True)
+                    res = {"ok": True, "msg": "ready"}
                 elif kind in STILLS:
                     _, at = fetch_still(kind, url)
                     res = {"ok": True, "msg": f"still from {int(max(0, time.time() - at) // 60)} min ago"}
@@ -1945,7 +2030,8 @@ def _grab(kind, url):
         os.replace(tmp.name, path)
         return
     media, _ = resolve(kind, url, need_w=480, min_h=0)
-    args = ["ffmpeg", "-hide_banner", "-nostdin", "-nostats", "-loglevel", "error", "-protocol_whitelist", PROTOCOLS]
+    args = ["ffmpeg", "-hide_banner", "-nostdin", "-nostats", "-loglevel", "error", "-protocol_whitelist", PROTOCOLS,
+            *http_args(media)]
     if kind == "youtube" or ".m3u8" in media:
         args += ["-live_start_index", "-1"]
     args += ["-i", media, "-frames:v", "1", "-vf", "scale=480:-2", "-f", "image2", "-c:v", "mjpeg", "-q:v", "4", "pipe:1"]

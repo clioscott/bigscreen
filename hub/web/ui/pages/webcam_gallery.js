@@ -1,10 +1,11 @@
 // Ready-made live webcams for the Webcams page: 24/7 YouTube live streams by city and kind, each checked live on
-// 2026-10-20 (yt-dlp from the hub) and its picture looked at. Mt Seymour, White Rock Pier and Tofino Harbour need deno
+// 2026-10-20 (yt-dlp from the hub) and its picture looked at. A few are EarthCam pages instead (their own `source`,
+// id "ec-<cam>"): the hub reads the stream from the page. Mt Seymour, White Rock Pier and Tofino Harbour need deno
 // on the hub, see hub/webcams.py deno_path.
 // A stream that restarts gets a new video id: if one stops working, Test on its page says so, and the channel
 // usually has the new one under /streams. A channel with one camera that restarts every day or so (`live`) is
 // played by its /live address, which follows the new stream.
-const yt = (c) => ({ type: "youtube", url: c.live ? `https://www.youtube.com/${c.live}/live` : `https://www.youtube.com/watch?v=${c.id}` });
+const yt = (c) => c.source || ({ type: "youtube", url: c.live ? `https://www.youtube.com/${c.live}/live` : `https://www.youtube.com/watch?v=${c.id}` });
 
 // kinds of webcam (the page's filter, the map's dot colours)
 export const CATS = {
@@ -59,6 +60,8 @@ export const CITIES = [
   ]},
   { key: "toronto", label: "Ontario & Québec", tz: "America/Toronto", cams: [
     { id: "LxluAbiabrQ", lat: 43.6370, lon: -79.4000, label: "Toronto Skyline", place: "Gardiner Expressway", cat: "skyline", credit: "Toronto Live View", live: "@TorontoLiveView", note: "Downtown towers from a condo above the Gardiner" },
+    { id: "ec-cntower1", lat: 43.6426, lon: -79.3871, label: "CN Tower East", place: "Toronto", cat: "skyline", credit: "EarthCam", note: "Downtown towers and the lake shore from the top of the CN Tower, looking east", source: { type: "earthcam", url: "https://www.earthcam.com/world/canada/toronto/cntower/?cam=cntower1" } },
+    { id: "ec-cntower2", lat: 43.6426, lon: -79.3871, label: "CN Tower West", place: "Toronto", cat: "skyline", credit: "EarthCam", note: "The Gardiner, Billy Bishop airport and the waterfront from the top of the CN Tower, looking west", source: { type: "earthcam", url: "https://www.earthcam.com/world/canada/toronto/cntower/?cam=cntower2" } },
     { id: "qx7gry390YA", lat: 43.0800, lon: -79.0750, label: "Niagara Falls", place: "Niagara Falls", cat: "water", credit: "EarthCam", note: "The Horseshoe Falls and the mist" },
     { id: "yF7XdpkL34w", lat: 42.8870, lon: -79.2500, label: "Welland Canal", place: "Port Colborne", cat: "transport", credit: "StreamTime Live", note: "Lake freighters entering the canal from Lake Erie" },
     { id: "g9hNGJxw6Yw", lat: 42.8980, lon: -78.9144, label: "Peace Bridge", place: "Fort Erie", cat: "transport", credit: "Peace Bridge Authority", note: "Trucks at the Canada-bound inspection plaza" },
@@ -123,9 +126,21 @@ export const CITIES = [
     { id: "H67j7H-7QD0", lat: 40.5749, lon: -73.9859, label: "Coney Island", place: "Brooklyn", cat: "beach", credit: "EarthCam", note: "The boardwalk, beach and Wonder Wheel" },
     { id: "bM438ptlpvE", lat: 40.6602, lon: -73.9690, label: "Prospect Park", place: "Brooklyn", cat: "street", credit: "Prospect Park Live", live: "@ProspectParkLive", note: "A leafy Park Slope street beside the park" },
     { id: "5BlEY0fpCRs", lat: 40.8517, lon: -73.9527, label: "George Washington Bridge", place: "New York", cat: "transport", credit: "GWB Live Traffic Cam", live: "@gwblivetrafficcam", note: "Traffic on the bridge from the Manhattan side" },
+    { id: "ec-tsball", lat: 40.7565, lon: -73.9864, label: "Times Square Ball", place: "Times Square", cat: "street", credit: "EarthCam", note: "The top of One Times Square, where the ball drops at New Year", source: { type: "earthcam", url: "https://www.earthcam.com/usa/newyork/timessquare/?cam=tsball" } },
+    { id: "ec-tsrobo3", lat: 40.7575, lon: -73.9860, label: "Times Square Crossroads", place: "Times Square", cat: "street", credit: "EarthCam", note: "Broadway and Seventh Avenue crossing, from above", source: { type: "earthcam", url: "https://www.earthcam.com/usa/newyork/timessquare/?cam=tsrobo3" } },
+    { id: "ec-tsstreet", lat: 40.7594, lon: -73.9852, label: "Times Square Street", place: "Times Square", cat: "street", credit: "EarthCam", note: "Street level by the TKTS booth and the red steps", source: { type: "earthcam", url: "https://www.earthcam.com/usa/newyork/timessquare/?cam=tsstreet" } },
+    { id: "ec-midtown4k", lat: 40.7484, lon: -73.9857, label: "Midtown Skyline", place: "Manhattan", cat: "skyline", credit: "EarthCam", note: "Manhattan spread out below, from high above Midtown", source: { type: "earthcam", url: "https://www.earthcam.com/usa/newyork/midtown/skyline/?cam=midtown4k" } },
+    { id: "ec-esb37", lat: 40.7480, lon: -73.9862, label: "Empire State Building", place: "Midtown Manhattan", cat: "skyline", credit: "EarthCam", note: "The Empire State Building's spire from a nearby rooftop", source: { type: "earthcam", url: "https://www.earthcam.com/usa/newyork/empirestatebuilding/?cam=esb37" } },
+    { id: "ec-heraldsquare_nyc", lat: 40.7495, lon: -73.9880, label: "Herald Square", place: "Midtown Manhattan", cat: "street", credit: "EarthCam", note: "Macy's corner and the Broadway and Sixth Avenue crossing from above", source: { type: "earthcam", url: "https://www.earthcam.com/usa/newyork/heraldsquare/?cam=heraldsquare_nyc" } },
+    { id: "ec-liberty_crown", lat: 40.6893, lon: -74.0445, label: "Statue of Liberty Crown", place: "New York Harbor", cat: "skyline", credit: "EarthCam", note: "Lady Liberty's crown and face, close up", source: { type: "earthcam", url: "https://www.earthcam.com/usa/newyork/statueofliberty/?cam=liberty_crown" } },
+    { id: "ec-littleitaly", lat: 40.7187, lon: -73.9973, label: "Mulberry Street", place: "Little Italy", cat: "street", credit: "EarthCam", note: "Little Italy's restaurant row under strings of lights", source: { type: "earthcam", url: "https://www.earthcam.com/usa/newyork/littleitaly/?cam=littleitaly" } },
+    { id: "ec-bluemountainlake", lat: 43.8553, lon: -74.4435, label: "Blue Mountain Lake", place: "Adirondacks", cat: "mountain", credit: "EarthCam", note: "An Adirondack lake and the wooded hills around it", source: { type: "earthcam", url: "https://www.earthcam.com/usa/newyork/indianlake/bluemountainlake/?cam=bluemountainlake" } },
+    { id: "ec-saranac1", lat: 44.3271, lon: -74.1301, label: "Saranac Lake", place: "Adirondacks", cat: "street", credit: "EarthCam", note: "The village's main street from the Hotel Saranac", source: { type: "earthcam", url: "https://www.earthcam.com/usa/newyork/saranaclake/?cam=saranac1" } },
   ]},
   { key: "dc", label: "Washington", tz: "America/New_York", cams: [
     { id: "oDCAAfOSqvA", lat: 38.8895, lon: -77.0353, label: "Washington Monument", place: "Washington, D.C.", cat: "skyline", credit: "EarthCam", note: "The monument over the National Mall" },
+    { id: "ec-dc_capitol", lat: 38.8898, lon: -77.0091, label: "US Capitol", place: "Washington, D.C.", cat: "skyline", credit: "EarthCam", note: "The Capitol dome, lit at night", source: { type: "earthcam", url: "https://www.earthcam.com/usa/dc/capitol/?cam=dc_capitol" } },
+    { id: "ec-dc_kennedycenter", lat: 38.8959, lon: -77.0557, label: "Kennedy Center View", place: "Washington, D.C.", cat: "skyline", credit: "EarthCam", note: "The Washington Monument and the Mall from the Kennedy Center", source: { type: "earthcam", url: "https://www.earthcam.com/usa/dc/?cam=dc_kennedycenter" } },
   ]},
   { key: "us", label: "More US cities", tz: "America/Chicago", cams: [
     { id: "O0UGT7AT3aw", lat: 41.8789, lon: -87.6359, label: "Skydeck Chicago", place: "Willis Tower", cat: "skyline", credit: "EarthCam", note: "The Loop from the 103rd floor" },
@@ -136,6 +151,17 @@ export const CITIES = [
     { id: "xqdukYhcGEU", lat: 29.9584, lon: -90.0651, label: "Bourbon Street", place: "New Orleans", cat: "street", credit: "EarthCam", note: "The French Quarter's party street" },
     { id: "QxFFjXu_zqs", lat: 29.9590, lon: -90.0645, label: "French Quarter Balcony", place: "New Orleans", cat: "street", credit: "EarthCam", note: "Bourbon Street from a balcony above" },
     { id: "hPvl6IACa2k", lat: 20.7182, lon: -156.4495, label: "Kihei Surf", place: "Maui", cat: "beach", credit: "The Hale Pau Hana", tz: "Pacific/Honolulu", note: "Waves on a south Maui beach" },
+    { id: "ec-chicagoskydeck2", lat: 41.8786, lon: -87.6359, label: "Skydeck North", place: "Chicago", cat: "skyline", credit: "EarthCam", note: "The Loop and the North Side from Willis Tower's 103rd floor", source: { type: "earthcam", url: "https://www.earthcam.com/usa/illinois/chicago/skydeck/?cam=chicagoskydeck2" } },
+    { id: "ec-chicagoskydeck3", lat: 41.8787, lon: -87.6360, label: "Skydeck West", place: "Chicago", cat: "skyline", credit: "EarthCam", note: "The city's street grid running west to the horizon from Willis Tower", source: { type: "earthcam", url: "https://www.earthcam.com/usa/illinois/chicago/skydeck/?cam=chicagoskydeck3" } },
+    { id: "ec-wrigleyfield_hd", lat: 41.9473, lon: -87.6564, label: "Wrigley Field", place: "Chicago", cat: "street", credit: "EarthCam", note: "The ballpark's red marquee at Clark and Addison", source: { type: "earthcam", url: "https://www.earthcam.com/usa/illinois/chicago/wrigleyfield/?cam=wrigleyfield_hd" } },
+    { id: "ec-wrigleyville", lat: 41.9478, lon: -87.6570, label: "Wrigleyville", place: "Chicago", cat: "street", credit: "EarthCam", note: "The plaza and sports bars beside Wrigley Field", source: { type: "earthcam", url: "https://www.earthcam.com/usa/illinois/chicago/wrigleyville/?cam=wrigleyville" } },
+    { id: "ec-snowman", lat: 44.8768, lon: -84.8177, label: "Gaylord Snowman", place: "Gaylord, Michigan", cat: "mountain", credit: "EarthCam", tz: "America/Detroit", note: "A snowman, a bench and a snow gauge: how much fell up north", source: { type: "earthcam", url: "https://www.earthcam.com/usa/michigan/gaylord/snowman/?cam=snowman" } },
+    { id: "ec-sign_hd", lat: 36.0820, lon: -115.1728, label: "Welcome to Las Vegas Sign", place: "Las Vegas", cat: "street", credit: "EarthCam", tz: "America/Los_Angeles", note: "The famous sign at the south end of the Strip", source: { type: "earthcam", url: "https://www.earthcam.com/usa/nevada/lasvegas/?cam=sign_hd" } },
+    { id: "ec-lasvegas", lat: 36.0393, lon: -115.1724, label: "South Las Vegas", place: "Las Vegas", cat: "skyline", credit: "EarthCam", tz: "America/Los_Angeles", note: "The Strip's lights from the south, across the valley", source: { type: "earthcam", url: "https://www.earthcam.com/usa/nevada/lasvegas/skyline/?cam=lasvegas" } },
+    { id: "ec-naplespier", lat: 26.1317, lon: -81.8062, label: "Naples Pier", place: "Naples, Florida", cat: "beach", credit: "EarthCam", tz: "America/New_York", note: "The pier and the Gulf beach; sunsets over the water", source: { type: "earthcam", url: "https://www.earthcam.com/usa/florida/naples/?cam=naplespier" } },
+    { id: "ec-manatee", lat: 26.7636, lon: -80.0522, label: "Manatee Lagoon", place: "West Palm Beach", cat: "wildlife", credit: "EarthCam", tz: "America/New_York", note: "Manatees gather in the warm water here in winter", source: { type: "earthcam", url: "https://www.earthcam.com/usa/florida/rivierabeach/manatee/?cam=manatee" } },
+    { id: "ec-panamacitybeach", lat: 30.1587, lon: -85.6603, label: "Panama City Beach", place: "Florida Panhandle", cat: "beach", credit: "EarthCam", note: "The Gulf beach and surf", source: { type: "earthcam", url: "https://www.earthcam.com/usa/florida/panamacitybeach/?cam=panamacitybeach" } },
+    { id: "ec-destin", lat: 30.3964, lon: -86.5147, label: "Destin", place: "Florida Panhandle", cat: "beach", credit: "EarthCam", note: "Destin's Gulf beach and harbour mouth", source: { type: "earthcam", url: "https://www.earthcam.com/usa/florida/destin/?cam=destin" } },
   ]},
   { key: "world", label: "Further afield", tz: "UTC", cams: [
     { id: "dfVK7ld38Ys", lat: 35.6595, lon: 139.7005, label: "Shibuya Crossing", place: "Tokyo, Japan", cat: "street", credit: "FNN", tz: "Asia/Tokyo", note: "The scramble crossing; busiest in Tokyo's evening (your early morning)" },
