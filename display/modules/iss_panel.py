@@ -125,7 +125,8 @@ class IssMapPanel:
         data = self._space(now)
         shape = shape_of_panel(entry.get("panel"), zone)
         frame = self._video(data, now)
-        mapset, view, fixed = {**self.cam["map"], "_video_up": frame is not None}, issmap.view_of(self.cam, shape),             bool(self.cam["map"].get("fixed"))
+        mapset = {**self.cam["map"], "_video_up": frame is not None}
+        view, fixed = issmap.view_of(self.cam, shape), bool(self.cam["map"].get("fixed"))
         if self.key == OVERHEAD:
             home = self._home(now)
             if home is None:
@@ -145,9 +146,8 @@ class IssMapPanel:
         self.boxes[key] = draw_caption(c, zone, cam, now - self.started[key], self.font, extra={"space": data})
         return None
 
-
     def _home(self, now):
-        if now - getattr(self, "_home_at", 0.0) > 60 or getattr(self, "_home_v", None) is None:
+        if now - getattr(self, "_home_at", -1e9) > 60:                # (checked a minute at a time, found or not)
             self._home_at, self._home_v = now, home_of(self.cam, self.data_dir)
         return self._home_v
 

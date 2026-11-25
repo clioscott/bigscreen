@@ -426,7 +426,7 @@ TOP_MIN = 66.0                # an automatic view reaches at least this far nort
                               # ground stations), squashing the map from top to bottom when the zone is too short
 
 
-OVERHEAD_ZOOM_MAX = 40.0
+OVERHEAD_ZOOM_MAX = 10.0      # (a world this many zone widths round is shaded every SHADE_EVERY on the Pi)
 OVERHEAD_DEFAULTS = {"min_el": 10, "layer": "starlink", "ring": True, "home": True, "outside": 0.3, "margin": 1.08}
 
 
@@ -451,6 +451,9 @@ def overhead_view(home, w, h, ov) -> dict:
     stretch = max(VIEW_RANGES["stretch"][0], min(VIEW_RANGES["stretch"][1], 1.0 / max(0.2, math.cos(math.radians(lat)))))
     span = 2.0 * rho * max(1.0, float(ov.get("margin", 1.08)))      # the ring's diameter (degrees), with room round it
     zoom = min(w, h) / span / stretch * 360.0 / max(1, w)           # (round: as many px across as up and down)
+    if zoom < 1.0:                                                  # (high orbits: the world's width is the least
+        stretch = max(VIEW_RANGES["stretch"][0], stretch * zoom)    # zoom, so it's flattened to fit the height)
+        zoom = 1.0
     return {**VIEW, "lat": max(-80.0, min(80.0, lat)), "lon": lon, "stretch": stretch, "clear": False, "_zoom": zoom}
 
 
@@ -1046,13 +1049,16 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
     band = img[sr]
     _window(band, world[rr], left, v.W)                    # the world from ``left``, round the date line
     paths = []
-    if pos is None:
+    no_iss = pos is None and full and bool(ms.get("_home"))  # (Satellites Overhead draws on without the ISS's track)
+    if pos is None and not no_iss:
         return img, paths
+    if no_iss:                                             # (somewhere never in view: home's antipode)
+        pos = (-float(ms["_home"][0]), (float(ms["_home"][1]) + 360.0) % 360.0 - 180.0)
     if full and _on(ex, "terminator"):
         _terminator(img, v, left, t)
-    if full and _on(ex, "ahead"):
+    if full and _on(ex, "ahead") and not no_iss:
         _ahead(img, v, left, track, t, pos, ex["ahead"].get("minutes", 45))
-    if not full or _on(ex, "trail"):
+    if (not full or _on(ex, "trail")) and not no_iss:
         span = max(5.0, float((ex.get("trail") or {}).get("minutes", 90))) * 60 if full else TRAIL_SEC
         _trail(img, v, left, track, t, pos, span=span,
                sunlit=(ex["sunlit"].get("shadow", "blue") if _on(ex, "sunlit") else None))
@@ -1128,7 +1134,7 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
     # the links
     aos = signal_at(live, t) if _on(ex, "signal") else None
     relays = valid_relays((data or {}).get("relays")) or FALLBACK_RELAYS
-    lks = links(pos, relays, aos, russian=_on(ex, "russian"))
+    lks = links(pos, relays, aos, russian=_on(ex, "russian")) if not no_iss else []
     if cpos and _on(ex, "chinese"):
         lks += cn_links(cpos, relays)
     used = set()
@@ -1183,12 +1189,12 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
         for vec, a in ((sun_dir(jd), SUN_ART), (moon_dir(jd), MOON_ART)):
             la, lo = sub_point(vec, jd)
             sx, sy = float(v.wx(lo)), float(v.y(la))
-            if ex["sunmoon"].get("lines"):
+            if ex["sunmoon"].get("lines") and not no_iss:
                 _seg_line(img, v, left, ix, iy, sx, sy, PAL["Y" if a is SUN_ART else "M"], [0.25])
             _sprite(img, a, sx, sy, v, left)
             SX, SY = _screen(v, left, sx, sy)
             icons.append((SX - 3, SY - 3, SX + 3, SY + 3))
-    if _on(ex, "footprint"):
+    if _on(ex, "footprint") and not no_iss:
         _ring(img, v, left, pos[0], pos[1], footprint_deg(ALT_KM, float(ex["footprint"].get("elevation", 10))),
               (255, 214, 120), 0.6)
     if _on(ex, "launches"):

@@ -131,3 +131,23 @@ def test_the_hub_checks_its_settings_and_fetches_layers_for_either_map():
                        "sats_overhead": {"map": {"sats": {"starlink": {"on": True}}}}}}
     assert sats.wanted(cfg) == ["starlink", "gps"]
     assert sats.wanted({"modules": {"iss_map": {"map": {"sats": {"gps": {"on": True}}}}}}) == ["gps"]
+
+
+@pytest.mark.parametrize("layer", ["gps", "goes", "oneweb"])
+def test_high_orbits_flatten_the_map_to_keep_the_ring_on_it(layer):
+    ov = issmap.overhead_of({"overhead": {"layer": layer}})
+    v = issmap.View(448, 175, follow=False, opts=issmap.overhead_view(HOME, 448, 175, ov))
+    la, _lo = issmap._circle(HOME[0], HOME[1], issmap.footprint_deg(issmap.overhead_alt(ov), 10), 72)
+    ys = v.y(la)
+    assert ys.min() >= -0.5 and ys.max() <= 175.5                    # (home may sit low: the map ends at the pole)
+
+
+def test_it_still_draws_the_sky_without_the_iss_track(tmp_path):
+    _starlink(tmp_path, [(HOME[0] + 1, HOME[1] + 1)])
+    issmap.DATA_DIR = str(tmp_path)
+    mp, view = iss_panel.overhead_mapset({"map": {"sats": {"starlink": {"on": True, "mark": "dot", "colour": "#ffffff",
+                                                                         "brightness": 1.0}}}}, HOME, 448, 175)
+    img, _paths = issmap.render(448, 175, None, T0, True, True, None, None, None, mp, view)
+    ring = np.asarray(issmap.HORIZON)
+    assert (np.abs(img.astype(int) - ring).sum(axis=2) < 60).any()             # the ring is there
+    assert (img == 255).all(axis=2).any()                                       # and the satellite

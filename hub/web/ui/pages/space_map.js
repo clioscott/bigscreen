@@ -411,7 +411,7 @@ const makePage = (O) => ({
               <ToggleRow :modelValue="sky.home !== false" @update:modelValue="v => setSky('home', v)" label="Home marker"/></div>
             <ToggleRow :modelValue="ownHome" @update:modelValue="useOwnHome" label="Centre somewhere else" hint="Off: the weather alerts' home"/>
             <div v-if="ownHome" class="row" style="gap:16px; flex-wrap:wrap">
-              <Field label="Latitude"><input class="input" type="number" step="0.01" min="-85" max="85" style="width:120px" :value="home[0]" @change="setHome(0, $event.target.value)"></Field>
+              <Field label="Latitude"><input class="input" type="number" step="0.01" min="-80" max="80" style="width:120px" :value="home[0]" @change="setHome(0, $event.target.value)"></Field>
               <Field label="Longitude"><input class="input" type="number" step="0.01" min="-180" max="180" style="width:120px" :value="home[1]" @change="setHome(1, $event.target.value)"></Field></div>
             <div class="faint" style="font-size:12px">The ISS, Tiangong and their links show when they pass through. Satellite layers switched on here are fetched for both maps.</div>
           </div></div>

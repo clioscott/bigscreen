@@ -418,7 +418,7 @@ def _validate_sats_overhead(m):
     h = m.get("home")
     num = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool)
     if h is not None and not (isinstance(h, list) and len(h) == 2 and all(map(num, h))
-                              and -85 <= h[0] <= 85 and -180 <= h[1] <= 180):
+                              and -80 <= h[0] <= 80 and -180 <= h[1] <= 180):
         raise ConfigError("Satellites Overhead: home must be [latitude, longitude] (or left out)")
 
 
