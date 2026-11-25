@@ -120,16 +120,16 @@ def _mesh_onto(img, v, left, key, segs, rgb):
     hit = _meshes.get(key[0])
     if hit is None or hit[0] != key:
         x0, y0, x1, y1 = segs()
-        m = np.zeros((v.mh, v.W), bool)
+        m = np.zeros((v.mh, v.RW), bool)
         xs, ys, _ = issmap._samples(x0, y0, x1, y1)
-        xi, yi = np.rint(xs).astype(np.int64) % v.W, np.rint(ys).astype(np.int64)
-        ok = (yi >= 0) & (yi < v.mh)
+        xi, yi = (np.rint(xs).astype(np.int64) - v.cx0) % v.W, np.rint(ys).astype(np.int64)
+        ok = (yi >= 0) & (yi < v.mh) & (xi < v.RW)
         m[yi[ok], xi[ok]] = True
         hit = _meshes[key[0]] = (key, m)
     sr, rr = v.rows()
     band = img[sr]
     win = np.empty(band.shape[:2], bool)
-    issmap._window(win, hit[1][rr], left, v.W)
+    v.window(win, hit[1][rr], left)
     band[win] = rgb
 
 
