@@ -48,6 +48,8 @@ from PIL import Image
 
 WORK_W = 640                 # the lo picture is this wide; a crop that needs no more detail comes out of it
 MIN_SOURCE_H = 720           # YouTube: never a smaller stream than this when it has one (480p is soft and blocky)
+DEFAULT_QUALITY_H = 1080     # a webcam with no quality of its own plays the stream's 1080p (or its best below): at
+                             # the wall's size 1080p already gives ~8 px per LED, and 4K costs bandwidth and a DASH run
 OVERSAMPLE = 1.5             # a crop gets this many source pixels per LED pixel when the stream has them (then
                              # scaled down: sharper than 1:1, which shows the encoder's blocks)
 HI_BUDGET = 1920 * 1088      # the hi picture is at most this many pixels (a 4K zoom gets just its region)
@@ -414,11 +416,15 @@ def is_snap(crop) -> bool:
 def choose_format(formats, wants, hw=None, quality=None):
     """The format a feed should decode for these consumers [(out_w, out_h, crop)]: the smallest playable one giving
     each crop OVERSAMPLE pixels per LED, on which every Whole pixels crop is still exact (4K and 1080p both are for
-    a crop made on either: 4K is 2 x 2 of 1080p). ``quality`` (the webcam's own choice, quality_of): at least that
-    tall ("max": the biggest there is), whatever the crops need."""
+    a crop made on either: 4K is 2 x 2 of 1080p). ``quality`` (the webcam's own choice, quality_of): None (the
+    default) is DEFAULT_QUALITY_H whatever the crops need; "auto": what the crops need; a height: at least that tall
+    ("max": the biggest there is)."""
     fs = playable(formats, hw)
     if not fs:
         return None
+    if quality is None:
+        fs = [f for f in fs if f["h"] <= DEFAULT_QUALITY_H] or fs[:1]
+        quality = DEFAULT_QUALITY_H
     top = native_of(fs)
     need = max([need_of(top["w"], top["h"], ow, oh, {k: v for k, v in c.items() if k != "snap"}
                         if is_snap(c) else c) for ow, oh, c in wants] or [0.0])
@@ -431,15 +437,21 @@ def choose_format(formats, wants, hw=None, quality=None):
 
 
 def quality_of(values):
-    """The quality asked of a stream by every saved webcam showing it ("auto", "max" or a height): the most of
-    them, or None (auto: by the crops)."""
-    best = None
+    """The quality asked of a stream by every saved webcam showing it (None: the default, "auto", "max" or a
+    height): the most of them ("max", then the tallest, then "auto"), or None (the default, DEFAULT_QUALITY_H)."""
+    best, auto = None, False
     for q in values:
         if q == "max":
             return "max"
         if isinstance(q, int) and not isinstance(q, bool) and (best is None or q > best):
             best = q
-    return best
+        auto = auto or q == "auto"
+    return best if best is not None else "auto" if auto else None
+
+
+def forced(quality) -> bool:
+    """A height chosen for the webcam ("max" or a number): every crop is cut from that stream's own pixels."""
+    return quality not in (None, "auto")
 
 
 def resolve(kind, url, fresh=False, timeout=60, need_w=0.0, min_h=MIN_SOURCE_H) -> tuple[str, str]:
@@ -1055,7 +1067,7 @@ class Feed:
         else:
             media, title = self.url, ""                      # its size is known once ffmpeg has opened it once
         src = self.source or {}
-        force = self.kind == "youtube" and quality_for(self.kind, self.url) is not None
+        force = self.kind == "youtube" and forced(quality_for(self.kind, self.url))
         live = self.live_wants()
         self.hi = plan(src.get("w", 0), src.get("h", 0), live, force) if src and live and not self._hi_broken             else None
         return media, title
@@ -1072,9 +1084,9 @@ class Feed:
         quality = quality_for(self.kind, self.url) if self.kind == "youtube" else None
         if self.formats:                                      # a bigger stream would give more
             fmt = choose_format(self.formats, wants, hw=True, quality=quality)
-            if fmt and (fmt["w"] > src["w"] or (quality is not None and fmt["w"] != src["w"])):
-                return True                                   # (a quality chosen lower: down to it too)
-        force = quality is not None
+            if fmt and (fmt["w"] > src["w"] or (quality != "auto" and fmt["w"] != src["w"])):
+                return True                                   # (a quality chosen lower, or the default: down to it too)
+        force = forced(quality)
         live = self.live_wants()                              # the hi picture: for the zones playing now
         lacking = [w for w in live if (force or need_of(src["w"], src["h"], *w) > WORK_W * 1.1)
                    and not covers(self.hi, src["w"], src["h"], w)]
