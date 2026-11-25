@@ -371,7 +371,7 @@ const makePage = (O) => ({
         <template v-else-if="tab === 'sats'">
         <div class="card"><div class="card-head"><Icon name="Satellite" :size="16"/><h3>Satellite layers</h3></div>
           <div class="card-body stack">
-            <div class="faint" style="font-size:12.5px">From CelesTrak's current orbits, worked out on the hub every 10 minutes (switching one on fetches it on the next run). Thousands of satellites draw best as faint single pixels.</div>
+            <div class="faint" style="font-size:12.5px">From CelesTrak's current orbits, worked out on the hub every 10 minutes (switching one on fetches it on the next run). Thousands of satellites draw best as faint single pixels. Orbit tracks: that many satellites' whole orbits, faint and still, with the satellites riding along them (spread through the layer, or the nearest ones when "Within" is set); calmer than the laser-link trellis.</div>
             <div v-for="L in cat.layers" :key="L.key" class="isx-row" :class="{off: !sat(L.key).on}">
               <Toggle :modelValue="!!sat(L.key).on" @update:modelValue="v => setSat(L.key, 'on', v)"/>
               <Icon name="Satellite" :size="15"/>
@@ -380,8 +380,9 @@ const makePage = (O) => ({
                 <Seg :modelValue="sat(L.key).mark" @update:modelValue="v => setSat(L.key, 'mark', v)" :options="[{value:'auto', label:'Auto'}, {value:'icon', label:'Icons'}, {value:'dot', label:'Pixels'}]"/>
                 <ColorPick :modelValue="sat(L.key).colour" @update:modelValue="v => setSat(L.key, 'colour', v)"/>
                 <span class="faint">Brightness</span><Slider :modelValue="sat(L.key).brightness" @update:modelValue="v => setSat(L.key, 'brightness', v)" :min="0.1" :max="1" :step="0.05" :format="pct"/>
+                <template v-if="L.orbit !== 'geo'"><span class="faint">Orbit tracks</span><Stepper :modelValue="sat(L.key).tracks || 0" @update:modelValue="v => setSat(L.key, 'tracks', v)" :min="0" :max="500" :step="10" unit=""/></template>
                 <label class="isx-chk" v-if="L.mesh || LINK_LABEL[L.key]"><input type="checkbox" :checked="sat(L.key).links" @change="setSat(L.key, 'links', $event.target.checked)">{{ LINK_LABEL[L.key] || 'Laser links (trellis)' }}</label>
-                <template v-if="L.mesh && sat(L.key).links"><span class="faint">Within</span><Stepper :modelValue="sat(L.key).near_km" @update:modelValue="v => setSat(L.key, 'near_km', v)" :min="0" :max="20000" :step="500" unit=" km"/><span class="faint">{{ O.overhead ? 'of home (0: everywhere above the horizon)' : 'of the ISS (0: everywhere)' }}</span></template>
+                <template v-if="(L.mesh && sat(L.key).links) || sat(L.key).tracks"><span class="faint">Within</span><Stepper :modelValue="sat(L.key).near_km" @update:modelValue="v => setSat(L.key, 'near_km', v)" :min="0" :max="20000" :step="500" unit=" km"/><span class="faint">{{ O.overhead ? 'of home (0: everywhere above the horizon)' : 'of the ISS (0: everywhere)' }}</span></template>
                 <Seg v-if="sat(L.key).links" :modelValue="sat(L.key).speed" @update:modelValue="v => setSat(L.key, 'speed', v)" :options="[{value:'slow', label:'Slow'}, {value:'normal', label:'Normal'}, {value:'fast', label:'Fast'}]"/>
                 <label class="isx-chk" v-if="L.count == null || L.count <= 40"><input type="checkbox" :checked="sat(L.key).label" @change="setSat(L.key, 'label', $event.target.checked)">Names</label>
               </div></div>

@@ -509,8 +509,11 @@ def _validate_space_map(mp, name="Space Map"):
                     or any(not isinstance(st.get(b, False), bool) for b in ("on", "label", "links")) \
                     or not (num(st.get("near_km", 0)) and 0 <= st.get("near_km", 0) <= 20000) \
                     or not (num(st.get("brightness", 0.7)) and 0.1 <= st.get("brightness", 0.7) <= 1) \
+                    or not (isinstance(st.get("tracks", 0), int) and not isinstance(st.get("tracks", 0), bool)
+                            and 0 <= st.get("tracks", 0) <= mapsats.TRACKS_MAX) \
                     or st.get("speed", "normal") not in issmap.FLOW_SPEED:
-                raise bad(f"{k}: mark {'/'.join(mapsats.MARKS)}, a colour like #ff8800, brightness 0.1-1, near_km 0-20000")
+                raise bad(f"{k}: mark {'/'.join(mapsats.MARKS)}, a colour like #ff8800, brightness 0.1-1, near_km 0-20000, "
+                          f"tracks 0-{mapsats.TRACKS_MAX}")
     units = mp.get("units")
     if units is not None and (not isinstance(units, dict) or any(k not in mappanels.UNITS or v not in mappanels.UNITS[k]
                                                                 for k, v in units.items())):
