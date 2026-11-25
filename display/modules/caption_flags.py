@@ -29,7 +29,7 @@ import numpy as np
 from common import flagplaces
 
 FLAG_DIRS = [os.path.join(os.environ.get("BIGSCREEN_DATA_DIR", "/dev/shm/bigscreen"), "flags")]
-DEFAULT_FLAGS = {"on": True, "ids": None, "corner": "br", "size": 18, "opacity": 0.8}
+DEFAULT_FLAGS = {"on": True, "ids": None, "corner": "br", "size": 18, "opacity": 0.5}
 CORNERS = ("tl", "tc", "tr", "bl", "bc", "br")
 BESIDE = ("left", "right")
 SIZES = (18, 23)
