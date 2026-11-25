@@ -717,6 +717,37 @@ def test_japanese_text_size_changes_only_the_japanese():
     assert len(rows(b)) > len(rows(a))                                   # the caption grew to fit the bigger kanji
 
 
+def test_caption_layer_cached_across_frames_with_a_bound_method_font_loader(monkeypatch):
+    """The wall's panels pass self.font (a new bound-method object on every access): the caption must still be drawn
+    once and only blended on the frames after (it was redrawn ~20 times a second on the Pi)."""
+    from display.gfx import Canvas, graphics
+    from display.modules import webcam_caption as cap
+
+    class Panel:
+        def __init__(self):
+            self.fonts = {}
+
+        def font(self, size):
+            f = self.fonts.get(size)
+            if f is None:
+                f = self.fonts[size] = graphics.Font()
+                f.LoadFont(cap.FONTS.get(size, size))
+            return f
+
+    p = Panel()
+    cam = {"label": "Kabukicho Ichibangai", "place": "Tokyo, Japan", "tz": "Asia/Tokyo"}
+    cap._memo.clear(), cap._layers.clear()
+    drawn = []
+    real = cap.LAYOUT_FUNCS["tag"]
+    monkeypatch.setitem(cap.LAYOUT_FUNCS, "tag", lambda *a: (drawn.append(1), real(*a))[1])
+    t = [1000.0]
+    monkeypatch.setattr(cap.time, "time", lambda: t[0])
+    for i in range(30):                                   # 30 frames, across several 0.4 s memo windows
+        t[0] = 1000.0 + i / 30
+        cap.draw_caption(Canvas(448, 130), (0, 0, 448, 130), cam, 3.0, p.font)
+    assert len(drawn) == 2                                # once onto black, once onto white: then only blended
+
+
 def test_japanese_text_size_validates():
     import pytest
 
