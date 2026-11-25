@@ -63,8 +63,9 @@ BUFFER_SEC = 3.5             # playout buffer for HLS (YouTube): longer than a s
 BUFFER_SEC_LIVE = 0.3        # … for sources that already arrive in real time (RTSP, MJPEG)
 BUFFER_HEADROOM = 4.0        # frames kept beyond the buffer (about one long segment) before the oldest are dropped
 RECENT_FRAMES = 90           # published frames kept per feed (3 s at 30 fps) for viewers catching up
-BACKLOG_SEC = 16.0           # a wall zone's frames kept this long (Consumer): the Pi's stream, opened ~16 s before its
-                             # turn, gets its whole 12 s buffer at once, in full detail, from a feed warmed for the zone
+BACKLOG_SEC = 26.0           # a wall zone's frames kept this long (Consumer): the Pi's stream, opened ~16 s before its
+                             # turn, gets its whole 20 s buffer at once, in full detail, from a feed warmed for the zone
+                             # (at least START_BACK_SEC: a first run's burst is kept whole)
 DECODED_SEC = 6.0            # decoded frames kept per feed for the wall's stream, which takes them as decoded (the
                              # Pi evens them out): a new viewer starts with these, a slow one catches up through them
 OPEN_SEC = 45.0              # … or no first frame this long after starting it
@@ -73,7 +74,7 @@ BOT_COOL = 20 * 60.0         # YouTube asked the hub to prove it isn't a bot: no
 LOOKUP_ARGS = ("--extractor-args", "youtube:formats=incomplete")   # a live stream's DASH formats (1440p, 4K) too,
                              # beside its HLS ones (yt-dlp leaves them out by default: it can't download them whole)
 SEG_TIMEOUT = 20.0           # a segment or playlist request gives up after this long
-START_BACK_SEC = 15.0        # a feed's first run starts this far behind the newest segment: the Pi's buffer fills at once
+START_BACK_SEC = 25.0        # a feed's first run starts this far behind the newest segment: the Pi's buffer fills at once
 PLAYLIST_EVERY = 10.0        # the playlist is read again this often (sooner when the next segment isn't on it yet)
 SCHEMES = {"http", "https", "rtsp", "rtsps", "rtmp", "rtmps"}
 PROTOCOLS = "http,https,tcp,tls,crypto,httpproxy,rtsp,rtsps,rtmp,rtmps,rtmpt"     # network only: no file:, data:

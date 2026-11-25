@@ -51,17 +51,22 @@ DEFAULT_HUB = "http://192.168.1.111:8800"
 IDLE_SEC = 3.0               # hang up when the screen hasn't drawn this webcam for this long
 PLAY_START_SEC = 4.0         # after running dry, video plays again once this much is buffered here; the first start
                              # waits for the full PLAY_BUFFER_SEC ("Loading webcam feeds" meanwhile, unless prerolled)
-PLAY_BUFFER_SEC = 12.0       # … and starts at this depth, then plays at exactly the feed's rate by this clock (every
+PLAY_BUFFER_SEC = 20.0       # … and starts at this depth, then plays at exactly the feed's rate by this clock (every
                              # frame for the same time, never sped up or slowed down): a busy hub (Plex) and the network
-                             # never show. YouTube's frames come 5 s at a time (a segment), so it swings 7-12 s: a hub
-                             # ~7 s late is still unseen (seconds behind live: nobody minds)
-PLAY_MAX_SEC = 20.0          # kept at most (only a far worse stall than seen drops anything)
+                             # never show. YouTube's frames come 5 s at a time (a segment), so it swings 15-20 s: an
+                             # uploader or hub ~14 s late is still unseen (12 s left ~6 s, and a 4K uploader was seen
+                             # ~7 s late, 2026-11-24). Seconds behind live: nobody minds
+PLAY_MAX_SEC = 30.0          # kept at most (only a far worse stall than seen drops anything)
 PREROLL_KEEP_SEC = 2.0       # a stream not playing yet (prerolled) keeps at most this much beyond PLAY_BUFFER_SEC (memory)
 WARM_EVERY = 10.0            # while a webcam is next in the rotation, ask the hub to keep its feed going this often
 WEBCAM_SEC = 40.0            # how long a webcam in the list shows when it doesn't say (the panel's default for a new one)
 GIVE_UP_SEC = 25.0           # no picture this long after the play started: skip to the next screen
+FIRST_FILL_SEC = PLAY_BUFFER_SEC + 13.0   # a webcam played by hand (not prerolled) whose first buffer hasn't filled
+                             # this long after its stream opened: skip it. A source that only comes in real time (RTSP,
+                             # MJPEG) takes the whole PLAY_BUFFER_SEC; YouTube fills at once (the hub starts 25 s back)
 PREROLL_SEC = 30.0           # the hub starts the next webcam's feed this long before it's due (~5-10 s from cold)
-STREAM_AHEAD_SEC = 16.0      # … and the Pi opens its own stream this long before: its buffer is full when it's due
+STREAM_AHEAD_SEC = 16.0      # … and the Pi opens its own stream this long before: the hub's backlog fills its buffer at
+                             # once, so it's full when it's due (a real-time source: by the time HOLD_MAX_SEC runs out)
 HOLD_MAX_SEC = 15.0          # the current webcam stays up this much longer while the next one isn't buffered; then the
                              # one after it comes up if that one is, else the current one carries on (it plays smoothly)
                              # until the next is buffered or GIVE_UP_SEC has gone by (then that one sits out)
@@ -886,7 +891,8 @@ class WebcamPanel:
             if getattr(st, "video", True):
                 CLOCK["video_at"] = now                        # main.py: the loop runs at the video rate meanwhile
             if st.buffering():                                 # not prepared ahead (played by hand): load, then play;
-                if now - st._buffer_since > GIVE_UP_SEC:       # it never fills: on to the next screen
+                limit = GIVE_UP_SEC if st._played else FIRST_FILL_SEC   # (refilling after running dry: 4 s)
+                if now - st._buffer_since > limit:             # it never fills: on to the next screen
                     self._mark_bad(entry.get("cam"), st.error or "too slow to buffer")
                     return "skip"
                 if not st._played:
