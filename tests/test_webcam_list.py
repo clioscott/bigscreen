@@ -745,6 +745,7 @@ def test_caption_layer_cached_across_frames_with_a_bound_method_font_loader(monk
     for i in range(30):                                   # 30 frames, across several 0.4 s memo windows
         t[0] = 1000.0 + i / 30
         cap.draw_caption(Canvas(448, 130), (0, 0, 448, 130), cam, 3.0, p.font)
+    cap._memo.clear(), cap._layers.clear()                # (leave no layers drawn with the patched clock)
     assert len(drawn) == 2                                # once onto black, once onto white: then only blended
 
 
