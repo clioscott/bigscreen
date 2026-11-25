@@ -1050,7 +1050,10 @@ def test_a_webcam_played_by_hand_says_it_is_loading(monkeypatch):
     c = Canvas(448, 130)
     assert p.draw(c, (0, 0, 448, 130), {"panel": "webcam_full", "cam": "a"}, True) is None
     assert int(c.buf[5, 5, 0]) < 120                                    # the still, dimmed under "Loading…"
-    clock[0] += wm.GIVE_UP_SEC + 1                                      # it never fills
+    clock[0] += wm.PLAY_BUFFER_SEC + 1                                  # a real-time source: the whole buffer's time,
+    st.frame_t = clock[0]                                               # and then some, is still loading, not down
+    assert p.draw(c, (0, 0, 448, 130), {"panel": "webcam_full", "cam": "a"}, False) is None
+    clock[0] = 1000.0 + wm.FIRST_FILL_SEC + 1                           # it never fills
     st.frame_t = clock[0]
     assert p.draw(c, (0, 0, 448, 130), {"panel": "webcam_full", "cam": "a"}, False) == "skip"
 
