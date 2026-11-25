@@ -54,9 +54,9 @@ def test_the_lines_alone_when_the_lights_cant_be_fetched_and_they_are_tried_agai
 
 def test_views_too_wide_for_carto_are_left_to_the_displays_own_lines():
     assert spacemap.drawable(_view(300))
-    assert not spacemap.drawable(_view(8000))                                 # (half the world: 1:110m will do)
-    assert not spacemap.drawable(_view(300, home=(45.0, 179.0)))              # (the date line in view)
-    assert spacemap.ensure(_view(8000), "/nowhere") == "too wide"
+    assert not spacemap.drawable(_view(8000, h=40, home=(0.0, 0.0)))         # (the world round: 1:110m will do)
+    assert not spacemap.drawable(_view(1500, home=(78.0, 15.0)))             # (past Mercator's 85°)
+    assert spacemap.ensure(_view(1500, home=(78.0, 15.0)), "/nowhere") == "too wide"
 
 
 def test_the_lights_are_sampled_at_the_views_pixels_keeping_small_towns(monkeypatch):
@@ -106,3 +106,29 @@ def test_one_basemap_per_size_and_old_zooms_are_dropped(tmp_path, monkeypatch):
     names = sorted(p.name for p in (tmp_path / "issmap").glob("ov_*.bin"))
     assert len(names) == 5 and "ov_1x1_1_0_0.bin" not in names
     assert spacemap.run({"modules": {}}) == {"skipped": "Satellites Overhead isn't set up"}
+
+
+def test_with_the_date_line_in_view_each_side_is_drawn_on_the_same_pixel_grid(monkeypatch):
+    from hub.weather import carto
+    v = _view(600, home=(52.0, 179.0))
+    ps = spacemap.parts(v)
+    assert len(ps) == 2 and ps[0]["i1"] == ps[1]["i0"] and ps[1]["i1"] == v.w
+    px_deg = 360.0 / v.W                                   # (the line runs through a column's middle)
+    assert ps[0]["east"] == pytest.approx(180.0, abs=px_deg) and ps[1]["west"] == pytest.approx(-180.0, abs=px_deg)
+    assert spacemap.drawable(v)
+    seen = []
+
+    def overlay(gv, ov, mfp, group="over"):
+        seen.append((gv.w, gv.center))
+        out = np.zeros((gv.h, gv.w, 4), np.uint8)
+        x, y = gv.project(-179.5 if gv.center[1] < 0 else 179.5, 52.0)   # (a point either side of the line)
+        out[int(y), int(x)] = (2, 0, 0, 255)
+        return out
+
+    monkeypatch.setattr(carto, "render_overlay", overlay)
+    ln = spacemap.lines(v)
+    assert [w for w, _c in seen] == [p["i1"] - p["i0"] for p in ps]
+    ys, xs = np.nonzero(ln == 2)
+    for lon in (179.5, -179.5):
+        px = (float(v.wx(lon)) - v.left()) % v.W
+        assert np.abs(xs - px).min() <= 0.5 and np.abs(ys - float(v.y(52.0))).min() <= 0.5

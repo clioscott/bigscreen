@@ -848,7 +848,8 @@ def ground_sites(russian=True, chinese=False):
 
 
 PROVINCE = (62, 62, 70)       # province / state lines (Satellites Overhead, from the hub's basemap)
-OV_COAST, OV_COUNTRY, OV_PROVINCE = 1, 2, 3   # the hub basemap's line classes
+LAKE = (45, 95, 125)          # lake shores (the same: dimmer than the coast, or the interior looks busy)
+OV_COAST, OV_COUNTRY, OV_PROVINCE, OV_LAKE = 1, 2, 3, 4   # the hub basemap's line classes
 _obases: dict = {}
 
 
@@ -862,8 +863,8 @@ OVERHEAD_DIRS: list = []      # more places to look for them (the hub's previews
 
 
 def overhead_base(v):
-    """The hub's basemap for this OverheadView, drawn for exactly it: {"lines": (h, w) uint8 OV_* classes (coasts and
-    lake shores, country and province lines, each 1 px at this scale), "lights": (h, w) uint8 or None, "stamp"};
+    """The hub's basemap for this OverheadView, drawn for exactly it: {"lines": (h, w) uint8 OV_* classes (coasts, lake
+    shores, country and province lines, each 1 px at this scale), "lights": (h, w) uint8 or None, "stamp"};
     None while there's none (the Natural Earth lines are drawn instead). Re-read when it changes (checked every 10 s)."""
     name = overhead_name(v)
     now = time.time()
@@ -923,7 +924,8 @@ def base(v, full, big=False, russian=True, chinese=False, stations=True, borders
          provinces=True):
     """The world W×mh (an OverheadView: just the zone): ocean, coastlines and, for the full map, borders (and a grid
     of latitudes and longitudes) and the ground stations (they never move); uint8, cached per size. ob: the hub's
-    basemap for the view (overhead_base), whose lines replace the Natural Earth ones (and add province lines).
+    basemap for the view (overhead_base), whose lines replace the Natural Earth ones (and add lake shores and province
+    lines).
     Returns (image, mask of the icons' pixels: the trail goes under them)."""
     key = (v.key, full, big, russian, chinese, stations, borders, json.dumps(grid), ob and ob["stamp"], provinces)
     hit = _bases.get(key)
@@ -934,6 +936,7 @@ def base(v, full, big=False, russian=True, chinese=False, stations=True, borders
             _graticule(img, v, grid)
         if ob is not None:
             ln = ob["lines"]
+            img[ln == OV_LAKE] = LAKE
             if full and borders:
                 if provinces:
                     img[ln == OV_PROVINCE] = PROVINCE

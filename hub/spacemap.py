@@ -11,8 +11,9 @@ towns stay). So zoomed in or out, nothing is a scaled-up raster.
 the lights are fetched again after LIGHTS_TTL. Run by hub/jobs/sats.py; the control panel's preview draws the
 draft's into the cache (preview) so the Pi's copy only ever holds the live settings' maps.
 
-A view that's too wide (past MAX_KM_PX, the date line in it, or Mercator's ±85°) gets none: the Pi draws the
-Natural Earth 1:110m lines there, which suit that scale."""
+With the date line in view each side is drawn on its own and the two meet exactly. A view that's too wide (past
+MAX_KM_PX, or Mercator's ±85° in it) gets none: the Pi draws the Natural Earth 1:110m lines there, which suit that
+scale."""
 
 from __future__ import annotations
 
@@ -28,7 +29,7 @@ import numpy as np
 from hub import paths
 
 RENDER_VERSION = 1            # bump to draw every basemap again after a change to the drawing
-MAX_KM_PX = 40.0              # wider than this the Pi's Natural Earth 1:110m lines do
+MAX_KM_PX = 80.0              # wider than this the Pi's Natural Earth 1:110m lines do
 MIN_PX = 3.0                  # islands and lakes smaller than this many px are left out (carto)
 LIGHTS_WMS = "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi"
 LIGHTS_TTL = 90 * 86400
@@ -40,7 +41,7 @@ BUDGET = 120.0                # s: no new basemap is started after this long in 
 UA = {"User-Agent": "BigScreen/2 (home LED wall; space map)"}
 _lock = threading.Lock()
 # (line class: issmap.OV_*) drawn by carto in these colours, read back from its overlay's red channel
-CLASSES = {"coastline": 1, "lakes": 1, "country": 2, "province": 3}
+CLASSES = {"coastline": 1, "country": 2, "province": 3, "lakes": 4}
 
 
 def zones(cfg) -> dict:
@@ -91,60 +92,79 @@ def live_views(cfg) -> list:
     return out
 
 
+def _lat_at(v, y):
+    return math.degrees(2 * math.atan(math.exp(v.m0 + ((v.h - 1) / 2 - y) / v.k)) - math.pi / 2)
+
+
+def parts(v) -> list:
+    """The view's columns split where the date line crosses them (one part, or two): [{"i0", "i1" (columns),
+    "lon" (the longitude at their middle), "west", "east" (their outer edges)}], each drawable on its own."""
+    out, i = [], 0
+    while i < v.w:
+        turn = (v.cx0 + i) // v.W
+        j = min(v.w, (turn + 1) * v.W - v.cx0)             # (the first column round the next turn of the world)
+        a, b = v.cx0 + i - turn * v.W, v.cx0 + j - 1 - turn * v.W
+        deg = lambda x: x / v.W * 360.0 - 180.0
+        out.append({"i0": i, "i1": j, "lon": deg((a + b) / 2), "west": deg(a - 0.5), "east": deg(b + 0.5)})
+        i = j
+    return out
+
+
 def edges(v):
-    """(west, south, east, north) of the view's outer pixel edges (west may be below -180 or east past 180)."""
-    from display.modules import issmap
-    west = (v.cx0 - 0.5) / v.W * 360.0 - 180.0
-    west = (west + 180.0) % 360.0 - 180.0
-    east = west + v.w / v.W * 360.0
-    lat = lambda y: math.degrees(2 * math.atan(math.exp(v.m0 + ((v.h - 1) / 2 - y) / v.k)) - math.pi / 2)
-    return west, lat(v.h - 0.5), east, lat(-0.5)
+    """(west, south, east, north) of the view's outer pixel edges (east past 180 when the date line is in view)."""
+    ps = parts(v)
+    return ps[0]["west"], _lat_at(v, v.h - 0.5), ps[0]["west"] + v.w / v.W * 360.0, _lat_at(v, -0.5)
 
 
 def drawable(v) -> bool:
-    w_, s, e, n = edges(v)
-    return v.km_per_px <= MAX_KM_PX and -180.0 <= w_ and e <= 180.0 and -85.0 < s and n < 85.0
+    _w, s, _e, n = edges(v)
+    return v.km_per_px <= MAX_KM_PX and -85.0 < s and n < 85.0
 
 
 def lines(v) -> np.ndarray:
-    """(h, w) uint8 line classes (issmap.OV_*: 1 coast or lake shore, 2 country, 3 province, 0 none) for the view."""
+    """(h, w) uint8 line classes (issmap.OV_*: coast, country, province, lake shore; 0 none) for the view: each part
+    (parts) drawn as a view of its own on the same pixel grid, so they meet exactly at the date line."""
     from hub.weather import carto
     from hub.weather.geo import View
-    gv = View({"id": "overhead", "center": [v.lat0, v.centre_lon], "km_per_px": v.km_per_px}, v.w, v.h)
     ov = {k: {"enabled": False} for k in carto.LAYERS}
     for k, c in CLASSES.items():
         ov[k] = {"enabled": True, "color": f"#{c:02x}0000", "opacity": 1.0}
-    rgba = carto.render_overlay(gv, ov, MIN_PX, group="over")
-    return np.where(rgba[..., 3] > 0, rgba[..., 0], 0).astype(np.uint8)
+    out = np.zeros((v.h, v.w), np.uint8)
+    for p in parts(v):
+        gv = View({"id": "overhead", "center": [v.lat0, p["lon"]], "km_per_px": v.km_per_px}, p["i1"] - p["i0"], v.h)
+        rgba = carto.render_overlay(gv, ov, MIN_PX, group="over")
+        out[:, p["i0"]:p["i1"]] = np.where(rgba[..., 3] > 0, rgba[..., 0], 0)
+    return out
 
 
 def lights(v, timeout=30) -> np.ndarray:
-    """(h, w) uint8 Black Marble brightness at the view's pixels: fetched for its area (EPSG:4326) at about twice
-    its resolution, each pixel the brightest of four samples inside it."""
+    """(h, w) uint8 Black Marble brightness at the view's pixels: fetched for each part's area (EPSG:4326) at about
+    twice its resolution, each pixel the brightest of four samples inside it."""
     import requests
     from PIL import Image
-    west, south, east, north = edges(v)
+    _w, south, _e, north = edges(v)
     finest = math.cos(math.radians(max(abs(south), abs(north)))) / v.k     # (the smallest pixel's height, radians)
-    W = int(min(MAX_WMS, max(8, 2 * v.w)))
     H = int(min(MAX_WMS, max(8, math.ceil(math.radians(north - south) / (finest / 2)))))
-    r = requests.get(LIGHTS_WMS, headers=UA, timeout=timeout, params={
-        "SERVICE": "WMS", "REQUEST": "GetMap", "VERSION": "1.3.0", "LAYERS": "VIIRS_Black_Marble", "STYLES": "",
-        "CRS": "EPSG:4326", "BBOX": f"{south:.6f},{west:.6f},{north:.6f},{east:.6f}", "WIDTH": W, "HEIGHT": H,
-        "FORMAT": "image/png"})
-    r.raise_for_status()
-    if not r.headers.get("content-type", "").startswith("image/"):
-        raise ValueError(f"not an image: {r.text[:120]}")
-    img = np.asarray(Image.open(io.BytesIO(r.content)).convert("L"), np.uint8)
-    gh, gw = img.shape
     out = np.zeros((v.h, v.w), np.uint8)
-    for dy in (-0.25, 0.25):
-        m = v.m0 + ((v.h - 1) / 2 - (np.arange(v.h) + dy)) / v.k
-        lat = np.degrees(2 * np.arctan(np.exp(m)) - np.pi / 2)
-        rows = ((north - lat) / (north - south) * gh).astype(int).clip(0, gh - 1)
-        for dx in (-0.25, 0.25):
-            lon = west + (np.arange(v.w) + 0.5 + dx) / v.w * (east - west)
-            cols = ((lon - west) / (east - west) * gw).astype(int).clip(0, gw - 1)
-            np.maximum(out, img[rows][:, cols], out=out)
+    for p in parts(v):
+        n, west, east = p["i1"] - p["i0"], p["west"], p["east"]
+        W = int(min(MAX_WMS, max(8, 2 * n)))
+        r = requests.get(LIGHTS_WMS, headers=UA, timeout=timeout, params={
+            "SERVICE": "WMS", "REQUEST": "GetMap", "VERSION": "1.3.0", "LAYERS": "VIIRS_Black_Marble", "STYLES": "",
+            "CRS": "EPSG:4326", "BBOX": f"{south:.6f},{west:.6f},{north:.6f},{east:.6f}", "WIDTH": W, "HEIGHT": H,
+            "FORMAT": "image/png"})
+        r.raise_for_status()
+        if not r.headers.get("content-type", "").startswith("image/"):
+            raise ValueError(f"not an image: {r.text[:120]}")
+        img = np.asarray(Image.open(io.BytesIO(r.content)).convert("L"), np.uint8)
+        gh, gw = img.shape
+        part = out[:, p["i0"]:p["i1"]]
+        for dy in (-0.25, 0.25):
+            lat = np.array([_lat_at(v, y + dy) for y in range(v.h)])
+            rows = ((north - lat) / (north - south) * gh).astype(int).clip(0, gh - 1)
+            for dx in (-0.25, 0.25):
+                cols = ((np.arange(n) + 0.5 + dx) / n * gw).astype(int).clip(0, gw - 1)
+                np.maximum(part, img[rows][:, cols], out=part)
     return out
 
 
