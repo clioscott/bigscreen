@@ -18,6 +18,8 @@ PANEL_LABELS = {
     "timezones_wall": "Time zone map (whole wall)",
     "iss_map": "ISS map", "iss_map_full": "ISS map (full width)", "iss_map_tall": "ISS map (above the clock)",
     "iss_map_wall": "ISS map (whole wall)",
+    "sats_overhead": "Satellites overhead", "sats_overhead_full": "Satellites overhead (full width)",
+    "sats_overhead_tall": "Satellites overhead (above the clock)", "sats_overhead_wall": "Satellites overhead (whole wall)",
 }
 WEATHER_SCREENS = {"current": "Current conditions", "hourly": "Hourly forecast", "forecast": "7-day forecast",
                    "warning": "Warnings"}

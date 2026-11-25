@@ -1,14 +1,18 @@
 // The Space Map (modules.iss_map; display/modules/iss_panel.py + issmap.py): the ISS's world map with its links, other
 // satellites, labels, and panels of data anywhere along the edges. Above the clock only (448×175): it's dense.
 // Everything here is the map's own; the ISS webcam's caption and its fallback map keep their settings on its page.
+// Satellites Overhead (modules.sats_overhead) is the same page and map, held over home and zoomed out to the horizon
+// of one layer (map.overhead): its Sky tab replaces View.
 import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
 import { store, api, seed, clone, dirty, previewOnDisplay, playOnDisplay, toast } from "../core.js";
 import { CaptionRows } from "./caption_rows.js";
 import { InRotation } from "./webcams.js";
 
 const SHAPE = "tall";
-const SHAPES = { tall: "iss_map_tall" };
-const ENTRY = () => ({ panel: "iss_map_tall", rules: [], dwell_sec: 60 });
+const SPACE = { key: "iss_map", panel: "iss_map", title: "Space Map", overhead: false,
+  sub: "The ISS and everything around it above the clock: its links, other satellites, names and flags, and panels of live data wherever you want them" };
+const OVERHEAD = { key: "sats_overhead", panel: "sats_overhead", title: "Satellites Overhead", overhead: true,
+  sub: "The sky over home right now: everything above your horizon, with the Space Map's controls. Made for Starlink's trellis and the other big networks" };
 const POS_NAMES = { tl: "Top left", tc: "Top middle", tr: "Top right", ml: "Middle left", mc: "Middle", mr: "Middle right",
   bl: "Bottom left", bc: "Bottom middle", br: "Bottom right" };
 const PIECES = ["live", "place", "coords", "orbit", "below", "crew", "mission", "custom"];
@@ -52,9 +56,16 @@ const seedSpaceMap = () => {
   seed(["modules", "iss_map"], { label: "International Space Station", overlay: ov,
     map: { fixed: !!src.map?.fixed, ...(src.map?.extras ? { extras: clone(src.map.extras) } : {}) } });
 };
+// Satellites Overhead's first visit: the Space Map's look (as display/modules/iss_panel.settings_of lends it)
+const seedOverhead = () => {
+  const sm = store.saved?.modules?.iss_map || {};
+  const map = {};
+  for (const k of ["sats", "links", "labels", "names", "units", "icons", "relays", "ground"]) if (sm.map?.[k] != null) map[k] = clone(sm.map[k]);
+  seed(["modules", "sats_overhead"], { label: "Satellites overhead", overlay: { ...clone(sm.overlay || {}), rows: [{ items: [{ k: "name" }] }] }, map });
+};
 
 const Preview = {
-  props: { settings: Object, zone: Array },
+  props: { settings: Object, zone: Array, overhead: Boolean },
   setup(props) {
     const src = ref("");
     const err = ref("");
@@ -64,7 +75,7 @@ const Preview = {
       busy = true; again = false;
       try {
         const r = await fetch("/api/iss-map/preview.png", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ settings: props.settings, shape: SHAPE }) });
+          body: JSON.stringify({ settings: props.settings, shape: SHAPE, overhead: props.overhead }) });
         if (!r.ok) {
           let why = r.statusText;
           try { why = (await r.json()).detail || why; } catch {}
@@ -88,22 +99,25 @@ const Preview = {
     <div v-if="err && src" class="callout" style="font-size:12.5px; margin-top:6px"><Icon name="TriangleAlert" :size="14"/><span>{{ err }}</span></div>`,
 };
 
-export const SpaceMap = {
+const makePage = (O) => ({
   components: { Preview, CaptionRows, InRotation },
   setup() {
-    seedSpaceMap();
-    watch(() => store.draft.modules.iss_map, (v) => { if (!v) seedSpaceMap(); }, { flush: "sync" });
-    const cam = computed(() => store.draft.modules.iss_map);
+    const seedIt = O.overhead ? seedOverhead : seedSpaceMap;
+    const SHAPES = { tall: O.panel + "_tall" };
+    const ENTRY = () => ({ panel: O.panel + "_tall", rules: [], dwell_sec: 60 });
+    seedIt();
+    watch(() => store.draft.modules[O.key], (v) => { if (!v) seedIt(); }, { flush: "sync" });
+    const cam = computed(() => store.draft.modules[O.key]);
     const map = computed(() => cam.value.map || (cam.value.map = {}));
     const cat = ref(null);
     const tab = ref("panels");
     const zone = ref([448, 175]);
     onMounted(async () => {
-      try { cat.value = await api("/api/iss-map/catalog"); } catch (e) { toast("Couldn't load the Space Map's options: " + e.message, "bad"); }
+      try { cat.value = await api("/api/iss-map/catalog"); } catch (e) { toast(`Couldn't load the ${O.title}'s options: ` + e.message, "bad"); }
       try { zone.value = (await api("/api/webcams/status")).zones?.tall || zone.value; } catch {}
     });
     const found = computed(() => ["left", "right"].flatMap((side) => (store.draft.modules.layout_cycle?.[side] || [])
-      .filter((e) => e.panel?.startsWith("iss_map")).map((e) => ({ side, e }))));
+      .filter((e) => e.panel?.startsWith(O.panel)).map((e) => ({ side, e }))));
     const play = async (hold) => {
       if (dirty.value.length) await previewOnDisplay(120, { hook: false });
       playOnDisplay(ENTRY(), { side: "right", hold });
@@ -115,8 +129,9 @@ export const SpaceMap = {
       top[key] = { ...(top[key] || {}), [part]: v };
     };
     // --- panels
-    const panels = computed(() => map.value.panels || cat.value?.default_panels || []);
-    const own = () => { if (!map.value.panels) map.value.panels = clone(cat.value?.default_panels || []); return map.value.panels; };
+    const defPanels = () => (O.overhead ? cat.value?.overhead_panels : cat.value?.default_panels) || [];
+    const panels = computed(() => map.value.panels || defPanels());
+    const own = () => { if (!map.value.panels) map.value.panels = clone(defPanels()); return map.value.panels; };
     const sel = ref(null);
     const selPanel = computed(() => (sel.value != null ? panels.value[sel.value] : null));
     const P = (p, k) => p[k] ?? cat.value?.panel_defaults?.[k];
@@ -186,6 +201,14 @@ export const SpaceMap = {
     // --- view (above the clock)
     const view = computed(() => ({ ...(cat.value?.view || {}), ...((map.value.views || {}).tall || {}) }));
     const setView = (k, v) => { const vs = map.value.views || (map.value.views = {}); vs.tall = { ...(vs.tall || {}), [k]: v }; };
+    // --- sky (Satellites Overhead: map.overhead, and home)
+    const sky = computed(() => ({ ...(cat.value?.overhead_defaults || {}), ...(map.value.overhead || {}) }));
+    const setSky = (k, v) => { map.value.overhead = { ...(map.value.overhead || {}), [k]: v }; };
+    const ownHome = computed(() => Array.isArray(cam.value.home));
+    const home = computed(() => cam.value.home || cat.value?.overhead_home || [0, 0]);
+    const setHome = (i, v) => { const h = [...home.value]; h[i] = Number(v); cam.value.home = h; };
+    const useOwnHome = (on) => { if (on) cam.value.home = [...home.value]; else delete cam.value.home; };
+    const tabs = O.overhead ? TABS.map((t) => (t.v === "view" ? { v: "view", l: "Sky", i: "Telescope" } : t)) : TABS;
     // --- caption (one row by default; the second line's facts belong in panels now)
     const ov = computed(() => cam.value.overlays?.tall || cam.value.overlay || (cam.value.overlay = {}));
     const twoRows = computed(() => Array.isArray(ov.value.rows) && ov.value.rows.length > 1);
@@ -202,16 +225,16 @@ export const SpaceMap = {
     const units = computed(() => ({ ...(cat.value?.unit_defaults || {}), ...(map.value.units || {}) }));
     const setUnit = (k, v) => { map.value.units = { ...(map.value.units || {}), [k]: v }; };
     const pct = (v) => Math.round(v * 100) + "%";
-    return { cam, map, cat, tab, zone, found, play, SHAPES, ENTRY, TABS, POS_NAMES, LAYER_ITEMS, LINK_LABEL, KIND_NAMES, PIECES, SECTIONS, CAPTION_CORNERS, FONTS,
+    return { O, tabs, sky, setSky, ownHome, home, setHome, useOwnHome, cam, map, cat, tab, zone, found, play, SHAPES, ENTRY, TABS, POS_NAMES, LAYER_ITEMS, LINK_LABEL, KIND_NAMES, PIECES, SECTIONS, CAPTION_CORNERS, FONTS,
       panels, sel, selPanel, P, inPos, sparkable, toggleSpark, video, setVideo, addPanel, setP, movePanel, removePanel, dupPanel, fieldQ, fieldLabel, toggleField, moveField, groupFields, hasCrew, panelName,
       link, setLink, lab, setLab, sat, setSat, ex, setEx, setTop, names, setName, nameQ, objects, view, setView, ov, twoRows, oneRow, units, setUnit, pct };
   },
   template: `<div class="page" v-if="cam">
-    <div class="page-head"><div class="grow"><h1>Space Map</h1>
-      <div class="faint" style="font-size:13px">The ISS and everything around it above the clock: its links, other satellites, names and flags, and panels of live data wherever you want them</div></div></div>
+    <div class="page-head"><div class="grow"><h1>{{ O.title }}</h1>
+      <div class="faint" style="font-size:13px">{{ O.sub }}</div></div></div>
     <div class="two-col">
       <div class="stack">
-        <div class="seg sm-tabs" style="flex-wrap:wrap"><button v-for="t in TABS" :key="t.v" type="button" :class="{on: tab === t.v}" @click="tab = t.v"><Icon :name="t.i" :size="14"/>{{ t.l }}</button></div>
+        <div class="seg sm-tabs" style="flex-wrap:wrap"><button v-for="t in tabs" :key="t.v" type="button" :class="{on: tab === t.v}" @click="tab = t.v"><Icon :name="t.i" :size="14"/>{{ t.l }}</button></div>
         <div v-if="!cat" class="card"><div class="card-body faint">Loading the options…</div></div>
 
         <!-- PANELS -->
@@ -349,7 +372,7 @@ export const SpaceMap = {
                 <ColorPick :modelValue="sat(L.key).colour" @update:modelValue="v => setSat(L.key, 'colour', v)"/>
                 <span class="faint">Brightness</span><Slider :modelValue="sat(L.key).brightness" @update:modelValue="v => setSat(L.key, 'brightness', v)" :min="0.1" :max="1" :step="0.05" :format="pct"/>
                 <label class="isx-chk" v-if="L.mesh || LINK_LABEL[L.key]"><input type="checkbox" :checked="sat(L.key).links" @change="setSat(L.key, 'links', $event.target.checked)">{{ LINK_LABEL[L.key] || 'Laser links (trellis)' }}</label>
-                <template v-if="L.mesh && sat(L.key).links"><span class="faint">Within</span><Stepper :modelValue="sat(L.key).near_km" @update:modelValue="v => setSat(L.key, 'near_km', v)" :min="0" :max="20000" :step="500" unit=" km"/><span class="faint">of the ISS (0: everywhere)</span></template>
+                <template v-if="L.mesh && sat(L.key).links"><span class="faint">Within</span><Stepper :modelValue="sat(L.key).near_km" @update:modelValue="v => setSat(L.key, 'near_km', v)" :min="0" :max="20000" :step="500" unit=" km"/><span class="faint">{{ O.overhead ? 'of home (0: everywhere above the horizon)' : 'of the ISS (0: everywhere)' }}</span></template>
                 <Seg v-if="sat(L.key).links" :modelValue="sat(L.key).speed" @update:modelValue="v => setSat(L.key, 'speed', v)" :options="[{value:'slow', label:'Slow'}, {value:'normal', label:'Normal'}, {value:'fast', label:'Fast'}]"/>
                 <label class="isx-chk" v-if="L.count == null || L.count <= 40"><input type="checkbox" :checked="sat(L.key).label" @change="setSat(L.key, 'label', $event.target.checked)">Names</label>
               </div></div>
@@ -370,6 +393,28 @@ export const SpaceMap = {
                   <Seg v-else-if="s[1] === 'seg'" :modelValue="ex(it.k)[s[0]]" @update:modelValue="v => setEx(it.k, s[0], v)" :options="s[2].map(o => ({value: o[0], label: o[1]}))"/>
                   <label v-else class="isx-chk"><input type="checkbox" :checked="ex(it.k)[s[0]]" @change="setEx(it.k, s[0], $event.target.checked)">{{ s[2] }}</label>
                 </template></div></div></div></div></div>
+        </template>
+
+        <!-- SKY (Satellites Overhead) -->
+        <template v-else-if="tab === 'view' && O.overhead">
+        <div class="card"><div class="card-head"><Icon name="Telescope" :size="16"/><h3>Sky</h3></div>
+          <div class="card-body stack">
+            <div class="faint" style="font-size:12.5px">The map is held over home and zoomed out just far enough to show the horizon of the satellites you pick: everything inside the ring is in your sky right now.
+              Lower orbits have a smaller ring; GPS and GOES are seen from most of a hemisphere.</div>
+            <Field label="Sized for" hint="Whose horizon the ring shows (the view fits it)"><select class="input" style="width:auto" :value="sky.layer" @change="setSky('layer', $event.target.value)">
+              <option v-for="L in cat.layers" :key="L.key" :value="L.key">{{ L.label }}</option></select></Field>
+            <Field label="Counts as overhead" hint="Degrees above the horizon: lower takes in more sky, but hills and buildings hide the edge"><Stepper :modelValue="sky.min_el" @update:modelValue="v => setSky('min_el', v)" :min="0" :max="60" :step="5" unit="° up"/></Field>
+            <Field label="Past the horizon" hint="How bright the satellites you can't see are drawn (0: hidden). Laser links show only between ones you can see"><div style="max-width:320px"><Slider :modelValue="sky.outside" @update:modelValue="v => setSky('outside', v)" :min="0" :max="1" :step="0.05" :format="pct"/></div></Field>
+            <Field label="Room round the ring"><div style="max-width:320px"><Slider :modelValue="sky.margin" @update:modelValue="v => setSky('margin', v)" :min="1" :max="2" :step="0.02" :format="v => Math.round((v - 1) * 100) + '%'"/></div></Field>
+            <div class="row" style="gap:16px; flex-wrap:wrap">
+              <ToggleRow :modelValue="sky.ring !== false" @update:modelValue="v => setSky('ring', v)" label="Horizon ring"/>
+              <ToggleRow :modelValue="sky.home !== false" @update:modelValue="v => setSky('home', v)" label="Home marker"/></div>
+            <ToggleRow :modelValue="ownHome" @update:modelValue="useOwnHome" label="Centre somewhere else" hint="Off: the weather alerts' home"/>
+            <div v-if="ownHome" class="row" style="gap:16px; flex-wrap:wrap">
+              <Field label="Latitude"><input class="input" type="number" step="0.01" min="-85" max="85" style="width:120px" :value="home[0]" @change="setHome(0, $event.target.value)"></Field>
+              <Field label="Longitude"><input class="input" type="number" step="0.01" min="-180" max="180" style="width:120px" :value="home[1]" @change="setHome(1, $event.target.value)"></Field></div>
+            <div class="faint" style="font-size:12px">The ISS, Tiangong and their links show when they pass through. Satellite layers switched on here are fetched for both maps.</div>
+          </div></div>
         </template>
 
         <!-- VIEW -->
@@ -426,14 +471,17 @@ export const SpaceMap = {
       <div class="stack sticky">
         <div class="card"><div class="card-head"><span class="live">LIVE</span><h3>On the wall · above the clock ({{ zone[0] }}×{{ zone[1] }})</h3></div>
           <div class="card-body stack">
-            <Preview :settings="cam" :zone="zone"/>
-            <div class="faint" style="font-size:12px">Covers the ticker; the clock and date stay. The Space Map is made for this size only.</div>
+            <Preview :settings="cam" :zone="zone" :overhead="O.overhead"/>
+            <div class="faint" style="font-size:12px">Covers the ticker; the clock and date stay. The {{ O.title }} is made for this size only.</div>
             <div class="row">
               <button class="btn sm" @click="play(false)"><Icon name="Play" :size="14"/>Play once on the wall</button>
               <button class="btn sm" @click="play(true)"><Icon name="Pause" :size="14"/>Hold on the wall</button></div>
-            <InRotation :found="found" what="The Space Map" :shapes="SHAPES" :make="ENTRY"/>
+            <InRotation :found="found" :what="'The ' + O.title" :shapes="SHAPES" :make="ENTRY"/>
           </div></div>
       </div>
     </div>
   </div>`,
-};
+});
+
+export const SpaceMap = makePage(SPACE);
+export const SatsOverhead = makePage(OVERHEAD);
