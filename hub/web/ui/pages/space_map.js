@@ -29,7 +29,8 @@ const LAYER_ITEMS = [
   { k: "aurora", title: "Aurora forecast", note: "NOAA's live oval on the night side", set: [["strength", "slider", 0.1, 1, 0.05, "%"]] },
   { k: "night", title: "Night shading", note: "the dark side of the Earth", set: [["darkness", "slider", 0, 0.95, 0.05, "%"]] },
   { k: "terminator", title: "Day/night line", note: "a thin line where the Sun is on the horizon" },
-  { k: "borders", title: "Country borders", note: "grey lines between countries" },
+  { k: "borders", title: "Country borders", note: "grey lines between countries",
+    set: [["provinces", "check", "Province and state lines too", "overhead"]] },
   { k: "grid", title: "Latitude/longitude grid", note: "faint lines; or just the equator, tropics and polar circles",
     set: [["step", "step", 10, 90, 10, "°"], ["lines", "seg", [["grid", "Grid"], ["special", "Equator & tropics"], ["both", "Both"]]]] },
   { k: "trail", title: "The ISS's trail", note: "where it's been, fading", set: [["minutes", "step", 5, 95, 5, " min"]] },
@@ -207,6 +208,20 @@ const makePage = (O) => ({
     // --- sky (Satellites Overhead: map.overhead, and home)
     const sky = computed(() => ({ ...(cat.value?.overhead_defaults || {}), ...(map.value.overhead || {}) }));
     const setSky = (k, v) => { map.value.overhead = { ...(map.value.overhead || {}), [k]: v }; };
+    // the zoom: radius_km (home to the top and bottom edges; 0 fits the ring), on a slider that's even in ratio
+    const kmRange = computed(() => cat.value?.overhead_km || [10, 8000]);
+    const zToKm = (z) => { const [lo, hi] = kmRange.value; const km = lo * Math.pow(hi / lo, z / 1000);
+      const p = Math.pow(10, Math.floor(Math.log10(km)) - 1); return Math.min(hi, Math.max(lo, Math.round(km / p) * p)); };
+    const kmToZ = (km) => { const [lo, hi] = kmRange.value; return Math.round(1000 * Math.log(Math.max(lo, km) / lo) / Math.log(hi / lo)); };
+    const fmtKm = (km) => `${Math.round(km).toLocaleString()} km`;
+    const ringKm = computed(() => {                    // (the horizon ring's radius: where "Set it" starts)
+      const L = (cat.value?.layers || []).find((x) => x.key === sky.value.layer) || { alt_km: 550 };
+      const R = 6371, e = (sky.value.min_el || 0) * Math.PI / 180;
+      return R * (Math.acos(R / (R + L.alt_km) * Math.cos(e)) - e) * (sky.value.margin || 1);
+    });
+    const setZoom = (mode) => setSky("radius_km", mode === "set" ? zToKm(kmToZ(ringKm.value)) : 0);
+    const zoomBy = (f) => setSky("radius_km", zToKm(kmToZ(sky.value.radius_km * f)));
+    const setOf = (it) => (it.set || []).filter((s) => !(s[1] === "check" && s[3] === "overhead" && !O.overhead));
     const ownHome = computed(() => Array.isArray(cam.value.home));
     const home = computed(() => cam.value.home || cat.value?.overhead_home || [0, 0]);
     const setHome = (i, v) => { const h = [...home.value]; h[i] = Number(v); cam.value.home = h; };
@@ -228,7 +243,7 @@ const makePage = (O) => ({
     const units = computed(() => ({ ...(cat.value?.unit_defaults || {}), ...(map.value.units || {}) }));
     const setUnit = (k, v) => { map.value.units = { ...(map.value.units || {}), [k]: v }; };
     const pct = (v) => Math.round(v * 100) + "%";
-    return { O, tabs, sky, setSky, ownHome, home, setHome, useOwnHome, cam, map, cat, tab, zone, found, play, SHAPES, ENTRY, TABS, POS_NAMES, LAYER_ITEMS, LINK_LABEL, KIND_NAMES, PIECES, SECTIONS, CAPTION_CORNERS, FONTS,
+    return { O, tabs, sky, setSky, kmRange, zToKm, kmToZ, fmtKm, setZoom, zoomBy, setOf, ownHome, home, setHome, useOwnHome, cam, map, cat, tab, zone, found, play, SHAPES, ENTRY, TABS, POS_NAMES, LAYER_ITEMS, LINK_LABEL, KIND_NAMES, PIECES, SECTIONS, CAPTION_CORNERS, FONTS,
       panels, sel, selPanel, P, inPos, sparkable, toggleSpark, video, setVideo, addPanel, setP, movePanel, removePanel, dupPanel, fieldQ, fieldLabel, toggleField, moveField, groupFields, hasCrew, panelName,
       link, setLink, lab, setLab, issFlag, FLAG_AT, sat, setSat, ex, setEx, setTop, names, setName, nameQ, objects, view, setView, ov, twoRows, oneRow, units, setUnit, pct };
   },
@@ -396,8 +411,8 @@ const makePage = (O) => ({
             <div v-for="it in LAYER_ITEMS" :key="it.k" class="isx-row" :class="{off: !ex(it.k).on}">
               <Toggle :modelValue="!!ex(it.k).on" @update:modelValue="v => setEx(it.k, 'on', v)"/><span></span>
               <div class="isx-txt"><b>{{ it.title }}</b><span class="faint">{{ it.note }}</span></div>
-              <div class="isx-set" v-if="ex(it.k).on && it.set">
-                <template v-for="s in it.set" :key="s[0]">
+              <div class="isx-set" v-if="ex(it.k).on && setOf(it).length">
+                <template v-for="s in setOf(it)" :key="s[0]">
                   <template v-if="s[1] === 'slider'"><Slider :modelValue="ex(it.k)[s[0]]" @update:modelValue="v => setEx(it.k, s[0], v)" :min="s[2]" :max="s[3]" :step="s[4]" :format="pct"/></template>
                   <Stepper v-else-if="s[1] === 'step'" :modelValue="ex(it.k)[s[0]]" @update:modelValue="v => setEx(it.k, s[0], v)" :min="s[2]" :max="s[3]" :step="s[4]" :unit="s[5]"/>
                   <select v-else-if="s[1] === 'select'" v-show="!s[3] || ex(it.k)[s[3]]" class="input" style="width:auto" :value="ex(it.k)[s[0]]" @change="setEx(it.k, s[0], $event.target.value)">
@@ -411,13 +426,20 @@ const makePage = (O) => ({
         <template v-else-if="tab === 'view' && O.overhead">
         <div class="card"><div class="card-head"><Icon name="Telescope" :size="16"/><h3>Sky</h3></div>
           <div class="card-body stack">
-            <div class="faint" style="font-size:12.5px">The map is held over home and zoomed out just far enough to show the horizon of the satellites you pick: everything inside the ring is in your sky right now.
+            <div class="faint" style="font-size:12.5px">The map is held over home, zoomed out just far enough to show the horizon of the satellites you pick (or as far as you set): everything inside the ring is in your sky right now.
               Lower orbits have a smaller ring; GPS and GOES are seen from most of a hemisphere.</div>
-            <Field label="Sized for" hint="Whose horizon the ring shows (the view fits it)"><select class="input" style="width:auto" :value="sky.layer" @change="setSky('layer', $event.target.value)">
+            <Field label="Sized for" hint="Whose horizon the ring shows (with the zoom on Fit, the view fits it)"><select class="input" style="width:auto" :value="sky.layer" @change="setSky('layer', $event.target.value)">
               <option v-for="L in cat.layers" :key="L.key" :value="L.key">{{ L.label }}</option></select></Field>
             <Field label="Counts as overhead" hint="Degrees above the horizon: lower takes in more sky, but hills and buildings hide the edge"><Stepper :modelValue="sky.min_el" @update:modelValue="v => setSky('min_el', v)" :min="0" :max="60" :step="5" unit="° up"/></Field>
             <Field label="Past the horizon" hint="How bright the satellites you can't see are drawn (0: hidden). Laser links show only between ones you can see"><div style="max-width:320px"><Slider :modelValue="sky.outside" @update:modelValue="v => setSky('outside', v)" :min="0" :max="1" :step="0.05" :format="pct"/></div></Field>
-            <Field label="Room round the ring"><div style="max-width:320px"><Slider :modelValue="sky.margin" @update:modelValue="v => setSky('margin', v)" :min="1" :max="2" :step="0.02" :format="v => Math.round((v - 1) * 100) + '%'"/></div></Field>
+            <Field label="Zoom" hint="Closer in, fewer satellites fill the map and there's room for their names. Coasts, borders and city lights are drawn again for every zoom, so lines stay 1 px">
+              <Seg :modelValue="sky.radius_km > 0 ? 'set' : 'fit'" @update:modelValue="setZoom" :options="[{value:'fit', label:'Fit the horizon ring'}, {value:'set', label:'Set it'}]"/></Field>
+            <Field v-if="sky.radius_km > 0" label="Home to the top and bottom edges">
+              <div class="row" style="gap:8px; align-items:center; max-width:520px">
+                <button type="button" class="btn ghost icon-only sm" title="Zoom out" @click="zoomBy(1.25)"><Icon name="ZoomOut" :size="15"/></button>
+                <div style="flex:1"><Slider :modelValue="kmToZ(sky.radius_km)" @update:modelValue="v => setSky('radius_km', zToKm(v))" :min="0" :max="1000" :step="1" :format="z => fmtKm(zToKm(z))"/></div>
+                <button type="button" class="btn ghost icon-only sm" title="Zoom in" @click="zoomBy(0.8)"><Icon name="ZoomIn" :size="15"/></button></div></Field>
+            <Field v-else label="Room round the ring"><div style="max-width:320px"><Slider :modelValue="sky.margin" @update:modelValue="v => setSky('margin', v)" :min="1" :max="2" :step="0.02" :format="v => Math.round((v - 1) * 100) + '%'"/></div></Field>
             <div class="row" style="gap:16px; flex-wrap:wrap">
               <ToggleRow :modelValue="sky.ring !== false" @update:modelValue="v => setSky('ring', v)" label="Horizon ring"/>
               <ToggleRow :modelValue="sky.home !== false" @update:modelValue="v => setSky('home', v)" label="Home marker"/></div>

@@ -175,7 +175,7 @@ EXTRAS = {
     # (the Space Map's own: the webcam's map keeps to the ones above)
     "trail": {"on": True, "minutes": 90},
     "chinese": {"on": True},
-    "borders": {"on": True},
+    "borders": {"on": True, "provinces": True},   # (provinces: Satellites Overhead zoomed in, from the hub)
     "night": {"on": True, "darkness": 0.55},
     "grid": {"on": False, "step": 30, "lines": "grid"},
     "sunmoon": {"on": False, "lines": False},
@@ -441,14 +441,16 @@ TOP_MIN = 66.0                # an automatic view reaches at least this far nort
                               # ground stations), squashing the map from top to bottom when the zone is too short
 
 
-OVERHEAD_ZOOM_MAX = 10.0      # (a world this many zone widths round is shaded every SHADE_EVERY on the Pi)
-OVERHEAD_DEFAULTS = {"min_el": 10, "layer": "starlink", "ring": True, "home": True, "outside": 0.3, "margin": 1.08}
+OVERHEAD_DEFAULTS = {"min_el": 10, "layer": "starlink", "ring": True, "home": True, "outside": 0.3, "margin": 1.08,
+                     "radius_km": 0}
+OVERHEAD_KM = (10, 8000)      # radius_km's range (0: fit the horizon ring)
 
 
 def overhead_of(mapset) -> dict:
     """map.overhead (Satellites Overhead): min_el (degrees above the horizon that count as seen), layer (whose height
-    sizes the view and its ring: the horizon for those satellites), ring, home (the marker), outside (how bright the
-    satellites past the horizon are, 0-1), margin (the ring's diameter times this fills the zone's height)."""
+    sizes the ring: the horizon for those satellites), ring, home (the marker), outside (how bright the satellites
+    past the horizon are, 0-1), radius_km (the zoom: km from home to the zone's nearer edges, top and bottom on the
+    wall; 0 fits the ring), margin (with radius_km 0: room round the ring)."""
     got = (mapset or {}).get("overhead")
     return {**OVERHEAD_DEFAULTS, **(got if isinstance(got, dict) else {})}
 
@@ -458,18 +460,39 @@ def overhead_alt(ov) -> float:
     return float((LAYERS.get(ov.get("layer")) or LAYERS["starlink"])["alt_km"])
 
 
-def overhead_view(home, w, h, ov) -> dict:
-    """The view (View opts) for Satellites Overhead: the home in the middle, the stretch that keeps a circle round
-    near it (1/cos lat, as far as the projection allows), zoomed so the horizon ring of ov's layer fits the height."""
-    lat, lon = float(home[0]), float(home[1])
+def overhead_km_per_px(lat, w, h, ov) -> float:
+    """Satellites Overhead's scale (km per px at home). radius_km: the map shows at least that far from home up and
+    down (Mercator's poleward half is the taller: that edge is exactly radius_km away, the other a little further);
+    0: zoomed so the horizon ring of ov's layer and its margin fit. Never so far out that the world is narrower than
+    the zone."""
+    c = math.cos(math.radians(lat))
+    widest = 2 * math.pi * R_MERC * c / max(1, w)                   # (the world's width across the zone)
+    m0 = float(_merc(lat))
+    half = lambda rho: max(float(_merc(min(89.9, lat + rho))) - m0, m0 - float(_merc(max(-89.9, lat - rho))))
+    try:
+        r = float(ov.get("radius_km") or 0)
+    except (TypeError, ValueError):
+        r = 0.0
+    if r > 0:
+        r = max(OVERHEAD_KM[0], min(OVERHEAD_KM[1], r))
+        k = (min(w, h) / 2) / half(math.degrees(r / 6371.0))      # px per radian (ground km on a 6371 km Earth)
+        return min(widest, R_MERC * c / k)
     rho = footprint_deg(overhead_alt(ov), float(ov.get("min_el", 10)))
-    stretch = max(VIEW_RANGES["stretch"][0], min(VIEW_RANGES["stretch"][1], 1.0 / max(0.2, math.cos(math.radians(lat)))))
-    span = 2.0 * rho * max(1.0, float(ov.get("margin", 1.08)))      # the ring's diameter (degrees), with room round it
-    zoom = min(w, h) / span / stretch * 360.0 / max(1, w)           # (round: as many px across as up and down)
-    if zoom < 1.0:                                                  # (high orbits: the world's width is the least
-        stretch = max(VIEW_RANGES["stretch"][0], stretch * zoom)    # zoom, so it's flattened to fit the height)
-        zoom = 1.0
-    return {**VIEW, "lat": max(-80.0, min(80.0, lat)), "lon": lon, "stretch": stretch, "clear": False, "_zoom": zoom}
+    margin = max(1.0, float(ov.get("margin", 1.08)))
+    la, lo = _circle(lat, 0.0, rho, 180)
+    if lat + rho >= 89.0 or lat - rho <= -89.0:                    # (round a pole: the world's width is the least)
+        return widest
+    dy = 2 * half(rho)
+    dx = math.radians(float(lo.max() - lo.min()))
+    k = min(h / (margin * dy), w / (margin * dx))                  # px per radian
+    return min(widest, R_MERC * c / k)
+
+
+def overhead_view(home, w, h, ov) -> dict:
+    """The view for Satellites Overhead (render takes it as ``view``): OverheadView's home and scale."""
+    lat = max(-80.0, min(80.0, float(home[0])))
+    return {**VIEW, "clear": False,
+            "_overhead": {"lat": lat, "lon": float(home[1]), "km_per_px": overhead_km_per_px(lat, w, h, ov)}}
 
 
 def view_of(cam, shape) -> dict:
@@ -510,8 +533,6 @@ class View:
         self.w, self.h, self.follow, self.small = w, h, follow, small
         o = {**VIEW, **(opts or {})} if not small else dict(VIEW)
         zoom, stretch = _num_in(o["zoom"], "zoom"), _num_in(o["stretch"], "stretch")
-        if o.get("_zoom") is not None:                              # (Satellites Overhead: worked out, not a setting)
-            zoom = max(1.0, min(OVERHEAD_ZOOM_MAX, float(o["_zoom"])))
         self.lon_off = _num_in(o["lon"], "lon")
         if small:
             s = w / 360.0
@@ -558,6 +579,19 @@ class View:
         self.mh = max(4, int(round((r_top - r_bot) * ys)))
         self.y0 = int(round((top - r_top) * ys))                    # the raster's first row on the screen
         self.key = (self.W, self.mh, round(r_top, 3), round(r_bot, 3))
+        self.cx0, self.RW = 0, self.W                               # (the raster is the whole world round)
+
+    def window(self, dst, src, left):
+        """src (a raster of this view) from world x ``left`` into dst, round the date line."""
+        _window(dst, src, left, self.W)
+
+    def row_lats(self):
+        """The latitude of each raster row's middle."""
+        return self.top - (np.arange(self.mh) + 0.5) / self.mh * (self.top - self.bot)
+
+    def col_lons(self):
+        """The longitude of each raster column's middle (-180..180)."""
+        return (np.arange(self.W) + 0.5) / self.W * 360.0 - 180.0
 
     def rows(self):
         """(screen rows, raster rows) the world covers: two slices of equal length (maybe empty)."""
@@ -582,11 +616,75 @@ class View:
         return int(math.floor(float(self.wx(c)) - self.w / 2 + 0.5))
 
 
+R_MERC = 6378.137             # km: Web Mercator's sphere (the hub's basemaps: hub/weather/geo.py)
+MERC_LAT = 85.0511
+
+
+def _merc(lat):
+    """Web Mercator's y (radians) of a latitude: arrays too."""
+    la = np.radians(np.clip(np.asarray(lat, float), -MERC_LAT, MERC_LAT))
+    return np.log(np.tan(np.pi / 4 + la / 2))
+
+
+class OverheadView:
+    """Satellites Overhead's map: Web Mercator (circles stay round, and the hub's basemap for the view lines up with
+    it pixel for pixel), home in the middle, km_per_px the scale at home. Same interface as View, but its raster is
+    only the zone itself (cx0: the world x of its first column, RW = w), so a map zoomed in far is no dearer to
+    shade than one zoomed out. Pixel centres sit on whole numbers (as _plot rounds), home on ((w-1)/2, (h-1)/2)."""
+
+    small, follow, y0 = False, False, 0
+
+    def __init__(self, w, h, lat, lon, km_per_px):
+        self.w, self.h, self.mh = w, h, h
+        self.lat0, self.lon0 = float(lat), float(lon)
+        k = R_MERC * math.cos(math.radians(self.lat0)) / max(1e-3, float(km_per_px))   # px per radian
+        self.W = max(w, int(round(2 * math.pi * k)))               # (whole px round the world: the wrap stays exact)
+        self.k = self.W / (2 * math.pi)
+        self.km_per_px = R_MERC * math.cos(math.radians(self.lat0)) / self.k
+        self.m0 = float(_merc(self.lat0))
+        self.cx0 = int(math.floor(float(self.wx(self.lon0)) - (w - 1) / 2 + 0.5))
+        self.RW = w
+        la = self.row_lats()
+        self.top, self.bot = float(la[0]), float(la[-1])
+        self.key = ("ov", self.W, w, h, self.cx0, round(self.lat0, 4))
+
+    @property
+    def centre_lon(self):
+        """The longitude at the zone's middle (home, give or take half a pixel): the hub's basemap is centred here."""
+        return (self.cx0 + (self.w - 1) / 2) / self.W * 360.0 - 180.0
+
+    def wx(self, lon):
+        return (np.asarray(lon, float) + 180.0) / 360.0 * self.W
+
+    def y(self, lat):
+        return (self.h - 1) / 2 - (_merc(lat) - self.m0) * self.k
+
+    def left(self, _iss_lon=None):
+        return self.cx0
+
+    def rows(self):
+        return slice(0, self.h), slice(0, self.h)
+
+    def window(self, dst, src, left):
+        off = (left - self.cx0) % self.W
+        n = max(0, min(dst.shape[1], self.RW - off))
+        dst[:, :n] = src[:, off:off + n]
+
+    def row_lats(self):
+        m = self.m0 + ((self.h - 1) / 2 - np.arange(self.h)) / self.k
+        return np.degrees(2 * np.arctan(np.exp(m)) - np.pi / 2)
+
+    def col_lons(self):
+        return ((self.cx0 + np.arange(self.w)) / self.W * 360.0) % 360.0 - 180.0
+
+
 # --- drawing primitives ----------------------------------------------------------------------------------------
-def _samples(X0, Y0, X1, Y1):
-    """Pixel samples along segments (arrays of endpoints): (xs, ys, segment index), every pixel step."""
+def _samples(X0, Y0, X1, Y1, steps=None):
+    """Pixel samples along segments (arrays of endpoints): (xs, ys, segment index), every pixel step (or ``steps``
+    steps each: in_zone's, so a cut segment keeps the whole one's samples)."""
     X0, Y0, X1, Y1 = (np.asarray(a, float) for a in (X0, Y0, X1, Y1))
-    n = np.maximum(np.abs(X1 - X0), np.abs(Y1 - Y0)).astype(np.int64) + 1
+    n = (np.maximum(np.abs(X1 - X0), np.abs(Y1 - Y0)).astype(np.int64) if steps is None
+         else np.asarray(steps, np.int64)) + 1
     if not n.size:
         return np.zeros(0), np.zeros(0), np.zeros(0, np.int64)
     idx = np.repeat(np.arange(n.size), n + 1)
@@ -622,12 +720,49 @@ def _unwrap(x0, x1, period):
     return x0 + (x1 - x0 + period / 2) % period - period / 2
 
 
+def in_zone(v, left, X0, Y0, X1, Y1, pad=2.0):
+    """Segments (world x, each already the short way round; screen or raster y) cut to the zone, pad px round it,
+    where the world is many zones round (Satellites Overhead zoomed in: a link to a relay can be 100,000 px long):
+    (X0, Y0, X1, Y1, t0, t1, index into the input, steps), t0..t1 the part of each that's kept. Narrower worlds (the Space
+    Map) come back whole. Then only what shows is sampled a pixel at a time. The cuts fall on the whole segment's
+    own samples, and the last item is each part's number of steps (for _samples): the same pixels as drawing it all,
+    or None (whole)."""
+    X0, Y0, X1, Y1 = (np.atleast_1d(np.asarray(a, float)) for a in (X0, Y0, X1, Y1))
+    n = X0.size
+    if v.W <= 2 * v.w + 8 or not n:
+        return X0, Y0, X1, Y1, np.zeros(n), np.ones(n), np.arange(n), None
+    xa = (X0 - left) % v.W                                 # (on the screen, or past its right edge round the world)
+    xb = xa + (X1 - X0)
+    xa, xb = np.r_[xa, xa - v.W], np.r_[xb, xb - v.W]      # (and the copy a world to the left)
+    ya, yb, idx = np.r_[Y0, Y0], np.r_[Y1, Y1], np.r_[np.arange(n), np.arange(n)]
+    dx, dy = xb - xa, yb - ya
+    t0, t1 = np.zeros(xa.size), np.ones(xa.size)
+    ok = np.ones(xa.size, bool)
+    with np.errstate(divide="ignore", invalid="ignore"):   # (Liang-Barsky, all at once)
+        for p_, q in ((-dx, xa + pad), (dx, v.w - 1 + pad - xa), (-dy, ya + pad), (dy, v.h - 1 + pad - ya)):
+            r = q / p_
+            ok &= ~((p_ == 0) & (q < 0))
+            t0 = np.where(p_ < 0, np.maximum(t0, r), t0)
+            t1 = np.where(p_ > 0, np.minimum(t1, r), t1)
+    ok &= t0 <= t1
+    xa, ya, dx, dy, t0, t1, idx = xa[ok], ya[ok], dx[ok], dy[ok], t0[ok], t1[ok], idx[ok]
+    steps = np.maximum(np.abs(dx), np.abs(dy)).astype(np.int64)        # (as _samples steps the whole segment)
+    m = np.maximum(steps, 1)
+    j0 = np.clip(np.floor(t0 * m), 0, m).astype(np.int64)
+    j1 = np.clip(np.ceil(t1 * m), 0, m).astype(np.int64)
+    t0, t1 = np.where(steps > 0, j0 / m, 0.0), np.where(steps > 0, j1 / m, 1.0)
+    part = np.where(steps > 0, j1 - j0, 0)
+    return xa + t0 * dx + left, ya + t0 * dy, xa + t1 * dx + left, ya + t1 * dy, t0, t1, idx, part
+
+
 def _seg_line(img, v, left, x0, y0, x1, y1, rgb, alpha=None, per_sample=False):
     """Segments between world points (arrays), each the short way round, onto the map."""
     x0 = np.atleast_1d(np.asarray(x0, float))
     x1 = _unwrap(x0, np.atleast_1d(np.asarray(x1, float)), v.W)
-    xs, ys, idx = _samples(x0, np.atleast_1d(y0), x1, np.atleast_1d(y1))
-    a = None if alpha is None else np.atleast_1d(np.asarray(alpha, np.float32))[idx]
+    y0, y1 = (np.broadcast_to(np.atleast_1d(np.asarray(a, float)), x0.shape) for a in (y0, y1))
+    X0, Y0, X1, Y1, _t0, _t1, keep, steps = in_zone(v, left, x0, y0, x1, y1)
+    xs, ys, idx = _samples(X0, Y0, X1, Y1, steps)
+    a = None if alpha is None else np.broadcast_to(np.atleast_1d(np.asarray(alpha, np.float32)), x0.shape)[keep][idx]
     _plot(img, xs, ys, rgb, a, left, v.W)
 
 
@@ -804,8 +939,9 @@ def _polylines(img, v, lines, rgb):
     s = s[np.abs(s[:, 2] - s[:, 0]) <= 180]              # (the data's own date-line breaks)
     x0, x1 = v.wx(s[:, 0]), v.wx(s[:, 2])
     y0, y1 = v.y(s[:, 1]) - v.y0, v.y(s[:, 3]) - v.y0
-    xs, ys, _ = _samples(x0, y0, x1, y1)
-    _plot(img, xs, ys, rgb, None, 0, v.W)
+    x0, y0, x1, y1, _t0, _t1, _k, steps = in_zone(v, v.cx0, x0, y0, x1, y1)   # (the raster is the zone when cut)
+    xs, ys, _ = _samples(x0, y0, x1, y1, steps)
+    _plot(img, xs, ys, rgb, None, v.cx0, v.W)
 
 
 def _graticule(img, v, grid):
@@ -821,8 +957,9 @@ def _graticule(img, v, grid):
             img[y, ::2] = rgb
     if grid.get("lines") != "special":
         for lo in range(-180, 180, step):
-            x = int(round(float(v.wx(lo)))) % v.W
-            img[::2, x] = (32, 44, 66)
+            x = (int(round(float(v.wx(lo)))) - v.cx0) % v.W
+            if x < v.RW:
+                img[::2, x] = (32, 44, 66)
 
 
 _bases: dict = {}
@@ -838,27 +975,112 @@ def ground_sites(russian=True, chinese=False):
     return out
 
 
-def base(v, full, big=False, russian=True, chinese=False, stations=True, borders=True, grid=None):
-    """The world W×mh: ocean, coastlines and, for the full map, borders (and a grid of latitudes and longitudes) and
-    the ground stations (they never move); uint8, cached per size. Returns (image, mask of the icons' pixels: the
-    trail goes under them)."""
-    key = (v.key, full, big, russian, chinese, stations, borders, json.dumps(grid))
+PROVINCE = (62, 62, 70)       # province / state lines (Satellites Overhead, from the hub's basemap)
+LAKE = (45, 95, 125)          # lake shores (the same: dimmer than the coast, or the interior looks busy)
+OV_COAST, OV_COUNTRY, OV_PROVINCE, OV_LAKE = 1, 2, 3, 4   # the hub basemap's line classes
+_obases: dict = {}
+
+
+def overhead_name(v) -> str:
+    """The file (data/issmap/<name>.bin + .json) of the hub's basemap for an OverheadView: hub/jobs/sats.py draws one
+    for each size of the live settings (hub/spacemap.py)."""
+    return f"ov_{v.w}x{v.h}_{v.W}_{v.cx0}_{int(round(v.lat0 * 1e4))}"
+
+
+OVERHEAD_DIRS: list = []      # more places to look for them (the hub's previews keep their drafts' in its cache)
+
+
+def overhead_base(v):
+    """The hub's basemap for this OverheadView, drawn for exactly it: {"lines": (h, w) uint8 OV_* classes (coasts, lake
+    shores, country and province lines, each 1 px at this scale), "lights": (h, w) uint8 or None, "stamp"};
+    None while there's none (the Natural Earth lines are drawn instead). Re-read when it changes (checked every 10 s)."""
+    name = overhead_name(v)
+    now = time.time()
+    hit = _obases.get(name)
+    if hit and now - hit[0] < 10:
+        return hit[2]
+    out, stamp = None, None
+    for d in [os.path.join(DATA_DIR, "issmap"), *OVERHEAD_DIRS]:
+        path = os.path.join(d, name + ".bin")
+        try:
+            stamp = os.stat(path).st_mtime
+        except OSError:
+            continue
+        if hit and hit[1] == (path, stamp):
+            _obases[name] = (now, hit[1], hit[2])
+            return hit[2]
+        try:
+            raw = open(path, "rb").read()
+            w, h, has_lights = int.from_bytes(raw[4:6], "big"), int.from_bytes(raw[6:8], "big"), raw[8]
+            if raw[:4] != b"OVB1" or (w, h) != (v.w, v.h) or len(raw) < 9 + w * h * (2 if has_lights else 1):
+                raise ValueError("not this view's")
+            lines = np.frombuffer(raw[9:9 + w * h], np.uint8).reshape(h, w)
+            lights = np.frombuffer(raw[9 + w * h:9 + 2 * w * h], np.uint8).reshape(h, w) if has_lights else None
+            out = {"lines": lines, "lights": lights, "stamp": stamp}
+            stamp = (path, stamp)
+            break
+        except (OSError, ValueError, IndexError):
+            out, stamp = None, None
+    if len(_obases) > 8:
+        _obases.clear()
+    _obases[name] = (now, stamp, out)
+    return out
+
+
+def _bilinear(g, lats, lons, north_first):
+    """A lat/lon grid (as _sample_now) read between its points at each pixel: (len(lats), len(lons)) float32."""
+    gh, gw = g.shape
+    if north_first:                                       # lights: lat 90 at row 0, lon -180 at column 0
+        fr = (90.0 - lats) / 180.0 * gh - 0.5
+        fc = (lons + 180.0) / 360.0 * gw - 0.5
+    else:                                                 # aurora: lat -90 at row 0 (1° rows), lon 0 at column 0
+        fr = lats + 90.0
+        fc = (lons % 360.0) / 360.0 * gw
+    fr = np.clip(fr, 0, gh - 1)
+    r0 = np.floor(fr).astype(int)
+    r1, ar = np.minimum(r0 + 1, gh - 1), (fr - r0).astype(np.float32)[:, None]
+    c0 = np.floor(fc).astype(int)
+    ac = (fc - c0).astype(np.float32)[None, :]
+    c0, c1 = c0 % gw, (c0 + 1) % gw
+    g = g.astype(np.float32)
+    top = g[r0][:, c0] * (1 - ac) + g[r0][:, c1] * ac
+    bot = g[r1][:, c0] * (1 - ac) + g[r1][:, c1] * ac
+    return top * (1 - ar) + bot * ar
+
+
+def base(v, full, big=False, russian=True, chinese=False, stations=True, borders=True, grid=None, ob=None,
+         provinces=True):
+    """The world W×mh (an OverheadView: just the zone): ocean, coastlines and, for the full map, borders (and a grid
+    of latitudes and longitudes) and the ground stations (they never move); uint8, cached per size. ob: the hub's
+    basemap for the view (overhead_base), whose lines replace the Natural Earth ones (and add lake shores and province
+    lines).
+    Returns (image, mask of the icons' pixels: the trail goes under them)."""
+    key = (v.key, full, big, russian, chinese, stations, borders, json.dumps(grid), ob and ob["stamp"], provinces)
     hit = _bases.get(key)
     if hit is None:
-        img = np.empty((v.mh, v.W, 3), np.uint8)
+        img = np.empty((v.mh, v.RW, 3), np.uint8)
         img[:] = OCEAN
-        L = world_lines()
         if full and grid:
             _graticule(img, v, grid)
-        if full and borders:
-            _polylines(img, v, L["borders"], BORDER)
-        _polylines(img, v, L["coast"], COAST)
-        icons = np.zeros((v.mh, v.W, 3), np.uint8)
-        mask = np.zeros((v.mh, v.W), bool)
+        if ob is not None:
+            ln = ob["lines"]
+            img[ln == OV_LAKE] = LAKE
+            if full and borders:
+                if provinces:
+                    img[ln == OV_PROVINCE] = PROVINCE
+                img[ln == OV_COUNTRY] = BORDER
+            img[ln == OV_COAST] = COAST
+        else:
+            L = world_lines()
+            if full and borders:
+                _polylines(img, v, L["borders"], BORDER)
+            _polylines(img, v, L["coast"], COAST)
+        icons = np.zeros((v.mh, v.RW, 3), np.uint8)
+        mask = np.zeros((v.mh, v.RW), bool)
         if full and stations:
             art = ICONS[big]
             for _n, (la, lo), net in ground_sites(russian, chinese):
-                _sprite(icons, art[GROUND_ART[net]], float(v.wx(lo)), float(v.y(la)) - v.y0, v, 0, drawn=mask)
+                _sprite(icons, art[GROUND_ART[net]], float(v.wx(lo)), float(v.y(la)) - v.y0, v, v.cx0, drawn=mask)
         img[mask] = icons[mask]
         if len(_bases) > 8:
             _bases.clear()
@@ -873,8 +1095,8 @@ def daylight(v, t, night=NIGHT):
     s = sun_dir(jd)
     dec = math.asin(max(-1.0, min(1.0, s[2])))
     ra = math.atan2(s[1], s[0])
-    lon = np.radians((np.arange(v.W) + 0.5) / v.W * 360.0 - 180.0)
-    lat = np.radians(v.top - (np.arange(v.mh) + 0.5) / v.mh * (v.top - v.bot))
+    lon = np.radians(v.col_lons())
+    lat = np.radians(v.row_lats())
     ha = gmst(jd) + lon - ra
     # the sine of the Sun's elevation (linear in it through twilight: no arcsin needed)
     se = (np.sin(lat)[:, None] * math.sin(dec)).astype(np.float32) \
@@ -903,8 +1125,9 @@ def _sample(v, g, north_first):
 
 def _sample_now(v, g, north_first):
     gh, gw = g.shape
-    lons = (np.arange(v.W) + 0.5) / v.W * 360.0 - 180.0
-    lats = v.top - (np.arange(v.mh) + 0.5) / v.mh * (v.top - v.bot)
+    lons, lats = v.col_lons(), v.row_lats()
+    if isinstance(v, OverheadView):                       # (zoomed in: between the grid's points, not blocks of them)
+        return _bilinear(g, lats, lons, north_first)
     if north_first:                                       # lights: lat 90 at row 0, lon -180 at column 0
         rows = ((90.0 - lats) / 180.0 * gh).astype(int).clip(0, gh - 1)
         cols = ((lons + 180.0) / 360.0 * gw).astype(int).clip(0, gw - 1)
@@ -931,14 +1154,18 @@ def shaded(v, full, t, big=False, ex=None, stations=True):
     night = max(0.05, min(1.0, night))
     gr = dict(ex["grid"]) if full and _on(ex, "grid") else None
     borders = not (full and ex and "borders" in ex and not _on(ex, "borders"))
-    key = (v.key, full, big, russian, chinese, stations, borders, json.dumps(gr))
+    provinces = bool(((ex or {}).get("borders") or {}).get("provinces", True))
+    ob = overhead_base(v) if full and isinstance(v, OverheadView) else None
+    if ob is not None and ob["lights"] is not None and lights is not None:
+        lights = ob["lights"]                                    # (the hub's, at this view's own pixels)
+    key = (v.key, full, big, russian, chinese, stations, borders, json.dumps(gr), ob and ob["stamp"], provinces)
     tag = (slot, id(lights), id(aurora), night,
            json.dumps([(ex or {}).get("lights"), (ex or {}).get("aurora")], default=str))
     hit = _shaded.get(key)
     if hit is None or hit[0] != tag:
         if len(_shaded) > 8:
             _shaded.clear()
-        img, mask = base(v, full, big, russian, chinese, stations, borders, gr)
+        img, mask = base(v, full, big, russian, chinese, stations, borders, gr, ob, provinces)
         day = daylight(v, slot * SHADE_EVERY, night)
         lit = img * day
         dark = ((1.0 - day[..., 0]) / max(1e-6, 1.0 - night)).clip(0, 1) if night < 1.0 else np.zeros(day.shape[:2], np.float32)
@@ -950,7 +1177,8 @@ def shaded(v, full, t, big=False, ex=None, stations=True):
             fk = (v.key, id(g), k)
             hit = _samples_memo.get(fk)
             if hit is None or hit[0] is not g:                   # the brightness of each pixel's lights / aurora
-                hit = _samples_memo[fk] = (g, f(_sample(v, g, north) / 255.0).astype(np.float32))
+                px = g.astype(np.float32) if ob is not None and g is ob["lights"] else _sample(v, g, north)
+                hit = _samples_memo[fk] = (g, f(px / 255.0).astype(np.float32))
             a = (hit[1] * (dark if north else np.clip(dark * 1.5, 0, 1)) * strength)[..., None]
             lit = lit * (1 - a) + np.asarray(rgb, np.float32) * a
         lit = (lit + 0.5).astype(np.uint8)
@@ -1018,9 +1246,10 @@ def _ahead(img, v, left, track, t, pos, minutes):
         return
     x0 = np.asarray(v.wx(a[:-1, 2]), float)
     x1 = _unwrap(x0, np.asarray(v.wx(a[1:, 2]), float), v.W)
-    xs, ys, idx = _samples(x0, v.y(a[:-1, 1]), x1, v.y(a[1:, 1]))
+    X0, Y0, X1, Y1, _t0, _t1, k, steps = in_zone(v, left, x0, v.y(a[:-1, 1]), x1, v.y(a[1:, 1]))
+    xs, ys, idx = _samples(X0, Y0, X1, Y1, steps)
     keep = (np.arange(xs.size) // 2) % 2 == 0
-    al = np.maximum(0.12, 0.55 * (1 - (a[1:, 0] - t) / span))[idx]
+    al = np.maximum(0.12, 0.55 * (1 - (a[1:, 0] - t) / span))[k][idx]
     _plot(img, xs[keep], ys[keep], AHEAD, al[keep], left, v.W)
 
 
@@ -1141,6 +1370,17 @@ def _terminator(img, v, left, t):
     _ring(img, v, left, la, lo, 90.0, (255, 190, 90), 0.5)
 
 
+def _shown_along(v, left, xs, ys):
+    """[(from, to)] px along a polyline (world x, unwrapped) that are on the zone; None: all of it (a narrow world)."""
+    if v.W <= 2 * v.w + 8:
+        return None
+    xs, ys = np.asarray(xs, float), np.asarray(ys, float)
+    seg = np.hypot(np.diff(xs), np.diff(ys))
+    cum = np.r_[0, np.cumsum(seg)]
+    _a, _b, _c, _d, t0, t1, k, _n = in_zone(v, left, xs[:-1], ys[:-1], xs[1:], ys[1:], pad=8.0)
+    return sorted((float(cum[i] + a * seg[i]), float(cum[i] + b * seg[i])) for a, b, i in zip(t0, t1, k))
+
+
 def _screen(v, left, wx_, y_):
     return int(round((wx_ - left) % v.W)), int(round(y_))
 
@@ -1166,8 +1406,11 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
     art = ICONS[big]
     track = (data or {}).get("track") if isinstance(data, dict) else None
     pos = position(track, t) if track else None
-    v = View(w, h, follow=not (full and fixed), small=not full, reserve=reserve if full else None,
-             opts=view if full else None, iss_lat=pos[0] if pos else None)
+    if full and isinstance(view, dict) and isinstance(view.get("_overhead"), dict):   # (Satellites Overhead)
+        v = OverheadView(w, h, **view["_overhead"])
+    else:
+        v = View(w, h, follow=not (full and fixed), small=not full, reserve=reserve if full else None,
+                 opts=view if full else None, iss_lat=pos[0] if pos else None)
     left = v.left(pos[1] if pos else None)
     img = np.empty((h, w, 3), np.uint8)
     img[:] = OUTSIDE
@@ -1175,7 +1418,7 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
     world, mask = shaded(v, full, t, big, ex, stations=ground_mode == "always")
     sr, rr = v.rows()
     band = img[sr]
-    _window(band, world[rr], left, v.W)                    # the world from ``left``, round the date line
+    v.window(band, world[rr], left)                    # the world from ``left``, round the date line
     paths = []
     no_iss = pos is None and full and bool(ms.get("_home"))  # (Satellites Overhead draws on without the ISS's track)
     if pos is None and not no_iss:
@@ -1192,9 +1435,9 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
                sunlit=(ex["sunlit"].get("shadow", "blue") if _on(ex, "sunlit") else None))
     if full:                                               # the stations back over the trail
         m = np.empty(band.shape[:2] + (1,), bool)
-        _window(m, mask[rr][..., None], left, v.W)
+        v.window(m, mask[rr][..., None], left)
         src = np.empty_like(band)
-        _window(src, world[rr], left, v.W)
+        v.window(src, world[rr], left)
         np.copyto(band, src, where=m)
     ix, iy = float(v.wx(pos[1])), float(v.y(pos[0]))
     if not full:
@@ -1211,6 +1454,8 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
     def label(kind, key, default, anchor, half, code=None, prio=5, extra="", optional=False, pad=None, flags=None):
         if not smap:
             return
+        if home and not (-half[0] <= anchor[0] < w + half[0] and -half[1] <= anchor[1] < h + half[1]):
+            return                                         # (Satellites Overhead: off the zone, no name on its edge)
         L = lab[kind]
         name = maplabels.name_for(ms, key, default).upper() if L["name"] else ""
         text = (flags if flags is not None else (flag(kind, code) if code else "")) + name + extra
@@ -1228,9 +1473,9 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
         counts = mapsats.draw(img, v, left, t, ms, DATA_DIR, pos, (ix, iy), paths, label_items, lab["sats"],
                               rgb_of("sats"), icons, observer=observer, up=up)
         m = np.empty(band.shape[:2] + (1,), bool)          # (the ground stations stay on top)
-        _window(m, mask[rr][..., None], left, v.W)
+        v.window(m, mask[rr][..., None], left)
         src = np.empty_like(band)
-        _window(src, world[rr], left, v.W)
+        v.window(src, world[rr], left)
         np.copyto(band, src, where=m)
     if home:                                               # the horizon for ov's layer, and home
         hx, hy = float(v.wx(home[1])), float(v.y(home[0]))
@@ -1287,7 +1532,11 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
         used.add(lk["ground"])
         live_ok = aos is True if lk["net"] == "nasa" else True
         if live_ok and _on(ex, "flow") and st.get("style") != "still":
+            vis = _shown_along(v, left, xs, ys)
+            if vis == []:
+                continue
             paths.append({"kind": "link", "xs": xs, "ys": ys, "cols": cols, "left": left, "W": v.W, "style": st["style"],
+                          "vis": vis,
                           "speed": st.get("speed", ex["flow"].get("speed")), "direction": st.get("direction", ex["flow"].get("direction"))})
     # the relays and ground stations (their icons, flags and names)
     relay_mode = ms.get("relays") if ms.get("relays") in RELAY_SHOW else "always"
@@ -1515,11 +1764,13 @@ def flow(buf, paths, now, ex, big=False):
             continue
         style = p.get("style", "dots")
         speed = FLOW_SPEED.get(p.get("speed"), FLOW_SPEED["normal"])
+        vis = p.get("vis")                                   # (only the stretches on the zone: see _shown_along)
+        lo, hi = (max(0.0, vis[0][0] - 30), min(total, vis[-1][1] + 30)) if vis else (0.0, total)
         direction = p.get("direction", "both")
         cols = [np.asarray(c, float) for c in p["cols"]]
         lighten = lambda c, lift: c * (1 - lift) + 255 * lift
         if style == "pulse":                                 # light running along the whole line
-            s = np.arange(clear, total - clear, 1.0)
+            s = np.arange(max(clear, math.floor(lo)), min(total - clear, hi), 1.0)
             ph = (now * speed) if direction != "up" else -(now * speed)
             a = np.clip(np.sin((s - ph) / 14.0 * math.pi) * 1.4 - 0.4, 0, 1) * 0.8
             px, py, k = _along(xs, ys, s, cum, seg)
@@ -1531,9 +1782,12 @@ def flow(buf, paths, now, ex, big=False):
         gap = {"dots": FLOW_GAP, "dashes": 10, "comet": 26}.get(style, FLOW_GAP) + (2 if direction == "both" else 0)
         runs = []
         if direction in ("down", "both"):
-            runs.append(((now * speed) % gap + np.arange(0, total, gap), 0.75, 1))
+            off = (now * speed) % gap
+            runs.append((off + gap * np.arange(math.floor((lo - off) / gap), math.ceil((hi - off) / gap) + 1), 0.75, 1))
         if direction in ("up", "both"):
-            runs.append((total - ((now * speed + gap / 2) % gap + np.arange(0, total, gap)), 0.45, -1))
+            off = (now * speed + gap / 2) % gap                # (heads at total - off - k gap)
+            ks = np.arange(math.floor((total - hi - off) / gap), math.ceil((total - lo - off) / gap) + 1)
+            runs.append((total - (off + gap * ks), 0.45, -1))
         for heads, lift, sgn in runs:
             if style == "dashes":
                 s = (heads[:, None] - sgn * np.arange(4)[None, :]).ravel()

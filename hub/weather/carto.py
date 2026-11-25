@@ -509,9 +509,11 @@ def _lost_channels(fine, f, coarse, min_px, island_px=CHANNEL_ISLAND_PX):
     return _thin_channels(coarse, ch & ~coarse)
 
 
-def water_masks(view: View, min_feature_px: float = 3.0):
-    """(land, ocean, lakes, rivers) bool masks at LED resolution. Cached per view."""
-    key = hashlib.sha1(json.dumps([view.key, min_feature_px, MASK_VERSION]).encode()).hexdigest()[:16]
+def water_masks(view: View, min_feature_px: float = 3.0, fine_max_w: int = CHANNEL_FINE_MAX_W):
+    """(land, ocean, lakes, rivers) bool masks at LED resolution. Cached per view. fine_max_w caps the width of the
+    raster the narrow channels are looked for in (smaller: faster, only wider channels kept)."""
+    k = [view.key, min_feature_px, MASK_VERSION] + ([fine_max_w] if fine_max_w != CHANNEL_FINE_MAX_W else [])
+    key = hashlib.sha1(json.dumps(k).encode()).hexdigest()[:16]
     cached = BASEMAP_CACHE / f"water_{key}.png"
     if cached.exists():
         a = np.asarray(Image.open(cached).convert("RGBA"))
@@ -537,7 +539,7 @@ def water_masks(view: View, min_feature_px: float = 3.0):
     ocean, lakes, rivers = down(ocean_img), down(lake_img), down(river_img)
     if km_px >= CHANNEL_FINE_KM * SS * 2:
         # Re-find straits/inlets narrower than a pixel at ~250 m and keep the major ones as 1-px water.
-        f = max(SS, min(int(np.ceil(km_px / CHANNEL_FINE_KM)), CHANNEL_FINE_MAX_W // view.w))
+        f = max(SS, min(int(np.ceil(km_px / CHANNEL_FINE_KM)), fine_max_w // view.w))
         fo = Image.new("L", (view.w * f, view.h * f), 0)
         _draw_ocean(ImageDraw.Draw(fo), view, WATER_FULL if WATER_FULL.exists() and km_px < 12 else WATER_SIMPLE, f)
         fine_ocean = np.asarray(fo) > 127
@@ -566,13 +568,23 @@ def water_masks(view: View, min_feature_px: float = 3.0):
     ocean &= ~land
     lakes &= ~land
     rivers &= ~land
-    BASEMAP_CACHE.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(np.dstack([land, ocean, lakes, rivers]).astype(np.uint8) * 255, "RGBA").save(cached)
+    _save_png(Image.fromarray(np.dstack([land, ocean, lakes, rivers]).astype(np.uint8) * 255, "RGBA"), cached)
     return land, ocean, lakes, rivers
 
 
-def land_mask(view: View, min_feature_px: float = 3.0) -> np.ndarray:
-    return water_masks(view, min_feature_px)[0]
+def _save_png(img, path):
+    """Save so a reader in another process never sees half a file."""
+    import os
+    import tempfile
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.stem}.", suffix=".png")
+    os.close(fd)
+    img.save(tmp, "PNG")
+    os.replace(tmp, path)
+
+
+def land_mask(view: View, min_feature_px: float = 3.0, fine_max_w: int = CHANNEL_FINE_MAX_W) -> np.ndarray:
+    return water_masks(view, min_feature_px, fine_max_w)[0]
 
 
 def _drop_small(mask, min_px):
@@ -659,7 +671,7 @@ def _draw_lines(view, pack, width):
 # Compose
 # ---------------------------------------------------------------------------
 def render_overlay(view: View, overrides: dict | None = None, min_feature_px: float = 3.0,
-                   group: str = "over") -> np.ndarray:
+                   group: str = "over", fine_max_w: int = CHANNEL_FINE_MAX_W) -> np.ndarray:
     """RGBA (h, w, 4) uint8 with every enabled, in-range layer of one group for this view. Cached.
 
     group "under": drawn on the basemap, below animated data (highways).
@@ -667,13 +679,13 @@ def render_overlay(view: View, overrides: dict | None = None, min_feature_px: fl
     all_layers = [s for s in layer_settings(overrides) if s["enabled"]]
     layers = [s for s in all_layers if bool(s.get("under")) == (group == "under")]
     km_px = view.km_per_px
-    key = hashlib.sha1(json.dumps([view.key, layers, min_feature_px, MASK_VERSION, group],
-                                  sort_keys=True).encode()).hexdigest()[:16]
+    k = [view.key, layers, min_feature_px, MASK_VERSION, group] + ([fine_max_w] if fine_max_w != CHANNEL_FINE_MAX_W else [])
+    key = hashlib.sha1(json.dumps(k, sort_keys=True).encode()).hexdigest()[:16]
     cached = BASEMAP_CACHE / f"carto_{key}.png"
     if cached.exists():
         return np.asarray(Image.open(cached).convert("RGBA"))
 
-    land, ocean, lakes, rivers = water_masks(view, min_feature_px)
+    land, ocean, lakes, rivers = water_masks(view, min_feature_px, fine_max_w)
     shore = edge_of(land)
     near = {name: ndimage.binary_dilation(m) for name, m in (("ocean", ocean), ("lakes", lakes), ("rivers", rivers))}
     coast = shore & near["ocean"]
@@ -705,8 +717,7 @@ def render_overlay(view: View, overrides: dict | None = None, min_feature_px: fl
                 m &= ~resolved_rivers          # centre lines only where the banks can't be resolved
         out[m, :3] = np.array(_hex(s["color"]), dtype=np.uint8)
         out[m, 3] = int(255 * float(s.get("opacity", 1.0)))
-    BASEMAP_CACHE.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(out, "RGBA").save(cached)
+    _save_png(Image.fromarray(out, "RGBA"), cached)
     return out
 
 

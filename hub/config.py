@@ -467,9 +467,16 @@ def _validate_space_map(mp, name="Space Map"):
     oh = mp.get("overhead")
     if oh is not None:
         d = issmap.OVERHEAD_DEFAULTS
-        if not isinstance(oh, dict) or not set(oh) <= set(d) or oh.get("layer", d["layer"]) not in LAYERS                 or any(not isinstance(oh.get(b, True), bool) for b in ("ring", "home"))                 or not (num(oh.get("min_el", 10)) and 0 <= oh.get("min_el", 10) <= 60)                 or not (num(oh.get("outside", 0.3)) and 0 <= oh.get("outside", 0.3) <= 1)                 or not (num(oh.get("margin", 1.08)) and 1 <= oh.get("margin", 1.08) <= 2):
+        lo_km, hi_km = issmap.OVERHEAD_KM
+        r_km = oh.get("radius_km", 0) if isinstance(oh, dict) else 0
+        if (not isinstance(oh, dict) or not set(oh) <= set(d) or oh.get("layer", d["layer"]) not in LAYERS
+                or any(not isinstance(oh.get(b, True), bool) for b in ("ring", "home"))
+                or not (num(oh.get("min_el", 10)) and 0 <= oh.get("min_el", 10) <= 60)
+                or not (num(oh.get("outside", 0.3)) and 0 <= oh.get("outside", 0.3) <= 1)
+                or not (num(oh.get("margin", 1.08)) and 1 <= oh.get("margin", 1.08) <= 2)
+                or not (num(r_km) and (r_km == 0 or lo_km <= r_km <= hi_km))):
             raise bad(f"overhead takes {', '.join(d)}: layer one of the satellite layers, min_el 0-60°, "
-                      "outside 0-1, margin 1-2, ring and home true or false")
+                      f"outside 0-1, margin 1-2, radius_km 0 (fit the ring) or {lo_km}-{hi_km}, ring and home true or false")
     if mp.get("relays", "always") not in issmap.RELAY_SHOW:
         raise bad(f"relays must be {' or '.join(issmap.RELAY_SHOW)}")
     if mp.get("ground", "always") not in ("always", "linked", "hidden"):

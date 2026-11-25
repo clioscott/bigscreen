@@ -212,8 +212,14 @@ once (`hold: false`), so the rotation resumes by itself.
 - **Satellites Overhead** (panel page `#/sats-overhead`, the same `pages/space_map.js` via `makePage`; config
   `modules.sats_overhead`, same shape as `iss_map` plus `home` [lat, lon] and `map.overhead` = `issmap.OVERHEAD_DEFAULTS`;
   panels `sats_overhead*`, made for `_tall`): `IssMapPanel(key="sats_overhead")` draws the Space Map fixed over home
-  (`issmap.overhead_view`: centred, stretch 1/cos lat so circles stay round, zoomed so the horizon ring of
-  `overhead.layer` at `min_el` fits; `View` takes the computed `_zoom` past the Space Map's 4×). `mapset["_home"]` turns
+  on `issmap.OverheadView` (Web Mercator centred on home; its raster is only the zone, so any zoom costs the same).
+  Zoom: `overhead.radius_km` (shows at least that far from home up and down) or 0 = fit the horizon ring of
+  `overhead.layer` at `min_el` (`overhead_km_per_px`). Basemap per view: `hub/spacemap.py` (run by the `sats` job, and
+  in the background for the panel preview's draft into `cache/overhead`) draws coasts, lake shores, country and province
+  lines with `hub/weather/carto.py` (1 px at any scale; split at the date line) plus Black Marble lights fetched at the
+  view's pixels → `data/issmap/ov_<w>x<h>_<W>_<cx0>_<lat>.bin` (`issmap.overhead_name`); the Pi uses it only for
+  exactly its view, else the Natural Earth 110m lines (also past 80 km/px). Bump `spacemap.RENDER_VERSION` after
+  drawing changes. `extras.borders.provinces` toggles province lines. `mapset["_home"]` turns
   on the ring and house marker, `mapsats.draw(observer=)` (satellites past the horizon at `outside` brightness, trellis
   only between ones home sees, `near_km` from home, GPS lines from home, per-layer counts → panel fields `sats_up`,
   `sats_up_total`), and hides the ISS while it's out of view. Home: its own `home`, else `data/issmap/overhead.json`

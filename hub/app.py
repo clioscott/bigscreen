@@ -85,8 +85,12 @@ def put_config(payload: dict = Body(...)):
     sources = lambda c: {k: (v or {}).get("source") for k, v in (((c["modules"].get("webcams") or {}).get("cams")) or {}).items()}
     if sources(before) != sources(saved):           # a webcam added, removed or pointed elsewhere: check them now
         _sched().run_now("webcam_health")
-    sats = lambda c: [(((c["modules"].get(k) or {}).get("map")) or {}).get("sats") for k in ("iss_map", "sats_overhead")]
-    if sats(before) != sats(saved):                 # a satellite layer switched on or off: fetch it (or drop it) now
+    sats = lambda c: [(((c["modules"].get(k) or {}).get("map")) or {}).get("sats") for k in ("iss_map", "sats_overhead")] + [
+        (((c["modules"].get("sats_overhead") or {}).get("map")) or {}).get("overhead"),
+        (c["modules"].get("sats_overhead") or {}).get("home"),
+        (c["modules"].get("weather_alerts") or {}).get("home_lonlat"), c.get("layout")]
+    if sats(before) != sats(saved):                 # a satellite layer switched on or off: fetch it (or drop it) now;
+        #                                             Satellites Overhead zoomed or moved: its basemaps drawn again
         _sched().run_now("sats")
     sync.push_data()         # config.json rides along; the v2 display hot-reloads it
     return {"config": saved, "display_in_sync": pi.display_in_sync(saved)[0]}
@@ -1205,12 +1209,8 @@ def display_headlines_jump(payload: dict = Body(default={})):
 def _webcam_zones():
     """Pixel size of each place a webcam can play (display/main.py Screen: ticker 44 px + 1, bottom strip 17).
     "tall": full width over the ticker too, down to the clock strip."""
-    L = (config.load().get("layout") or {})
-    w, h = L.get("width", 448), L.get("height", 192)
-    main_h = h - 17 - (L.get("top_bar_height", 44) + 1)
-    cal_w = int(w * L.get("calendar_split_ratio", 0.66))
-    return {"left": [cal_w, main_h], "right": [w - cal_w - 1, main_h], "full": [w, main_h], "tall": [w, h - 17],
-            "wall": [w, h]}
+    from hub import spacemap
+    return spacemap.zones(config.load())
 
 
 def _webcam_feed(src, fps):
@@ -1464,13 +1464,14 @@ def iss_map_catalog():
                        for k, c in (((config.load().get("modules") or {}).get("webcams") or {}).get("cams") or {}).items()
                        if isinstance(c, dict) and c.get("space")],
         "units": {k: list(v) for k, v in mappanels.UNITS.items()}, "unit_defaults": mappanels.UNIT_DEFAULTS,
-        "layers": [{"key": k, **{f: L[f] for f in ("label", "flag", "orbit", "mesh", "colour", "note")},
+        "layers": [{"key": k, **{f: L[f] for f in ("label", "flag", "orbit", "mesh", "colour", "note", "alt_km")},
                     "count": counts.get(k)} for k, L in LAYERS.items()],
         "sat_defaults": mapsats.SAT_DEFAULTS, "marks": mapsats.MARKS,
         "nets": issmap.NETS, "link_defaults": issmap.LINK_DEFAULTS, "link_styles": issmap.LINK_STYLES,
         "label_kinds": maplabels.KINDS, "label_defaults": maplabels.LABEL_DEFAULTS, "label_places": maplabels.PLACES,
         "extras": issmap.EXTRAS, "view": issmap.VIEW, "view_ranges": issmap.VIEW_RANGES, "objects": objects,
-        "overhead_defaults": issmap.OVERHEAD_DEFAULTS, "overhead_panels": mappanels.overhead_panels(),
+        "overhead_defaults": issmap.OVERHEAD_DEFAULTS, "overhead_km": issmap.OVERHEAD_KM,
+        "overhead_panels": mappanels.overhead_panels(),
         "overhead_home": _overhead_home(None),
     }
 
@@ -1530,6 +1531,12 @@ def iss_map_preview(payload: dict):
     mods = config.load().get("modules") or {}
     cam = iss_panel.settings_of({key: s if isinstance(s, dict) else None, "iss_map": mods.get("iss_map"),
                                  "webcams": mods.get("webcams")}, key)
+    if overhead:                                          # (its basemap for the draft's zoom: drawn in the background
+        from hub import spacemap                          # when it's new, the plain lines until then)
+        try:
+            spacemap.preview(spacemap.view_for(cam, tuple(_overhead_home(cam)), *zones[shape]))
+        except Exception as e:
+            print(f"Satellites Overhead preview basemap: {type(e).__name__}: {e}", flush=True)
     try:
         img = iss_panel.render_preview(cam, shape, tuple(zones[shape]), _iss_data(), _iss_live(history=True),
                                        video=_space_map_video(cam), home=tuple(_overhead_home(cam)) if overhead else None)
