@@ -9,7 +9,7 @@ import { useSlippyMap } from "./slippymap.js";
 import { CaptionRows } from "./caption_rows.js";
 import { IssMapExtras } from "./iss_map_extras.js";
 
-const DEFAULT_SHARPEN = 0.5;          // hub/webcams.py DEFAULT_SHARPEN: a webcam with no Sharpness of its own
+const DEFAULT_SHARPEN = 0.1;          // hub/webcams.py DEFAULT_SHARPEN: a webcam with no Sharpness of its own
 // a caption of its own per size on the wall (webcam_caption.for_shape): the two sides share one
 const SIZE_OF_SHAPE = { left: "side", right: "side", full: "full", tall: "tall", wall: "wall" };
 const SIZE_LABELS = { side: "the sides", full: "full width", tall: "above the clock", wall: "the whole wall" };
