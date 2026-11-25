@@ -54,7 +54,7 @@ HI_BUDGET = 1920 * 1088      # the hi picture is at most this many pixels (a 4K 
 RAISE_GAP = 15.0             # a running feed restarts for more detail at most this often (a crop being zoomed)
 DRAFT_SETTLE = 1.5           # a preview's crop counts towards the detail needed once it's held still this long
 HW_DEVICE = "/dev/dri/renderD128"   # the N100's video engine (VAAPI): decodes 4K for almost nothing
-DEFAULT_SHARPEN = 0.5        # unsharp mask after scaling down (colour.sharpen; 0 = off): crisper edges on the LEDs
+DEFAULT_SHARPEN = 0.1        # unsharp mask after scaling down (colour.sharpen; 0 = off): crisper edges on the LEDs
 MAX_FEEDS = 6                # ffmpegs at once (the wall's list prepares a few ahead: display/modules/webcam.py LOOKAHEAD)
 GRACE_SEC = 15.0             # a feed outlives its last viewer (or warm ask, every 10 s) by this long
 STALL_SEC = 20.0             # nothing decoded for this long: restart ffmpeg
