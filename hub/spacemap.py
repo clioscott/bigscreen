@@ -31,6 +31,8 @@ from hub import paths
 RENDER_VERSION = 1            # bump to draw every basemap again after a change to the drawing
 MAX_KM_PX = 80.0              # wider than this the Pi's Natural Earth 1:110m lines do
 MIN_PX = 3.0                  # islands and lakes smaller than this many px are left out (carto)
+FINE_MAX_W = 2400             # carto's search for straits narrower than a px: at most this wide (its default, 8000,
+                              # takes a minute a map zoomed out to the horizon; this still keeps Johnstone Strait)
 LIGHTS_WMS = "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi"
 LIGHTS_TTL = 90 * 86400
 LIGHTS_RETRY = 86400          # a failed lights fetch is tried again after this
@@ -132,7 +134,7 @@ def lines(v) -> np.ndarray:
     out = np.zeros((v.h, v.w), np.uint8)
     for p in parts(v):
         gv = View({"id": "overhead", "center": [v.lat0, p["lon"]], "km_per_px": v.km_per_px}, p["i1"] - p["i0"], v.h)
-        rgba = carto.render_overlay(gv, ov, MIN_PX, group="over")
+        rgba = carto.render_overlay(gv, ov, MIN_PX, group="over", fine_max_w=FINE_MAX_W)
         out[:, p["i0"]:p["i1"]] = np.where(rgba[..., 3] > 0, rgba[..., 0], 0)
     return out
 

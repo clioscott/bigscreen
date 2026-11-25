@@ -118,7 +118,7 @@ def test_with_the_date_line_in_view_each_side_is_drawn_on_the_same_pixel_grid(mo
     assert spacemap.drawable(v)
     seen = []
 
-    def overlay(gv, ov, mfp, group="over"):
+    def overlay(gv, ov, mfp, group="over", fine_max_w=None):
         seen.append((gv.w, gv.center))
         out = np.zeros((gv.h, gv.w, 4), np.uint8)
         x, y = gv.project(-179.5 if gv.center[1] < 0 else 179.5, 52.0)   # (a point either side of the line)
