@@ -1441,8 +1441,13 @@ def test_a_full_width_only_webcam_plays_full_width_but_never_on_one_side(monkeyp
 
     assert turn("webcam_full", (0, 0, 448, 130)) == ("done", ["a", "big", "c"])
     assert turn("webcam", (0, 0, 224, 130)) == ("done", ["a", "c"])              # one side: passed over
+    s["per_turn"] = 3                                                             # a number: never more than fit
+    assert turn("webcam", (0, 0, 224, 130)) == ("done", ["a", "c"])              # (not a, c, a)
     p, _ = _panel(s, monkeypatch, clock)
     assert p._list_first(shape="right") == ["a", "c"] and "big" in p._list_first(shape="full")
     only = {"cams": {"big": {"full_only": True}}, "playlist": [{"cam": "big"}]}
-    p, drawn = _panel(only, monkeypatch, clock)                                   # nothing fits one side: skipped at once
-    assert p.draw(Canvas(224, 130), (224, 0, 224, 130), {"panel": "webcam", "_play": 1}, True) == "skip" and not drawn
+    p, drawn = _panel(only, monkeypatch, clock)                                   # nothing fits one side: a message,
+    zone, entry = (224, 0, 224, 130), {"panel": "webcam", "_play": 1}           # then skipped
+    assert p.draw(Canvas(224, 130), zone, entry, True) is None
+    clock[0] += 5
+    assert p.draw(Canvas(224, 130), zone, entry, False) == "skip" and not drawn

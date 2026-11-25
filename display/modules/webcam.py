@@ -741,8 +741,10 @@ class WebcamPanel:
             return "skip" if now - self.started.setdefault(("list", entry.get("_play")), now) > 4 else None
         where = tuple(zone)                                   # each half of the wall has its own turn
         shape = self.shape_for(entry, zone)
-        if not any(fits(self.cams.get(cid), shape) for cid, _ in self.playlist):
-            return "skip"                                     # every webcam in the list is full width only
+        n_fit = sum(1 for cid, _ in self.playlist if fits(self.cams.get(cid), shape))
+        if not n_fit:                                         # every webcam in the list is full width only
+            self._centre(c, zone, "Every webcam is full width only", self.dim)
+            return "skip" if now - self.started.setdefault(("list", entry.get("_play")), now) > 4 else None
         t = self._turns.get(where)
         if t is not None and t.get("ended") and entry.get("_held") and t["play"] == entry.get("_play"):
             # the turn is over but the rotation holds it while the screen after it buffers: the same webcam carries on
@@ -764,7 +766,8 @@ class WebcamPanel:
             ready = [k for k in first if (st := self._open(k, shape, zone)) is not None and st.ready()]  # opened them)
             self._switch(t, ready[0] if ready else self._next_up(_list_pos["i"], self._taken(t), shape), now)
         due = t["t0"] + self._sec(t["cam"])
-        last = t["shown"] + 1 >= min(t.get("limit") or 1, n)  # nothing after this one in this turn
+        last = t["shown"] + 1 >= min(t.get("limit") or 1, n_fit)   # nothing after this one in this turn (never
+                                                                    # more than the webcams that fit this shape)
         if last and now >= due:
             t["ended"] = True                                 # another pass of the same play starts afresh (unless
             return "done"                                     # the rotation holds this one: see above)
