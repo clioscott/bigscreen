@@ -352,3 +352,40 @@ def test_track_picks_are_spread_or_nearest():
     assert len(spread) == 10 and spread[0] == 0 and spread[-1] == 99
     near = mapsats.track_pick(lat, lon, ok, 3, centre=(0.0, 0.0), near_km=2000)
     assert set(np.abs(lon[near]).round()) <= {2.0, 5.0}       # the ones either side of 0°
+
+
+def test_track_picks_hold_between_steps_and_the_mask_is_not_redrawn(tmp_path, monkeypatch):
+    from hub.jobs import sats as job
+    from display.modules import issmap, mapsats
+    monkeypatch.setattr(job.paths, "DATA_DIR", tmp_path)
+    tles = [(f"S{i}", ISS_TLE[1], ISS_TLE[2][:17] + f"{i * 30.0:8.4f}" + ISS_TLE[2][25:]) for i in range(12)]
+    job.write("starlink", tles, TLE_T)
+    job.write_tracks("starlink", tles, TLE_T)
+    v = issmap.View(448, 192, follow=False)
+    ms = {"sats": {"starlink": {"on": True, "mark": "dot", "tracks": 3, "near_km": 15000}}}   # (the nearest three)
+    rebuilt = []
+    real = mapsats._mesh_onto
+
+    def spy(img, v_, left, key, segs, rgb):
+        hit = mapsats._meshes.get(key[0])
+        if hit is None or hit[0] != key:
+            rebuilt.append(key)
+        return real(img, v_, left, key, segs, rgb)
+
+    monkeypatch.setattr(mapsats, "_mesh_onto", spy)
+    step = job.TRACK_STEP["leo"]
+    t0 = (TLE_T // step + 1) * step
+    for dt in range(0, step, 10):                           # a step's worth of frames, the ISS moving under them
+        img = np.zeros((192, 448, 3), np.uint8)
+        mapsats.draw(img, v, v.left(None), t0 + dt + 1, ms, str(tmp_path), (10.0, dt * 0.06), (0, 0), [], [], {},
+                     (200, 200, 200), [])
+    assert len(rebuilt) == 1                                # the same picks, one mask, for the whole step
+
+
+def test_a_fixed_label_goes_to_the_other_side_at_the_edge_of_the_map():
+    from display.modules import maplabels
+    it = {"text": "ISS", "anchor": (440, 50), "half": (10, 4), "pos": "right", "rgb": (255, 255, 255)}
+    (_it, x, _y, _t, bw), = maplabels.place([it], [], 448, 100)
+    assert x + bw <= 440 - 10                               # left of the icon, not squashed onto it
+    it["anchor"] = (100, 50)
+    assert maplabels.place([it], [], 448, 100)[0][1] > 100 + 10

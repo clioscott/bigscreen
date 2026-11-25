@@ -1394,8 +1394,9 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
     if iss_up:
         L_ = lab["iss"]
         text = iss_text(L_.get("text"), data, n_crew)
-        label("iss", "ISS", text, (IX, IY), iss_half, None, 0,
-              f" {n_crew} CREW" if L_.get("crew") and n_crew else "", pad=pad, flags=in_label)
+        crew_txt = f" {n_crew} CREW" if L_.get("crew") and n_crew else ""
+        if L_.get("name") or crew_txt:                     # (no name and no crew: no label, not a lone flag)
+            label("iss", "ISS", text, (IX, IY), iss_half, None, 0, crew_txt, pad=pad, flags=in_label)
     if smap:
         obstacles = icons + pboxes + ([tuple(avoid)] if avoid else [])
         maplabels.draw(img, maplabels.place(label_items, obstacles, w, h))

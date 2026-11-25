@@ -56,8 +56,8 @@ def _candidates(X, Y, hw, hh, bw, pos, pad=None):
     p = pad or {}
     c = {"right": (X + hw + 2 + p.get("right", 0), Y - LH // 2), "left": (X - hw - 2 - bw - p.get("left", 0), Y - LH // 2),
          "above": (X - bw // 2, Y - hh - 1 - LH - p.get("above", 0)), "below": (X - bw // 2, Y + hh + 2 + p.get("below", 0))}
-    if pos in c:
-        return [c[pos]]
+    if pos in c:                                        # a fixed place, then the other side for when it's off the map
+        return [c[pos], c[{"right": "left", "left": "right", "above": "below", "below": "above"}[pos]]]
     return list(c.values()) + [(X + hw + 1, Y - hh - LH), (X + hw + 1, Y + hh + 1),
                                (X - hw - 1 - bw, Y - hh - LH), (X - hw - 1 - bw, Y + hh + 1)]
 
@@ -84,9 +84,12 @@ def place(items, obstacles, w, h):
         X, Y = it["anchor"]
         hw, hh = it.get("half", (2, 2))
         best = None
-        for k, (x, y) in enumerate(_candidates(int(X), int(Y), hw, hh, bw, it.get("pos", "auto"), it.get("pad"))):
-            if it.get("pos", "auto") != "auto":                 # (a fixed place: kept on the map)
-                x, y = max(0, min(w - bw, x)), max(0, min(h - LH, y))
+        cands = _candidates(int(X), int(Y), hw, hh, bw, it.get("pos", "auto"), it.get("pad"))
+        if it.get("pos", "auto") != "auto":                     # a fixed place, or the other side if it's off the
+            fits = [(x, y) for x, y in cands if x - 1 >= 0 and x + bw + 1 <= w and y >= 0 and y + LH <= h]
+            x, y = fits[0] if fits else cands[0]                # map; kept on the map either way
+            cands = [(max(0, min(w - bw, x)), max(0, min(h - LH, y)))]
+        for k, (x, y) in enumerate(cands):
             box = (x - 1, y, x + bw + 1, y + LH)
             out = max(0, -box[0]) + max(0, box[2] - w) + max(0, -box[1]) + max(0, box[3] - h)
             cost = out * LH * 4 + _overlap(box, taken) * 3 + _overlap(box, obstacles) + k * 0.5

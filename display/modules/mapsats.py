@@ -131,9 +131,9 @@ def _tracks_onto(img, v, left, key, tr, t, sel, rgb):
     after (through where it is now), drawn faint into a cached mask (redrawn when the track's window moves a step)."""
     from display.modules import issmap
     h, la, lo = tr
-    half = h["period"] / 2 / h["step"]
-    c = (t - h["t0"]) / h["step"]
-    i0, i1 = max(0, int(np.floor(c - half))), min(h["steps"] - 1, int(np.ceil(c + half)))
+    hs = int(np.ceil(h["period"] / 2 / h["step"]))
+    b = int(np.floor((t - h["t0"]) / h["step"]))           # (both ends move together, once a step)
+    i0, i1 = max(0, b - hs), min(h["steps"] - 1, b + hs + 1)
     if i1 - i0 < 2 or sel.size == 0:
         return
 
@@ -147,8 +147,22 @@ def _tracks_onto(img, v, left, key, tr, t, sel, rgb):
         x1 = issmap._unwrap(x0, x[1:].ravel(), v.W)
         return x0[k], y[:-1].ravel()[k], x1[k], y[1:].ravel()[k]
 
-    _mesh_onto(img, v, left, (key + "/tracks", v.key, i0, i1, int(sel.size), int(sel.sum()), rgb), segs,
+    _mesh_onto(img, v, left, (key + "/tracks", v.key, h["t0"], i0, i1, hash(sel.tobytes())), segs,
                np.array([int(ch * TRACK_DIM) for ch in rgb], np.uint8))
+
+
+_picks: dict = {}
+
+
+def steady_pick(key, tr, t, lat, lon, ok, count, centre=None, near_km=0.0, extra=None):
+    """track_pick, worked out again only when the tracks' window moves a step (or the settings change), so the same
+    satellites keep their tracks between steps: no tracks coming and going, no redrawing every frame."""
+    h = tr[0]
+    ck = (h["t0"], int(np.floor((t - h["t0"]) / h["step"])), count, near_km, extra)
+    hit = _picks.get(key)
+    if hit is None or hit[0] != ck:
+        hit = _picks[key] = (ck, track_pick(lat, lon, ok, count, centre, near_km))
+    return hit[1]
 
 
 def positions(f, t):
@@ -268,7 +282,8 @@ def draw(img, v, left, t, mapset, data_dir, iss_pos, iss_xy, paths, label_items,
             if tr and tr[0]["n"] == f[0]["n"]:
                 pick_ok = ok if seen is None else ok & seen
                 centre = observer[:2] if observer else iss_pos
-                tsel = track_pick(lat, lon, pick_ok, n_tracks, centre, float(st.get("near_km") or 0))
+                tsel = steady_pick(key, tr, t, lat, lon, pick_ok, n_tracks, centre, float(st.get("near_km") or 0),
+                                   tuple(observer) if observer else None)
                 _tracks_onto(img, v, left, key, tr, t, tsel, rgb)
         if st.get("links"):
             near = float(st.get("near_km") or 0)
