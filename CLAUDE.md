@@ -27,11 +27,14 @@ happens on a separate server; the Pi only renders. Research and history: `RESEAR
   never make a job a long-lived loop (v1's finance worker leaked to 8.7 GB that way).
 - Job health → `status.json` → the control panel's Overview (also shows the deployed commit). A job is "stale" after 3 missed intervals.
 - Service: `bigscreen-hub` (system unit, user scott). `sudo systemctl restart bigscreen-hub` is passwordless.
-  The server exists for the wall: the unit gives the hub no memory cap, no swap (`MemorySwapMax=0`), `MemoryLow=6G`
-  and top CPU/IO weight. Never cap it again: a 1 GB `MemoryMax` (from before webcams) had it swapping constantly,
-  frames reached the Pi slower than real time and a third of the webcams were skipped. The deploy timer doesn't
-  install unit changes: `sudo install -m 644 deploy/bigscreen-hub.service /etc/systemd/system/ && sudo systemctl
-  daemon-reload && sudo systemctl restart bigscreen-hub` (needs Scott's password).
+  The server exists for the wall: the unit gives the hub no memory cap, keeps the hub's own memory out of swap
+  (`MemorySwapMax=0`) and gives it 10× the default CPU/IO weight. Don't cap its memory again: a 1 GB `MemoryMax`
+  (from before webcams) had it swapping constantly, frames reached the Pi slower than real time and a third of the
+  webcams were skipped. The deploy timer doesn't install unit changes; after one merges, Scott runs this on the
+  server (it asks for his password):
+  ```
+  sudo install -m 644 ~/bigscreen/deploy/bigscreen-hub.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl restart bigscreen-hub
+  ```
 - Logs: `journalctl -u bigscreen-hub -f`.
 
 ## Making a change (agents)
