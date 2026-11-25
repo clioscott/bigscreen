@@ -133,8 +133,10 @@ def lines(v) -> np.ndarray:
         ov[k] = {"enabled": True, "color": f"#{c:02x}0000", "opacity": 1.0}
     out = np.zeros((v.h, v.w), np.uint8)
     for p in parts(v):
-        gv = View({"id": "overhead", "center": [v.lat0, p["lon"]], "km_per_px": v.km_per_px}, p["i1"] - p["i0"], v.h)
-        rgba = carto.render_overlay(gv, ov, MIN_PX, group="over", fine_max_w=FINE_MAX_W)
+        pw = p["i1"] - p["i0"]
+        gv = View({"id": "overhead", "center": [v.lat0, p["lon"]], "km_per_px": v.km_per_px}, pw, v.h)
+        # (carto sizes its fine raster by the view's width: a narrow part gets its share of the whole's, not more)
+        rgba = carto.render_overlay(gv, ov, MIN_PX, group="over", fine_max_w=max(pw, FINE_MAX_W * pw // v.w))
         out[:, p["i0"]:p["i1"]] = np.where(rgba[..., 3] > 0, rgba[..., 0], 0)
     return out
 
@@ -194,6 +196,12 @@ def ensure(v, out_dir, with_lights=True, now=None, lights_timeout=30) -> str:
         or (not meta.get("lights_at") and now - float(meta.get("lights_tried") or 0) > LIGHTS_RETRY))
     if meta.get("version") == RENDER_VERSION and (out_dir / f"{name}.bin").exists() and not stale_lights:
         return "kept"
+    draft = read_json(DRAFTS / f"{name}.json", None) or {}
+    if out_dir != DRAFTS and draft.get("version") == RENDER_VERSION and draft.get("lights_at") \
+            and now - draft["lights_at"] < LIGHTS_TTL and (DRAFTS / f"{name}.bin").exists():
+        _write(out_dir / f"{name}.bin", (DRAFTS / f"{name}.bin").read_bytes())   # (the preview drew it already)
+        atomic_write_json(out_dir / f"{name}.json", draft)
+        return "kept (from the preview)"
     with _lock:
         ln = lines(v)
         lt, lights_at, err = None, None, None

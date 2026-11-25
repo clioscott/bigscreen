@@ -70,6 +70,15 @@ def _push_once():
                                capture_output=True, text=True, timeout=300)
             ok = ok and q.returncode == 0
             err = (err + " " + q.stderr.strip()[-300:]).strip()
+        issmap = paths.DATA_DIR / "issmap"
+        if any(issmap.glob("ov_*")) if issmap.is_dir() else False:
+            # Satellites Overhead basemaps (hub/spacemap.py): one per size and zoom, so old zooms are deleted
+            q = subprocess.run(["rsync", "-a", "--delete", "--timeout=30", "--include=ov_*", "--exclude=*",
+                                "--rsync-path", f"mkdir -p {remote_dir}/issmap && rsync",
+                                "-e", SSH, f"{issmap}/", f"{target}:{remote_dir}/issmap/"],
+                               capture_output=True, text=True, timeout=120)
+            ok = ok and q.returncode == 0
+            err = (err + " " + q.stderr.strip()[-300:]).strip()
         bridges = paths.DATA_DIR / "bridges"
         if bridges.is_dir():
             # Bridges now tiles (hub/jobs/bridges.py): named by content, so --delete keeps /dev/shm from filling up

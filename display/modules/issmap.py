@@ -664,10 +664,12 @@ class OverheadView:
 
 
 # --- drawing primitives ----------------------------------------------------------------------------------------
-def _samples(X0, Y0, X1, Y1):
-    """Pixel samples along segments (arrays of endpoints): (xs, ys, segment index), every pixel step."""
+def _samples(X0, Y0, X1, Y1, steps=None):
+    """Pixel samples along segments (arrays of endpoints): (xs, ys, segment index), every pixel step (or ``steps``
+    steps each: in_zone's, so a cut segment keeps the whole one's samples)."""
     X0, Y0, X1, Y1 = (np.asarray(a, float) for a in (X0, Y0, X1, Y1))
-    n = np.maximum(np.abs(X1 - X0), np.abs(Y1 - Y0)).astype(np.int64) + 1
+    n = (np.maximum(np.abs(X1 - X0), np.abs(Y1 - Y0)).astype(np.int64) if steps is None
+         else np.asarray(steps, np.int64)) + 1
     if not n.size:
         return np.zeros(0), np.zeros(0), np.zeros(0, np.int64)
     idx = np.repeat(np.arange(n.size), n + 1)
@@ -703,12 +705,49 @@ def _unwrap(x0, x1, period):
     return x0 + (x1 - x0 + period / 2) % period - period / 2
 
 
+def in_zone(v, left, X0, Y0, X1, Y1, pad=2.0):
+    """Segments (world x, each already the short way round; screen or raster y) cut to the zone, pad px round it,
+    where the world is many zones round (Satellites Overhead zoomed in: a link to a relay can be 100,000 px long):
+    (X0, Y0, X1, Y1, t0, t1, index into the input, steps), t0..t1 the part of each that's kept. Narrower worlds (the Space
+    Map) come back whole. Then only what shows is sampled a pixel at a time. The cuts fall on the whole segment's
+    own samples, and the last item is each part's number of steps (for _samples): the same pixels as drawing it all,
+    or None (whole)."""
+    X0, Y0, X1, Y1 = (np.atleast_1d(np.asarray(a, float)) for a in (X0, Y0, X1, Y1))
+    n = X0.size
+    if v.W <= 2 * v.w + 8 or not n:
+        return X0, Y0, X1, Y1, np.zeros(n), np.ones(n), np.arange(n), None
+    xa = (X0 - left) % v.W                                 # (on the screen, or past its right edge round the world)
+    xb = xa + (X1 - X0)
+    xa, xb = np.r_[xa, xa - v.W], np.r_[xb, xb - v.W]      # (and the copy a world to the left)
+    ya, yb, idx = np.r_[Y0, Y0], np.r_[Y1, Y1], np.r_[np.arange(n), np.arange(n)]
+    dx, dy = xb - xa, yb - ya
+    t0, t1 = np.zeros(xa.size), np.ones(xa.size)
+    ok = np.ones(xa.size, bool)
+    with np.errstate(divide="ignore", invalid="ignore"):   # (Liang-Barsky, all at once)
+        for p_, q in ((-dx, xa + pad), (dx, v.w - 1 + pad - xa), (-dy, ya + pad), (dy, v.h - 1 + pad - ya)):
+            r = q / p_
+            ok &= ~((p_ == 0) & (q < 0))
+            t0 = np.where(p_ < 0, np.maximum(t0, r), t0)
+            t1 = np.where(p_ > 0, np.minimum(t1, r), t1)
+    ok &= t0 <= t1
+    xa, ya, dx, dy, t0, t1, idx = xa[ok], ya[ok], dx[ok], dy[ok], t0[ok], t1[ok], idx[ok]
+    steps = np.maximum(np.abs(dx), np.abs(dy)).astype(np.int64)        # (as _samples steps the whole segment)
+    m = np.maximum(steps, 1)
+    j0 = np.clip(np.floor(t0 * m), 0, m).astype(np.int64)
+    j1 = np.clip(np.ceil(t1 * m), 0, m).astype(np.int64)
+    t0, t1 = np.where(steps > 0, j0 / m, 0.0), np.where(steps > 0, j1 / m, 1.0)
+    part = np.where(steps > 0, j1 - j0, 0)
+    return xa + t0 * dx + left, ya + t0 * dy, xa + t1 * dx + left, ya + t1 * dy, t0, t1, idx, part
+
+
 def _seg_line(img, v, left, x0, y0, x1, y1, rgb, alpha=None, per_sample=False):
     """Segments between world points (arrays), each the short way round, onto the map."""
     x0 = np.atleast_1d(np.asarray(x0, float))
     x1 = _unwrap(x0, np.atleast_1d(np.asarray(x1, float)), v.W)
-    xs, ys, idx = _samples(x0, np.atleast_1d(y0), x1, np.atleast_1d(y1))
-    a = None if alpha is None else np.atleast_1d(np.asarray(alpha, np.float32))[idx]
+    y0, y1 = (np.broadcast_to(np.atleast_1d(np.asarray(a, float)), x0.shape) for a in (y0, y1))
+    X0, Y0, X1, Y1, _t0, _t1, keep, steps = in_zone(v, left, x0, y0, x1, y1)
+    xs, ys, idx = _samples(X0, Y0, X1, Y1, steps)
+    a = None if alpha is None else np.broadcast_to(np.atleast_1d(np.asarray(alpha, np.float32)), x0.shape)[keep][idx]
     _plot(img, xs, ys, rgb, a, left, v.W)
 
 
@@ -812,7 +851,8 @@ def _polylines(img, v, lines, rgb):
     s = s[np.abs(s[:, 2] - s[:, 0]) <= 180]              # (the data's own date-line breaks)
     x0, x1 = v.wx(s[:, 0]), v.wx(s[:, 2])
     y0, y1 = v.y(s[:, 1]) - v.y0, v.y(s[:, 3]) - v.y0
-    xs, ys, _ = _samples(x0, y0, x1, y1)
+    x0, y0, x1, y1, _t0, _t1, _k, steps = in_zone(v, v.cx0, x0, y0, x1, y1)   # (the raster is the zone when cut)
+    xs, ys, _ = _samples(x0, y0, x1, y1, steps)
     _plot(img, xs, ys, rgb, None, v.cx0, v.W)
 
 
@@ -1118,9 +1158,10 @@ def _ahead(img, v, left, track, t, pos, minutes):
         return
     x0 = np.asarray(v.wx(a[:-1, 2]), float)
     x1 = _unwrap(x0, np.asarray(v.wx(a[1:, 2]), float), v.W)
-    xs, ys, idx = _samples(x0, v.y(a[:-1, 1]), x1, v.y(a[1:, 1]))
+    X0, Y0, X1, Y1, _t0, _t1, k, steps = in_zone(v, left, x0, v.y(a[:-1, 1]), x1, v.y(a[1:, 1]))
+    xs, ys, idx = _samples(X0, Y0, X1, Y1, steps)
     keep = (np.arange(xs.size) // 2) % 2 == 0
-    al = np.maximum(0.12, 0.55 * (1 - (a[1:, 0] - t) / span))[idx]
+    al = np.maximum(0.12, 0.55 * (1 - (a[1:, 0] - t) / span))[k][idx]
     _plot(img, xs[keep], ys[keep], AHEAD, al[keep], left, v.W)
 
 
@@ -1241,6 +1282,17 @@ def _terminator(img, v, left, t):
     _ring(img, v, left, la, lo, 90.0, (255, 190, 90), 0.5)
 
 
+def _shown_along(v, left, xs, ys):
+    """[(from, to)] px along a polyline (world x, unwrapped) that are on the zone; None: all of it (a narrow world)."""
+    if v.W <= 2 * v.w + 8:
+        return None
+    xs, ys = np.asarray(xs, float), np.asarray(ys, float)
+    seg = np.hypot(np.diff(xs), np.diff(ys))
+    cum = np.r_[0, np.cumsum(seg)]
+    _a, _b, _c, _d, t0, t1, k, _n = in_zone(v, left, xs[:-1], ys[:-1], xs[1:], ys[1:], pad=8.0)
+    return sorted((float(cum[i] + a * seg[i]), float(cum[i] + b * seg[i])) for a, b, i in zip(t0, t1, k))
+
+
 def _screen(v, left, wx_, y_):
     return int(round((wx_ - left) % v.W)), int(round(y_))
 
@@ -1314,6 +1366,8 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
     def label(kind, key, default, anchor, half, code=None, prio=5, extra="", optional=False):
         if not smap:
             return
+        if home and not (-half[0] <= anchor[0] < w + half[0] and -half[1] <= anchor[1] < h + half[1]):
+            return                                         # (Satellites Overhead: off the zone, no name on its edge)
         L = lab[kind]
         name = maplabels.name_for(ms, key, default).upper() if L["name"] else ""
         text = (flag(kind, code) if code else "") + name + extra
@@ -1388,7 +1442,11 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
         used.add(lk["ground"])
         live_ok = aos is True if lk["net"] == "nasa" else True
         if live_ok and _on(ex, "flow") and st.get("style") != "still":
+            vis = _shown_along(v, left, xs, ys)
+            if vis == []:
+                continue
             paths.append({"kind": "link", "xs": xs, "ys": ys, "cols": cols, "left": left, "W": v.W, "style": st["style"],
+                          "vis": vis,
                           "speed": st.get("speed", ex["flow"].get("speed")), "direction": st.get("direction", ex["flow"].get("direction"))})
     # the relays and ground stations (their icons, flags and names)
     relay_mode = ms.get("relays") if ms.get("relays") in RELAY_SHOW else "always"
@@ -1593,11 +1651,13 @@ def flow(buf, paths, now, ex, big=False):
             continue
         style = p.get("style", "dots")
         speed = FLOW_SPEED.get(p.get("speed"), FLOW_SPEED["normal"])
+        vis = p.get("vis")                                   # (only the stretches on the zone: see _shown_along)
+        lo, hi = (max(0.0, vis[0][0] - 30), min(total, vis[-1][1] + 30)) if vis else (0.0, total)
         direction = p.get("direction", "both")
         cols = [np.asarray(c, float) for c in p["cols"]]
         lighten = lambda c, lift: c * (1 - lift) + 255 * lift
         if style == "pulse":                                 # light running along the whole line
-            s = np.arange(clear, total - clear, 1.0)
+            s = np.arange(max(clear, math.floor(lo)), min(total - clear, hi), 1.0)
             ph = (now * speed) if direction != "up" else -(now * speed)
             a = np.clip(np.sin((s - ph) / 14.0 * math.pi) * 1.4 - 0.4, 0, 1) * 0.8
             px, py, k = _along(xs, ys, s, cum, seg)
@@ -1609,9 +1669,12 @@ def flow(buf, paths, now, ex, big=False):
         gap = {"dots": FLOW_GAP, "dashes": 10, "comet": 26}.get(style, FLOW_GAP) + (2 if direction == "both" else 0)
         runs = []
         if direction in ("down", "both"):
-            runs.append(((now * speed) % gap + np.arange(0, total, gap), 0.75, 1))
+            off = (now * speed) % gap
+            runs.append((off + gap * np.arange(math.floor((lo - off) / gap), math.ceil((hi - off) / gap) + 1), 0.75, 1))
         if direction in ("up", "both"):
-            runs.append((total - ((now * speed + gap / 2) % gap + np.arange(0, total, gap)), 0.45, -1))
+            off = (now * speed + gap / 2) % gap                # (heads at total - off - k gap)
+            ks = np.arange(math.floor((total - hi - off) / gap), math.ceil((total - lo - off) / gap) + 1)
+            runs.append((total - (off + gap * ks), 0.45, -1))
         for heads, lift, sgn in runs:
             if style == "dashes":
                 s = (heads[:, None] - sgn * np.arange(4)[None, :]).ravel()

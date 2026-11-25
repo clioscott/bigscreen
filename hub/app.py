@@ -87,7 +87,8 @@ def put_config(payload: dict = Body(...)):
         _sched().run_now("webcam_health")
     sats = lambda c: [(((c["modules"].get(k) or {}).get("map")) or {}).get("sats") for k in ("iss_map", "sats_overhead")] + [
         (((c["modules"].get("sats_overhead") or {}).get("map")) or {}).get("overhead"),
-        (c["modules"].get("sats_overhead") or {}).get("home")]
+        (c["modules"].get("sats_overhead") or {}).get("home"),
+        (c["modules"].get("weather_alerts") or {}).get("home_lonlat"), c.get("layout")]
     if sats(before) != sats(saved):                 # a satellite layer switched on or off: fetch it (or drop it) now;
         #                                             Satellites Overhead zoomed or moved: its basemaps drawn again
         _sched().run_now("sats")

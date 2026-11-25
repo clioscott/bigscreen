@@ -225,3 +225,58 @@ def test_it_still_draws_the_sky_without_the_iss_track(tmp_path):
     ring = np.asarray(issmap.HORIZON)
     assert (np.abs(img.astype(int) - ring).sum(axis=2) < 60).any()             # the ring is there
     assert (img == 255).all(axis=2).any()                                       # and the satellite
+
+
+def test_zoomed_far_in_long_lines_are_cut_to_the_zone_first_with_the_same_pixels():
+    v = _view(448, 175, issmap.overhead_of({"overhead": {"radius_km": 10}}))
+    left = v.left()
+    rng = np.random.default_rng(3)
+    x0 = left + rng.uniform(-3000, 3000, 60)
+    x1 = x0 + rng.uniform(-v.W / 2, v.W / 2, 60)
+    y0, y1 = rng.uniform(-200, 400, 60), rng.uniform(-200, 400, 60)
+    a = np.zeros((175, 448, 3), np.uint8)
+    issmap._seg_line(a, v, left, x0, y0, x1, y1, (255, 255, 255))
+    b = np.zeros((175, 448, 3), np.uint8)                    # (the old way: every pixel of every line)
+    xs, ys, _ = issmap._samples(x0, y0, issmap._unwrap(x0, x1, v.W), y1)
+    issmap._plot(b, xs, ys, (255, 255, 255), None, left, v.W)
+    A, B = a.any(axis=2), b.any(axis=2)
+    assert A.sum() == B.sum() > 1000                         # (the same lines: a step may land a px over where a
+    assert (A != B).sum() <= 0.01 * B.sum()                  # sample sits on a half pixel, rounded a hair apart)
+
+
+def test_zoomed_far_in_the_map_still_draws_quickly():
+    import time
+    v_ = issmap.overhead_view(HOME, 448, 175, issmap.overhead_of({"overhead": {"radius_km": 10}}))
+    data = _track(lat=HOME[0], lon=HOME[1] + 40)
+    issmap.render(448, 175, data, T0, True, True, None, None, None, {"_home": list(HOME)}, v_)   # (caches filled)
+    t = time.perf_counter()
+    for k in range(5):
+        issmap.render(448, 175, data, T0 + 60 * k, True, True, None, None, None, {"_home": list(HOME)}, v_)
+    assert (time.perf_counter() - t) / 5 < 0.05
+
+
+def test_the_link_animation_runs_only_where_the_link_shows_with_the_same_dots():
+    v = _view(448, 175, issmap.overhead_of({"overhead": {"radius_km": 10}}))
+    left = v.left()
+    xs = [left - 40000.0, left + 200.0, left + 60000.0]       # (a long link crossing the zone)
+    ys = [-3000.0, 90.0, 900.0]
+    p = {"kind": "link", "xs": xs, "ys": ys, "cols": [(255, 40, 40), (60, 220, 255)], "left": left, "W": v.W,
+         "style": "dots", "speed": "normal", "direction": "both"}
+    for style in ("dots", "comet", "pulse"):
+        a, b = np.zeros((175, 448, 3), np.uint8), np.zeros((175, 448, 3), np.uint8)
+        issmap.flow(a, [dict(p, style=style)], 1234.5, issmap.extras_of(None, True))
+        issmap.flow(b, [dict(p, style=style, vis=issmap._shown_along(v, left, xs, ys))], 1234.5, issmap.extras_of(None, True))
+        assert a.any() and (a == b).all(), style
+    assert issmap._shown_along(v, left, [left - 9e4, left - 8e4], [0.0, 10.0]) == []
+
+
+def test_satellites_off_to_the_sides_dont_count_against_icons_and_names(tmp_path):
+    near = [(HOME[0] + 0.3 * (i % 5) - 0.6, HOME[1] + 0.5 * (i // 5) - 1.0) for i in range(10)]
+    far = [(HOME[0], HOME[1] + 20 + i * 0.1) for i in range(200)]          # (the same latitudes, far east)
+    _starlink(tmp_path, near + far)
+    v = _view(448, 175, issmap.overhead_of({"overhead": {"radius_km": 200}}))
+    img = np.zeros((175, 448, 3), np.uint8)
+    icons, labels = [], []
+    ms = {"sats": {"starlink": {"on": True, "mark": "auto", "label": True}}}
+    mapsats.draw(img, v, v.left(), T0, ms, str(tmp_path), None, (0, 0), [], labels, {}, (200, 200, 200), icons)
+    assert len(icons) == 10 and len(labels) == 10

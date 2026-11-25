@@ -152,3 +152,19 @@ def test_a_previews_basemap_is_drawn_in_the_background_into_the_cache(tmp_path, 
         assert issmap.overhead_base(v)["lines"].all()                         # (the renderer finds it there)
     finally:
         issmap.OVERHEAD_DIRS.clear()
+
+
+def test_the_sats_job_takes_a_basemap_the_preview_already_drew(tmp_path, monkeypatch):
+    monkeypatch.setattr(spacemap, "DRAFTS", tmp_path / "drafts")
+    v = _view(300)
+    monkeypatch.setattr(spacemap, "lines", lambda view: np.ones((view.h, view.w), np.uint8))
+    monkeypatch.setattr(spacemap, "lights", lambda view, timeout=30: np.ones((view.h, view.w), np.uint8))
+    spacemap.ensure(v, spacemap.DRAFTS, now=1000.0)
+
+    def boom(view):
+        raise AssertionError("drawn again")
+
+    monkeypatch.setattr(spacemap, "lines", boom)
+    assert spacemap.ensure(v, tmp_path / "live", now=2000.0) == "kept (from the preview)"
+    name = issmap.overhead_name(v)
+    assert (tmp_path / "live" / f"{name}.bin").read_bytes() == (spacemap.DRAFTS / f"{name}.bin").read_bytes()

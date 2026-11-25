@@ -568,9 +568,19 @@ def water_masks(view: View, min_feature_px: float = 3.0, fine_max_w: int = CHANN
     ocean &= ~land
     lakes &= ~land
     rivers &= ~land
-    BASEMAP_CACHE.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(np.dstack([land, ocean, lakes, rivers]).astype(np.uint8) * 255, "RGBA").save(cached)
+    _save_png(Image.fromarray(np.dstack([land, ocean, lakes, rivers]).astype(np.uint8) * 255, "RGBA"), cached)
     return land, ocean, lakes, rivers
+
+
+def _save_png(img, path):
+    """Save so a reader in another process never sees half a file."""
+    import os
+    import tempfile
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.stem}.", suffix=".png")
+    os.close(fd)
+    img.save(tmp, "PNG")
+    os.replace(tmp, path)
 
 
 def land_mask(view: View, min_feature_px: float = 3.0, fine_max_w: int = CHANNEL_FINE_MAX_W) -> np.ndarray:
@@ -707,8 +717,7 @@ def render_overlay(view: View, overrides: dict | None = None, min_feature_px: fl
                 m &= ~resolved_rivers          # centre lines only where the banks can't be resolved
         out[m, :3] = np.array(_hex(s["color"]), dtype=np.uint8)
         out[m, 3] = int(255 * float(s.get("opacity", 1.0)))
-    BASEMAP_CACHE.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(out, "RGBA").save(cached)
+    _save_png(Image.fromarray(out, "RGBA"), cached)
     return out
 
 
