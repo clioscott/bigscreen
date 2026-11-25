@@ -6,14 +6,14 @@ export const EXTRA_DEFAULTS = {
   ahead: { on: true, minutes: 45 },
   sunlit: { on: true, shadow: "blue" },
   tiangong: { on: true, trail: true, label: true },
-  signal: { on: true, tag: true, place: "right" },
+  signal: { on: true, tag: true, place: "auto", style: "text" },
   russian: { on: true },
   flow: { on: true, speed: "normal", direction: "both" },
   telemetry: { on: true, corner: "tr", rows: ["cabin_p", "cabin_t", "o2", "co2", "gyros", "water"] },
   docked: { on: true, corner: "tl", days: true },
 };
 // where the AOS/LOS tag sits round the ISS (display/modules/issmap.py TAG_PLACES)
-export const TAG_PLACES = [["right", "Right"], ["left", "Left"], ["above", "Above"], ["below", "Below"],
+export const TAG_PLACES = [["auto", "Auto"], ["right", "Right"], ["left", "Left"], ["above", "Above"], ["below", "Below"],
   ["above_right", "Above right"], ["above_left", "Above left"], ["below_right", "Below right"], ["below_left", "Below left"]];
 const ROWS = [
   { value: "cabin_p", label: "Cabin pressure" }, { value: "cabin_t", label: "Cabin temperature" },
@@ -71,7 +71,9 @@ export const IssMapExtras = {
         <template v-else-if="it.k === 'signal'">
           <label class="isx-chk"><input type="checkbox" :checked="get('signal').tag" @change="set('signal', 'tag', $event.target.checked)">AOS/LOS tag</label>
           <select v-if="get('signal').tag" class="input" style="width:auto" :value="get('signal').place || 'right'" @change="set('signal', 'place', $event.target.value)">
-            <option v-for="o in TAG_PLACES" :key="o[0]" :value="o[0]">{{ o[1] }}</option></select></template>
+            <option v-for="o in TAG_PLACES" :key="o[0]" :value="o[0]">{{ o[1] }}</option></select>
+          <Seg v-if="get('signal').tag" :modelValue="get('signal').style || 'text'" @update:modelValue="v => set('signal', 'style', v)"
+            :options="[{ value: 'text', label: 'Text' }, { value: 'icon', label: 'Signal icon' }]"/></template>
         <template v-else-if="it.k === 'flow'">
           <Seg :modelValue="get('flow').direction" @update:modelValue="v => set('flow', 'direction', v)"
             :options="[{ value: 'both', label: 'Up & down' }, { value: 'down', label: 'Down' }, { value: 'up', label: 'Up' }]"/>

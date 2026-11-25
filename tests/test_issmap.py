@@ -299,7 +299,7 @@ def test_the_iss_has_a_black_outline_round_it():
     assert xs.min() == 93 and xs.max() == 107 and ys.min() == 60 - 3 and ys.max() == 60 + 3   # 1 px all round
 
 
-@pytest.mark.parametrize("place", issmap.TAG_PLACES)
+@pytest.mark.parametrize("place", [p for p in issmap.TAG_PLACES if p != "auto"])
 def test_the_aos_los_tag_goes_where_it_is_asked_clear_of_the_iss(place):
     art, IX, IY, tw = issmap.ISS_BIG, 200, 60, 16
     X, Y = issmap.tag_xy(place, IX, IY, art, tw, 448, 134)
@@ -331,3 +331,33 @@ def test_the_tag_place_is_checked_in_the_config():
     config._validate_map_extras("x", {"signal": {"place": "below_left"}})
     with pytest.raises(config.ConfigError):
         config._validate_map_extras("x", {"signal": {"place": "sideways"}})
+
+
+def test_the_iss_label_has_a_globe_or_the_partners_flags_each_where_asked():
+    from display.modules.flags import flag_char
+    from display.modules.maplabels import labels_of
+    L = labels_of({}, "iss")
+    assert (L["flag"], L["pos"], L["text"]) == ("globe", "right", "ISS")
+    assert issmap.iss_flags(L) == ([], flag_char("world"), {})
+    assert labels_of({"labels": {"iss": {"flag": True}}}, "iss")["flag"] == "globe"   # (saved before)
+    beside, inline, pad = issmap.iss_flags({"flag": "partners", "us_at": "left", "ru_at": "label"})
+    assert beside == [("us", "left")] and inline == flag_char("ru") and pad == {"left": issmap.FLAG_W + 2}
+    both = issmap.iss_flags({"flag": "partners", "us_at": "above", "ru_at": "above"})[0]
+    (c1, x1, y1), (c2, x2, y2) = issmap._flag_boxes(both, 200, 60, issmap.ISS_BIG)
+    assert y1 == y2 and y1 + issmap.FLAG_H + 1 < 60 - 3 and x2 == x1 + issmap.FLAG_W + 2   # side by side, clear above
+    assert abs((x1 + x2 + issmap.FLAG_W) / 2 - 200) <= 1
+
+
+def test_the_iss_label_text_fills_in_the_expedition_and_crew():
+    data = {"mission": {"name": "Expedition 75"}}
+    assert issmap.iss_text("ISS: EXP {exp}", data, 7) == "ISS: EXP 75"
+    assert issmap.iss_text("{crew} ABOARD", {}, 7) == "7 ABOARD"
+    assert issmap.iss_text("", data, None) == "ISS"
+
+
+def test_the_aos_los_tag_can_be_a_signal_icon():
+    data = {**_track(lon0=40.0, lat=-30.0), "relays": [{"name": "TDRS Z", "net": "tdrs", "lat": 0, "lon": 85.0}]}
+    t = T0 + 500
+    live = {"at": t + 40, "connected": True, "signal": [[t - 100, 1]]}
+    img = issmap.render(448, 134, data, t, extras=_all_off(signal={"style": "icon"}), live=live)[0]
+    assert (img == issmap.PAL["V"]).all(axis=2).sum() == sum(r.count("V") for r in issmap.AOS_ART)   # (no text)

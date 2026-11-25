@@ -307,3 +307,85 @@ def test_a_layer_with_nothing_in_orbit_yet_is_empty_not_an_error(tmp_path, monke
     monkeypatch.setattr(sats, "cache_dir", lambda: tmp_path)
     monkeypatch.setattr(sats.requests, "get", lambda *a, **k: R())
     assert sats.elements("lightspeed") == []
+
+
+ISS_TLE = ("ISS (ZARYA)", "1 25544U 98067A   08264.51782528 -.00002182  00000-0 -11606-4 0  2927",
+           "2 25544  51.6416 247.4627 0006703 130.5360 325.0288 15.72125391563537")
+TLE_T = 1221923540.0            # (2008-09-20 12:32 UTC: the TLE's epoch)
+
+
+def test_orbit_tracks_go_round_a_whole_orbit_through_the_satellite(tmp_path, monkeypatch):
+    from hub.jobs import sats as job
+    from display.modules import issmap, mapsats
+    monkeypatch.setattr(job.paths, "DATA_DIR", tmp_path)
+    job.write("starlink", [ISS_TLE], TLE_T)
+    assert job.write_tracks("starlink", [ISS_TLE], TLE_T) > 40
+    assert abs(job.period([ISS_TLE]) - 86400 / 15.72125391) < 1
+    cfg = {"modules": {"iss_map": {"map": {"sats": {"starlink": {"on": True, "tracks": 20}}}}}}
+    assert job.tracks_wanted(cfg, "starlink") and not job.tracks_wanted(cfg, "gps")
+    v = issmap.View(448, 192, follow=False)
+    left = v.left(None)
+    ms = {"sats": {"starlink": {"on": True, "mark": "dot", "tracks": 5, "near_km": 0, "colour": "#ffffff",
+                                "brightness": 1.0}}}
+    img = np.zeros((192, 448, 3), np.uint8)
+    mapsats.draw(img, v, left, TLE_T + 60, ms, str(tmp_path), None, (0, 0), [], [], {}, (200, 200, 200), [])
+    dim = int(255 * mapsats.TRACK_DIM)
+    track = (img == dim).all(axis=2)
+    cols = np.flatnonzero(track.any(axis=0))
+    assert cols.size > 0.85 * 448                               # a whole orbit: right across the map
+    rows = np.flatnonzero(track.any(axis=1))
+    assert v.y(51.6) - 3 <= rows.min() and rows.max() <= v.y(-51.6) + 3   # between ±51.6°
+    lat, lon, ok = mapsats.positions(mapsats.load("starlink", str(tmp_path)), TLE_T + 60)
+    X, Y = int(round((float(v.wx(lon[0])) - left) % v.W)), int(round(float(v.y(lat[0]))))
+    assert (img[Y, X] == 255).all() and track[max(0, Y - 2):Y + 3, max(0, X - 2):X + 3].any()   # on its own track
+    ms["sats"]["starlink"]["tracks"] = 0                       # off: no track
+    img[:] = 0
+    mapsats.draw(img, v, left, TLE_T + 60, ms, str(tmp_path), None, (0, 0), [], [], {}, (200, 200, 200), [])
+    assert not (img == dim).all(axis=2).any()
+
+
+def test_track_picks_are_spread_or_nearest():
+    from display.modules import mapsats
+    lat, lon = np.zeros(100), np.linspace(-170, 170, 100)
+    ok = np.ones(100, bool)
+    spread = mapsats.track_pick(lat, lon, ok, 10)
+    assert len(spread) == 10 and spread[0] == 0 and spread[-1] == 99
+    near = mapsats.track_pick(lat, lon, ok, 3, centre=(0.0, 0.0), near_km=2000)
+    assert set(np.abs(lon[near]).round()) <= {2.0, 5.0}       # the ones either side of 0°
+
+
+def test_track_picks_hold_between_steps_and_the_mask_is_not_redrawn(tmp_path, monkeypatch):
+    from hub.jobs import sats as job
+    from display.modules import issmap, mapsats
+    monkeypatch.setattr(job.paths, "DATA_DIR", tmp_path)
+    tles = [(f"S{i}", ISS_TLE[1], ISS_TLE[2][:17] + f"{i * 30.0:8.4f}" + ISS_TLE[2][25:]) for i in range(12)]
+    job.write("starlink", tles, TLE_T)
+    job.write_tracks("starlink", tles, TLE_T)
+    v = issmap.View(448, 192, follow=False)
+    ms = {"sats": {"starlink": {"on": True, "mark": "dot", "tracks": 3, "near_km": 15000}}}   # (the nearest three)
+    rebuilt = []
+    real = mapsats._mesh_onto
+
+    def spy(img, v_, left, key, segs, rgb):
+        hit = mapsats._meshes.get(key[0])
+        if hit is None or hit[0] != key:
+            rebuilt.append(key)
+        return real(img, v_, left, key, segs, rgb)
+
+    monkeypatch.setattr(mapsats, "_mesh_onto", spy)
+    step = job.TRACK_STEP["leo"]
+    t0 = (TLE_T // step + 1) * step
+    for dt in range(0, step, 10):                           # a step's worth of frames, the ISS moving under them
+        img = np.zeros((192, 448, 3), np.uint8)
+        mapsats.draw(img, v, v.left(None), t0 + dt + 1, ms, str(tmp_path), (10.0, dt * 0.06), (0, 0), [], [], {},
+                     (200, 200, 200), [])
+    assert len(rebuilt) == 1                                # the same picks, one mask, for the whole step
+
+
+def test_a_fixed_label_goes_to_the_other_side_at_the_edge_of_the_map():
+    from display.modules import maplabels
+    it = {"text": "ISS", "anchor": (440, 50), "half": (10, 4), "pos": "right", "rgb": (255, 255, 255)}
+    (_it, x, _y, _t, bw), = maplabels.place([it], [], 448, 100)
+    assert x + bw <= 440 - 10                               # left of the icon, not squashed onto it
+    it["anchor"] = (100, 50)
+    assert maplabels.place([it], [], 448, 100)[0][1] > 100 + 10

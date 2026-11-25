@@ -14,6 +14,11 @@ real links aren't published; this is how these networks are built).
 
 .bin: b"SAT2", n (u32), steps (u16), pairs (u32), t0 (f64), step (f32), then lat×100 and lon×100 as int16
 [steps][n], then the pairs as uint16 [pairs][2]. .json: {"at", "names", "count"}.
+
+Orbit tracks (``map.sats.<layer>.tracks``, low and middle orbits): each satellite's ground track from half an orbit
+before the positions start to half an orbit after they end, every TRACK_STEP, so the display can draw each one's
+whole orbit round where it is → .trk: b"TRK1", n (u32), steps (u16), t0 (f64), step (f64), period (f32, the
+layer's typical orbit, s), then lat×100 and lon×100 as int16 [steps][n].
 """
 
 from __future__ import annotations
@@ -36,6 +41,8 @@ TLE_TTL = 6 * 3600
 BACK = 120                       # from this long before now (the wall shows the map as filmed, 35 s ago)
 HORIZON = 25 * 60                # … to this long after it (the job runs every 10 min)
 MAX_SATS = 65000                 # (pair indices are uint16)
+TRACK_STEP = {"leo": 120, "meo": 600}   # s between the points of the orbit tracks (none for GEO: it stays put)
+TRK = struct.Struct("<4sIHddf")
 MESH_KM = 3500                   # no laser link longer than this
 R_EARTH = 6378.137
 
@@ -141,6 +148,50 @@ def mesh(tles, r):
     return sorted(pairs)
 
 
+def period(tles):
+    """The layer's typical orbit (s): the median of its satellites' periods from their mean motion (rev/day)."""
+    import numpy as np
+    mm = []
+    for _n, _l1, l2 in tles:
+        try:
+            mm.append(float(l2[52:63]))
+        except ValueError:
+            pass
+    mm = [m for m in mm if m > 0]
+    return 86400.0 / float(np.median(mm)) if mm else 0.0
+
+
+def write_tracks(key, tles, now):
+    """data/issmap/sats_<key>.trk (see the top): every satellite's ground track round the positions' span."""
+    import numpy as np
+    step = TRACK_STEP.get(LAYERS[key]["orbit"])
+    p = period(tles) if step and tles else 0.0
+    d = paths.DATA_DIR / "issmap"
+    if not p:
+        (d / f"sats_{key}.trk").unlink(missing_ok=True)
+        return 0
+    t0 = math.floor((now - BACK - p / 2) / step) * step
+    steps = int((BACK + HORIZON + p) // step) + 2
+    lat, lon, _r = propagate(tles, t0, steps, step)
+    la = np.where(np.isfinite(lat), np.round(lat * 100), 32767).astype("<i2")
+    lo = np.where(np.isfinite(lon), np.round(lon * 100), 32767).astype("<i2")
+    d.mkdir(parents=True, exist_ok=True)
+    tmp = d / f"sats_{key}.trk.tmp"
+    tmp.write_bytes(TRK.pack(b"TRK1", len(tles), steps, float(t0), float(step), float(p)) + la.tobytes() + lo.tobytes())
+    tmp.replace(d / f"sats_{key}.trk")
+    return steps
+
+
+def tracks_wanted(cfg, key):
+    """Whether either map draws this layer's orbit tracks."""
+    mods = (cfg or {}).get("modules") or {}
+    for m in ("iss_map", "sats_overhead"):
+        st = ((((mods.get(m) or {}).get("map") or {}).get("sats") or {}).get(key))
+        if isinstance(st, dict) and st.get("on") and st.get("tracks"):
+            return True
+    return False
+
+
 def write(key, tles, now):
     import numpy as np
     step = STEP[LAYERS[key]["orbit"]]
@@ -194,7 +245,7 @@ def run(cfg):
     d = paths.DATA_DIR / "issmap"
     for k in LAYERS:                                        # layers switched off: their files go (and stop syncing)
         if k not in keys:
-            for ext in ("bin", "json"):
+            for ext in ("bin", "json", "trk"):
                 try:
                     (d / f"sats_{k}.{ext}").unlink()
                 except OSError:
@@ -205,8 +256,14 @@ def run(cfg):
     out, errs = {}, {}
     for k in keys:
         try:
-            n, m = write(k, elements(k), now)
+            tles = elements(k)
+            n, m = write(k, tles, now)
             out[k] = f"{n} sats" + (f", {m} links" if m else "")
+            if tracks_wanted(cfg, k):
+                write_tracks(k, tles[:MAX_SATS], now)
+                out[k] += ", orbit tracks"
+            else:
+                (d / f"sats_{k}.trk").unlink(missing_ok=True)
         except Exception as e:
             errs[k] = str(e)[:160]
     return {"ok": not errs or bool(out), **out, **({"failed": errs} if errs else {}),

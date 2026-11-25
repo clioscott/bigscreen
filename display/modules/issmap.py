@@ -97,7 +97,13 @@ RELAY_ART = ["BB.W.BB", "BBWWWBB", "BB.W.BB"]
 LUCH_ART = ["TT.W.TT", "TTWWWTT", "TT.W.TT"]
 DISH_ART = ["D.....", ".DD...", ".D.D..", "..DDS.", "...S..", ".KKKK.", ".KLKL."]   # a big dish on a building
 SMALL_ART = ["A.A", "AWA", "A.A"]                                                  # the small map's ISS
-CSS_ART = ["R.R", "RWR", "R.R"]
+# Tiangong from above, as big as the ISS: the two lab modules (Wentian, Mengtian) across the node with their big
+# wings at the ends, the core module (Tianhe) back from it with its own smaller wings
+CSS_ART = ["RR...W...RR",
+           "RRWWWWWWWRR",
+           "RR...W...RR",
+           "....QWQ....",
+           ".....W....."]
 ISS_BIG = ["AAA.AAA.....AAA.AAA",
            "HHH.HHH..W..HHH.HHH",
            "AAA.AAA.WWW.AAA.AAA",
@@ -124,11 +130,20 @@ DISH_BIG = ["D....S...D",
             ".KKKKKKKK.",
             ".KLKLKLKK.",
             ".KKKKKKKK."]
-CSS_BIG = ["RRR.RRR", "RRRWRRR", "...W...", "..WWW.."]
+CSS_BIG = ["QQQQ.........QQQQ",
+           "RRRR....W....RRRR",
+           "RRRRWWWWWWWWWRRRR",
+           "QQQQ....W....QQQQ",
+           "......RRWRR......",
+           "......QQWQQ......",
+           "........W........"]
+# the AOS/LOS tag as an icon (``extras.signal.style``): signal bars, green with the signal, grey and crossed out without
+AOS_ART = ["......V", "....V.V", "..V.V.V", "V.V.V.V"]
+LOS_ART = ["X.X...Z", ".X..Z.Z", "X.X.Z.Z", "Z.Z.Z.Z"]
 PAL = {"A": (220, 150, 40), "W": (235, 235, 235), "G": (240, 200, 60), "B": (70, 130, 255), "D": (225, 225, 235),
        "S": (150, 150, 160), "K": (110, 110, 125), "L": (255, 210, 90), "T": (60, 200, 170), "E": (250, 190, 140),
        "R": (230, 80, 60), "H": (160, 105, 30), "Y": (255, 214, 90), "M": (220, 222, 235), "P": (255, 150, 100),
-       "O": (255, 225, 120)}
+       "O": (255, 225, 120), "Q": (150, 45, 35), "V": (80, 225, 120), "X": (235, 60, 60), "Z": (130, 130, 140)}
 RU = lambda art: [r.replace("D", "E") for r in art]                               # a Russian station's dish
 CN = lambda art: [r.replace("D", "R") for r in art]                               # a Chinese station's dish
 TL_ART = ["RR.W.RR", "RRWWWRR", "RR.W.RR"]
@@ -152,7 +167,7 @@ EXTRAS = {
     "ahead": {"on": True, "minutes": 45},
     "sunlit": {"on": True, "shadow": "blue"},
     "tiangong": {"on": True, "trail": True, "label": True},
-    "signal": {"on": True, "tag": True, "place": "right"},
+    "signal": {"on": True, "tag": True, "place": "auto", "style": "text"},
     "russian": {"on": True},
     "flow": {"on": True, "speed": "normal", "direction": "both"},
     "telemetry": {"on": True, "corner": "tr", "rows": ["cabin_p", "cabin_t", "o2", "co2", "gyros", "water"]},
@@ -643,18 +658,88 @@ def _sprite_arrays(art, outline=False):
     return hit
 
 
-TAG_PLACES = ("right", "left", "above", "below", "above_right", "above_left", "below_right", "below_left")
+TAG_PLACES = ("auto", "right", "left", "above", "below", "above_right", "above_left", "below_right", "below_left")
 
 
-def tag_xy(place, IX, IY, art, tw, w, h):
+TAG_STYLES = ("text", "icon")
+FLAG_W, FLAG_H = 9, 6                                      # (display/modules/flags.py)
+
+
+def _stamp(img, rgb, mask, x0, y0):
+    """rgb where mask, with its top-left at x0, y0 (clipped to img)."""
+    h, w = img.shape[:2]
+    hh, ww = mask.shape
+    X0, Y0, X1, Y1 = max(0, x0), max(0, y0), min(w, x0 + ww), min(h, y0 + hh)
+    if X1 <= X0 or Y1 <= Y0:
+        return
+    m = mask[Y0 - y0:Y1 - y0, X0 - x0:X1 - x0]
+    img[Y0:Y1, X0:X1][m] = rgb[Y0 - y0:Y1 - y0, X0 - x0:X1 - x0][m]
+
+
+def iss_flags(L):
+    """The ISS label's flags (``labels.iss``): ([(code, side)] beside the icon, the flags in the label (characters),
+    {side: px they take}). flag "globe": a globe flag in the label; "partners": the US and Russian flags, each in
+    the label or by the icon on its own side (us_at, ru_at); "none"."""
+    from display.modules.flags import flag_char
+    mode, beside, inline = L.get("flag"), [], ""
+    if mode == "globe":
+        inline = flag_char("world")
+    elif mode == "partners":
+        for c in ("us", "ru"):
+            at = L.get(f"{c}_at", "label")
+            if at in ("right", "left", "above", "below"):
+                beside.append((c, at))
+            else:
+                inline += flag_char(c)
+    pad = {}
+    for side in ("right", "left", "above", "below"):
+        n = sum(1 for _c, s in beside if s == side)
+        if n:
+            pad[side] = n * (FLAG_W + 2) if side in ("right", "left") else FLAG_H + 2
+    return beside, inline, pad
+
+
+def _flag_boxes(beside, IX, IY, art):
+    """[(code, x, y)]: each flag's top-left beside an icon centred on IX, IY, a pixel clear of its outline; flags on
+    the same side sit side by side (centred above or below it)."""
+    aw, ah = len(art[0]), len(art)
+    L, T = IX - aw // 2, IY - ah // 2
+    R, B = L + aw - 1, T + ah - 1
+    out = []
+    for side in ("right", "left", "above", "below"):
+        codes = [c for c, s in beside if s == side]
+        total = len(codes) * FLAG_W + (len(codes) - 1) * 2
+        for i, c in enumerate(codes):
+            if side == "right":
+                out.append((c, R + 3 + i * (FLAG_W + 2), IY - FLAG_H // 2))
+            elif side == "left":
+                out.append((c, L - 2 - FLAG_W - i * (FLAG_W + 2), IY - FLAG_H // 2))
+            else:
+                out.append((c, IX - total // 2 + i * (FLAG_W + 2), T - 2 - FLAG_H if side == "above" else B + 3))
+    return out
+
+
+def iss_text(text, data, n_crew):
+    """The ISS label's own text (``labels.iss.text``), with {exp} the expedition's number and {crew} how many are
+    aboard (left out when not known)."""
+    s = str(text or "ISS")
+    name = str(((data or {}).get("mission") or {}).get("name") or "")
+    exp = name.split()[-1] if name and name.split()[-1].isdigit() else ""
+    return s.replace("{exp}", exp).replace("{crew}", str(n_crew or "")).strip() or "ISS"
+
+
+def tag_xy(place, IX, IY, art, tw, w, h, pad=None):
     """Where the AOS/LOS tag's text goes (its left column and the top row of its 7-row backdrop) for an ISS icon
     centred on IX, IY: ``place`` one of TAG_PLACES (beside, above or below the icon, or off a corner), its
     backdrop just outside the icon's black outline. Where that side runs off the map it goes to the other side
-    (never pushed back over the ISS); then it's kept on the map. tw: the text's width (_tw, ending in a 1 px gap)."""
+    (never pushed back over the ISS); then it's kept on the map. tw: the text's width (_tw, ending in a 1 px gap).
+    pad: {side: px} already taken next to the icon on that side (its flags), which the tag goes beyond."""
     place = place if place in TAG_PLACES else "right"
     aw, ah = len(art[0]), len(art)
     L, T = IX - aw // 2, IY - ah // 2                      # the icon's first column and row
     R, B = L + aw - 1, T + ah - 1                          # its last (the outline is one further out)
+    p = pad or {}
+    L, R, T, B = L - p.get("left", 0), R + p.get("right", 0), T - p.get("above", 0), B + p.get("below", 0)
     vert, _, side = place.partition("_") if place not in ("left", "right") else ("", "", place)
     xs = {"right": R + 3, "left": L - 1 - tw}
     ys = {"above": T - 8, "below": B + 2}
@@ -671,9 +756,10 @@ def tag_xy(place, IX, IY, art, tw, w, h):
     return max(1, min(w - tw, X)), max(0, min(h - 8, Y))
 
 
-def _sprite(img, art, wx, y, v, left, clamp_y=False, outline=False):
+def _sprite(img, art, wx, y, v, left, clamp_y=False, outline=True, drawn=None):
     """An icon centred on world x wx, row y (drawn again a world further along when it straddles the map's edge).
-    outline: a 1 px black edge round it (the ISS: it stays clear on a busy map); clamp_y keeps the icon itself in."""
+    outline: a 1 px black edge round it, so it stays clear on a busy map; clamp_y keeps the icon itself in.
+    drawn: a bool mask the size of img, set where the icon (with its edge) went."""
     rgb, mask = _sprite_arrays(art, outline)
     hh, ww = mask.shape
     pad = 1 if outline else 0
@@ -688,6 +774,8 @@ def _sprite(img, art, wx, y, v, left, clamp_y=False, outline=False):
             continue
         m = mask[Y0 - y0:Y1 - y0, X0 - xx:X1 - xx]
         img[Y0:Y1, X0:X1][m] = rgb[Y0 - y0:Y1 - y0, X0 - xx:X1 - xx][m]
+        if drawn is not None:
+            drawn[Y0:Y1, X0:X1] |= m
 
 
 # --- the world: lines once per size, night every SHADE_EVERY --------------------------------------------------
@@ -766,11 +854,11 @@ def base(v, full, big=False, russian=True, chinese=False, stations=True, borders
             _polylines(img, v, L["borders"], BORDER)
         _polylines(img, v, L["coast"], COAST)
         icons = np.zeros((v.mh, v.W, 3), np.uint8)
+        mask = np.zeros((v.mh, v.W), bool)
         if full and stations:
             art = ICONS[big]
             for _n, (la, lo), net in ground_sites(russian, chinese):
-                _sprite(icons, art[GROUND_ART[net]], float(v.wx(lo)), float(v.y(la)) - v.y0, v, 0)
-        mask = icons.any(axis=2)
+                _sprite(icons, art[GROUND_ART[net]], float(v.wx(lo)), float(v.y(la)) - v.y0, v, 0, drawn=mask)
         img[mask] = icons[mask]
         if len(_bases) > 8:
             _bases.clear()
@@ -1110,7 +1198,7 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
         np.copyto(band, src, where=m)
     ix, iy = float(v.wx(pos[1])), float(v.y(pos[0]))
     if not full:
-        _sprite(img, SMALL_ART, ix, iy, v, left, clamp_y=True, outline=True)
+        _sprite(img, SMALL_ART, ix, iy, v, left, clamp_y=True)
         return img, paths
     IX, IY = _screen(v, left, ix, iy)
     hw = lambda a: (len(a[0]) // 2 + 1, len(a) // 2 + 1)
@@ -1120,15 +1208,16 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
     flag = lambda k, code: (__import__("display.modules.flags", fromlist=["x"]).flag_char(code) if lab[k]["flag"] else "")
     people = [p for p in (data or {}).get("people") or [] if isinstance(p, dict)]
 
-    def label(kind, key, default, anchor, half, code=None, prio=5, extra="", optional=False):
+    def label(kind, key, default, anchor, half, code=None, prio=5, extra="", optional=False, pad=None, flags=None):
         if not smap:
             return
         L = lab[kind]
         name = maplabels.name_for(ms, key, default).upper() if L["name"] else ""
-        text = (flag(kind, code) if code else "") + name + extra
+        text = (flags if flags is not None else (flag(kind, code) if code else "")) + name + extra
         if text.strip():
             label_items.append({"text": text, "anchor": anchor, "half": half, "pos": L["pos"], "prio": prio,
-                                "rgb": rgb_of(kind), "backdrop": L.get("backdrop", True), "optional": optional})
+                                "rgb": rgb_of(kind), "edge": L.get("edge", "outline"), "optional": optional,
+                                "pad": pad})
 
     # satellite layers (under everything else: there can be thousands)
     counts, up = {}, {}
@@ -1167,7 +1256,8 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
             label("tiangong", "Tiangong", "Tiangong", (CX, CY), hw(art["css"]), "cn", 1, crew)
         elif ex["tiangong"].get("label", True) and big:    # (the webcam's map: its name, as it always was)
             X = int(round((cx - left) % v.W))
-            _text(img, min(w - _tw("TIANGONG") - 1, X + 6), max(0, int(cy) - 9), "TIANGONG", (230, 110, 90))
+            mappanels.draw_text_outlined(img, min(w - _tw("TIANGONG") - 1, X + 10), max(0, int(cy) - 11), "TIANGONG",
+                                         (230, 110, 90))
         if _on(ex, "footprint") and ex["footprint"].get("tiangong"):
             _ring(img, v, left, cpos[0], cpos[1], footprint_deg(390.0, float(ex["footprint"].get("elevation", 10))),
                   CSS, 0.45)
@@ -1284,24 +1374,47 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
         icons.append((IX - iss_half[0], IY - iss_half[1], IX + iss_half[0], IY + iss_half[1]))
     crew = [p for p in people if p.get("iss")]
     n_crew = len(crew) or ((data or {}).get("crew") or {}).get("count")
-    if iss_up:
-        label("iss", "ISS", "ISS", (IX, IY), iss_half, None, 0,
-              f" {n_crew} CREW" if lab["iss"].get("crew") and n_crew else "")
+    side_flags, in_label, pad = iss_flags(lab["iss"]) if smap else ([], "", {})
+    flag_boxes = []
+    if iss_up and side_flags:                              # the US and Russian flags beside the icon
+        flag_boxes = _flag_boxes(side_flags, IX, IY, art["iss"])
+        icons.extend((x - 1, y - 1, x + FLAG_W + 1, y + FLAG_H + 1) for _c, x, y in flag_boxes)
     tag = _on(ex, "signal") and ex["signal"].get("tag", True) and aos is not None
     if tag:                                                # (the AOS/LOS tag's room)
+        icon_tag = ex["signal"].get("style") == "icon"
         lab_ = "AOS" if aos else "LOS"
-        X, Y = tag_xy(ex["signal"].get("place"), IX, IY, art["iss"], _tw(lab_), w, h)
-        icons.append((X - 1, Y, X + _tw(lab_), Y + 7))
+        tw_ = len(AOS_ART[0]) + 1 if icon_tag else _tw(lab_)
+        tside = ex["signal"].get("place") or "auto"
+        if tside == "auto":                                # (the Space Map's ISS label is on the right)
+            tside = "below" if smap and lab["iss"].get("name") else "right"
+        X, Y = tag_xy(tside, IX, IY, art["iss"], tw_, w, h, pad)
+        icons.append((X - 1, Y, X + tw_, Y + 7))
+        if tside in ("right", "left", "above", "below"):  # (a label on that side goes beyond it)
+            pad = {**pad, tside: pad.get(tside, 0) + (tw_ + 2 if tside in ("right", "left") else 9)}
+    if iss_up:
+        L_ = lab["iss"]
+        text = iss_text(L_.get("text"), data, n_crew)
+        crew_txt = f" {n_crew} CREW" if L_.get("crew") and n_crew else ""
+        if L_.get("name") or crew_txt:                     # (no name and no crew: no label, not a lone flag)
+            label("iss", "ISS", text, (IX, IY), iss_half, None, 0, crew_txt, pad=pad, flags=in_label)
     if smap:
         obstacles = icons + pboxes + ([tuple(avoid)] if avoid else [])
         maplabels.draw(img, maplabels.place(label_items, obstacles, w, h))
         mappanels.draw(img, placed)
     if tag:
-        x0, x1 = max(0, X - 1), X + _tw(lab_)               # 1 px each side of the ink (the width ends in a 1 px gap)
-        img[Y:Y + 7, x0:x1] = (img[Y:Y + 7, x0:x1] * 0.3).astype(np.uint8)
-        _text(img, X, Y + 1, lab_, AOS_C if aos else LOS_C)
+        if icon_tag:
+            a = AOS_ART if aos else LOS_ART
+            rgb, m = _sprite_arrays(a, True)
+            _stamp(img, rgb, m, X - 1, Y + 1)
+        else:
+            mappanels.draw_text_outlined(img, X, Y + 1, lab_, AOS_C if aos else LOS_C)
+    from display.modules import flags as flagmod
+    for code, x, y in flag_boxes:
+        pic = flagmod.picture(code)
+        _stamp(img, np.pad(pic, ((1, 1), (1, 1), (0, 0))), mappanels.grow(np.pad(np.ones(pic.shape[:2], bool), 1)),
+               x - 1, y - 1)
     if iss_up:
-        _sprite(img, art["iss"], ix, iy, v, left, clamp_y=not home, outline=True)   # (last: nothing ever covers the ISS)
+        _sprite(img, art["iss"], ix, iy, v, left, clamp_y=not home)   # (last: nothing ever covers the ISS)
     if pboxes:
         solid = [b for (q, m, _x, _y), b in zip(placed, pboxes) if m.get("video")]
         seen = [(*b, 1 - max(0.0, min(1.0, float(q.get("opacity", 0.72))))) for (q, m, _x, _y), b in zip(placed, pboxes)
