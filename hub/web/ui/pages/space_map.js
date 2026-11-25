@@ -214,11 +214,14 @@ const makePage = (O) => ({
       const p = Math.pow(10, Math.floor(Math.log10(km)) - 1); return Math.min(hi, Math.max(lo, Math.round(km / p) * p)); };
     const kmToZ = (km) => { const [lo, hi] = kmRange.value; return Math.round(1000 * Math.log(Math.max(lo, km) / lo) / Math.log(hi / lo)); };
     const fmtKm = (km) => `${Math.round(km).toLocaleString()} km`;
-    const ringKm = computed(() => {                    // (the horizon ring's radius: where "Set it" starts)
+    const horizonKm = computed(() => {                 // (the layer's horizon on the ground, km from home)
       const L = (cat.value?.layers || []).find((x) => x.key === sky.value.layer) || { alt_km: 550 };
       const R = 6371, e = (sky.value.min_el || 0) * Math.PI / 180;
-      return R * (Math.acos(R / (R + L.alt_km) * Math.cos(e)) - e) * (sky.value.margin || 1);
+      return R * (Math.acos(R / (R + L.alt_km) * Math.cos(e)) - e);
     });
+    const ringKm = computed(() =>                      // (the ring and its room: where the zoom's "Set it" starts)
+      (sky.value.ring_km > 0 ? sky.value.ring_km : horizonKm.value) * (sky.value.margin || 1));
+    const setRing = (mode) => setSky("ring_km", mode === "set" ? zToKm(kmToZ(horizonKm.value)) : 0);
     const setZoom = (mode) => setSky("radius_km", mode === "set" ? zToKm(kmToZ(ringKm.value)) : 0);
     const zoomBy = (f) => setSky("radius_km", zToKm(kmToZ(sky.value.radius_km * f)));
     const setOf = (it) => (it.set || []).filter((s) => !(s[1] === "check" && s[3] === "overhead" && !O.overhead));
@@ -243,7 +246,7 @@ const makePage = (O) => ({
     const units = computed(() => ({ ...(cat.value?.unit_defaults || {}), ...(map.value.units || {}) }));
     const setUnit = (k, v) => { map.value.units = { ...(map.value.units || {}), [k]: v }; };
     const pct = (v) => Math.round(v * 100) + "%";
-    return { O, tabs, sky, setSky, kmRange, zToKm, kmToZ, fmtKm, setZoom, zoomBy, setOf, ownHome, home, setHome, useOwnHome, cam, map, cat, tab, zone, found, play, SHAPES, ENTRY, TABS, POS_NAMES, LAYER_ITEMS, LINK_LABEL, KIND_NAMES, PIECES, SECTIONS, CAPTION_CORNERS, FONTS,
+    return { O, tabs, sky, setSky, kmRange, zToKm, kmToZ, fmtKm, setZoom, setRing, zoomBy, setOf, ownHome, home, setHome, useOwnHome, cam, map, cat, tab, zone, found, play, SHAPES, ENTRY, TABS, POS_NAMES, LAYER_ITEMS, LINK_LABEL, KIND_NAMES, PIECES, SECTIONS, CAPTION_CORNERS, FONTS,
       panels, sel, selPanel, P, inPos, sparkable, toggleSpark, video, setVideo, addPanel, setP, movePanel, removePanel, dupPanel, fieldQ, fieldLabel, toggleField, moveField, groupFields, hasCrew, panelName,
       link, setLink, lab, setLab, issFlag, FLAG_AT, sat, setSat, ex, setEx, setTop, names, setName, nameQ, objects, view, setView, ov, twoRows, oneRow, units, setUnit, pct };
   },
@@ -428,12 +431,16 @@ const makePage = (O) => ({
           <div class="card-body stack">
             <div class="faint" style="font-size:12.5px">The map is held over home, zoomed out just far enough to show the horizon of the satellites you pick (or as far as you set): everything inside the ring is in your sky right now.
               Lower orbits have a smaller ring; GPS and GOES are seen from most of a hemisphere.</div>
-            <Field label="Sized for" hint="Whose horizon the ring shows (with the zoom on Fit, the view fits it)"><select class="input" style="width:auto" :value="sky.layer" @change="setSky('layer', $event.target.value)">
+            <Field label="Ring" hint="The horizon of a layer below, or a circle as far from home as you like. With the zoom on Fit, the map sizes itself to the ring">
+              <Seg :modelValue="sky.ring_km > 0 ? 'set' : 'horizon'" @update:modelValue="setRing" :options="[{value:'horizon', label:'The horizon'}, {value:'set', label:'A distance'}]"/></Field>
+            <Field v-if="sky.ring_km > 0" label="Ring distance from home">
+              <div style="max-width:520px"><Slider :modelValue="kmToZ(sky.ring_km)" @update:modelValue="v => setSky('ring_km', zToKm(v))" :min="0" :max="1000" :step="1" :format="z => fmtKm(zToKm(z))"/></div></Field>
+            <Field label="Satellites' horizon" hint="Whose horizon counts as overhead (what's past it is dimmed; with the ring on The horizon, the ring shows it)"><select class="input" style="width:auto" :value="sky.layer" @change="setSky('layer', $event.target.value)">
               <option v-for="L in cat.layers" :key="L.key" :value="L.key">{{ L.label }}</option></select></Field>
             <Field label="Counts as overhead" hint="Degrees above the horizon: lower takes in more sky, but hills and buildings hide the edge"><Stepper :modelValue="sky.min_el" @update:modelValue="v => setSky('min_el', v)" :min="0" :max="60" :step="5" unit="° up"/></Field>
             <Field label="Past the horizon" hint="How bright the satellites you can't see are drawn (0: hidden). Laser links show only between ones you can see"><div style="max-width:320px"><Slider :modelValue="sky.outside" @update:modelValue="v => setSky('outside', v)" :min="0" :max="1" :step="0.05" :format="pct"/></div></Field>
             <Field label="Zoom" hint="Closer in, fewer satellites fill the map and there's room for their names. Coasts, borders and city lights are drawn again for every zoom, so lines stay 1 px">
-              <Seg :modelValue="sky.radius_km > 0 ? 'set' : 'fit'" @update:modelValue="setZoom" :options="[{value:'fit', label:'Fit the horizon ring'}, {value:'set', label:'Set it'}]"/></Field>
+              <Seg :modelValue="sky.radius_km > 0 ? 'set' : 'fit'" @update:modelValue="setZoom" :options="[{value:'fit', label:'Fit the ring'}, {value:'set', label:'Set it'}]"/></Field>
             <Field v-if="sky.radius_km > 0" label="Home to the top and bottom edges">
               <div class="row" style="gap:8px; align-items:center; max-width:520px">
                 <button type="button" class="btn ghost icon-only sm" title="Zoom out" @click="zoomBy(1.25)"><Icon name="ZoomOut" :size="15"/></button>
@@ -441,7 +448,7 @@ const makePage = (O) => ({
                 <button type="button" class="btn ghost icon-only sm" title="Zoom in" @click="zoomBy(0.8)"><Icon name="ZoomIn" :size="15"/></button></div></Field>
             <Field v-else label="Room round the ring"><div style="max-width:320px"><Slider :modelValue="sky.margin" @update:modelValue="v => setSky('margin', v)" :min="1" :max="2" :step="0.02" :format="v => Math.round((v - 1) * 100) + '%'"/></div></Field>
             <div class="row" style="gap:16px; flex-wrap:wrap">
-              <ToggleRow :modelValue="sky.ring !== false" @update:modelValue="v => setSky('ring', v)" label="Horizon ring"/>
+              <ToggleRow :modelValue="sky.ring !== false" @update:modelValue="v => setSky('ring', v)" label="Show the ring"/>
               <ToggleRow :modelValue="sky.home !== false" @update:modelValue="v => setSky('home', v)" label="Home marker"/></div>
             <ToggleRow :modelValue="ownHome" @update:modelValue="useOwnHome" label="Centre somewhere else" hint="Off: the weather alerts' home"/>
             <div v-if="ownHome" class="row" style="gap:16px; flex-wrap:wrap">

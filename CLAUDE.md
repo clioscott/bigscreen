@@ -214,7 +214,8 @@ once (`hold: false`), so the rotation resumes by itself.
   panels `sats_overhead*`, made for `_tall`): `IssMapPanel(key="sats_overhead")` draws the Space Map fixed over home
   on `issmap.OverheadView` (Web Mercator centred on home; its raster is only the zone, so any zoom costs the same).
   Zoom: `overhead.radius_km` (shows at least that far from home up and down) or 0 = fit the horizon ring of
-  `overhead.layer` at `min_el` (`overhead_km_per_px`). Basemap per view: `hub/spacemap.py` (run by the `sats` job, and
+  `overhead.layer` at `min_el`, or `overhead.ring_km` when set: `overhead_ring_deg`; what counts as seen stays the
+  horizon) (`overhead_km_per_px`). Basemap per view: `hub/spacemap.py` (run by the `sats` job, and
   in the background for the panel preview's draft into `cache/overhead`) draws coasts, lake shores, country and province
   lines with `hub/weather/carto.py` (1 px at any scale; split at the date line) plus Black Marble lights fetched at the
   view's pixels → `data/issmap/ov_<w>x<h>_<W>_<cx0>_<lat>.bin` (`issmap.overhead_name`); the Pi uses it only for

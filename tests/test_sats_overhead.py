@@ -199,7 +199,8 @@ def test_the_hub_checks_its_settings_and_fetches_layers_for_either_map():
     for bad in ({"home": [99, 0]}, {"home": "here"}, {"map": {"overhead": {"layer": "nope"}}},
                 {"map": {"overhead": {"min_el": 90}}}, {"map": {"overhead": {"zoom": 3}}},
                 {"map": {"overhead": {"radius_km": 5}}}, {"map": {"overhead": {"radius_km": 9000}}},
-                {"map": {"overhead": {"radius_km": "far"}}}):
+                {"map": {"overhead": {"radius_km": "far"}}}, {"map": {"overhead": {"ring_km": 3}}},
+                {"map": {"overhead": {"ring_km": 9001}}}):
         with pytest.raises(config.ConfigError):
             config._validate_sats_overhead(bad)
     cfg = {"modules": {"iss_map": {"map": {"sats": {"gps": {"on": True}}}},
@@ -280,3 +281,35 @@ def test_satellites_off_to_the_sides_dont_count_against_icons_and_names(tmp_path
     ms = {"sats": {"starlink": {"on": True, "mark": "auto", "label": True}}}
     mapsats.draw(img, v, v.left(), T0, ms, str(tmp_path), None, (0, 0), [], labels, {}, (200, 200, 200), icons)
     assert len(icons) == 10 and len(labels) == 10
+
+
+def test_the_ring_can_be_a_distance_and_the_fit_sizes_the_map_to_it():
+    km = 400
+    ov = issmap.overhead_of({"overhead": {"ring_km": km}})
+    assert issmap.overhead_ring_deg(ov) == pytest.approx(math.degrees(km / 6371))
+    v = _view(448, 175, ov)
+    la, lo = issmap._circle(HOME[0], HOME[1], issmap.overhead_ring_deg(ov), 72)
+    ys = v.y(la)
+    assert ys.min() >= 0 and ys.max() <= 175 and ys.max() - ys.min() >= 175 * 0.75   # (fitted to the 400 km ring)
+    horizon = _view(448, 175, issmap.overhead_of({}))
+    assert v.km_per_px < horizon.km_per_px / 3                    # (Starlink's horizon is ~1,700 km out)
+    zoomed = _view(448, 175, issmap.overhead_of({"overhead": {"ring_km": km, "radius_km": 2000}}))
+    assert zoomed.km_per_px > v.km_per_px                         # (a set zoom still wins over the fit)
+
+
+def test_a_distance_ring_is_drawn_there_while_overhead_stays_the_horizon(tmp_path):
+    _starlink(tmp_path, [(HOME[0] + 6, HOME[1])])            # (~670 km north: past a 300 km ring, under the horizon)
+    issmap.DATA_DIR = str(tmp_path)
+    mp, view = iss_panel.overhead_mapset({"map": {"overhead": {"ring_km": 300, "radius_km": 900},
+                                                  "sats": {"starlink": {"on": True, "mark": "dot", "colour": "#ffffff",
+                                                                        "brightness": 1.0}}}}, HOME, 448, 175)
+    img, _paths = issmap.render(448, 175, None, T0, True, True, None, None, None, mp, view)
+    plain, _p = issmap.render(448, 175, None, T0, True, True, None, None, None,
+                              {**mp, "overhead": {**mp["overhead"], "ring": False}}, view)
+    v = issmap.OverheadView(448, 175, **view["_overhead"])
+    la, lo = issmap._circle(HOME[0], HOME[1], math.degrees(300 / 6371), 72)
+    ring = (img != plain).any(axis=2)
+    on_ring = [ring[int(round(float(v.y(a)))), int(round(float(v.wx(o)) - v.left()))] for a, o in zip(la[::9], lo[::9])]
+    assert sum(on_ring) >= 6                                     # (the ring is 300 km out)
+    sat = img[int(round(float(v.y(HOME[0] + 6)))), int(round(float(v.wx(HOME[1])) - v.left()))]
+    assert sat.max() == 255                                      # (in the sky: drawn full bright, not dimmed)

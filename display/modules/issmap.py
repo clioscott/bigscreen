@@ -442,7 +442,7 @@ TOP_MIN = 66.0                # an automatic view reaches at least this far nort
 
 
 OVERHEAD_DEFAULTS = {"min_el": 10, "layer": "starlink", "ring": True, "home": True, "outside": 0.3, "margin": 1.08,
-                     "radius_km": 0}
+                     "radius_km": 0, "ring_km": 0}
 OVERHEAD_KM = (10, 8000)      # radius_km's range (0: fit the horizon ring)
 
 
@@ -450,7 +450,8 @@ def overhead_of(mapset) -> dict:
     """map.overhead (Satellites Overhead): min_el (degrees above the horizon that count as seen), layer (whose height
     sizes the ring: the horizon for those satellites), ring, home (the marker), outside (how bright the satellites
     past the horizon are, 0-1), radius_km (the zoom: km from home to the zone's nearer edges, top and bottom on the
-    wall; 0 fits the ring), margin (with radius_km 0: room round the ring)."""
+    wall; 0 fits the ring), margin (with radius_km 0: room round the ring), ring_km (the ring's radius on the ground;
+    0: the horizon of ``layer`` at ``min_el``. Only the ring and the fit: what counts as seen stays the horizon)."""
     got = (mapset or {}).get("overhead")
     return {**OVERHEAD_DEFAULTS, **(got if isinstance(got, dict) else {})}
 
@@ -460,10 +461,21 @@ def overhead_alt(ov) -> float:
     return float((LAYERS.get(ov.get("layer")) or LAYERS["starlink"])["alt_km"])
 
 
+def overhead_ring_deg(ov) -> float:
+    """The ring's radius (degrees of arc from home): ring_km, else the horizon of ov's layer at min_el."""
+    try:
+        r = float(ov.get("ring_km") or 0)
+    except (TypeError, ValueError):
+        r = 0.0
+    if r > 0:
+        return math.degrees(max(OVERHEAD_KM[0], min(OVERHEAD_KM[1], r)) / 6371.0)
+    return footprint_deg(overhead_alt(ov), float(ov.get("min_el", 10)))
+
+
 def overhead_km_per_px(lat, w, h, ov) -> float:
     """Satellites Overhead's scale (km per px at home). radius_km: the map shows at least that far from home up and
     down (Mercator's poleward half is the taller: that edge is exactly radius_km away, the other a little further);
-    0: zoomed so the horizon ring of ov's layer and its margin fit. Never so far out that the world is narrower than
+    0: zoomed so the ring (overhead_ring_deg) and its margin fit. Never so far out that the world is narrower than
     the zone."""
     c = math.cos(math.radians(lat))
     widest = 2 * math.pi * R_MERC * c / max(1, w)                   # (the world's width across the zone)
@@ -477,7 +489,7 @@ def overhead_km_per_px(lat, w, h, ov) -> float:
         r = max(OVERHEAD_KM[0], min(OVERHEAD_KM[1], r))
         k = (min(w, h) / 2) / half(math.degrees(r / 6371.0))      # px per radian (ground km on a 6371 km Earth)
         return min(widest, R_MERC * c / k)
-    rho = footprint_deg(overhead_alt(ov), float(ov.get("min_el", 10)))
+    rho = overhead_ring_deg(ov)
     margin = max(1.0, float(ov.get("margin", 1.08)))
     la, lo = _circle(lat, 0.0, rho, 180)
     if lat + rho >= 89.0 or lat - rho <= -89.0:                    # (round a pole: the world's width is the least)
@@ -1480,7 +1492,7 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
     if home:                                               # the horizon for ov's layer, and home
         hx, hy = float(v.wx(home[1])), float(v.y(home[0]))
         if ov.get("ring", True):
-            _ring(img, v, left, home[0], home[1], footprint_deg(overhead_alt(ov), float(ov["min_el"])), HORIZON, 0.6)
+            _ring(img, v, left, home[0], home[1], overhead_ring_deg(ov), HORIZON, 0.6)
         if ov.get("home", True):
             _sprite(img, HOME_ART, hx, hy, v, left)
             HX, HY = _screen(v, left, hx, hy)
