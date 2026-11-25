@@ -789,7 +789,8 @@ def draw_caption(c, zone, cam, elapsed, font_for, now_local=None, wx=None, extra
         return None
     x, y, w, h = zone
     if now_local is None:              # the same layer for 0.4 s: skip rebuilding the key
-        mk = (id(cam), id(font_for), w, h, int(time.time() * 2.5), (wx or {}).get("at"), round((extra or {}).get("taken") or 0))
+        mk = (id(cam), _font_key(font_for), w, h, int(time.time() * 2.5), (wx or {}).get("at"),
+              round((extra or {}).get("taken") or 0))
         parts = _memo.get(mk)
         if parts is None:
             if len(_memo) > 32:
@@ -810,6 +811,17 @@ def _box_of(parts):
 
 
 _memo: dict = {}
+
+
+def _font_key(font_for):
+    """font_for as a cache key that stays the same from frame to frame. Panels pass a bound method (self.font), and
+    Python makes a new bound-method object on every attribute access, so its id() changed nearly every frame: the
+    caption layer missed both caches ~20 times a second and was redrawn each time (on the Pi, most of the frame's
+    draw time). A bound method is keyed by its object and function instead."""
+    owner = getattr(font_for, "__self__", None)
+    if owner is not None and hasattr(font_for, "__func__"):
+        return (id(owner), id(font_for.__func__))
+    return id(font_for)
 
 
 def _composite(c, x, y, parts, a):
@@ -864,7 +876,7 @@ def _layer(style, ov, ct, w, h, font_for):
     from display.gfx import Canvas
     blink = 0
     key = (style, json.dumps(ov, sort_keys=True, default=str), ct.title, tuple(ct.bits()), tuple(ct.name_lines), ct.icon, ct.night, ct.live,
-           ct.ampm, ct.clock(), w, h, blink, id(font_for), ct.side_icon, ct.flag_ids, _flag_set_stamp())
+           ct.ampm, ct.clock(), w, h, blink, _font_key(font_for), ct.side_icon, ct.flag_ids, _flag_set_stamp())
     hit = _layers.get(key)
     if hit is not None:
         return hit
