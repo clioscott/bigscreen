@@ -145,3 +145,11 @@ def test_a_webcam_in_space_without_its_map_is_skipped_unless_its_whole_turn_is_i
     assert not p.is_down("mapped", night)
     monkeypatch.setattr(p, "_space", lambda now: None)                   # no orbit data: never hidden for it
     assert not p.is_down("iss", night)
+
+
+def test_every_space_country_has_a_flag():
+    from display.modules import flags
+    for code in ("au", "nz", "kr", "kp", "ir", "ua", "pk", "mx", "ar", "tw", "vn", "za"):
+        assert flag_char(code), code
+    assert all(len(a) == flags.H and all(len(r) == flags.W for r in a) for a in flags.ART.values())
+    assert iss.PAD_FLAG["mh"] == "us"                       # Kwajalein (Pegasus, once Falcon 1)

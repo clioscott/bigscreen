@@ -1,5 +1,5 @@
-"""Tiny pixel flags (9 x 6) for captions: the countries people fly to the ISS from, and the EU for launches from
-Kourou, redrawn by hand at LED size (flag designs are public domain). Each is a colour glyph (display/gfx.py
+"""Tiny pixel flags (9 x 6) for captions: the countries people fly to the ISS from, the EU for launches from
+Kourou, and every other country with a space programme, a launch site or an astronaut, redrawn by hand at LED size (flag designs are public domain). Each is a colour glyph (display/gfx.py
 COLOR_GLYPHS): ``flag_char("us")`` is a single character that DrawText draws as the flag, so a flag can sit
 anywhere in a line of text and widths stay right."""
 
@@ -11,6 +11,7 @@ W, H = 9, 6
 C = {  # LED-friendly colours (saturated; the wall's white is bright)
     "R": (215, 30, 40), "W": (225, 225, 225), "B": (35, 70, 200), "N": (20, 40, 120), "K": (25, 25, 25),
     "Y": (245, 200, 20), "G": (20, 150, 60), "O": (240, 130, 30), "L": (90, 170, 235), "D": (150, 20, 40),
+    "M": (140, 90, 40),
 }
 
 
@@ -57,6 +58,40 @@ ART = {
     "il": ["WWWWWWWWW", "BBBBBBBBB", "WWWWBWWWW", "WWWBWBWWW", "BBBBBBBBB", "WWWWWWWWW"],
     "br": ["GGGGGGGGG", "GGGYYYGGG", "GGYYBYYGG", "GGYYBYYGG", "GGGYYYGGG", "GGGGGGGGG"],
     "eu": ["BBBBBBBBB", "BBBYBYBBB", "BBYBBBYBB", "BBYBBBYBB", "BBBYBYBBB", "BBBBBBBBB"],  # Kourou (Ariane, Vega)
+    # other countries with a space programme, a launch site or an astronaut
+    "au": ["WRWNNNNWN", "RRRNNNNNN", "WRWNNWNNW", "NNNNNNNNN", "NWNNNNNWN", "NNNNNNNNN"],
+    "nz": ["WRWNNNNRN", "RRRNNNNNN", "WRWNNRNNR", "NNNNNNNNN", "NNNNNNNRN", "NNNNNNNNN"],
+    "kr": ["KWWWWWWWK", "WKWRRRWKW", "WWWRRBWWW", "WWWRBBWWW", "WKWBBBWKW", "KWWWWWWWK"],
+    "kp": ["BBBBBBBBB", "RWWWRRRRR", "RWRWRRRRR", "RWWWRRRRR", "RRRRRRRRR", "BBBBBBBBB"],
+    "tw": ["BBBBRRRRR", "BWWBRRRRR", "BBBBRRRRR", "RRRRRRRRR", "RRRRRRRRR", "RRRRRRRRR"],
+    "ir": ["GGGGGGGGG", "GGGGGGGGG", "WWWWRWWWW", "WWWWRWWWW", "RRRRRRRRR", "RRRRRRRRR"],
+    "pk": ["WWGGGGGGG", "WWGGWWGWG", "WWGWGGGGG", "WWGWGGGGG", "WWGGWWGGG", "WWGGGGGGG"],
+    "ua": _rows(("B", 3), ("Y", 3)),
+    "by": ["WRRRRRRRR", "RWRRRRRRR", "WRRRRRRRR", "RWRRRRRRR", "WGGGGGGGG", "RWGGGGGGG"],
+    "cz": ["BWWWWWWWW", "BBWWWWWWW", "BBBWWWWWW", "BBBRRRRRR", "BBRRRRRRR", "BRRRRRRRR"],
+    "sk": ["WWWWWWWWW", "WRWRWWWWW", "BRRRBBBBB", "BRWRBBBBB", "RBBBRRRRR", "RRRRRRRRR"],
+    "ro": _cols(("B", 3), ("Y", 3), ("R", 3)),
+    "bg": _rows(("W", 2), ("G", 2), ("R", 2)),
+    "lu": _rows(("R", 2), ("W", 2), ("L", 2)),
+    "ie": _cols(("G", 3), ("W", 3), ("O", 3)),
+    "pt": ["GGGRRRRRR", "GGYYRRRRR", "GYWWYRRRR", "GYWWYRRRR", "GGYYRRRRR", "GGGRRRRRR"],
+    "gr": ["BWBBBBBBB", "WWWWWWWWW", "BWBBBBBBB", "WWWWWWWWW", "BBBBBBBBB", "WWWWWWWWW"],
+    "mx": ["GGGWWWRRR", "GGGWWWRRR", "GGGWMWRRR", "GGGMMMRRR", "GGGWWWRRR", "GGGWWWRRR"],
+    "ar": ["LLLLLLLLL", "LLLLLLLLL", "WWWWYWWWW", "WWWWWWWWW", "LLLLLLLLL", "LLLLLLLLL"],
+    "cl": ["BBBWWWWWW", "BWBWWWWWW", "BBBWWWWWW", "RRRRRRRRR", "RRRRRRRRR", "RRRRRRRRR"],
+    "co": _rows(("Y", 3), ("B", 2), ("R", 1)),
+    "pe": _cols(("R", 3), ("W", 3), ("R", 3)),
+    "ve": ["YYYYYYYYY", "YYYYYYYYY", "BBWBWBWBB", "BBBBBBBBB", "RRRRRRRRR", "RRRRRRRRR"],
+    "cu": ["RBBBBBBBB", "RRWWWWWWW", "RWRBBBBBB", "RRRBBBBBB", "RRWWWWWWW", "RBBBBBBBB"],
+    "vn": ["RRRRRRRRR", "RRRRYRRRR", "RRYYYYYRR", "RRRYYYRRR", "RRRYRYRRR", "RRRRRRRRR"],
+    "mn": ["RRRBBBRRR", "RYRBBBRRR", "RYRBBBRRR", "RYRBBBRRR", "RYRBBBRRR", "RRRBBBRRR"],
+    "my": ["NNNNRRRRR", "NYNYWWWWW", "NYNNRRRRR", "WWWWWWWWW", "RRRRRRRRR", "WWWWWWWWW"],
+    "id": _rows(("R", 3), ("W", 3)),
+    "th": _rows(("R", 1), ("W", 1), ("B", 2), ("W", 1), ("R", 1)),
+    "ph": ["WBBBBBBBB", "WWBBBBBBB", "WYWBBBBBB", "WYWRRRRRR", "WWRRRRRRR", "WRRRRRRRR"],
+    "ng": _cols(("G", 3), ("W", 3), ("G", 3)),
+    "eg": ["RRRRRRRRR", "RRRRRRRRR", "WWWWYWWWW", "WWWWYWWWW", "KKKKKKKKK", "KKKKKKKKK"],
+    "za": ["GGWRRRRRR", "KYGGWWWWW", "KKYGGGGGG", "KKYGGGGGG", "KYGGWWWWW", "GGWBBBBBB"],
 }
 BASE = 0xE100                   # Unicode private use: one code point per flag
 
