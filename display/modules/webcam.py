@@ -51,11 +51,12 @@ DEFAULT_HUB = "http://192.168.1.111:8800"
 IDLE_SEC = 3.0               # hang up when the screen hasn't drawn this webcam for this long
 PLAY_START_SEC = 4.0         # after running dry, video plays again once this much is buffered here; the first start
                              # waits for the full PLAY_BUFFER_SEC ("Loading webcam feeds" meanwhile, unless prerolled)
-PLAY_BUFFER_SEC = 12.0       # … and starts at this depth, then plays at exactly the feed's rate by this clock (every
+PLAY_BUFFER_SEC = 20.0       # … and starts at this depth, then plays at exactly the feed's rate by this clock (every
                              # frame for the same time, never sped up or slowed down): a busy hub (Plex) and the network
-                             # never show. YouTube's frames come 5 s at a time (a segment), so it swings 7-12 s: a hub
-                             # ~7 s late is still unseen (seconds behind live: nobody minds)
-PLAY_MAX_SEC = 20.0          # kept at most (only a far worse stall than seen drops anything)
+                             # never show. YouTube's frames come 5 s at a time (a segment), so it swings 15-20 s: an
+                             # uploader or hub ~14 s late is still unseen (12 s left ~6 s, and a 4K uploader was seen
+                             # ~7 s late, 2026-11-24). Seconds behind live: nobody minds
+PLAY_MAX_SEC = 30.0          # kept at most (only a far worse stall than seen drops anything)
 PREROLL_KEEP_SEC = 2.0       # a stream not playing yet (prerolled) keeps at most this much beyond PLAY_BUFFER_SEC (memory)
 WARM_EVERY = 10.0            # while a webcam is next in the rotation, ask the hub to keep its feed going this often
 WEBCAM_SEC = 40.0            # how long a webcam in the list shows when it doesn't say (the panel's default for a new one)

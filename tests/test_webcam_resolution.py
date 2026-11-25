@@ -352,6 +352,7 @@ def _feeder(monkeypatch, segs, now, seg=None, get=None):
     """A feed shell with a fake clock, playlist and segment fetch; returns (feed, run, clock)."""
     clock = _Clock(now)
     monkeypatch.setattr(wc, "time", clock)
+    monkeypatch.setattr(wc, "START_BACK_SEC", 15.0)           # these test the feeder, not how far back it starts
     monkeypatch.setattr(wc, "get_playlist", lambda url: segs)
 
     def seg_get(url, n=None):
