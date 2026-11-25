@@ -269,7 +269,7 @@ def draw(img, v, left, t, mapset, data_dir, iss_pos, iss_xy, paths, label_items,
                     text = (flag_char(L["flag"]) if lab.get("flag") else "") + name_for(mapset, nm, _short_name(nm)).upper()
                     label_items.append({"text": text, "anchor": (int(x), int(y)), "half": (hw_, hh_),
                                         "pos": lab.get("pos", "auto"), "prio": 6, "rgb": rgb if st.get("label") else lab_rgb,
-                                        "backdrop": lab.get("backdrop", True), "optional": True})
+                                        "edge": lab.get("edge", "outline"), "optional": True})
         else:
             issmap._plot(img, wx[sel], wy[sel], rgb, alpha, left, v.W)
     return counts

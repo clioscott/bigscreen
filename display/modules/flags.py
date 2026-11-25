@@ -59,6 +59,8 @@ ART = {
     "il": ["WWWWWWWWW", "BBBBBBBBB", "WWWWBWWWW", "WWWBWBWWW", "BBBBBBBBB", "WWWWWWWWW"],
     "br": ["GGGGGGGGG", "GGGYYYGGG", "GGYYBYYGG", "GGYYBYYGG", "GGGYYYGGG", "GGGGGGGGG"],
     "eu": ["BBBBBBBBB", "BBBYBYBBB", "BBYBBBYBB", "BBYBBBYBB", "BBBYBYBBB", "BBBBBBBBB"],  # Kourou (Ariane, Vega)
+    # not a country: a globe on a plain field, for the ISS (everyone's station)
+    "world": ["LLLWWWLLL", "LLWLWLWLL", "LLWWWWWLL", "LLWLWLWLL", "LLLWWWLLL", "LLLLLLLLL"],
     # other countries with a space programme, a launch site or an astronaut
     "au": ["WRWNNNNWN", "RRRNNNNNN", "WRWNNWNNW", "NNNNNNNNN", "NWNNNNNWN", "NNNNNNNNN"],
     "nz": ["WRWNNNNRN", "RRRNNNNNN", "WRWNNRNNR", "NNNNNNNNN", "NNNNNNNRN", "NNNNNNNNN"],
@@ -108,6 +110,11 @@ def _picture(rows):
 CODES = sorted(ART)
 for _i, _code in enumerate(CODES):
     gfx.COLOR_GLYPHS[BASE + _i] = _picture(ART[_code])
+
+
+def picture(code):
+    """A flag as an (H, W, 3) image (the world flag for an unknown code)."""
+    return gfx.COLOR_GLYPHS[BASE + CODES.index(code if code in ART else "world")]
 
 
 def flag_char(code) -> str:

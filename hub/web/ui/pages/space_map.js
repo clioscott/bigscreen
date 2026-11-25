@@ -40,7 +40,7 @@ const LAYER_ITEMS = [
   { k: "tiangong", title: "Tiangong", note: "China's space station", set: [["trail", "check", "Its trail"]] },
   { k: "sunmoon", title: "Sun and Moon", note: "the points straight under them", set: [["lines", "check", "Faint lines from the ISS"]] },
   { k: "launches", title: "Launch pads", note: "the next launches' pads, pulsing, with countdowns", set: [["count", "step", 1, 6, 1, ""]] },
-  { k: "signal", title: "AOS / LOS", note: "NASA's telemetry: links drawn only with the signal", set: [["tag", "check", "AOS/LOS tag"], ["place", "select", TAG_PLACES, "tag"]] },
+  { k: "signal", title: "AOS / LOS", note: "NASA's telemetry: links drawn only with the signal", set: [["tag", "check", "AOS/LOS tag"], ["place", "select", TAG_PLACES, "tag"], ["style", "select", [["text", "Text"], ["icon", "Signal icon"]], "tag"]] },
   { k: "russian", title: "Russian segment link", note: "estimated from geometry" },
   { k: "chinese", title: "Tiangong's link", note: "to a Chinese station or a Tianlian relay (estimated)" },
   { k: "flow", title: "Data moving along links", note: "the animation; each network's style is under Links" },
@@ -186,6 +186,8 @@ const makePage = (O) => ({
     const setLink = (net, k, v) => put("links", net, k, v);
     const lab = (kind) => ({ ...(cat.value?.label_defaults?.[kind] || {}), ...(sub("labels")[kind] || {}) });
     const setLab = (kind, k, v) => put("labels", kind, k, v);
+    const issFlag = () => { const f = lab("iss").flag; return f === true ? "globe" : f === false ? "none" : (f || "globe"); };
+    const FLAG_AT = [["label", "In the label"], ["left", "Left of the ISS"], ["right", "Right of the ISS"], ["above", "Above the ISS"], ["below", "Below the ISS"]];
     const sat = (k) => { const L = cat.value?.layers.find((l) => l.key === k) || {}; return { ...(cat.value?.sat_defaults || {}), colour: L.colour, ...(sub("sats")[k] || {}) }; };
     const setSat = (k, part, v) => put("sats", k, part, v);
     const ex = (k) => ({ ...(cat.value?.extras?.[k] || {}), ...((map.value.extras || {})[k] || {}) });
@@ -228,7 +230,7 @@ const makePage = (O) => ({
     const pct = (v) => Math.round(v * 100) + "%";
     return { O, tabs, sky, setSky, ownHome, home, setHome, useOwnHome, cam, map, cat, tab, zone, found, play, SHAPES, ENTRY, TABS, POS_NAMES, LAYER_ITEMS, LINK_LABEL, KIND_NAMES, PIECES, SECTIONS, CAPTION_CORNERS, FONTS,
       panels, sel, selPanel, P, inPos, sparkable, toggleSpark, video, setVideo, addPanel, setP, movePanel, removePanel, dupPanel, fieldQ, fieldLabel, toggleField, moveField, groupFields, hasCrew, panelName,
-      link, setLink, lab, setLab, sat, setSat, ex, setEx, setTop, names, setName, nameQ, objects, view, setView, ov, twoRows, oneRow, units, setUnit, pct };
+      link, setLink, lab, setLab, issFlag, FLAG_AT, sat, setSat, ex, setEx, setTop, names, setName, nameQ, objects, view, setView, ov, twoRows, oneRow, units, setUnit, pct };
   },
   template: `<div class="page" v-if="cam">
     <div class="page-head"><div class="grow"><h1>{{ O.title }}</h1>
@@ -345,10 +347,16 @@ const makePage = (O) => ({
                 <label class="isx-chk"><input type="checkbox" :checked="lab(kind).name" @change="setLab(kind, 'name', $event.target.checked)">Name</label>
                 <label class="isx-chk" v-if="kind !== 'iss'"><input type="checkbox" :checked="lab(kind).flag" @change="setLab(kind, 'flag', $event.target.checked)">Flag of who runs it</label>
                 <label class="isx-chk" v-if="kind === 'iss' || kind === 'tiangong'"><input type="checkbox" :checked="lab(kind).crew" @change="setLab(kind, 'crew', $event.target.checked)">How many aboard</label>
-                <label class="isx-chk"><input type="checkbox" :checked="lab(kind).backdrop" @change="setLab(kind, 'backdrop', $event.target.checked)">Dark backing</label>
+                <template v-if="kind === 'iss'">
+                  <span class="faint">Flag</span><Seg :modelValue="issFlag()" @update:modelValue="v => setLab('iss', 'flag', v)" :options="[{value:'globe', label:'Globe'}, {value:'partners', label:'US + Russia'}, {value:'none', label:'None'}]"/>
+                  <template v-if="issFlag() === 'partners'">
+                    <span class="faint">US flag</span><select class="input" style="width:auto" :value="lab('iss').us_at || 'label'" @change="setLab('iss', 'us_at', $event.target.value)"><option v-for="o in FLAG_AT" :key="o[0]" :value="o[0]">{{ o[1] }}</option></select>
+                    <span class="faint">Russian flag</span><select class="input" style="width:auto" :value="lab('iss').ru_at || 'label'" @change="setLab('iss', 'ru_at', $event.target.value)"><option v-for="o in FLAG_AT" :key="o[0]" :value="o[0]">{{ o[1] }}</option></select></template>
+                  <span class="faint">Text</span><input class="input" style="width:150px" maxlength="40" :value="lab('iss').text ?? 'ISS'" placeholder="ISS" title="{exp}: the expedition's number, {crew}: how many are aboard" @change="setLab('iss', 'text', $event.target.value)"></template>
+                <span class="faint">Edge</span><Seg :modelValue="lab(kind).edge || 'outline'" @update:modelValue="v => setLab(kind, 'edge', v)" :options="[{value:'outline', label:'Outline'}, {value:'box', label:'Dark box'}, {value:'none', label:'None'}]"/>
                 <Seg :modelValue="lab(kind).pos" @update:modelValue="v => setLab(kind, 'pos', v)" :options="[{value:'auto', label:'Auto'}, {value:'right', label:'Right'}, {value:'left', label:'Left'}, {value:'above', label:'Above'}, {value:'below', label:'Below'}]"/>
                 <ColorPick :modelValue="lab(kind).colour" @update:modelValue="v => setLab(kind, 'colour', v)"/></div></div>
-            <div class="faint" style="font-size:12px">Auto puts each label where it covers least (other labels, icons, panels, the caption, the edges); the ISS's goes first. Minor labels with no clear room are left out.</div>
+            <div class="faint" style="font-size:12px">The ISS's text can use {exp} (the expedition's number, e.g. ISS: EXP {exp}) and {crew}. Outline: a 1 px black edge round every letter, so labels read on anything. Auto puts each label where it covers least (other labels, icons, panels, the caption, the edges); the ISS's goes first. Minor labels with no clear room are left out.</div>
           </div></div>
         <div class="card"><div class="card-head"><Icon name="PenLine" :size="16"/><h3>Your own names</h3></div>
           <div class="card-body stack">

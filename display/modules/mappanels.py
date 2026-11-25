@@ -545,6 +545,37 @@ def draw_text(img, x, y, s, rgb, font="tiny"):
     graphics.DrawText(cv, f, x, y + f.baseline, Color(*rgb), s)
 
 
+def grow(mask):
+    """A mask grown a pixel all round (8-way)."""
+    g = mask.copy()
+    g[1:] |= mask[:-1]
+    g[:-1] |= mask[1:]
+    h = g.copy()
+    h[:, 1:] |= g[:, :-1]
+    h[:, :-1] |= g[:, 1:]
+    return h
+
+
+def draw_text_outlined(img, x, y, s, rgb, font="tiny", edge=(0, 0, 0)):
+    """Text with its top-left at x, y and a 1 px black edge round every stroke (8-way), so it reads on anything
+    behind it: what the map's labels and tags use instead of a dark box. Flags in the text are outlined too."""
+    f = _font(font)
+    tw, th = text_w(s, font), max(1, f.height)
+    scratch = np.zeros((th + 2, tw + 2, 3), np.uint8)
+    draw_text(scratch, 1, 1, s, rgb, font)
+    ink = scratch.any(axis=2)
+    ring = grow(ink) & ~ink
+    h, w = img.shape[:2]
+    X0, Y0 = x - 1, y - 1
+    x0, y0, x1, y1 = max(0, X0), max(0, Y0), min(w, X0 + tw + 2), min(h, Y0 + th + 2)
+    if x1 <= x0 or y1 <= y0:
+        return
+    sub = img[y0:y1, x0:x1]
+    r, k = ring[y0 - Y0:y1 - Y0, x0 - X0:x1 - X0], ink[y0 - Y0:y1 - Y0, x0 - X0:x1 - X0]
+    sub[r] = edge
+    sub[k] = scratch[y0 - Y0:y1 - Y0, x0 - X0:x1 - X0][k]
+
+
 def draw_value(img, x, y, s, rgb, unit_rgb, font="tiny"):
     """A value with its units dimmer: the lower-case letters (a duration's h, m and s; everything else on the panels
     is in capitals) in unit_rgb, the rest in rgb, so the numbers stand out in the tiny font."""
