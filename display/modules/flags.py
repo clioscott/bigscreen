@@ -1,5 +1,6 @@
 """Tiny pixel flags (9 x 6) for captions: the countries people fly to the ISS from, the EU for launches from
-Kourou, and every other country with a space programme, a launch site or an astronaut, redrawn by hand at LED size (flag designs are public domain). Each is a colour glyph (display/gfx.py
+Kourou, and every other country with a space programme, a launch site or an astronaut,
+redrawn by hand at LED size (flag designs are public domain). Each is a colour glyph (display/gfx.py
 COLOR_GLYPHS): ``flag_char("us")`` is a single character that DrawText draws as the flag, so a flag can sit
 anywhere in a line of text and widths stay right."""
 
@@ -75,7 +76,7 @@ ART = {
     "lu": _rows(("R", 2), ("W", 2), ("L", 2)),
     "ie": _cols(("G", 3), ("W", 3), ("O", 3)),
     "pt": ["GGGRRRRRR", "GGYYRRRRR", "GYWWYRRRR", "GYWWYRRRR", "GGYYRRRRR", "GGGRRRRRR"],
-    "gr": ["BWBBBBBBB", "WWWWWWWWW", "BWBBBBBBB", "WWWWWWWWW", "BBBBBBBBB", "WWWWWWWWW"],
+    "gr": ["BWBBBBBBB", "WWWWWWWWW", "BWBWWWWWW", "BBBBBBBBB", "WWWWWWWWW", "BBBBBBBBB"],
     "mx": ["GGGWWWRRR", "GGGWWWRRR", "GGGWMWRRR", "GGGMMMRRR", "GGGWWWRRR", "GGGWWWRRR"],
     "ar": ["LLLLLLLLL", "LLLLLLLLL", "WWWWYWWWW", "WWWWWWWWW", "LLLLLLLLL", "LLLLLLLLL"],
     "cl": ["BBBWWWWWW", "BWBWWWWWW", "BBBWWWWWW", "RRRRRRRRR", "RRRRRRRRR", "RRRRRRRRR"],

@@ -648,15 +648,26 @@ TAG_PLACES = ("right", "left", "above", "below", "above_right", "above_left", "b
 
 def tag_xy(place, IX, IY, art, tw, w, h):
     """Where the AOS/LOS tag's text goes (its left column and the top row of its 7-row backdrop) for an ISS icon
-    centred on IX, IY: ``place`` one of TAG_PLACES (beside, above or below the icon, or off a corner), a pixel
-    clear of its black outline; kept on the map. tw: the text's width (_tw, ending in its 1 px gap)."""
+    centred on IX, IY: ``place`` one of TAG_PLACES (beside, above or below the icon, or off a corner), its
+    backdrop just outside the icon's black outline. Where that side runs off the map it goes to the other side
+    (never pushed back over the ISS); then it's kept on the map. tw: the text's width (_tw, ending in a 1 px gap)."""
     place = place if place in TAG_PLACES else "right"
     aw, ah = len(art[0]), len(art)
     L, T = IX - aw // 2, IY - ah // 2                      # the icon's first column and row
     R, B = L + aw - 1, T + ah - 1                          # its last (the outline is one further out)
     vert, _, side = place.partition("_") if place not in ("left", "right") else ("", "", place)
-    X = {"right": R + 3, "left": L - 1 - tw}.get(side, IX - (tw - 1) // 2)
-    Y = {"above": T - 8, "below": B + 2}.get(vert, IY - 3)
+    xs = {"right": R + 3, "left": L - 1 - tw}
+    ys = {"above": T - 8, "below": B + 2}
+    if side == "right" and xs["right"] + tw > w:
+        side = "left"
+    elif side == "left" and xs["left"] - 1 < 0:
+        side = "right"
+    if vert == "above" and ys["above"] < 0:
+        vert = "below"
+    elif vert == "below" and ys["below"] + 7 > h:
+        vert = "above"
+    X = xs.get(side, IX - (tw - 1) // 2)
+    Y = ys.get(vert, IY - 3)
     return max(1, min(w - tw, X)), max(0, min(h - 8, Y))
 
 

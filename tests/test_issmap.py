@@ -317,7 +317,13 @@ def test_the_aos_los_tag_goes_where_it_is_asked_clear_of_the_iss(place):
         assert box[1] >= B
     if place in ("above", "below"):
         assert abs((box[0] + box[2]) / 2 - IX) <= 1
-    assert issmap.tag_xy(place, 2, 2, art, tw, 448, 134)[0] >= 1           # kept on the map
+    for ix, iy in ((8, 5), (440, 5), (8, 129), (440, 129), (224, 3), (224, 131), (5, 67), (443, 67)):   # at the edges
+        X, Y = issmap.tag_xy(place, ix, iy, art, tw, 448, 134)
+        box = (X - 1, Y, X + tw, Y + 7)
+        L, T = ix - len(art[0]) // 2 - 1, iy - len(art) // 2 - 1
+        R, B = L + len(art[0]) + 2, T + len(art) + 2
+        assert 0 <= box[0] and box[2] <= 448 and 0 <= box[1] and box[3] <= 134          # kept on the map
+        assert box[2] <= L or box[0] >= R or box[3] <= T or box[1] >= B, (ix, iy)     # flipped, not over the ISS
 
 
 def test_the_tag_place_is_checked_in_the_config():
