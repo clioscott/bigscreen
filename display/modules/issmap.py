@@ -127,7 +127,8 @@ DISH_BIG = ["D....S...D",
 CSS_BIG = ["RRR.RRR", "RRRWRRR", "...W...", "..WWW.."]
 PAL = {"A": (220, 150, 40), "W": (235, 235, 235), "G": (240, 200, 60), "B": (70, 130, 255), "D": (225, 225, 235),
        "S": (150, 150, 160), "K": (110, 110, 125), "L": (255, 210, 90), "T": (60, 200, 170), "E": (250, 190, 140),
-       "R": (230, 80, 60), "H": (160, 105, 30), "Y": (255, 214, 90), "M": (220, 222, 235), "P": (255, 150, 100)}
+       "R": (230, 80, 60), "H": (160, 105, 30), "Y": (255, 214, 90), "M": (220, 222, 235), "P": (255, 150, 100),
+       "O": (255, 225, 120)}
 RU = lambda art: [r.replace("D", "E") for r in art]                               # a Russian station's dish
 CN = lambda art: [r.replace("D", "R") for r in art]                               # a Chinese station's dish
 TL_ART = ["RR.W.RR", "RRWWWRR", "RR.W.RR"]
@@ -135,6 +136,8 @@ TL_BIG = [r.replace("T", "R") for r in LUCH_BIG]
 SUN_ART = [".Y.Y.", "YYYYY", ".YYY.", "YYYYY", ".Y.Y."]
 MOON_ART = [".MM.", "MM..", "MM..", ".MM."]
 PAD_ART = ["..P..", ".PPP.", ".PPP.", "PPPPP", "P.P.P"]
+HOME_ART = ["...O...", "..OOO..", ".OOOOO.", "OOOOOOO", ".OO.OO.", ".OO.OO."]    # Satellites Overhead: the wall's home
+HORIZON = (120, 200, 255)     # its ring: where ov's layer is min_el above the horizon
 ICONS = {False: {"iss": ISS_ART, "tdrs": RELAY_ART, "luch": LUCH_ART, "tianlian": TL_ART, "nasa": DISH_ART,
                  "ru": RU(DISH_ART), "cn": CN(DISH_ART), "css": CSS_ART},
          True: {"iss": ISS_BIG, "tdrs": RELAY_BIG, "luch": LUCH_BIG, "tianlian": TL_BIG, "nasa": DISH_BIG,
@@ -423,6 +426,34 @@ TOP_MIN = 66.0                # an automatic view reaches at least this far nort
                               # ground stations), squashing the map from top to bottom when the zone is too short
 
 
+OVERHEAD_ZOOM_MAX = 40.0
+OVERHEAD_DEFAULTS = {"min_el": 10, "layer": "starlink", "ring": True, "home": True, "outside": 0.3, "margin": 1.08}
+
+
+def overhead_of(mapset) -> dict:
+    """map.overhead (Satellites Overhead): min_el (degrees above the horizon that count as seen), layer (whose height
+    sizes the view and its ring: the horizon for those satellites), ring, home (the marker), outside (how bright the
+    satellites past the horizon are, 0-1), margin (the ring's diameter times this fills the zone's height)."""
+    got = (mapset or {}).get("overhead")
+    return {**OVERHEAD_DEFAULTS, **(got if isinstance(got, dict) else {})}
+
+
+def overhead_alt(ov) -> float:
+    from common.satlayers import LAYERS
+    return float((LAYERS.get(ov.get("layer")) or LAYERS["starlink"])["alt_km"])
+
+
+def overhead_view(home, w, h, ov) -> dict:
+    """The view (View opts) for Satellites Overhead: the home in the middle, the stretch that keeps a circle round
+    near it (1/cos lat, as far as the projection allows), zoomed so the horizon ring of ov's layer fits the height."""
+    lat, lon = float(home[0]), float(home[1])
+    rho = footprint_deg(overhead_alt(ov), float(ov.get("min_el", 10)))
+    stretch = max(VIEW_RANGES["stretch"][0], min(VIEW_RANGES["stretch"][1], 1.0 / max(0.2, math.cos(math.radians(lat)))))
+    span = 2.0 * rho * max(1.0, float(ov.get("margin", 1.08)))      # the ring's diameter (degrees), with room round it
+    zoom = min(w, h) / span / stretch * 360.0 / max(1, w)           # (round: as many px across as up and down)
+    return {**VIEW, "lat": max(-80.0, min(80.0, lat)), "lon": lon, "stretch": stretch, "clear": False, "_zoom": zoom}
+
+
 def view_of(cam, shape) -> dict:
     """The map's view for a size (``cams.<id>.map.views.<side|full|tall|wall>``) over VIEW."""
     from display.modules.webcam_caption import SIZE_OF_SHAPE
@@ -461,6 +492,8 @@ class View:
         self.w, self.h, self.follow, self.small = w, h, follow, small
         o = {**VIEW, **(opts or {})} if not small else dict(VIEW)
         zoom, stretch = _num_in(o["zoom"], "zoom"), _num_in(o["stretch"], "stretch")
+        if o.get("_zoom") is not None:                              # (Satellites Overhead: worked out, not a setting)
+            zoom = max(1.0, min(OVERHEAD_ZOOM_MAX, float(o["_zoom"])))
         self.lon_off = _num_in(o["lon"], "lon")
         if small:
             s = w / 360.0
@@ -1052,15 +1085,26 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
                                 "rgb": rgb_of(kind), "backdrop": L.get("backdrop", True), "optional": optional})
 
     # satellite layers (under everything else: there can be thousands)
-    counts = {}
+    counts, up = {}, {}
+    home = ms.get("_home") if smap else None              # (Satellites Overhead: the wall's home in the middle)
+    ov = overhead_of(ms) if home else None
+    observer = (float(home[0]), float(home[1]), float(ov["min_el"]), float(ov["outside"])) if home else None
     if smap and isinstance(ms.get("sats"), dict):
         counts = mapsats.draw(img, v, left, t, ms, DATA_DIR, pos, (ix, iy), paths, label_items, lab["sats"],
-                              rgb_of("sats"), icons)
+                              rgb_of("sats"), icons, observer=observer, up=up)
         m = np.empty(band.shape[:2] + (1,), bool)          # (the ground stations stay on top)
         _window(m, mask[rr][..., None], left, v.W)
         src = np.empty_like(band)
         _window(src, world[rr], left, v.W)
         np.copyto(band, src, where=m)
+    if home:                                               # the horizon for ov's layer, and home
+        hx, hy = float(v.wx(home[1])), float(v.y(home[0]))
+        if ov.get("ring", True):
+            _ring(img, v, left, home[0], home[1], footprint_deg(overhead_alt(ov), float(ov["min_el"])), HORIZON, 0.6)
+        if ov.get("home", True):
+            _sprite(img, HOME_ART, hx, hy, v, left)
+            HX, HY = _screen(v, left, hx, hy)
+            icons.append((HX - 3, HY - 3, HX + 3, HY + 3))
     # Tiangong and its link
     css = (data or {}).get("css")
     cpos = position(css, t) if (css and _on(ex, "tiangong")) else None
@@ -1164,7 +1208,7 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
     placed = []
     if smap:
         ctx = {"data": data, "live": live, "t": t, "units": mappanels.units_of(ms), "pos": pos, "aos": aos,
-               "links": lks, "css_pos": cpos, "sat_counts": counts}
+               "links": lks, "css_pos": cpos, "sat_counts": counts, "sats_up": up if home else None}
         vid = mappanels.video_of(ms)
         placed = mappanels.layout(mappanels.panels_of(ms, ex), ctx, w, h, top, bottom, avoid,
                                   video=vid if vid.get("on") and ms.get("_video_up") else None)
@@ -1187,11 +1231,16 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
     pboxes = mappanels.boxes(placed)
     # the ISS's own label, then all the labels where they cover least
     iss_half = hw(art["iss"])
-    icons.append((IX - iss_half[0], IY - iss_half[1], IX + iss_half[0], IY + iss_half[1]))
+    iss_up = not home or (-iss_half[0] < IX < w + iss_half[0] and -iss_half[1] < IY < h + iss_half[1])
+    if not iss_up:                                         # (Satellites Overhead: the ISS only while it's in view)
+        aos = None
+    else:
+        icons.append((IX - iss_half[0], IY - iss_half[1], IX + iss_half[0], IY + iss_half[1]))
     crew = [p for p in people if p.get("iss")]
     n_crew = len(crew) or ((data or {}).get("crew") or {}).get("count")
-    label("iss", "ISS", "ISS", (IX, IY), iss_half, None, 0,
-          f" {n_crew} CREW" if lab["iss"].get("crew") and n_crew else "")
+    if iss_up:
+        label("iss", "ISS", "ISS", (IX, IY), iss_half, None, 0,
+              f" {n_crew} CREW" if lab["iss"].get("crew") and n_crew else "")
     if _on(ex, "signal") and ex["signal"].get("tag", True) and aos is not None:   # (the AOS/LOS tag's room)
         X = IX + len(art["iss"][0]) // 2 + 3
         icons.append((X - 1, IY - 3, X + 14, IY + 4))
@@ -1206,7 +1255,8 @@ def render(w, h, data, t, full=True, fixed=False, reserve=None, extras=None, liv
         x0, x1 = max(0, X - 1), X + _tw(lab_)               # 1 px each side of the ink (the width ends in a 1 px gap)
         img[Y:Y + 7, x0:x1] = (img[Y:Y + 7, x0:x1] * 0.3).astype(np.uint8)
         _text(img, X, Y + 1, lab_, AOS_C if aos else LOS_C)
-    _sprite(img, art["iss"], ix, iy, v, left, clamp_y=True)  # (last: nothing ever covers the ISS)
+    if iss_up:
+        _sprite(img, art["iss"], ix, iy, v, left, clamp_y=not home)   # (last: nothing ever covers the ISS)
     if pboxes:
         solid = [b for (q, m, _x, _y), b in zip(placed, pboxes) if m.get("video")]
         seen = [(*b, 1 - max(0.0, min(1.0, float(q.get("opacity", 0.72))))) for (q, m, _x, _y), b in zip(placed, pboxes)

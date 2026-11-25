@@ -103,10 +103,12 @@ FIELDS = {
     "launches_5": ("Launches", "Next 5 launches"),
     # satellites
     "sat_counts": ("Satellites", "Satellites per layer"), "sats_total": ("Satellites", "Satellites on the map"),
+    "sats_up": ("Satellites", "Above your horizon, per layer (Satellites Overhead)"),
+    "sats_up_total": ("Satellites", "Above your horizon (Satellites Overhead)"),
     "tg_coords": ("Satellites", "Tiangong's position"), "relays_used": ("Satellites", "Relays in use"),
 }
 LIST_FIELDS = {"crew", "crew_roles", "tg_crew", "people_by", "vehicles", "shenzhou", "docked", "docked_ports",
-               "launch_next", "launches", "launches_5", "sat_counts", "betas", "crew_flags", "over"}
+               "launch_next", "launches", "launches_5", "sat_counts", "sats_up", "betas", "crew_flags", "over"}
 GROUPS = list(dict.fromkeys(g for g, _l in FIELDS.values()))
 
 
@@ -127,10 +129,15 @@ def default_panels(ex=None):
     ]
 
 
+def overhead_panels():
+    """Satellites Overhead's panels when none are set: how many of each layer are above the horizon."""
+    return [{"id": "up", "pos": "tr", "on": True, "title": "OVERHEAD", "fields": ["sats_up"]}]
+
+
 def panels_of(mapset, ex=None):
     got = (mapset or {}).get("panels")
     if not isinstance(got, list):
-        got = default_panels(ex)
+        got = overhead_panels() if (mapset or {}).get("_home") else default_panels(ex)
     out = []
     for i, p in enumerate(got):
         if isinstance(p, dict):
@@ -488,6 +495,14 @@ def rows_for(key, ctx):
             if key == "launch_next" and x.get("rocket"):
                 out.append((_short(x["rocket"], 22), x.get("status", "").upper()))
         return out
+    if key in ("sats_up", "sats_up_total"):                # (only Satellites Overhead has a horizon)
+        up = ctx.get("sats_up")
+        if not up:
+            return []
+        if key == "sats_up_total":
+            return [("OVERHEAD", f"{sum(up.values()):,}")]
+        from common.satlayers import LAYERS
+        return [(_flag(LAYERS[k]["flag"], fl) + LAYERS[k]["label"].upper(), f"{n:,}") for k, n in up.items()]
     if key in ("sat_counts", "sats_total"):
         counts = ctx.get("sat_counts") or {}
         if key == "sats_total":
