@@ -154,6 +154,15 @@ def in_hours(cam: dict, now=None) -> bool:
     return a <= m < b if a < b else (m >= a or m < b)
 
 
+HALF_SHAPES = ("left", "right")   # one side of the wall: a webcam marked full_only never plays there
+
+
+def fits(cam: dict, shape) -> bool:
+    """Can the list play this webcam at this shape? ``full_only`` webcams (ones that look poor small) play only at full
+    width or bigger, never on one side. No shape (not known yet): yes."""
+    return not ((cam or {}).get("full_only") and shape in HALF_SHAPES)
+
+
 def playlist_of(s: dict) -> list:
     """The Webcams list in order, as [(cam id, seconds)] of the webcams that are on and exist."""
     cams = s.get("cams") or {}
@@ -520,8 +529,8 @@ class WebcamPanel:
             return self.grid.warm(zone)
         cid = (entry or {}).get("cam")
         if not cid and self.playlist:                         # the Webcams list: the first few it will play
-            first = self._list_first()
             shape = self.shape_for(entry, zone) if zone is not None else None
+            first = self._list_first(shape=shape)
             for i, k in enumerate(first):                     # the first ones' streams too (short turns), the rest
                 if soon and zone is not None and i < PREROLL_STREAMS:    # at the hub
                     self._preroll(k, shape, zone)
@@ -534,15 +543,15 @@ class WebcamPanel:
         else:
             self._warm_hub(cid, shape, zone)
 
-    def _list_first(self, taken=None):
-        """The first LOOKAHEAD webcams a new turn of the list would play (warm prepares them; the turn opens on the
-        first of them that's buffered)."""
+    def _list_first(self, taken=None, shape=None):
+        """The first LOOKAHEAD webcams a new turn of the list would play at this shape (warm prepares them; the turn
+        opens on the first of them that's buffered)."""
         first, taken = [], self._taken() if taken is None else taken
         n = len(self.playlist)
         pos = -1 if self.from_top and not self._other_turns(None) else _list_pos["i"]
         for step in range(1, n + 1):
             k = self.playlist[(pos + step) % n][0]
-            if k not in taken and not self.is_down(k) and k not in first:
+            if k not in taken and not self._passed(k, shape) and k not in first:
                 first.append(k)
             if len(first) >= LOOKAHEAD:
                 break
@@ -565,7 +574,7 @@ class WebcamPanel:
             return True
         shape = self.shape_for(entry, zone)
         cid = entry.get("cam")
-        todo = [cid] if cid else (self._list_first()[:PREROLL_STREAMS] if self.playlist else [])
+        todo = [cid] if cid else (self._list_first(shape=shape)[:PREROLL_STREAMS] if self.playlist else [])
         if not todo:
             return True
         for k in todo:
@@ -631,6 +640,10 @@ class WebcamPanel:
             return False
         return not (h.get("by") == "feed" and now - float(h.get("checked") or 0) > RETRY_DOWN_SEC)
 
+    def _passed(self, cid, shape, now=None):
+        """The list passes this webcam over at this shape: it's down (is_down) or full_only on one side of the wall."""
+        return not fits(self.cams.get(cid), shape) or self.is_down(cid, now)
+
     def _daylit(self, cid, now):
         """A webcam in space with daylight_only (on unless turned off): the ISS is in sunlight for its whole next turn,
         as the video shows it (LAG behind). No orbit data: true (never hide it on a hub hiccup)."""
@@ -662,14 +675,15 @@ class WebcamPanel:
         self._bad[cid] = time.time() + BAD_SEC
         print(f"[webcam] {cid} is down{': ' + why if why else ''}; skipping it for {int(BAD_SEC // 60)} min")
 
-    def _next_up(self, after, avoid=()):
+    def _next_up(self, after, avoid=(), shape=None):
         """The list's next webcam after position ``after`` that isn't down and isn't in ``avoid`` (what the other half of
         the wall is showing or about to); the next one that isn't down when every other is taken; the next one at all
-        when every one is down."""
+        when every one is down. Never a full_only one on one side of the wall."""
         n = len(self.playlist)
-        order = [self.playlist[(after + step) % n][0] for step in range(1, n + 1)]
+        order = [k for k in (self.playlist[(after + step) % n][0] for step in range(1, n + 1))
+                 if fits(self.cams.get(k), shape)]
         up = [cid for cid in order if not self.is_down(cid)]
-        return next((cid for cid in up if cid not in avoid), up[0] if up else (order[0] if n else None))
+        return next((cid for cid in up if cid not in avoid), up[0] if up else (order[0] if order else None))
 
     def _other_turns(self, t):
         """The other half of the wall's list turns that are playing."""
@@ -727,6 +741,8 @@ class WebcamPanel:
             return "skip" if now - self.started.setdefault(("list", entry.get("_play")), now) > 4 else None
         where = tuple(zone)                                   # each half of the wall has its own turn
         shape = self.shape_for(entry, zone)
+        if not any(fits(self.cams.get(cid), shape) for cid, _ in self.playlist):
+            return "skip"                                     # every webcam in the list is full width only
         t = self._turns.get(where)
         if t is not None and t.get("ended") and entry.get("_held") and t["play"] == entry.get("_play"):
             # the turn is over but the rotation holds it while the screen after it buffers: the same webcam carries on
@@ -734,19 +750,19 @@ class WebcamPanel:
             return r if r == "skip" else None
         if transition or t is None or t["play"] != entry.get("_play") or t.get("ended"):
             t = self._turns[where] = {"play": entry.get("_play"), "cam": None, "t0": now, "shown": 0, "failed": 0,
-                                      "next": None}
+                                      "next": None, "shape": shape}
             if self.from_top and not self._other_turns(t):    # a new turn starts at the top (unless the other half
                 _list_pos["i"] = -1                           # of the wall is part-way through the list)
-            up = sum(1 for cid, _ in self.playlist if not self.is_down(cid, now))
+            up = sum(1 for cid, _ in self.playlist if not self._passed(cid, shape, now))
             t["limit"] = max(1, up) if self.per_turn is None else self.per_turn
         n = len(self.playlist)
         if t["cam"] is None:                                  # the turn's first webcam (prerolled by warm)
-            if all(self.is_down(cid, now) for cid, _ in self.playlist):
+            if all(self._passed(cid, shape, now) for cid, _ in self.playlist):
                 self._centre(c, zone, "Every webcam is down", self.dim)
                 return "skip" if now - t["t0"] > 4 else None
-            first = self._list_first(self._taken(t))[:PREROLL_STREAMS]     # the first one buffered (warm
+            first = self._list_first(self._taken(t), shape)[:PREROLL_STREAMS]     # the first one buffered (warm
             ready = [k for k in first if (st := self._open(k, shape, zone)) is not None and st.ready()]  # opened them)
-            self._switch(t, ready[0] if ready else self._next_up(_list_pos["i"], self._taken(t)), now)
+            self._switch(t, ready[0] if ready else self._next_up(_list_pos["i"], self._taken(t), shape), now)
         due = t["t0"] + self._sec(t["cam"])
         last = t["shown"] + 1 >= min(t.get("limit") or 1, n)  # nothing after this one in this turn
         if last and now >= due:
@@ -783,7 +799,7 @@ class WebcamPanel:
             if t["failed"] >= n:
                 self._turns.pop(where, None)
                 return "skip"
-            self._switch(t, self._next_up(_list_pos["i"], self._taken(t)), now)
+            self._switch(t, self._next_up(_list_pos["i"], self._taken(t), shape), now)
         return None
 
     def _ahead(self, t, now, due):
@@ -794,7 +810,7 @@ class WebcamPanel:
         out, start = [], due
         for step in range(1, n + 1):
             cid = self.playlist[(_list_pos["i"] + step) % n][0]
-            if cid in skip or self.is_down(cid, now) or any(cid == c for c, _ in out):
+            if cid in skip or self._passed(cid, t.get("shape"), now) or any(cid == c for c, _ in out):
                 continue
             out.append((cid, start))
             start += self._sec(cid)

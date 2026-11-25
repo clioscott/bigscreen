@@ -76,6 +76,8 @@ const DEFAULT_OVERLAY = { style: "tag", corner: "bl", when: "always", font: "sma
 // conditions; 12 h clock, medium text, 30 fps
 const NEW_ORDER = ["shield", "live", "name", "place", "time", "offset", "weather", "conditions"];
 export const WEBCAM_SEC = 40;          // how long a webcam shows in the Webcams list by default (display/modules/webcam.py WEBCAM_SEC)
+// full_only: the list passes the webcam over on one side of the wall (display/modules/webcam.py fits); off = no key
+const setFullOnly = (cam, on) => { if (!cam) return; if (on) cam.full_only = true; else delete cam.full_only; };
 const NEW_WEBCAM = { fps: 30,
   overlay: { font: "medium", time_format: "12h", place_beside: true, temp_icon: true,
     order: [...NEW_ORDER, ...ORDERABLE.filter((k) => !NEW_ORDER.includes(k))],
@@ -608,7 +610,7 @@ const PlaylistTab = {
     const srcHost = (s) => (s?.type === "drivebc" ? `DriveBC camera ${s.id}` : host(s?.url));
     const kindOf = (s) => (STILL.includes(s?.type) ? "Still" : "Live");
     const mins = (s) => (s >= 90 ? `${Math.round(s / 6) / 10} min` : `${s} s`);
-    return { LIST_SHAPES, WEBCAM_SEC, wc, cams, list, on, total, found, single, combine, feedFor, feedPill, healthFor, downPill, fetchAll, fetching, fetchState, fetchResult, srcHost, kindOf, hasSource, mins, go, flagsOf, flagNames };
+    return { LIST_SHAPES, WEBCAM_SEC, setFullOnly, wc, cams, list, on, total, found, single, combine, feedFor, feedPill, healthFor, downPill, fetchAll, fetching, fetchState, fetchResult, srcHost, kindOf, hasSource, mins, go, flagsOf, flagNames };
   },
   template: `<div class="stack">
     <div class="card"><div class="card-body stack" style="gap:10px">
@@ -650,6 +652,9 @@ const PlaylistTab = {
           <span v-if="fetchResult(it.cam)" class="pill" :class="fetchResult(it.cam).ok ? 'ok' : 'bad'" :title="fetchResult(it.cam).msg">{{ fetchResult(it.cam).ok ? 'fetched' : 'fetch failed' }}</span>
           <span v-if="downPill(healthFor(it.cam))" class="pill bad" :title="downPill(healthFor(it.cam)).title">{{ downPill(healthFor(it.cam)).text }}</span>
           <span v-else class="pill" :class="feedPill(feedFor(cams[it.cam])).cls">{{ feedPill(feedFor(cams[it.cam])).text }}</span>
+          <button v-if="cams[it.cam]" class="btn sm icon-only" :class="cams[it.cam].full_only ? 'primary' : 'ghost'"
+            :title="cams[it.cam].full_only ? 'Full width only: skipped on one side of the wall (click to allow every size)' : 'Plays at every size (click to make it full width only)'"
+            @click="setFullOnly(cams[it.cam], !cams[it.cam].full_only)"><Icon name="Maximize2" :size="14"/></button>
           <Stepper :modelValue="it.sec || WEBCAM_SEC" @update:modelValue="v => it.sec = v" :min="5" :max="3600" :step="5" unit=" s" title="How long it shows"/>
           <Toggle :modelValue="it.on !== false" @update:modelValue="v => it.on = v" title="In the rotation"/>
           <button class="btn sm ghost icon-only" title="Crop, colour and caption" @click="go('webcams/' + it.cam)"><Icon name="Pencil" :size="14"/></button>
@@ -1484,7 +1489,7 @@ const WebcamEditor = {
       const on = !here || a === b ? null : a < b ? here >= a && here < b : here >= a || here < b;
       return where + (here ? " · it's " + here + " there now: " + (on ? "in the list" : "skipped") : "");
     });
-    return { inRows, setSpace, previewMap, setMap, setMinimap, SPACE_GROUPS, toggleHours, hoursNote, id, cam, shape, WEBCAM_SEC, zone, ov, colour, DEFAULT_SHARPEN, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
+    return { setFullOnly, inRows, setSpace,previewMap, setMap, setMinimap, SPACE_GROUPS, toggleHours, hoursNote, id, cam, shape, WEBCAM_SEC, zone, ov, colour, DEFAULT_SHARPEN, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
       orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, hasText, customCols, SHIELD_PRESETS, SHIELD_KINDS, SHIELD_PLACES, SHIELD_SIZES, SHIELD_STYLES, shieldSrc, signMissing, presetShown, presetDone,
       CONTAINERS, feedFor, feedPill, healthFor, downPill, local, cityQ, cityHits, citySearching, searchCity, pickCity, clearCity, cityLabel, wxPoint, jpFaces, jpSample, jc, jcSizes, jcSetFace, jcSample, JC_POSITIONS, capSize, ownSize, ownSizes, setOwnSize, SIZE_LABELS, captionToSize,
       flagSet, fl, flagAuto, FLAG_GROUPS, FLAG_POSITIONS, FLAG_SIZES, flagQ, flagGroup, flagIds, flagHits, flagSrc, flagName, setFlagMode, addFlag, removeFlag, moveFlag, setCountry, setRegion, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
@@ -1585,6 +1590,10 @@ const WebcamEditor = {
               <template v-if="cam.hours"><input class="input" type="time" style="width:auto" v-model="cam.hours.from">
                 <span>and</span><input class="input" type="time" style="width:auto" v-model="cam.hours.to"></template>
               <span class="faint" style="font-size:12px">{{ hoursNote }}</span></div>
+            <div class="wc-rot"><Icon name="Maximize2" :size="15"/>
+              <Toggle :modelValue="!!cam.full_only" @update:modelValue="v => setFullOnly(cam, v)" title="Full width only"/>
+              <span>Full width only</span>
+              <span class="faint" style="font-size:12px">{{ cam.full_only ? 'the list passes it over on one side of the wall: it plays only when the Webcams entry is full width or the whole wall' : 'plays at every size, including one side of the wall' }}</span></div>
             <div class="wc-rot" v-if="cam.space"><Icon name="Sun" :size="15"/>
               <Toggle :modelValue="cam.daylight_only ?? true" @update:modelValue="v => cam.daylight_only = v" title="Only in orbital daylight"/>
               <span>Only while the ISS is in daylight</span>
