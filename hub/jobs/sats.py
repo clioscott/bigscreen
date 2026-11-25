@@ -1,7 +1,8 @@
 """Satellites for the Space Map and Satellites Overhead (Starlink, GPS, GOES…) → data/issmap/sats_<layer>.bin
 
 The layers switched on in modules.iss_map.map.sats or modules.sats_overhead.map.sats → data/issmap/sats_<layer>.bin +
-.json, and the home Satellites Overhead is centred on → data/issmap/overhead.json ({"home": [lat, lon]}).
+.json, the home Satellites Overhead is centred on → data/issmap/overhead.json ({"home": [lat, lon]}), and its basemaps
+for the live zoom (hub/spacemap.py) → data/issmap/ov_*.bin + .json.
 
 Only the layers switched on are fetched. CelesTrak's current elements for each (common/satlayers.py: its group or
 name search), at most every TLE_TTL (CelesTrak asks for no more than every couple of hours), are propagated here with
@@ -199,8 +200,6 @@ def run(cfg):
                     (d / f"sats_{k}.{ext}").unlink()
                 except OSError:
                     pass
-    if not keys:
-        return {"ok": True, "skipped": "no satellite layers switched on"}
     now = time.time()
     out, errs = {}, {}
     for k in keys:
@@ -209,7 +208,14 @@ def run(cfg):
             out[k] = f"{n} sats" + (f", {m} links" if m else "")
         except Exception as e:
             errs[k] = str(e)[:160]
-    return {"ok": not errs or bool(out), **out, **({"failed": errs} if errs else {}),
+    try:                                                    # Satellites Overhead's basemaps (hub/spacemap.py)
+        from hub import spacemap
+        maps = spacemap.run(cfg)
+    except Exception as e:
+        maps = f"failed: {str(e)[:160]}"
+    if not keys:
+        return {"ok": True, "skipped": "no satellite layers switched on", "basemaps": maps}
+    return {"ok": not errs or bool(out), **out, **({"failed": errs} if errs else {}), "basemaps": maps,
             "took": round(time.time() - now, 1)}
 
 
