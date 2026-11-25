@@ -316,7 +316,7 @@ def docked(now):
 SWPC = "https://services.swpc.noaa.gov"
 LAUNCHES_URL = "https://ll.thespacedevs.com/2.3.0/launches/upcoming/?limit=8&mode=normal"
 LAUNCHES_TTL = 3600                 # (Launch Library 2's free tier: 15 requests an hour)
-PAD_FLAG = {"gf": "eu", "kz": "ru"}  # Kourou launches for Europe, Baikonur for Russia
+PAD_FLAG = {"gf": "eu", "kz": "ru", "mh": "us"}  # Kourou launches for Europe, Baikonur for Russia, Kwajalein the US
 
 
 def spacewx():

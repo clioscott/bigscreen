@@ -284,3 +284,50 @@ def test_a_quiet_feed_during_los_still_counts_as_connected(monkeypatch):
     assert snap["connected"] and issmap.signal_at(snap, now - 35) is False
     monkeypatch.setitem(iss_live.state, "heard", now - 120)         # the session itself gone quiet: unknown
     assert issmap.signal_at(iss_live.snapshot(), now - 35) is None
+
+
+def test_the_iss_has_a_black_outline_round_it():
+    rgb, mask = issmap._sprite_arrays(issmap.ISS_ART, outline=True)
+    assert mask.shape == (len(issmap.ISS_ART) + 2, len(issmap.ISS_ART[0]) + 2)
+    edge = mask & ~np.pad(issmap._sprite_arrays(issmap.ISS_ART)[1], 1)
+    assert edge[0].any() and edge[-1].any() and edge[:, 0].any() and edge[:, -1].any()
+    assert (rgb[edge] == 0).all()
+    img = np.full((134, 448, 3), 200, np.uint8)
+    v = issmap.View(448, 134)
+    issmap._sprite(img, issmap.ISS_ART, 100.0, 60.0, v, 0.0, outline=True)
+    ys, xs = np.nonzero((img == 0).all(axis=2))
+    assert xs.min() == 93 and xs.max() == 107 and ys.min() == 60 - 3 and ys.max() == 60 + 3   # 1 px all round
+
+
+@pytest.mark.parametrize("place", issmap.TAG_PLACES)
+def test_the_aos_los_tag_goes_where_it_is_asked_clear_of_the_iss(place):
+    art, IX, IY, tw = issmap.ISS_BIG, 200, 60, 16
+    X, Y = issmap.tag_xy(place, IX, IY, art, tw, 448, 134)
+    box = (X - 1, Y, X + tw, Y + 7)                              # the backdrop
+    L, T = IX - len(art[0]) // 2 - 1, IY - len(art) // 2 - 1     # the icon with its outline
+    R, B = L + len(art[0]) + 2, T + len(art) + 2
+    assert box[2] <= L or box[0] >= R or box[3] <= T or box[1] >= B          # never on the ISS
+    if "right" in place:
+        assert box[0] >= R
+    if "left" in place:
+        assert box[2] <= L
+    if "above" in place:
+        assert box[3] <= T
+    if "below" in place:
+        assert box[1] >= B
+    if place in ("above", "below"):
+        assert abs((box[0] + box[2]) / 2 - IX) <= 1
+    for ix, iy in ((8, 5), (440, 5), (8, 129), (440, 129), (224, 3), (224, 131), (5, 67), (443, 67)):   # at the edges
+        X, Y = issmap.tag_xy(place, ix, iy, art, tw, 448, 134)
+        box = (X - 1, Y, X + tw, Y + 7)
+        L, T = ix - len(art[0]) // 2 - 1, iy - len(art) // 2 - 1
+        R, B = L + len(art[0]) + 2, T + len(art) + 2
+        assert 0 <= box[0] and box[2] <= 448 and 0 <= box[1] and box[3] <= 134          # kept on the map
+        assert box[2] <= L or box[0] >= R or box[3] <= T or box[1] >= B, (ix, iy)     # flipped, not over the ISS
+
+
+def test_the_tag_place_is_checked_in_the_config():
+    from hub import config
+    config._validate_map_extras("x", {"signal": {"place": "below_left"}})
+    with pytest.raises(config.ConfigError):
+        config._validate_map_extras("x", {"signal": {"place": "sideways"}})
