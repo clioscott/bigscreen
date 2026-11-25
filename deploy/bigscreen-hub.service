@@ -11,8 +11,17 @@ Environment=PYTHONUNBUFFERED=1
 ExecStart=/home/scott/bigscreen/.venv/bin/python -m hub.main
 Restart=always
 RestartSec=5
-# Belt and braces on top of per-job subprocesses: never let the hub eat the server.
-MemoryMax=1G
+# The server exists to do the wall's work, so the hub (and its ffmpegs and jobs, all in this cgroup) gets first
+# claim on it. No memory cap: live video keeps seconds of decoded frames per webcam, which a 1 GB cap (set before
+# webcams existed) turned into constant swapping, frames reaching the Pi slower than real time and webcams skipped.
+MemoryMax=infinity
+# Never swapped out: a frame paged out and back in arrives too late to play.
+MemorySwapMax=0
+# Other services give up memory before the hub does.
+MemoryLow=6G
+# First call on the CPU and the disk when Plex, Home Assistant and the rest want them too (default is 100).
+CPUWeight=1000
+IOWeight=1000
 SyslogIdentifier=bigscreen-hub
 
 [Install]
