@@ -247,12 +247,43 @@ def run(cfg) -> dict:
     return out
 
 
+_want: dict = {}
+_drawing = {"thread": None}
+_plock = threading.Lock()
+
+
 def preview(v) -> str:
-    """The basemap for a draft's view (the control panel's preview), drawn into the cache unless the live one is it.
-    The hub's renderer looks there too (issmap.OVERHEAD_DIRS)."""
+    """The basemap for a draft's view (the control panel's preview): "live" (the wall's own is it), "kept" (drawn
+    already), "too wide", or "drawing": drawn in the background into the cache (the latest asked for wins), so the
+    preview shows at once with the plain lines and picks the basemap up on a later poll. The hub's renderer looks in
+    the cache too (issmap.OVERHEAD_DIRS)."""
     from display.modules import issmap
+    from hub.util import read_json
     if str(DRAFTS) not in issmap.OVERHEAD_DIRS:
         issmap.OVERHEAD_DIRS.append(str(DRAFTS))
-    if (paths.DATA_DIR / "issmap" / f"{issmap.overhead_name(v)}.bin").exists():
+    name = issmap.overhead_name(v)
+    if (paths.DATA_DIR / "issmap" / f"{name}.bin").exists():
         return "live"
-    return ensure(v, DRAFTS, lights_timeout=15)
+    if not drawable(v):
+        return "too wide"
+    if (DRAFTS / f"{name}.bin").exists() and (read_json(DRAFTS / f"{name}.json", None) or {}).get("version") == RENDER_VERSION:
+        return "kept"
+    with _plock:
+        _want["v"] = v
+        if _drawing["thread"] is None:
+            _drawing["thread"] = threading.Thread(target=_draw_drafts, name="overhead-basemap", daemon=True)
+            _drawing["thread"].start()
+    return "drawing"
+
+
+def _draw_drafts():
+    while True:
+        with _plock:
+            v = _want.pop("v", None)
+            if v is None:
+                _drawing["thread"] = None
+                return
+        try:
+            ensure(v, DRAFTS, lights_timeout=15)
+        except Exception as e:
+            print(f"Satellites Overhead preview basemap: {type(e).__name__}: {e}", flush=True)

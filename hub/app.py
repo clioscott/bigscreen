@@ -1530,11 +1530,11 @@ def iss_map_preview(payload: dict):
     mods = config.load().get("modules") or {}
     cam = iss_panel.settings_of({key: s if isinstance(s, dict) else None, "iss_map": mods.get("iss_map"),
                                  "webcams": mods.get("webcams")}, key)
-    if overhead:                                          # (its basemap for the draft's zoom, drawn now if it's new)
-        from hub import spacemap
+    if overhead:                                          # (its basemap for the draft's zoom: drawn in the background
+        from hub import spacemap                          # when it's new, the plain lines until then)
         try:
             spacemap.preview(spacemap.view_for(cam, tuple(_overhead_home(cam)), *zones[shape]))
-        except Exception as e:                            # (no geodata, a fetch failing: the Pi's own lines)
+        except Exception as e:
             print(f"Satellites Overhead preview basemap: {type(e).__name__}: {e}", flush=True)
     try:
         img = iss_panel.render_preview(cam, shape, tuple(zones[shape]), _iss_data(), _iss_live(history=True),

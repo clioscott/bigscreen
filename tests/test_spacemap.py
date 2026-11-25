@@ -132,3 +132,23 @@ def test_with_the_date_line_in_view_each_side_is_drawn_on_the_same_pixel_grid(mo
     for lon in (179.5, -179.5):
         px = (float(v.wx(lon)) - v.left()) % v.W
         assert np.abs(xs - px).min() <= 0.5 and np.abs(ys - float(v.y(52.0))).min() <= 0.5
+
+
+def test_a_previews_basemap_is_drawn_in_the_background_into_the_cache(tmp_path, monkeypatch):
+    import time
+    monkeypatch.setattr(spacemap.paths, "DATA_DIR", tmp_path / "data")
+    monkeypatch.setattr(spacemap, "DRAFTS", tmp_path / "drafts")
+    monkeypatch.setattr(spacemap, "lines", lambda view: np.ones((view.h, view.w), np.uint8))
+    monkeypatch.setattr(spacemap, "lights", lambda view, timeout=30: None)
+    v = _view(300)
+    try:
+        assert spacemap.preview(v) == "drawing"
+        for _ in range(100):
+            if spacemap._drawing["thread"] is None:
+                break
+            time.sleep(0.02)
+        assert spacemap.preview(v) == "kept"
+        issmap._obases.clear()
+        assert issmap.overhead_base(v)["lines"].all()                         # (the renderer finds it there)
+    finally:
+        issmap.OVERHEAD_DIRS.clear()
