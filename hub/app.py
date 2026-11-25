@@ -85,7 +85,7 @@ def put_config(payload: dict = Body(...)):
     sources = lambda c: {k: (v or {}).get("source") for k, v in (((c["modules"].get("webcams") or {}).get("cams")) or {}).items()}
     if sources(before) != sources(saved):           # a webcam added, removed or pointed elsewhere: check them now
         _sched().run_now("webcam_health")
-    sats = lambda c: ((((c["modules"].get("iss_map") or {}).get("map")) or {}).get("sats"))
+    sats = lambda c: [(((c["modules"].get(k) or {}).get("map")) or {}).get("sats") for k in ("iss_map", "sats_overhead")]
     if sats(before) != sats(saved):                 # a satellite layer switched on or off: fetch it (or drop it) now
         _sched().run_now("sats")
     sync.push_data()         # config.json rides along; the v2 display hot-reloads it
@@ -1470,7 +1470,19 @@ def iss_map_catalog():
         "nets": issmap.NETS, "link_defaults": issmap.LINK_DEFAULTS, "link_styles": issmap.LINK_STYLES,
         "label_kinds": maplabels.KINDS, "label_defaults": maplabels.LABEL_DEFAULTS, "label_places": maplabels.PLACES,
         "extras": issmap.EXTRAS, "view": issmap.VIEW, "view_ranges": issmap.VIEW_RANGES, "objects": objects,
+        "overhead_defaults": issmap.OVERHEAD_DEFAULTS, "overhead_panels": mappanels.overhead_panels(),
+        "overhead_home": _overhead_home(None),
     }
+
+
+def _overhead_home(settings):
+    """(lat, lon) Satellites Overhead is centred on: its own home, else the weather alerts' home."""
+    from hub.bc import common
+    h = (settings or {}).get("home")
+    if isinstance(h, list) and len(h) == 2:
+        return [float(h[0]), float(h[1])]
+    lon, lat = common.home(config.load())
+    return [round(float(lat), 3), round(float(lon), 3)]
 
 
 def _space_map_video(settings):
@@ -1507,16 +1519,20 @@ def _space_map_video(settings):
 @app.post("/api/iss-map/preview.png")
 def iss_map_preview(payload: dict):
     """The ISS map entry as the wall would draw it now (display/modules/iss_panel.py), for the draft settings:
-    {"settings": modules.iss_map, "shape": left|right|full|tall|wall}."""
+    {"settings": modules.iss_map, "shape": left|right|full|tall|wall, "overhead": true for Satellites Overhead
+    (settings: modules.sats_overhead)}."""
     from display.modules import iss_panel
     zones = _webcam_zones()
     shape = payload.get("shape") if payload.get("shape") in zones else "tall"
     s = payload.get("settings")
-    cam = iss_panel.settings_of({"iss_map": s if isinstance(s, dict) else None,
-                                 "webcams": (config.load().get("modules") or {}).get("webcams")})
+    overhead = bool(payload.get("overhead"))
+    key = iss_panel.OVERHEAD if overhead else "iss_map"
+    mods = config.load().get("modules") or {}
+    cam = iss_panel.settings_of({key: s if isinstance(s, dict) else None, "iss_map": mods.get("iss_map"),
+                                 "webcams": mods.get("webcams")}, key)
     try:
         img = iss_panel.render_preview(cam, shape, tuple(zones[shape]), _iss_data(), _iss_live(history=True),
-                                       video=_space_map_video(cam))
+                                       video=_space_map_video(cam), home=tuple(_overhead_home(cam)) if overhead else None)
     except Exception as e:                                # (a half-typed setting: say what, don't 500 blankly)
         raise HTTPException(400, f"{type(e).__name__}: {e}")
     out = io.BytesIO()

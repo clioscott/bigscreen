@@ -1,5 +1,7 @@
-"""Satellite constellations for the Space Map (modules.iss_map.map.sats: Starlink, Amazon Leo, GPS, GOES…) →
-data/issmap/sats_<layer>.bin + .json.
+"""Satellites for the Space Map and Satellites Overhead (Starlink, GPS, GOES…) → data/issmap/sats_<layer>.bin
+
+The layers switched on in modules.iss_map.map.sats or modules.sats_overhead.map.sats → data/issmap/sats_<layer>.bin +
+.json, and the home Satellites Overhead is centred on → data/issmap/overhead.json ({"home": [lat, lon]}).
 
 Only the layers switched on are fetched. CelesTrak's current elements for each (common/satlayers.py: its group or
 name search), at most every TLE_TTL (CelesTrak asks for no more than every couple of hours), are propagated here with
@@ -166,13 +168,28 @@ def write(key, tles, now):
 
 
 def wanted(cfg):
-    """The layers switched on for the Space Map."""
+    """The layers switched on for the Space Map or Satellites Overhead (until it's saved, it shows the Space Map's)."""
     mods = (cfg or {}).get("modules") or {}
-    sats = (((mods.get("iss_map") or {}).get("map") or {}).get("sats") or {})
-    return [k for k in LAYERS if isinstance(sats.get(k), dict) and sats[k].get("on")]
+    on = set()
+    for key in ("iss_map", "sats_overhead") if mods.get("sats_overhead") else ("iss_map",):
+        sats = (((mods.get(key) or {}).get("map") or {}).get("sats") or {})
+        on |= {k for k in LAYERS if isinstance(sats.get(k), dict) and sats[k].get("on")}
+    return [k for k in LAYERS if k in on]
+
+
+def write_home(cfg):
+    """data/issmap/overhead.json: the weather alerts' home, which Satellites Overhead is centred on unless its own
+    settings give one."""
+    from hub.bc import common
+    from hub.util import atomic_write_json
+    lon, lat = common.home(cfg)
+    d = paths.DATA_DIR / "issmap"
+    d.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(d / "overhead.json", {"home": [round(float(lat), 3), round(float(lon), 3)]})
 
 
 def run(cfg):
+    write_home(cfg)
     keys = wanted(cfg)
     d = paths.DATA_DIR / "issmap"
     for k in LAYERS:                                        # layers switched off: their files go (and stop syncing)

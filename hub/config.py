@@ -140,6 +140,7 @@ def validate(cfg):
 
     _validate_webcams(mods.get("webcams"))
     _validate_iss_map(mods.get("iss_map"))
+    _validate_sats_overhead(mods.get("sats_overhead"))
     _validate_bridges(mods.get("bridges"))
     _validate_timezones(mods.get("timezones"))
 
@@ -388,34 +389,47 @@ def _validate_bridges(br):
             raise ConfigError(f"bridge {c['label']}: pick a DriveBC camera")
 
 
-def _validate_iss_map(m):
+def _validate_iss_map(m, name="Space Map"):
     """modules.iss_map, the Space Map (display/modules/iss_panel.py): a label, a caption (overlay) and the map's
     settings: views per size, link looks, relays and ground stations, labels and names, satellite layers, panels."""
     if m is None:
         return
     if not isinstance(m, dict):
-        raise ConfigError("Space Map: must be an object")
+        raise ConfigError(f"{name}: must be an object")
     if not isinstance(m.get("label", ""), str):
-        raise ConfigError("Space Map: label must be text")
+        raise ConfigError(f"{name}: label must be text")
     v = m.get("sats_interval_sec")
     if v is not None and (not isinstance(v, (int, float)) or isinstance(v, bool) or v < 300):
-        raise ConfigError("Space Map: sats_interval_sec must be at least 300")
-    _validate_overlay("Space Map", m.get("overlay"))
-    _validate_overlays("Space Map", m.get("overlays"))
+        raise ConfigError(f"{name}: sats_interval_sec must be at least 300")
+    _validate_overlay(name, m.get("overlay"))
+    _validate_overlays(name, m.get("overlays"))
     mp = m.get("map")
     if mp is None:
         return
-    _validate_space_map(mp)
+    _validate_space_map(mp, name)
+
+
+def _validate_sats_overhead(m):
+    """modules.sats_overhead, Satellites Overhead (the Space Map held over home): the Space Map's settings, plus home
+    ([lat, lon], or none: the weather alerts' home) and map.overhead (issmap.OVERHEAD_DEFAULTS)."""
+    if m is None:
+        return
+    _validate_iss_map(m, "Satellites Overhead")
+    h = m.get("home")
+    num = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool)
+    if h is not None and not (isinstance(h, list) and len(h) == 2 and all(map(num, h))
+                              and -80 <= h[0] <= 80 and -180 <= h[1] <= 180):
+        raise ConfigError("Satellites Overhead: home must be [latitude, longitude] (or left out)")
 
 
 SPACE_MAP_KEYS = {"when_down", "fixed", "extras", "views", "links", "relays", "ground", "labels", "names", "sats",
-                  "panels", "units", "icons", "video"}
+                  "panels", "units", "icons", "video", "overhead"}
 
 
-def _validate_space_map(mp):
+def _validate_space_map(mp, name="Space Map"):
     from common.satlayers import LAYERS
     from display.modules import issmap, maplabels, mappanels, mapsats
-    bad = lambda what: ConfigError(f"Space Map: {what}")
+    bad = lambda what: ConfigError(f"{name}: {what}")
     num = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool)
     colour = lambda v: isinstance(v, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", v)
     if not isinstance(mp, dict) or not set(mp) <= SPACE_MAP_KEYS or not isinstance(mp.get("fixed", False), bool):
@@ -449,6 +463,12 @@ def _validate_space_map(mp):
                     or st.get("direction", "both") not in ("both", "down", "up") \
                     or not (num(st.get("line", 1.0)) and 0 <= st.get("line", 1.0) <= 1):
                 raise bad(f"{net} links: style {'/'.join(issmap.LINK_STYLES)}, speed, direction, line 0-1")
+    oh = mp.get("overhead")
+    if oh is not None:
+        d = issmap.OVERHEAD_DEFAULTS
+        if not isinstance(oh, dict) or not set(oh) <= set(d) or oh.get("layer", d["layer"]) not in LAYERS                 or any(not isinstance(oh.get(b, True), bool) for b in ("ring", "home"))                 or not (num(oh.get("min_el", 10)) and 0 <= oh.get("min_el", 10) <= 60)                 or not (num(oh.get("outside", 0.3)) and 0 <= oh.get("outside", 0.3) <= 1)                 or not (num(oh.get("margin", 1.08)) and 1 <= oh.get("margin", 1.08) <= 2):
+            raise bad(f"overhead takes {', '.join(d)}: layer one of the satellite layers, min_el 0-60°, "
+                      "outside 0-1, margin 1-2, ring and home true or false")
     if mp.get("relays", "always") not in issmap.RELAY_SHOW:
         raise bad(f"relays must be {' or '.join(issmap.RELAY_SHOW)}")
     if mp.get("ground", "always") not in ("always", "linked", "hidden"):

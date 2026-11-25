@@ -357,6 +357,12 @@ class Screen:
         self.full_panels["iss_map_full"] = self.iss_map.draw
         self.tall_panels["iss_map_tall"] = self.iss_map.draw
         self.takeover_panels["iss_map_wall"] = self.iss_map.draw
+        self.sats_overhead = keep("sats_overhead", ("sats_overhead", "iss_map", "webcams"),   # the same map over home
+                                  lambda: IssMapPanel(cfg, getattr(loader, "data_dir", None), key="sats_overhead"))
+        self.panels["sats_overhead"] = self.sats_overhead.draw
+        self.full_panels["sats_overhead_full"] = self.sats_overhead.draw
+        self.tall_panels["sats_overhead_tall"] = self.sats_overhead.draw
+        self.takeover_panels["sats_overhead_wall"] = self.sats_overhead.draw
         from display.modules.webcam import WebcamPanel        # live video decoded by the hub (control panel → Webcams)
         self.webcam = keep("webcam", ("webcams",), lambda: WebcamPanel(cfg, getattr(loader, "data_dir", None)))
         self.panels["webcam"] = self.webcam.draw

@@ -142,9 +142,14 @@ def _gc_deg(lat1, lon1, lat2, lon2):
     return np.degrees(np.arccos(np.clip(c, -1, 1)))
 
 
-def draw(img, v, left, t, mapset, data_dir, iss_pos, iss_xy, paths, label_items, lab, lab_rgb, icons):
+def draw(img, v, left, t, mapset, data_dir, iss_pos, iss_xy, paths, label_items, lab, lab_rgb, icons, observer=None,
+         up=None):
     """Every layer switched on, onto the map (and its moving data into ``paths``, its names into ``label_items``).
-    Returns {layer: how many satellites it has}."""
+    Returns {layer: how many satellites it has}.
+
+    observer (Satellites Overhead): (lat, lon, min_el, outside) of the wall's home. Then near_km is measured from it,
+    the satellites it can't see (less than min_el above its horizon) are drawn ``outside`` as bright (0: not at all),
+    GPS's lines go from it to the ones it sees, and ``up`` gets {layer: how many it sees}."""
     from display.modules import issmap
     from display.modules.flags import flag_char
     from display.modules.maplabels import name_for
@@ -167,7 +172,16 @@ def draw(img, v, left, t, mapset, data_dir, iss_pos, iss_xy, paths, label_items,
         except (TypeError, ValueError):
             bright = 0.7
         wx, wy = v.wx(lon), v.y(lat)
+        seen = None
+        if observer:
+            rho = issmap.footprint_deg(float(L.get("alt_km", 550)), observer[2])
+            seen = ok & (_gc_deg(observer[0], observer[1], lat, lon) <= rho)
+            if up is not None:
+                up[key] = int(seen.sum())
+        outside = max(0.0, min(1.0, float(observer[3]))) if observer else 1.0
         on_map = ok & (wy >= 0) & (wy < v.h)
+        if observer and outside <= 0:
+            on_map &= seen
         n_map = int(on_map.sum())
         mark = st.get("mark") if st.get("mark") in MARKS else "auto"
         icon = mark == "icon" or (mark == "auto" and n_map <= ICON_MAX)
@@ -177,9 +191,12 @@ def draw(img, v, left, t, mapset, data_dir, iss_pos, iss_xy, paths, label_items,
             if L["mesh"] and f[3].size:
                 a, b = f[3][:, 0], f[3][:, 1]
                 k = ok[a] & ok[b]
-                if near > 0 and iss_pos:
+                if seen is not None:                           # (overhead: the links home could see, both ends up)
+                    k &= seen[a] & seen[b]
+                centre = observer[:2] if observer else iss_pos
+                if near > 0 and centre:
                     mid_la, mid_lo = (lat[a] + lat[b]) / 2, lon[a]
-                    k &= _gc_deg(iss_pos[0], iss_pos[1], mid_la, mid_lo) * 111.2 <= near
+                    k &= _gc_deg(centre[0], centre[1], mid_la, mid_lo) * 111.2 <= near
                 a, b = a[k], b[k]
                 x0 = wx[a]
                 x1 = issmap._unwrap(x0, wx[b], v.W)
@@ -194,7 +211,16 @@ def draw(img, v, left, t, mapset, data_dir, iss_pos, iss_xy, paths, label_items,
                     paths.append({"kind": "segs", "x0": x0[pick], "y0": wy[a][pick], "x1": x1[pick], "y1": wy[b][pick],
                                   "phase": (pick * 0.6180339) % 1.0, "rgb": rgb, "left": left, "W": v.W,
                                   "speed": st.get("speed", "normal"), "direction": "down"})
-            elif key == "gps" and iss_pos:                     # the ISS's GPS receivers: the satellites it can see
+            elif key == "gps" and observer and seen.any():      # Satellites Overhead: the ones home can see
+                hx, hy = float(v.wx(observer[1])), float(v.y(observer[0]))
+                x1 = wx[seen]
+                x0 = issmap._unwrap(x1, np.full(x1.size, hx), v.W)
+                issmap._seg_line(img, v, left, x0, np.full(x1.size, hy), x1, wy[seen], tuple(int(c * 0.5) for c in rgb),
+                                 np.full(x1.size, 0.5, np.float32))
+                paths.append({"kind": "segs", "x0": x1, "y0": wy[seen], "x1": x0, "y1": np.full(x1.size, hy),
+                              "phase": np.arange(x1.size) * 0.37 % 1.0, "rgb": rgb, "left": left, "W": v.W,
+                              "speed": "normal", "direction": "down"})
+            elif key == "gps" and iss_pos and not observer:    # the ISS's GPS receivers: the satellites it can see
                 iss = _xyz(np.array([iss_pos[0]]), np.array([iss_pos[1]]), issmap.R_KM + issmap.ALT_KM)[0]
                 sats = _xyz(lat, lon, issmap.R_KM + 20200.0)
                 d = sats - iss
@@ -220,16 +246,18 @@ def draw(img, v, left, t, mapset, data_dir, iss_pos, iss_xy, paths, label_items,
                 paths.append({"kind": "segs", "x0": x0, "y0": wy[ok], "x1": x1, "y1": y1,
                               "phase": np.arange(x0.size) * 0.29 % 1.0, "rgb": rgb, "left": left, "W": v.W,
                               "speed": "slow", "direction": "down"})
-        # the satellites
+        # the satellites (past home's horizon dimmer)
         sel = np.flatnonzero(on_map)
+        alpha = np.full(sel.size, bright, np.float32)
+        if seen is not None:
+            alpha[~seen[sel]] *= outside
         if icon:
             art = SAT_ART[L["orbit"]]
             for j, row in enumerate(art):
                 for i, ch in enumerate(row):
                     if ch != ".":
                         dx, dy = i - len(row) // 2, j - len(art) // 2
-                        issmap._plot(img, wx[sel] + dx, wy[sel] + dy, rgb, np.full(sel.size, bright, np.float32),
-                                     left, v.W)
+                        issmap._plot(img, wx[sel] + dx, wy[sel] + dy, rgb, alpha, left, v.W)
             hw_, hh_ = len(art[0]) // 2 + 1, len(art) // 2 + 1
             X = np.rint((wx[sel] - left) % v.W).astype(int)
             Y = np.rint(wy[sel]).astype(int)
@@ -243,7 +271,7 @@ def draw(img, v, left, t, mapset, data_dir, iss_pos, iss_xy, paths, label_items,
                                         "pos": lab.get("pos", "auto"), "prio": 6, "rgb": rgb if st.get("label") else lab_rgb,
                                         "backdrop": lab.get("backdrop", True), "optional": True})
         else:
-            issmap._plot(img, wx[sel], wy[sel], rgb, np.full(sel.size, bright, np.float32), left, v.W)
+            issmap._plot(img, wx[sel], wy[sel], rgb, alpha, left, v.W)
     return counts
 
 

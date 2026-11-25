@@ -450,7 +450,8 @@ def wanted(cfg) -> bool:
     if any(isinstance(c, dict) and c.get("space") for c in cams.values()):
         return True
     lc = mods.get("layout_cycle") or {}
-    return bool(mods.get("iss_map")) or any(str((e or {}).get("panel", "")).startswith("iss_map")
+    return bool(mods.get("iss_map") or mods.get("sats_overhead")) or any(
+        str((e or {}).get("panel", "")).startswith(("iss_map", "sats_overhead"))
                                             for side in ("left", "right") for e in lc.get(side) or [] if isinstance(e, dict))
 
 

@@ -4,7 +4,12 @@ whole wall (``iss_map_wall``). It plays for the entry's own seconds.
 
 Settings: ``modules.iss_map``, shaped like a webcam in space (``label``, ``overlay`` for the caption, ``map`` with
 ``fixed`` and ``extras``), so the webcam caption and the map draw it as they do for the ISS webcam. Until it's been
-saved once, the first webcam in space lends its caption and map settings."""
+saved once, the first webcam in space lends its caption and map settings.
+
+Satellites Overhead (``sats_overhead*``, settings ``modules.sats_overhead``, the same shape plus ``map.overhead``:
+issmap.overhead_of) is the same map held still over the wall's home, zoomed out just far enough to show the horizon
+of its layer (Starlink by default): what could be seen in the sky from home right now. Home: ``home`` [lat, lon] in
+its settings, else data/issmap/overhead.json (hub/jobs/sats.py writes the weather alerts' home there)."""
 
 from __future__ import annotations
 
@@ -18,10 +23,20 @@ from display.modules.webcam_caption import FONTS, draw_caption, for_shape, shape
 DEFAULT_HUB = "http://192.168.1.111:8800"
 
 
-def settings_of(modules) -> dict:
-    """modules.iss_map as a webcam-shaped dict (space: iss, its map always on), or the first ISS webcam's settings."""
+OVERHEAD = "sats_overhead"
+OVERHEAD_LABEL = "Satellites overhead"
+
+
+def settings_of(modules, key="iss_map") -> dict:
+    """modules.iss_map (or modules.sats_overhead) as a webcam-shaped dict (space: iss, its map always on), or the first
+    ISS webcam's settings."""
     modules = modules or {}
-    s = modules.get("iss_map") if isinstance(modules.get("iss_map"), dict) else None
+    s = modules.get(key) if isinstance(modules.get(key), dict) else None
+    if not s and key == OVERHEAD:                         # (until it's saved: the Space Map's look, a one-line caption)
+        sm = modules.get("iss_map") if isinstance(modules.get("iss_map"), dict) else {}
+        s = {"label": OVERHEAD_LABEL, "overlay": {**(sm.get("overlay") or {}), "rows": [{"items": [{"k": "name"}]}]},
+             "map": {k: v for k, v in (sm.get("map") or {}).items() if k in ("sats", "links", "labels", "names", "units",
+                                                                             "icons", "relays", "ground")}}
     if not s:
         cams = ((modules.get("webcams") or {}).get("cams") or {})
         cam = next((c for c in cams.values() if isinstance(c, dict) and c.get("space")), None) or {}
@@ -32,10 +47,39 @@ def settings_of(modules) -> dict:
     return out
 
 
+def home_of(settings, data_dir=None):
+    """(lat, lon) Satellites Overhead is centred on: its own ``home``, else the hub's (data/issmap/overhead.json)."""
+    h = (settings or {}).get("home")
+    if isinstance(h, (list, tuple)) and len(h) == 2:
+        try:
+            return float(h[0]), float(h[1])
+        except (TypeError, ValueError):
+            pass
+    try:
+        with open(os.path.join(data_dir or issmap_dir(), "issmap", "overhead.json"), encoding="utf-8") as f:
+            la, lo = json.load(f)["home"]
+        return float(la), float(lo)
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def issmap_dir():
+    from display.modules import issmap
+    return issmap.DATA_DIR
+
+
+def overhead_mapset(settings, home, w, h):
+    """(mapset, view) for Satellites Overhead at w×h: the map's settings with home in them, and the view on home."""
+    from display.modules import issmap
+    mp = {**(settings.get("map") or {}), "_home": home}
+    return mp, issmap.overhead_view(home, w, h, issmap.overhead_of(mp))
+
+
 class IssMapPanel:
-    def __init__(self, cfg, data_dir=None):
+    def __init__(self, cfg, data_dir=None, key="iss_map"):
         mods = getattr(cfg, "modules", None) or {}
-        self.cam = settings_of(mods)
+        self.key = key
+        self.cam = settings_of(mods, key)
         self.hub = ((mods.get("webcams") or {}).get("hub_url")) or DEFAULT_HUB
         self.data_dir = data_dir
         if data_dir:
@@ -81,11 +125,18 @@ class IssMapPanel:
         data = self._space(now)
         shape = shape_of_panel(entry.get("panel"), zone)
         frame = self._video(data, now)
-        paths = issmap.draw_full(c, zone, data, now - space.LAG, fixed=bool(self.cam["map"].get("fixed")),
+        mapset = {**self.cam["map"], "_video_up": frame is not None}
+        view, fixed = issmap.view_of(self.cam, shape), bool(self.cam["map"].get("fixed"))
+        if self.key == OVERHEAD:
+            home = self._home(now)
+            if home is None:
+                return None
+            mapset, view = overhead_mapset({**self.cam, "map": mapset}, home, zone[2], zone[3])
+            fixed = True
+        paths = issmap.draw_full(c, zone, data, now - space.LAG, fixed=fixed,
                                  caption_box=self.boxes.get(key), extras=issmap.extras_of(self.cam, space_map=True),
                                  live=issmap.live_from(self.hub, mappanels.history_keys(self.cam["map"])),
-                                 mapset={**self.cam["map"], "_video_up": frame is not None},
-                                 view=issmap.view_of(self.cam, shape))
+                                 mapset=mapset, view=view)
         if frame is not None:
             box = issmap.video_box(paths)
             if box:
@@ -95,6 +146,10 @@ class IssMapPanel:
         self.boxes[key] = draw_caption(c, zone, cam, now - self.started[key], self.font, extra={"space": data})
         return None
 
+    def _home(self, now):
+        if now - getattr(self, "_home_at", -1e9) > 60:                # (checked a minute at a time, found or not)
+            self._home_at, self._home_v = now, home_of(self.cam, self.data_dir)
+        return self._home_v
 
     def video_cam(self):
         return video_cam(self.cam, self.cams)
@@ -143,9 +198,9 @@ def video_cam(settings, cams):
     return next((c for c in cams.values() if isinstance(c, dict) and c.get("space")), None)
 
 
-def render_preview(settings, shape, size, data, live, elapsed=30.0, video=None):
+def render_preview(settings, shape, size, data, live, elapsed=30.0, video=None, home=None):
     """The Space Map as the wall draws it at a size (shape: left | right | full | tall | wall; size: (w, h)) for the
-    control panel: the map with its caption, the moving data where it is now."""
+    control panel: the map with its caption, the moving data where it is now. home (lat, lon): Satellites Overhead."""
     from display.gfx import Canvas
     from display.modules import issmap, space
     w, h = size
@@ -166,9 +221,11 @@ def render_preview(settings, shape, size, data, live, elapsed=30.0, video=None):
     c = Canvas(w, h)
     ex = issmap.extras_of(settings, space_map=True)
     now = time.time()
-    img, paths = issmap.render(w, h, data, now - space.LAG, True, bool(settings["map"].get("fixed")),
-                               issmap.reserve_for(box, h), ex, live, {**settings["map"], "_video_up": video is not None},
-                               issmap.view_of(settings, shape), tuple(box) if box else None)
+    mapset, view = {**settings["map"], "_video_up": video is not None}, issmap.view_of(settings, shape)
+    if home is not None:
+        mapset, view = overhead_mapset({**settings, "map": mapset}, home, w, h)
+    img, paths = issmap.render(w, h, data, now - space.LAG, True, home is not None or bool(settings["map"].get("fixed")),
+                               issmap.reserve_for(box, h), ex, live, mapset, view, tuple(box) if box else None)
     c.Blit(img, 0, 0)
     issmap.flow(c.buf, paths, now, ex, w >= issmap.BIG_W)
     issmap.draw_video(c.buf, issmap.video_box(paths), video)
