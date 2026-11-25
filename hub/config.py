@@ -247,14 +247,14 @@ def _validate_rows(name, rows):
 
 def _validate_map_extras(name, ex):
     """The ISS map's extras (display/modules/issmap.py EXTRAS): each {on, …its settings}."""
-    from display.modules.issmap import EXTRAS, FLOW_SPEED, SHADOW, TAG_PLACES, TELEMETRY_ROWS
+    from display.modules.issmap import EXTRAS, FLOW_SPEED, SHADOW, TAG_PLACES, TAG_STYLES, TELEMETRY_ROWS
     bad = lambda what: ConfigError(f"webcam {name}: map extras: {what}")
     if not isinstance(ex, dict):
         raise bad("must be an object")
     choices = {("sunlit", "shadow"): tuple(SHADOW), ("flow", "speed"): tuple(FLOW_SPEED),
                ("flow", "direction"): ("both", "down", "up"), ("telemetry", "corner"): ("tl", "tr"),
                ("docked", "corner"): ("tl", "tr"), ("grid", "lines"): ("grid", "special", "both"),
-               ("signal", "place"): TAG_PLACES}
+               ("signal", "place"): TAG_PLACES, ("signal", "style"): TAG_STYLES}
     ranges = {("lights", "strength"): (0.1, 1.0), ("aurora", "strength"): (0.1, 1.0), ("ahead", "minutes"): (5, 90),
               ("trail", "minutes"): (5, 95), ("night", "darkness"): (0.0, 0.95), ("grid", "step"): (10, 90),
               ("footprint", "elevation"): (0, 45), ("launches", "count"): (1, 6)}
@@ -492,8 +492,15 @@ def _validate_space_map(mp, name="Space Map"):
             if not isinstance(L, dict) or not set(L) <= set(d):
                 raise bad(f"{kind} labels take {', '.join(d)}")
             if L.get("pos", "auto") not in maplabels.PLACES or ("colour" in L and not colour(L["colour"])) \
+                    or L.get("edge", "outline") not in maplabels.EDGES \
                     or any(not isinstance(L[k], bool) for k in L if isinstance(d[k], bool)):
-                raise bad(f"{kind} labels: pos {'/'.join(maplabels.PLACES)}, a colour like #ff8800, the rest true/false")
+                raise bad(f"{kind} labels: pos {'/'.join(maplabels.PLACES)}, edge {'/'.join(maplabels.EDGES)}, "
+                          "a colour like #ff8800, the rest true/false")
+            if kind == "iss" and (not (isinstance(L.get("flag", "globe"), bool) or L.get("flag", "globe") in maplabels.ISS_FLAGS)
+                                  or any(L.get(k, "label") not in maplabels.FLAG_AT for k in ("us_at", "ru_at"))
+                                  or not (isinstance(L.get("text", "ISS"), str) and len(L.get("text", "ISS")) <= 40)):
+                raise bad(f"the ISS's label: flag {'/'.join(maplabels.ISS_FLAGS)}, us_at and ru_at "
+                          f"{'/'.join(maplabels.FLAG_AT)}, text up to 40 letters")
     names = mp.get("names")
     if names is not None and (not isinstance(names, dict) or len(names) > 500
                               or any(not isinstance(k, str) or not isinstance(v, str) or len(v) > 40 for k, v in names.items())):
@@ -509,8 +516,11 @@ def _validate_space_map(mp, name="Space Map"):
                     or any(not isinstance(st.get(b, False), bool) for b in ("on", "label", "links")) \
                     or not (num(st.get("near_km", 0)) and 0 <= st.get("near_km", 0) <= 20000) \
                     or not (num(st.get("brightness", 0.7)) and 0.1 <= st.get("brightness", 0.7) <= 1) \
+                    or not (isinstance(st.get("tracks", 0), int) and not isinstance(st.get("tracks", 0), bool)
+                            and 0 <= st.get("tracks", 0) <= mapsats.TRACKS_MAX) \
                     or st.get("speed", "normal") not in issmap.FLOW_SPEED:
-                raise bad(f"{k}: mark {'/'.join(mapsats.MARKS)}, a colour like #ff8800, brightness 0.1-1, near_km 0-20000")
+                raise bad(f"{k}: mark {'/'.join(mapsats.MARKS)}, a colour like #ff8800, brightness 0.1-1, near_km 0-20000, "
+                          f"tracks 0-{mapsats.TRACKS_MAX}")
     units = mp.get("units")
     if units is not None and (not isinstance(units, dict) or any(k not in mappanels.UNITS or v not in mappanels.UNITS[k]
                                                                 for k, v in units.items())):

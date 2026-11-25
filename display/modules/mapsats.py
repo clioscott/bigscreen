@@ -1,12 +1,14 @@
 """Satellite layers on the Space Map (common/satlayers.py; positions from hub/jobs/sats.py in
 data/issmap/sats_<layer>.bin): each satellite where it is at the moment the map shows, interpolated between the
-hub's positions (30 s apart for low orbits), as an icon or a single pixel; for networks linked by laser, the
-links between neighbours (a trellis), with data moving along some of them.
+hub's positions (30 s apart for low orbits), as an icon or a single pixel; their orbit tracks (each one's ground
+track for a whole orbit round where it is, faint and still: the satellites ride along them); for networks linked
+by laser, the links between neighbours (a trellis), with data moving along some of them.
 
 Settings (``map.sats.<layer>``, SAT_DEFAULTS): on, mark ("auto": icons when there are few enough, else pixels;
 "icon"; "dot"), colour, label (names beside the icons, when there are at most LABEL_MAX), links (the trellis, or
-for GPS the ISS's own receivers' view of them, for GOES the downlink to Wallops), near_km (the trellis only within
-this of the ISS; 0: everywhere), brightness (0.1-1: thousands of pixels can drown the map), speed (the data along
+for GPS the ISS's own receivers' view of them, for GOES the downlink to Wallops), tracks (how many satellites' orbit
+tracks to draw: 0 none; spread evenly through the layer, or the nearest when near_km is set), near_km (the
+trellis and tracks only within this of the ISS; 0: everywhere), brightness (0.1-1: thousands of pixels can drown the map), speed (the data along
 the links)."""
 
 from __future__ import annotations
@@ -20,8 +22,11 @@ import numpy as np
 
 from common.satlayers import LAYERS
 
-SAT_DEFAULTS = {"on": False, "mark": "auto", "colour": None, "label": False, "links": False, "near_km": 3000,
-                "brightness": 0.7, "speed": "normal"}
+SAT_DEFAULTS = {"on": False, "mark": "auto", "colour": None, "label": False, "links": False, "tracks": 0,
+                "near_km": 3000, "brightness": 0.7, "speed": "normal"}
+TRACKS_MAX = 500              # orbit tracks per layer at most
+TRACK_DIM = 0.3               # how bright the tracks are against the layer's colour
+TRK = struct.Struct("<4sIHddf")
 MARKS = ("auto", "icon", "dot")
 ICON_MAX = 80                 # auto: icons up to this many satellites on the map, pixels past it
 LABEL_MAX = 40                # names only for layers this small
@@ -77,6 +82,87 @@ def load(key, data_dir):
         mt, got = None, None
     _files[key] = (now, mt, got)
     return got
+
+
+def load_tracks(key, data_dir):
+    """(header, lat [steps, n] int16 ×100, lon) of a layer's orbit tracks (hub/jobs/sats.py .trk), re-read when the
+    file changes (checked every 10 s); None when there isn't one."""
+    hit = _files.get(key + ".trk")
+    now = time.time()
+    if hit and now - hit[0] < 10:
+        return hit[2]
+    path = os.path.join(data_dir, "issmap", f"sats_{key}.trk")
+    try:
+        mt = os.stat(path).st_mtime
+        if hit and hit[1] == mt:
+            _files[key + ".trk"] = (now, mt, hit[2])
+            return hit[2]
+        raw = open(path, "rb").read()
+        magic, n, steps, t0, step, period = TRK.unpack_from(raw)
+        if magic != b"TRK1":
+            raise ValueError("not a tracks file")
+        o = TRK.size
+        la = np.frombuffer(raw, "<i2", steps * n, o).reshape(steps, n)
+        lo = np.frombuffer(raw, "<i2", steps * n, o + 2 * steps * n).reshape(steps, n)
+        got = ({"n": n, "steps": steps, "t0": t0, "step": step, "period": period}, la, lo)
+    except (OSError, ValueError, struct.error):
+        mt, got = None, None
+    _files[key + ".trk"] = (now, mt, got)
+    return got
+
+
+def track_pick(lat, lon, ok, count, centre=None, near_km=0.0):
+    """Which satellites get an orbit track: the nearest ``count`` to centre (within near_km) when both are given,
+    else ``count`` spread evenly through the layer (the same ones from one moment to the next)."""
+    cand = np.flatnonzero(ok)
+    if count <= 0 or cand.size == 0:
+        return cand[:0]
+    if centre is not None and near_km > 0:
+        d = _gc_deg(centre[0], centre[1], lat[cand], lon[cand]) * 111.2
+        cand = cand[d <= near_km]
+        return cand[np.argsort(d[d <= near_km])[:count]]
+    if cand.size <= count:
+        return cand
+    return cand[np.unique(np.linspace(0, cand.size - 1, count).round().astype(int))]
+
+
+def _tracks_onto(img, v, left, key, tr, t, sel, rgb):
+    """The orbit tracks of satellites ``sel``: each one's ground track from half an orbit before t to half an orbit
+    after (through where it is now), drawn faint into a cached mask (redrawn when the track's window moves a step)."""
+    from display.modules import issmap
+    h, la, lo = tr
+    hs = int(np.ceil(h["period"] / 2 / h["step"]))
+    b = int(np.floor((t - h["t0"]) / h["step"]))           # (both ends move together, once a step)
+    i0, i1 = max(0, b - hs), min(h["steps"] - 1, b + hs + 1)
+    if i1 - i0 < 2 or sel.size == 0:
+        return
+
+    def segs():
+        a, o = la[i0:i1 + 1][:, sel], lo[i0:i1 + 1][:, sel]
+        good = (a != 32767) & (o != 32767)
+        x = v.wx(o / 100.0)
+        y = v.y(a / 100.0) - v.y0
+        k = (good[:-1] & good[1:]).ravel()
+        x0 = x[:-1].ravel()
+        x1 = issmap._unwrap(x0, x[1:].ravel(), v.W)
+        return x0[k], y[:-1].ravel()[k], x1[k], y[1:].ravel()[k]
+
+    _mesh_onto(img, v, left, (key + "/tracks", v.key, h["t0"], i0, i1, hash(sel.tobytes())), segs,
+               np.array([int(ch * TRACK_DIM) for ch in rgb], np.uint8))
+
+
+_picks: dict = {}
+
+
+def steady_pick(key, tr, t, lat, lon, ok, count, centre=None, near_km=0.0, extra=None):
+    """track_pick, worked out again only when the tracks' window moves a step (or the settings change), so the same
+    satellites keep their tracks between steps: no tracks coming and going, no redrawing every frame."""
+    h = tr[0]
+    ck = (h["t0"], int(np.floor((t - h["t0"]) / h["step"])), count, near_km, extra)
+    hit = _picks.get(key)
+    if hit is None or hit[0] != ck:
+        hit = _picks[key] = (ck, track_pick(lat, lon, ok, count, centre, near_km))
+    return hit[1]
 
 
 def positions(f, t):
@@ -187,7 +273,20 @@ def draw(img, v, left, t, mapset, data_dir, iss_pos, iss_xy, paths, label_items,
         n_map = int(on_map.sum())
         mark = st.get("mark") if st.get("mark") in MARKS else "auto"
         icon = mark == "icon" or (mark == "auto" and n_map <= ICON_MAX)
-        # links first (under the satellites)
+        # orbit tracks and links first (under the satellites)
+        try:
+            n_tracks = max(0, min(TRACKS_MAX, int(st.get("tracks") or 0)))
+        except (TypeError, ValueError):
+            n_tracks = 0
+        tsel = np.zeros(0, np.int64)
+        if n_tracks and L["orbit"] != "geo":
+            tr = load_tracks(key, data_dir)
+            if tr and tr[0]["n"] == f[0]["n"]:
+                pick_ok = ok if seen is None else ok & seen
+                centre = observer[:2] if observer else iss_pos
+                tsel = steady_pick(key, tr, t, lat, lon, pick_ok, n_tracks, centre, float(st.get("near_km") or 0),
+                                   tuple(observer) if observer else None)
+                _tracks_onto(img, v, left, key, tr, t, tsel, rgb)
         if st.get("links"):
             near = float(st.get("near_km") or 0)
             if L["mesh"] and f[3].size:
@@ -271,9 +370,17 @@ def draw(img, v, left, t, mapset, data_dir, iss_pos, iss_xy, paths, label_items,
                     text = (flag_char(L["flag"]) if lab.get("flag") else "") + name_for(mapset, nm, _short_name(nm)).upper()
                     label_items.append({"text": text, "anchor": (int(x), int(y)), "half": (hw_, hh_),
                                         "pos": lab.get("pos", "auto"), "prio": 6, "rgb": rgb if st.get("label") else lab_rgb,
-                                        "backdrop": lab.get("backdrop", True), "optional": True})
+                                        "edge": lab.get("edge", "outline"), "optional": True})
         else:
             issmap._plot(img, wx[sel], wy[sel], rgb, alpha, left, v.W)
+            ts = tsel[on_map[tsel]]                            # the ones with a track: their icon, riding along it
+            if ts.size:
+                art = SAT_ART[L["orbit"]]
+                for j, row in enumerate(art):
+                    for i, ch in enumerate(row):
+                        if ch != ".":
+                            dx, dy = i - len(row) // 2, j - len(art) // 2
+                            issmap._plot(img, wx[ts] + dx, wy[ts] + dy, rgb, np.ones(ts.size, np.float32), left, v.W)
     return counts
 
 
