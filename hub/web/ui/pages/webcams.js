@@ -1052,11 +1052,12 @@ const CropEditor = {
       return out;
     });
     const fmt = (v) => (v >= 10 ? v.toFixed(0) : v.toFixed(1));
-    // the stream's resolution: Auto (the smallest with the detail the crops need) or one chosen for this webcam
-    const quality = computed(() => String(props.cam.quality ?? "auto"));
+    // the stream's resolution: the default (1080p, hub/webcams.py DEFAULT_QUALITY_H), Auto (the smallest with the
+    // detail the crops need, up to 4K) or one chosen for this webcam
+    const quality = computed(() => String(props.cam.quality ?? "default"));
     const setQuality = (v) => {
-      if (v === "auto") delete props.cam.quality;
-      else props.cam.quality = v === "max" ? "max" : +v;
+      if (v === "default") delete props.cam.quality;
+      else props.cam.quality = v === "max" || v === "auto" ? v : +v;
     };
     const heights = computed(() => [...new Set([...(info.value?.formats || []).map(([, h]) => h), native.value?.h].filter((h) => h >= 720))].sort((a, b) => b - a));
     const resName = (h) => (h >= 2160 ? "4K (" + h + "p)" : h >= 1440 ? "1440p (2K)" : h + "p");
@@ -1083,11 +1084,12 @@ const CropEditor = {
     <div v-if="cam.source?.type === 'youtube'" class="row">
       <span class="faint">Stream</span>
       <select class="input" style="width:auto" :value="quality" @change="setQuality($event.target.value)">
-        <option value="auto">Auto: what the crops need</option>
+        <option value="default">Default: 1080p</option>
+        <option value="auto">Auto: what the crops need (up to 4K)</option>
         <option value="max">The highest it has{{ native ? ': ' + resName(native.h) : '' }}</option>
         <option v-for="h in heights" :key="h" :value="String(h)">{{ resName(h) }}</option>
       </select>
-      <span class="faint" style="font-size:12px">{{ quality === 'auto' ? 'the hub picks the smallest stream that gives every crop its full detail' : 'every place on the wall is cut from this stream, whatever the crop (more work for the hub); applies once saved' }}</span>
+      <span class="faint" style="font-size:12px">{{ quality === 'default' ? 'plenty for the wall unless the crop is tight (under about a third of the frame): then pick Auto or a higher one' : quality === 'auto' ? 'the hub picks the smallest stream that gives every crop its full detail' :'every place on the wall is cut from this stream, whatever the crop (more work for the hub); applies once saved' }}</span>
     </div>
     <div v-if="stats" class="wc-stats">
       <div><span>Livestream</span><b>{{ stats.native }}</b><i v-if="stats.others">also {{ stats.others }}</i></div>

@@ -672,8 +672,8 @@ def _validate_webcams(wc):
             raise ConfigError(f"webcam {name}: map takes when_down and fixed (each true or false) and extras")
         if isinstance(mp, dict) and mp.get("extras") is not None:
             _validate_map_extras(name, mp["extras"])
-        q = cam.get("quality", "auto")
-        if q not in ("auto", "max") and not (isinstance(q, int) and not isinstance(q, bool) and 144 <= q <= 4320):
+        q = cam.get("quality")
+        if q not in (None, "auto", "max") and not (isinstance(q, int) and not isinstance(q, bool) and 144 <= q <= 4320):
             raise ConfigError(f'webcam {name}: quality must be "auto", "max" or a height (720, 1080, 2160…)')
         refresh = (cam.get("source") or {}).get("refresh_sec")
         if refresh not in (None, ""):

@@ -1267,7 +1267,7 @@ def _saved_quality(kind, url):
     for cam in cams.values():
         try:
             if isinstance(cam, dict) and webcams.check_source(cam.get("source")) == (kind, url):
-                asks.append(cam.get("quality", "auto"))
+                asks.append(cam.get("quality"))
         except webcams.SourceError:
             continue
     out = webcams.quality_of(asks)

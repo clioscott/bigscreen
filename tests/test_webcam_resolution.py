@@ -278,11 +278,12 @@ def test_the_lookup_asks_for_dash_formats_and_resolve_never_gives_one(monkeypatc
 
 def test_4k_is_decoded_only_for_crops_that_need_more_than_1080p():
     f = wc.formats_of(_live_info())
-    assert wc.choose_format(f, [(448, 175, None)], hw=True)["h"] == 720          # full width: plenty in 720p
-    assert wc.choose_format(f, [(448, 175, {"x": 0.3, "y": 0.3, "w": 0.4})], hw=True)["h"] == 1080
+    assert wc.choose_format(f, [(448, 175, None)], hw=True, quality="auto")["h"] == 720   # full width: plenty in 720p
+    assert wc.choose_format(f, [(448, 175, {"x": 0.3, "y": 0.3, "w": 0.4})], hw=True, quality="auto")["h"] == 1080
     tight = (448, 175, {"x": 0.4, "y": 0.4, "w": 0.2})                            # 448 / 0.2 x 1.5 = 3360 wide
-    assert wc.choose_format(f, [tight], hw=True)["h"] == 2160
-    assert wc.choose_format(f, [tight], hw=False)["h"] == 1080                    # no video engine: HLS's best
+    assert wc.choose_format(f, [tight], hw=True, quality="auto")["h"] == 2160
+    assert wc.choose_format(f, [tight], hw=True)["h"] == 1080                     # the default: 1080p whatever the crop
+    assert wc.choose_format(f, [tight], hw=False, quality="auto")["h"] == 1080                    # no video engine: HLS's best
 
 
 def test_whole_pixels_crops_get_a_resolution_they_are_exact_on():
@@ -291,7 +292,7 @@ def test_whole_pixels_crops_get_a_resolution_they_are_exact_on():
     got = wc.choose_format(f, [(448, 130, k4)], hw=True)
     assert got["h"] == 1080 and wc.snap_k(k4, got["w"], got["h"], 448, 130) == 4   # not 720p (not exact there)
     k3 = {"x": 0.3, "y": 0.3, "w": round(3 * 448 / 3840, 6), "snap": True}       # 3:1, set on the 4K
-    got = wc.choose_format(f, [(448, 130, k3)], hw=True)
+    got = wc.choose_format(f, [(448, 130, k3)], hw=True, quality="auto")
     assert got["dash"] and wc.snap_k(k3, got["w"], got["h"], 448, 130) > 0
 
 
@@ -528,13 +529,16 @@ def test_a_blip_is_retried_but_an_answer_is_not(monkeypatch):
 def test_a_webcam_can_ask_for_4k_whatever_its_crops_need():
     f = wc.formats_of(_live_info())
     full = [(448, 175, None)]
-    assert wc.choose_format(f, full, hw=True)["h"] == 720                         # auto: what the crop needs
+    assert wc.choose_format(f, full, hw=True)["h"] == 1080                        # the default
+    assert wc.choose_format(f, full, hw=True, quality="auto")["h"] == 720         # auto: what the crop needs
     assert wc.choose_format(f, full, hw=True, quality="max")["h"] == 2160
     assert wc.choose_format(f, full, hw=True, quality=1440)["h"] == 1440
     assert wc.choose_format(f, full, hw=True, quality=1080)["h"] == 1080
     assert wc.choose_format(f, full, hw=False, quality="max")["h"] == 1080        # no video engine: HLS's best
     assert wc.quality_of(["auto", 1080, "auto"]) == 1080 and wc.quality_of(["auto", 1440, "max"]) == "max"
-    assert wc.quality_of(["auto"]) is None
+    assert wc.quality_of(["auto"]) == "auto" and wc.quality_of([None, "auto"]) == "auto"
+    assert wc.quality_of([None]) is None and wc.quality_of([]) is None
+    assert not wc.forced(None) and not wc.forced("auto") and wc.forced(1080) and wc.forced("max")
 
 
 def test_a_chosen_quality_cuts_every_crop_from_the_streams_own_pixels():
@@ -550,7 +554,7 @@ def test_quality_is_checked_in_the_config():
     for bad in ("4k", 0, True, 99999):
         with pytest.raises(config.ConfigError):
             config._validate_webcams({"cams": {"a": {**base, "quality": bad}}})
-    for good in ("auto", "max", 2160, 1080):
+    for good in (None, "auto", "max", 2160, 1080):
         config._validate_webcams({"cams": {"a": {**base, "quality": good}}})
 
 
