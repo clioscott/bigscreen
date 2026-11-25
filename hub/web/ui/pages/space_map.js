@@ -7,6 +7,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
 import { store, api, seed, clone, dirty, previewOnDisplay, playOnDisplay, toast } from "../core.js";
 import { CaptionRows } from "./caption_rows.js";
 import { InRotation } from "./webcams.js";
+import { TAG_PLACES } from "./iss_map_extras.js";
 
 const SHAPE = "tall";
 const SPACE = { key: "iss_map", panel: "iss_map", title: "Space Map", overhead: false,
@@ -39,7 +40,7 @@ const LAYER_ITEMS = [
   { k: "tiangong", title: "Tiangong", note: "China's space station", set: [["trail", "check", "Its trail"]] },
   { k: "sunmoon", title: "Sun and Moon", note: "the points straight under them", set: [["lines", "check", "Faint lines from the ISS"]] },
   { k: "launches", title: "Launch pads", note: "the next launches' pads, pulsing, with countdowns", set: [["count", "step", 1, 6, 1, ""]] },
-  { k: "signal", title: "AOS / LOS", note: "NASA's telemetry: links drawn only with the signal", set: [["tag", "check", "AOS/LOS beside the ISS"]] },
+  { k: "signal", title: "AOS / LOS", note: "NASA's telemetry: links drawn only with the signal", set: [["tag", "check", "AOS/LOS tag"], ["place", "select", TAG_PLACES, "tag"]] },
   { k: "russian", title: "Russian segment link", note: "estimated from geometry" },
   { k: "chinese", title: "Tiangong's link", note: "to a Chinese station or a Tianlian relay (estimated)" },
   { k: "flow", title: "Data moving along links", note: "the animation; each network's style is under Links" },
@@ -390,6 +391,8 @@ const makePage = (O) => ({
                 <template v-for="s in it.set" :key="s[0]">
                   <template v-if="s[1] === 'slider'"><Slider :modelValue="ex(it.k)[s[0]]" @update:modelValue="v => setEx(it.k, s[0], v)" :min="s[2]" :max="s[3]" :step="s[4]" :format="pct"/></template>
                   <Stepper v-else-if="s[1] === 'step'" :modelValue="ex(it.k)[s[0]]" @update:modelValue="v => setEx(it.k, s[0], v)" :min="s[2]" :max="s[3]" :step="s[4]" :unit="s[5]"/>
+                  <select v-else-if="s[1] === 'select'" v-show="!s[3] || ex(it.k)[s[3]]" class="input" style="width:auto" :value="ex(it.k)[s[0]]" @change="setEx(it.k, s[0], $event.target.value)">
+                    <option v-for="o in s[2]" :key="o[0]" :value="o[0]">{{ o[1] }}</option></select>
                   <Seg v-else-if="s[1] === 'seg'" :modelValue="ex(it.k)[s[0]]" @update:modelValue="v => setEx(it.k, s[0], v)" :options="s[2].map(o => ({value: o[0], label: o[1]}))"/>
                   <label v-else class="isx-chk"><input type="checkbox" :checked="ex(it.k)[s[0]]" @change="setEx(it.k, s[0], $event.target.checked)">{{ s[2] }}</label>
                 </template></div></div></div></div></div>

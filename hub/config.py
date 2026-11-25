@@ -247,13 +247,14 @@ def _validate_rows(name, rows):
 
 def _validate_map_extras(name, ex):
     """The ISS map's extras (display/modules/issmap.py EXTRAS): each {on, …its settings}."""
-    from display.modules.issmap import EXTRAS, FLOW_SPEED, SHADOW, TELEMETRY_ROWS
+    from display.modules.issmap import EXTRAS, FLOW_SPEED, SHADOW, TAG_PLACES, TELEMETRY_ROWS
     bad = lambda what: ConfigError(f"webcam {name}: map extras: {what}")
     if not isinstance(ex, dict):
         raise bad("must be an object")
     choices = {("sunlit", "shadow"): tuple(SHADOW), ("flow", "speed"): tuple(FLOW_SPEED),
                ("flow", "direction"): ("both", "down", "up"), ("telemetry", "corner"): ("tl", "tr"),
-               ("docked", "corner"): ("tl", "tr"), ("grid", "lines"): ("grid", "special", "both")}
+               ("docked", "corner"): ("tl", "tr"), ("grid", "lines"): ("grid", "special", "both"),
+               ("signal", "place"): TAG_PLACES}
     ranges = {("lights", "strength"): (0.1, 1.0), ("aurora", "strength"): (0.1, 1.0), ("ahead", "minutes"): (5, 90),
               ("trail", "minutes"): (5, 95), ("night", "darkness"): (0.0, 0.95), ("grid", "step"): (10, 90),
               ("footprint", "elevation"): (0, 45), ("launches", "count"): (1, 6)}

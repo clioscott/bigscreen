@@ -6,12 +6,15 @@ export const EXTRA_DEFAULTS = {
   ahead: { on: true, minutes: 45 },
   sunlit: { on: true, shadow: "blue" },
   tiangong: { on: true, trail: true, label: true },
-  signal: { on: true, tag: true },
+  signal: { on: true, tag: true, place: "right" },
   russian: { on: true },
   flow: { on: true, speed: "normal", direction: "both" },
   telemetry: { on: true, corner: "tr", rows: ["cabin_p", "cabin_t", "o2", "co2", "gyros", "water"] },
   docked: { on: true, corner: "tl", days: true },
 };
+// where the AOS/LOS tag sits round the ISS (display/modules/issmap.py TAG_PLACES)
+export const TAG_PLACES = [["right", "Right"], ["left", "Left"], ["above", "Above"], ["below", "Below"],
+  ["above_right", "Above right"], ["above_left", "Above left"], ["below_right", "Below right"], ["below_left", "Below left"]];
 const ROWS = [
   { value: "cabin_p", label: "Cabin pressure" }, { value: "cabin_t", label: "Cabin temperature" },
   { value: "o2", label: "Oxygen" }, { value: "co2", label: "CO₂" }, { value: "gyros", label: "Gyroscopes online" },
@@ -47,7 +50,7 @@ export const IssMapExtras = {
       set("telemetry", "rows", ROWS.map((x) => x.value).filter((v) => rows.includes(v)));
     };
     const pct = (v) => Math.round(v * 100) + "%";
-    return { ITEMS, ROWS, get, set, toggleRow, pct };
+    return { ITEMS, ROWS, TAG_PLACES, get, set, toggleRow, pct };
   },
   template: `<div class="isx">
     <div v-for="it in ITEMS" :key="it.k" class="isx-row" :class="{off: !get(it.k).on}">
@@ -66,7 +69,9 @@ export const IssMapExtras = {
           <label class="isx-chk"><input type="checkbox" :checked="get('tiangong').trail" @change="set('tiangong', 'trail', $event.target.checked)">Trail</label>
           <label class="isx-chk"><input type="checkbox" :checked="get('tiangong').label" @change="set('tiangong', 'label', $event.target.checked)">Name (full width)</label></template>
         <template v-else-if="it.k === 'signal'">
-          <label class="isx-chk"><input type="checkbox" :checked="get('signal').tag" @change="set('signal', 'tag', $event.target.checked)">AOS/LOS beside the ISS</label></template>
+          <label class="isx-chk"><input type="checkbox" :checked="get('signal').tag" @change="set('signal', 'tag', $event.target.checked)">AOS/LOS tag</label>
+          <select v-if="get('signal').tag" class="input" style="width:auto" :value="get('signal').place || 'right'" @change="set('signal', 'place', $event.target.value)">
+            <option v-for="o in TAG_PLACES" :key="o[0]" :value="o[0]">{{ o[1] }}</option></select></template>
         <template v-else-if="it.k === 'flow'">
           <Seg :modelValue="get('flow').direction" @update:modelValue="v => set('flow', 'direction', v)"
             :options="[{ value: 'both', label: 'Up & down' }, { value: 'down', label: 'Down' }, { value: 'up', label: 'Up' }]"/>
