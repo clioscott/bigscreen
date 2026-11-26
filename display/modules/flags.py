@@ -121,3 +121,32 @@ def flag_char(code) -> str:
     """The flag of an ISO 3166 two-letter code as one character, or "" when there's no flag for it."""
     code = str(code or "").lower()
     return chr(BASE + CODES.index(code)) if code in ART else ""
+
+
+# Operators' marks at text size, for labels where the name is long (STARLINK-31234 -> the mark + 31234): drawn by
+# hand at LED size, like the flags. Each stands on the baseline in its own colours.
+LOGO_C = {"W": (230, 230, 235), "g": (120, 120, 130)}
+LOGOS = {
+    # Starlink: its swoosh, a stroke rising left to right, thick at the start and tapering to a point
+    "starlink": ["......ggW", "...gWWWg.", ".gWWWg...", "gWWg.....", "Wg......."],
+}
+LOGO_BASE = 0xE200
+
+
+def _logo(rows):
+    a = np.zeros((len(rows), max(len(r) for r in rows), 3), np.uint8)
+    for y, row in enumerate(rows):
+        for x, ch in enumerate(row):
+            if ch != ".":
+                a[y, x] = LOGO_C[ch]
+    return a
+
+
+LOGO_KEYS = sorted(LOGOS)
+for _i, _key in enumerate(LOGO_KEYS):
+    gfx.COLOR_GLYPHS[LOGO_BASE + _i] = _logo(LOGOS[_key])
+
+
+def logo_char(key) -> str:
+    """An operator's mark (LOGOS) as one character, or "" when there's none."""
+    return chr(LOGO_BASE + LOGO_KEYS.index(key)) if key in LOGOS else ""

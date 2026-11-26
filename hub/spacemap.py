@@ -256,13 +256,15 @@ def run(cfg) -> dict:
 
 
 _want: dict = {}
+_failed: dict = {}            # name -> when a preview's basemap last failed (not "drawing" again for FAIL_WAIT)
+FAIL_WAIT = 300
 _drawing = {"thread": None}
 _plock = threading.Lock()
 
 
 def preview(v) -> str:
     """The basemap for a draft's view (the control panel's preview): "live" (the wall's own is it), "kept" (drawn
-    already), "too wide", or "drawing": drawn in the background into the cache (the latest asked for wins), so the
+    already), "too wide", "failed" (tried in the last FAIL_WAIT s), or "drawing": drawn in the background into the cache (the latest asked for wins), so the
     preview shows at once with the plain lines and picks the basemap up on a later poll. The hub's renderer looks in
     the cache too (issmap.OVERHEAD_DIRS)."""
     from display.modules import issmap
@@ -276,6 +278,8 @@ def preview(v) -> str:
         return "too wide"
     if (DRAFTS / f"{name}.bin").exists() and (read_json(DRAFTS / f"{name}.json", None) or {}).get("version") == RENDER_VERSION:
         return "kept"
+    if time.time() - _failed.get(name, 0) < FAIL_WAIT:
+        return "failed"
     with _plock:
         _want["v"] = v
         if _drawing["thread"] is None:
@@ -294,4 +298,6 @@ def _draw_drafts():
         try:
             ensure(v, DRAFTS, lights_timeout=15)
         except Exception as e:
+            from display.modules import issmap
+            _failed[issmap.overhead_name(v)] = time.time()
             print(f"Satellites Overhead preview basemap: {type(e).__name__}: {e}", flush=True)

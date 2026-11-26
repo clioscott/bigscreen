@@ -5,7 +5,8 @@ track for a whole orbit round where it is, faint and still: the satellites ride 
 by laser, the links between neighbours (a trellis), with data moving along some of them.
 
 Settings (``map.sats.<layer>``, SAT_DEFAULTS): on, mark ("auto": icons when there are few enough, else pixels;
-"icon"; "dot"), colour, label (names beside the icons, when there are at most LABEL_MAX), links (the trellis, or
+"icon"; "dot"), colour, label (names beside them, while at most map.labels.sats.max of the layer are on the map:
+zoomed in far enough, Starlink's too), links (the trellis, or
 for GPS the ISS's own receivers' view of them, for GOES the downlink to Wallops), tracks (how many satellites' orbit
 tracks to draw: 0 none; spread evenly through the layer, or the nearest when near_km is set), near_km (the
 trellis and tracks only within this of the ISS; 0: everywhere), brightness (0.1-1: thousands of pixels can drown the map), speed (the data along
@@ -29,7 +30,9 @@ TRACK_DIM = 0.3               # how bright the tracks are against the layer's co
 TRK = struct.Struct("<4sIHddf")
 MARKS = ("auto", "icon", "dot")
 ICON_MAX = 80                 # auto: icons up to this many satellites on the map, pixels past it
-LABEL_MAX = 40                # names only for layers this small
+LABEL_MAX = 40                # names for a layer only while at most this many of it are on the map (map.labels.sats.max)
+NAMES_MAX = 200               # satellite names at most, all layers together (placing them costs the Pi every second)
+LABEL_RANGE = (5, 150)        # (what that can be set to: past it they can't find room, and placing them costs the Pi)
 HEAD = struct.Struct("<4sIHIdf")
 WALLOPS = (37.94, -75.46)     # NOAA's command and data station for GOES (Wallops, Virginia)
 GPS_MASK_KM = 6378.0 + 420.0  # (the ISS sees a GPS satellite when Earth isn't in between)
@@ -238,9 +241,10 @@ def draw(img, v, left, t, mapset, data_dir, iss_pos, iss_xy, paths, label_items,
     the satellites it can't see (less than min_el above its horizon) are drawn ``outside`` as bright (0: not at all),
     GPS's lines go from it to the ones it sees, and ``up`` gets {layer: how many it sees}."""
     from display.modules import issmap
-    from display.modules.flags import flag_char
+    from display.modules.flags import flag_char, logo_char
     from display.modules.maplabels import name_for
     counts = {}
+    budget = NAMES_MAX                                       # (satellite names across every layer, for the Pi)
     for key, L in LAYERS.items():
         st = settings(mapset, key)
         if not st.get("on"):
@@ -363,14 +367,6 @@ def draw(img, v, left, t, mapset, data_dir, iss_pos, iss_xy, paths, label_items,
             X = np.rint((wx[sel] - left) % v.W).astype(int)
             Y = np.rint(wy[sel]).astype(int)
             icons.extend((int(x) - hw_, int(y) - hh_, int(x) + hw_, int(y) + hh_) for x, y in zip(X, Y))
-            if (st.get("label") or lab.get("name")) and sel.size <= LABEL_MAX:
-                names = f[4]
-                for x, y, i in zip(X, Y, sel):
-                    nm = names[i] if i < len(names) else ""
-                    text = (flag_char(L["flag"]) if lab.get("flag") else "") + name_for(mapset, nm, _short_name(nm)).upper()
-                    label_items.append({"text": text, "anchor": (int(x), int(y)), "half": (hw_, hh_),
-                                        "pos": lab.get("pos", "auto"), "prio": 6, "rgb": rgb if st.get("label") else lab_rgb,
-                                        "edge": lab.get("edge", "outline"), "optional": True})
         else:
             issmap._plot(img, wx[sel], wy[sel], rgb, alpha, left, v.W)
             ts = tsel[on_map[tsel]]                            # the ones with a track: their icon, riding along it
@@ -381,7 +377,44 @@ def draw(img, v, left, t, mapset, data_dir, iss_pos, iss_xy, paths, label_items,
                         if ch != ".":
                             dx, dy = i - len(row) // 2, j - len(art) // 2
                             issmap._plot(img, wx[ts] + dx, wy[ts] + dy, rgb, np.ones(ts.size, np.float32), left, v.W)
+        # names (and the flag of who runs them): any layer, once few enough of it are on the map (zoomed in far
+        # enough); Satellites Overhead names the ones above the horizon first
+        if (st.get("label") or lab.get("name")) and 0 < sel.size:
+            named = sel if seen is None else np.concatenate([sel[seen[sel]], sel[~seen[sel]]])
+            if named.size <= label_max(lab) and budget > 0:
+                named = named[:budget]
+                budget -= named.size
+                art = SAT_ART[L["orbit"]]
+                hw_, hh_ = (len(art[0]) // 2 + 1, len(art) // 2 + 1) if icon else (1, 1)
+                names, fl = f[4], flag_char(L["flag"]) if lab.get("flag") else ""
+                mark = logo_char(key) if lab.get("logo", True) else ""
+                for i in named:
+                    x, y = int(np.rint((wx[i] - left) % v.W)) % v.W, int(np.rint(wy[i]))
+                    if x >= v.w:                                 # (just past the zone's edge: no name there)
+                        continue
+                    nm = names[i] if i < len(names) else ""
+                    text = name_for(mapset, nm, None)                # (a name of your own stays as you wrote it)
+                    text = (text or (_with_logo(_short_name(nm), mark) if mark else _short_name(nm))).upper()
+                    label_items.append({"text": fl + text, "anchor": (x, y),
+                                        "half": (hw_, hh_), "pos": lab.get("pos", "auto"), "prio": 6,
+                                        "rgb": rgb if st.get("label") else lab_rgb, "edge": lab.get("edge", "outline"),
+                                        "optional": True})
     return counts
+
+
+def label_max(lab) -> int:
+    """How many of a layer's satellites can be on the map with their names shown (``map.labels.sats.max``)."""
+    try:
+        return max(LABEL_RANGE[0], min(LABEL_RANGE[1], int(lab.get("max", LABEL_MAX))))
+    except (TypeError, ValueError):
+        return LABEL_MAX
+
+
+def _with_logo(name, mark):
+    """'STARLINK-31234' -> the Starlink mark + '31234' (the operator's name at the start swapped for its mark)."""
+    import re
+    m = re.match(r"(STARLINK)[-\s]*(.*)$", name.strip(), re.I)
+    return mark + m.group(2) if m and m.group(2) else name
 
 
 def _short_name(n):

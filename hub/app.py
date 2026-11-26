@@ -1531,10 +1531,11 @@ def iss_map_preview(payload: dict):
     mods = config.load().get("modules") or {}
     cam = iss_panel.settings_of({key: s if isinstance(s, dict) else None, "iss_map": mods.get("iss_map"),
                                  "webcams": mods.get("webcams")}, key)
+    basemap = ""
     if overhead:                                          # (its basemap for the draft's zoom: drawn in the background
         from hub import spacemap                          # when it's new, the plain lines until then)
         try:
-            spacemap.preview(spacemap.view_for(cam, tuple(_overhead_home(cam)), *zones[shape]))
+            basemap = spacemap.preview(spacemap.view_for(cam, tuple(_overhead_home(cam)), *zones[shape]))
         except Exception as e:
             print(f"Satellites Overhead preview basemap: {type(e).__name__}: {e}", flush=True)
     try:
@@ -1544,7 +1545,7 @@ def iss_map_preview(payload: dict):
         raise HTTPException(400, f"{type(e).__name__}: {e}")
     out = io.BytesIO()
     Image.fromarray(img).save(out, "PNG", compress_level=1)
-    return Response(out.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})
+    return Response(out.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store", "X-Basemap": basemap})
 
 
 @app.get("/api/webcams/status")

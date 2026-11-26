@@ -198,7 +198,9 @@ once (`hold: false`), so the rotation resumes by itself.
   (`display/modules/mapsats.py` + `common/satlayers.py`; job `hub/jobs/sats.py` propagates CelesTrak groups with
   sgp4 every 10 min into `data/issmap/sats_<layer>.bin`, 30 s steps the Pi interpolates; laser trellis = likely
   neighbour links, redrawn every 5 s from a cached mask; orbit tracks = `tracks` satellites' whole ground tracks from
-  `sats_<layer>.trk`, written by the job only when a map asks for them), `panels` (`display/modules/mappanels.py`: any number, each
+  `sats_<layer>.trk`, written by the job only when a map asks for them; names + the operator's flag for any layer,
+  only while at most `labels.sats.max` (5-150, default 40) of it are on the map, i.e. zoomed in, and
+  `mapsats.NAMES_MAX` in all; `labels.sats.logo`: Starlink's swoosh glyph (`flags.logo_char`) for STARLINK-), `panels` (`display/modules/mappanels.py`: any number, each
   in one of nine places with its own fields from `FIELDS`, layout, font, colours, crew name style) and `units`.
   Its caption is its own (one line by default); the ISS webcam's is untouched. China's link: Tiangong → a Chinese
   station or a Tianlian II relay (inferred). Extra data in iss.json for the panels: `people`, `spacewx` (NOAA SWPC),
@@ -219,7 +221,8 @@ once (`hold: false`), so the rotation resumes by itself.
   in the background for the panel preview's draft into `cache/overhead`) draws coasts, lake shores, country and province
   lines with `hub/weather/carto.py` (1 px at any scale; split at the date line) plus Black Marble lights fetched at the
   view's pixels → `data/issmap/ov_<w>x<h>_<W>_<cx0>_<lat>.bin` (`issmap.overhead_name`); the Pi uses it only for
-  exactly its view, else the Natural Earth 110m lines (also past 80 km/px). Bump `spacemap.RENDER_VERSION` after
+  exactly its view, else the Natural Earth 110m lines (also past 80 km/px; the preview says so while a draft's is
+  being drawn: `X-Basemap: drawing`). Bump `spacemap.RENDER_VERSION` after
   drawing changes. `extras.borders.provinces` toggles province lines. `mapset["_home"]` turns
   on the ring and house marker, `mapsats.draw(observer=)` (satellites past the horizon at `outside` brightness, trellis
   only between ones home sees, `near_km` from home, GPS lines from home, per-layer counts → panel fields `sats_up`,

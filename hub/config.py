@@ -499,6 +499,9 @@ def _validate_space_map(mp, name="Space Map"):
                     or any(not isinstance(L[k], bool) for k in L if isinstance(d[k], bool)):
                 raise bad(f"{kind} labels: pos {'/'.join(maplabels.PLACES)}, edge {'/'.join(maplabels.EDGES)}, "
                           "a colour like #ff8800, the rest true/false")
+            if kind == "sats" and "max" in L and not (num(L["max"]) and float(L["max"]).is_integer()
+                                                      and mapsats.LABEL_RANGE[0] <= L["max"] <= mapsats.LABEL_RANGE[1]):
+                raise bad(f"satellite names: max {mapsats.LABEL_RANGE[0]}-{mapsats.LABEL_RANGE[1]} on the map")
             if kind == "iss" and (not (isinstance(L.get("flag", "globe"), bool) or L.get("flag", "globe") in maplabels.ISS_FLAGS)
                                   or any(L.get(k, "label") not in maplabels.FLAG_AT for k in ("us_at", "ru_at"))
                                   or not (isinstance(L.get("text", "ISS"), str) and len(L.get("text", "ISS")) <= 40)):
