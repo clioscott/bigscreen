@@ -48,6 +48,12 @@ from PIL import Image
 
 WORK_W = 640                 # the lo picture is this wide; a crop that needs no more detail comes out of it
 MIN_SOURCE_H = 720           # YouTube: never a smaller stream than this when it has one (480p is soft and blocky)
+SWS = "flags=area+full_chroma_int+accurate_rnd"   # every CPU scale: plain averaging, colour at every output pixel
+                             # (without full_chroma_int swscale's RGB has half the colour resolution across: 40 dB
+                             # against a reference, 57 dB with it), exact rounding
+GPU_KEEP = 6                 # a 4K run: the video engine scales a region down to no less than this many times the
+                             # picture wanted, the CPU averages the rest (its scaler alone: 21 dB, soft and smeared;
+                             # this: 48 dB at a third of a core; a region already smaller than that is only cropped)
 DEFAULT_QUALITY_H = 1080     # a webcam with no quality of its own plays the stream's 1080p (or its best below): at
                              # the wall's size 1080p already gives ~8 px per LED, and 4K costs bandwidth and a DASH run
 OVERSAMPLE = 1.5             # a crop gets this many source pixels per LED pixel when the stream has them (then
@@ -617,8 +623,8 @@ def plan(src_w, src_h, wants, force=False) -> dict | None:
     pixels than the source has."""
     if src_w < 16 or src_h < 16:
         return None
-    if force:                                            # a quality chosen for the webcam: every crop from the stream's
-        full_w = float(src_w)                            # own pixels (else a full-frame crop of 4K came from lo)
+    if force:                                            # a feed's run: every crop from the stream's own pixels, in one
+        full_w = float(src_w)                            # step (through lo, scaled twice, it came out soft: 33 dB)
     else:
         wants = [w for w in wants if need_of(src_w, src_h, *w) > WORK_W * 1.1]    # the rest come out of lo
         if not wants:
@@ -1067,8 +1073,8 @@ class Feed:
         else:
             media, title = self.url, ""                      # its size is known once ffmpeg has opened it once
         src = self.source or {}
-        force = self.kind == "youtube" and forced(quality_for(self.kind, self.url))
         live = self.live_wants()
+        force = True                                         # the wall is always cut from the stream's own pixels
         self.hi = plan(src.get("w", 0), src.get("h", 0), live, force) if src and live and not self._hi_broken             else None
         return media, title
 
@@ -1086,7 +1092,7 @@ class Feed:
             fmt = choose_format(self.formats, wants, hw=True, quality=quality)
             if fmt and (fmt["w"] > src["w"] or (quality != "auto" and fmt["w"] != src["w"])):
                 return True                                   # (a quality chosen lower, or the default: down to it too)
-        force = forced(quality)
+        force = True
         live = self.live_wants()                              # the hi picture: for the zones playing now
         lacking = [w for w in live if (force or need_of(src["w"], src["h"], *w) > WORK_W * 1.1)
                    and not covers(self.hi, src["w"], src["h"], w)]
@@ -1223,40 +1229,51 @@ class Feed:
 
     def _filters(self, args, hi_fd):
         """The CPU filters after the input: the lo picture on pipe:1, and the hi one (plan) on hi_fd."""
-        lo = f"scale={WORK_W}:-2:flags=area"
+        lo = f"scale={WORK_W}:-2:{SWS},format=rgb24"
         p = self.hi
         if p is None or hi_fd is None:
             return args + ["-an", "-sn", "-dn", "-vf", f"fps={self.fps},{lo}",
                            "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"]
         crop = "" if (p["x"], p["y"], p["w"], p["h"]) == (0, 0, self.source["w"], self.source["h"]) else \
             f"crop=w={p['w']}:h={p['h']}:x={p['x']}:y={p['y']}:exact=1,"
-        scale = "" if (p["out_w"], p["out_h"]) == (p["w"], p["h"]) else \
-            f"scale={p['out_w']}:{p['out_h']}:flags=area,"
-        graph = f"[0:v:0]fps={self.fps},split=2[a][b];[a]{lo}[lo];[b]{crop}{scale}null[hi]"
+        # (always through scale, at the same size too: it is what turns the stream's YUV into RGB, with SWS)
+        scale = f"scale={p['out_w']}:{p['out_h']}:{SWS},format=rgb24"
+        graph = f"[0:v:0]fps={self.fps},split=2[a][b];[a]{lo}[lo];[b]{crop}{scale}[hi]"
         return args + ["-filter_complex", graph,
                        "-map", "[lo]", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1",
                        "-map", "[hi]", "-f", "rawvideo", "-pix_fmt", "rgb24", f"pipe:{hi_fd}"]
 
     def _dash_args(self, args, hi_fd):
-        """A DASH (4K) run: WebM segments on stdin; the video engine decodes, crops and scales, and only the two
-        pictures come back to memory (as NV12: its own RGB is a few levels off). Scaling a 4K frame on the CPU would
-        cost more than a core; pulling a cropped frame back without scale_vaapi, several."""
+        """A DASH (4K) run: WebM segments on stdin; the video engine decodes and crops, and scales a big region part
+        of the way (never below GPU_KEEP times the picture wanted); the CPU averages that down to the picture (SWS).
+        The video engine's own scaler all the way came out soft with smeared colour (21 dB against a reference)."""
         self._buffer_sec = BUFFER_SEC                       # 5 s segments, like the HLS
         args = args[:-1] + [PROTOCOLS + ",pipe"]
         args += ["-hwaccel", "vaapi", "-hwaccel_device", HW_DEVICE, "-hwaccel_output_format", "vaapi",
                  "-f", "matroska", "-i", "pipe:0"]
         src = self.source
 
-        def gpu(w, h):
-            return f"scale_vaapi=w={w}:h={h}:mode=hq:format=nv12,hwdownload,format=nv12"
-        lo = gpu(WORK_W, max(2, round(WORK_W * src["h"] / src["w"] / 2) * 2))
+        def gpu(x, y, w, h, out_w, out_h, keep=GPU_KEEP):
+            """Region (x, y, w, h) of the stream to out_w x out_h."""
+            tail = f"hwdownload,format=nv12,{{}}scale={out_w}:{out_h}:{SWS},format=rgb24"
+            if w > max(out_w, keep * out_w):               # big: the video engine scales it part of the way
+                pw = max(2, keep * out_w // 2 * 2)
+                ph = max(2, max(out_h, round(h * pw / w)) // 2 * 2)
+                return f"crop=w={w}:h={h}:x={x}:y={y}:exact=1,scale_vaapi=w={pw}:h={ph}:mode=hq:format=nv12," +                     tail.format("")
+            # else it only crops (scale_vaapi at the region's own size is what makes the crop happen there: hwdownload
+            # alone ignores it), on even pixels (NV12); the CPU trims an odd edge. The whole frame is just fetched.
+            x0, y0 = x // 2 * 2, y // 2 * 2
+            x1, y1 = min(src["w"], -(-(x + w) // 2) * 2), min(src["h"], -(-(y + h) // 2) * 2)
+            pre = "" if (x0, y0, x1, y1) == (0, 0, src["w"], src["h"]) else                 f"crop=w={x1 - x0}:h={y1 - y0}:x={x0}:y={y0}:exact=1,scale_vaapi=w={x1 - x0}:h={y1 - y0}:format=nv12,"
+            trim = "" if (x0, y0, x1 - x0, y1 - y0) == (x, y, w, h) else                 f"crop=w={w}:h={h}:x={x - x0}:y={y - y0}:exact=1,"
+            return pre + tail.format(trim)
+        lo = gpu(0, 0, src["w"], src["h"], WORK_W, max(2, round(WORK_W * src["h"] / src["w"] / 2) * 2), keep=2)
         p = self.hi
         if p is None or hi_fd is None:
             return args + ["-an", "-sn", "-dn", "-vf", f"fps={self.fps},{lo}",
                            "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"]
-        crop = "" if (p["x"], p["y"], p["w"], p["h"]) == (0, 0, src["w"], src["h"]) else \
-            f"crop=w={p['w']}:h={p['h']}:x={p['x']}:y={p['y']}:exact=1,"
-        graph = f"[0:v:0]fps={self.fps},split=2[a][b];[a]{lo}[lo];[b]{crop}{gpu(p['out_w'], p['out_h'])}[hi]"
+        hi = gpu(p["x"], p["y"], p["w"], p["h"], p["out_w"], p["out_h"])
+        graph = f"[0:v:0]fps={self.fps},split=2[a][b];[a]{lo}[lo];[b]{hi}[hi]"
         return args + ["-filter_complex", graph,
                        "-map", "[lo]", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1",
                        "-map", "[hi]", "-f", "rawvideo", "-pix_fmt", "rgb24", f"pipe:{hi_fd}"]
