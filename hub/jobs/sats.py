@@ -14,7 +14,9 @@ ahead and behind in its own plane and to its nearest neighbours in the planes ei
 real links aren't published; this is how these networks are built).
 
 .bin: b"SAT2", n (u32), steps (u16), pairs (u32), t0 (f64), step (f32), then lat×100 and lon×100 as int16
-[steps][n], then the pairs as uint16 [pairs][2]. .json: {"at", "names", "count"}.
+[steps][n], then the pairs as uint16 [pairs][2]. .json: {"at", "names", "count"}. A layer with trails on
+(``map.sats.<layer>.trail`` minutes, either map) starts that much (plus a minute) earlier, so the display can draw
+where each satellite has been.
 
 Orbit tracks (``map.sats.<layer>.tracks``, low and middle orbits): each satellite's ground track from half an orbit
 before the positions start to half an orbit after they end, every TRACK_STEP, so the display can draw each one's
@@ -41,6 +43,7 @@ UA = {"User-Agent": "BigScreen/2 (home LED wall; space map)"}
 TLE_TTL = 6 * 3600
 BACK = 120                       # from this long before now (the wall shows the map as filmed, 35 s ago)
 HORIZON = 25 * 60                # … to this long after it (the job runs every 10 min)
+TRAIL_MAX = 30                   # min: the longest trail (map.sats.<layer>.trail) the positions go back for
 MAX_SATS = 65000                 # (pair indices are uint16)
 TRACK_STEP = {"leo": 120, "meo": 600}   # s between the points of the orbit tracks (none for GEO: it stays put)
 TRK = struct.Struct("<4sIHddf")
@@ -193,18 +196,34 @@ def tracks_wanted(cfg, key):
     return False
 
 
-def write(key, tles, now):
+def trail_back(cfg, key) -> int:
+    """How much further back (s) this layer's positions go for its trails: the longest trail either map draws for
+    it, plus a minute; 0 without."""
+    mods = (cfg or {}).get("modules") or {}
+    m = 0
+    for name in ("iss_map", "sats_overhead"):
+        st = ((((mods.get(name) or {}).get("map") or {}).get("sats") or {}).get(key))
+        if isinstance(st, dict) and st.get("on"):
+            try:
+                m = max(m, min(TRAIL_MAX, float(st.get("trail") or 0)))
+            except (TypeError, ValueError):
+                pass
+    return int(m * 60 + 60) if m > 0 else 0
+
+
+def write(key, tles, now, extra=0):
     import numpy as np
     step = STEP[LAYERS[key]["orbit"]]
-    t0 = math.floor((now - BACK) / step) * step
-    steps = int((BACK + HORIZON) // step) + 2
+    t0 = math.floor((now - BACK - extra) / step) * step
+    steps = int((BACK + extra + HORIZON) // step) + 2
     tles = tles[:MAX_SATS]
     if tles:
         lat, lon, r = propagate(tles, t0, steps, step)
     else:
         lat = lon = np.zeros((steps, 0))
         r = None
-    pairs = mesh(tles, r) if LAYERS[key]["mesh"] and r is not None else []
+    j = int(extra // step)                                  # (the links as they are now, not a trail ago)
+    pairs = mesh(tles, r[:, j:]) if LAYERS[key]["mesh"] and r is not None else []
     la = np.where(np.isfinite(lat), np.round(lat * 100), 32767).astype("<i2")
     lo = np.where(np.isfinite(lon), np.round(lon * 100), 32767).astype("<i2")
     pr = np.asarray(pairs, "<u2").reshape(-1, 2)
@@ -256,7 +275,7 @@ def run(cfg):
     for k in keys:
         try:
             tles = elements(k)
-            n, m = write(k, tles, now)
+            n, m = write(k, tles, now, trail_back(cfg, k))
             out[k] = f"{n} sats" + (f", {m} links" if m else "")
             if tracks_wanted(cfg, k):
                 write_tracks(k, tles[:MAX_SATS], now)

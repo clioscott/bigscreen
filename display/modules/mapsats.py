@@ -8,7 +8,9 @@ Settings (``map.sats.<layer>``, SAT_DEFAULTS): on, mark ("auto": icons when ther
 "icon"; "dot"), colour, label (names beside them, while at most map.labels.sats.max of the layer are on the map:
 zoomed in far enough, Starlink's too), links (the trellis, or
 for GPS the ISS's own receivers' view of them, for GOES the downlink to Wallops), tracks (how many satellites' orbit
-tracks to draw: 0 none; spread evenly through the layer, or the nearest when near_km is set), near_km (the
+tracks to draw: 0 none; spread evenly through the layer, or the nearest when near_km is set), trail (minutes: each
+satellite that's been on the map in that time trails where it went, bright, then fading out towards the trail's
+end; 0 none), near_km (the
 trellis and tracks only within this of the ISS; 0: everywhere), brightness (0.1-1: thousands of pixels can drown the map), speed (the data along
 the links)."""
 
@@ -24,7 +26,12 @@ import numpy as np
 from common.satlayers import LAYERS
 
 SAT_DEFAULTS = {"on": False, "mark": "auto", "colour": None, "label": False, "links": False, "tracks": 0,
-                "near_km": 3000, "brightness": 0.7, "speed": "normal"}
+                "near_km": 3000, "brightness": 0.7, "speed": "normal", "trail": 0}
+TRAIL_MAX = 30                # min (hub/jobs/sats.py TRAIL_MAX: how far back its positions go for them)
+TRAIL_DIM = 0.5               # a trail's brightness against the layer's colour, while it's fresh
+TRAIL_HOLD = 0.6              # ... for this part of its length, then fading to nothing at its end
+TRAIL_EVERY = 5.0             # s: the trails are drawn again this often (the newest stretch every frame)
+TRAILS_MAX = 300              # satellites with a trail per layer at most
 TRACKS_MAX = 500              # orbit tracks per layer at most
 TRACK_DIM = 0.3               # how bright the tracks are against the layer's colour
 TRK = struct.Struct("<4sIHddf")
@@ -152,6 +159,93 @@ def _tracks_onto(img, v, left, key, tr, t, sel, rgb):
 
     _mesh_onto(img, v, left, (key + "/tracks", v.key, h["t0"], i0, i1, hash(sel.tobytes())), segs,
                np.array([int(ch * TRACK_DIM) for ch in rgb], np.uint8))
+
+
+_onmap: dict = {}
+_trails: dict = {}
+
+
+def _on_map_at(v, left, key, f, i):
+    """Which of a layer's satellites were on the map at its position step i (cached: each step is worked out once
+    while it's in a trail's window)."""
+    h, la, lo = f[0], f[1], f[2]
+    wide = v.W <= 2 * v.w + 8                                # (the whole world across: it doesn't matter where)
+    ck = (v.key, None if wide else left, h["t0"], h["step"], h["n"])
+    c = _onmap.get(key)
+    if c is None or c[0] != ck:
+        c = _onmap[key] = (ck, {})
+    m = c[1].get(i)
+    if m is None:
+        a, o = la[i], lo[i]
+        good = (a != 32767) & (o != 32767)
+        y = v.y(a / 100.0)
+        sx = (v.wx(o / 100.0) - left) % v.W
+        m = c[1][i] = good & (y >= -1) & (y < v.h + 1) & ((sx < v.w + 1) | (sx > v.W - 2))
+    return m
+
+
+def _trail_alpha(age, T):
+    """How bright (0-1) a trail is this many seconds back along it, for a trail T s long: full for TRAIL_HOLD of it,
+    then fading to nothing at its end."""
+    hold = TRAIL_HOLD * T
+    return np.clip(1.0 - (np.asarray(age, float) - hold) / max(1.0, T - hold), 0.0, 1.0)
+
+
+def _trails_onto(img, v, left, key, f, t, minutes, rgb, now):
+    """Trails: every satellite that's been on the map in the last ``minutes``, the way it went in that time (from the
+    hub's positions, a step apart), bright and then fading towards the trail's end, so one that has crossed the map
+    leaves its trail there a good while after it's gone. Drawn into a cache every TRAIL_EVERY; the stretch from the
+    last step to where each one is now every frame."""
+    from display.modules import issmap
+    h, la, lo = f[0], f[1], f[2]
+    T = minutes * 60.0
+    b = int(np.floor((t - h["t0"]) / h["step"]))            # (the last step before now)
+    a0 = max(0, int(np.ceil((t - T - h["t0"]) / h["step"])))
+    if b < 0 or b >= h["steps"] or a0 > b:
+        return
+    lat, lon, ok = now
+    c = _onmap.get(key)
+    if c is not None:                                         # (steps that have left the window)
+        for i in [i for i in c[1] if i < a0 or i > b]:
+            del c[1][i]
+    seen = np.zeros(h["n"], bool)
+    for i in range(a0, b + 1):
+        seen |= _on_map_at(v, left, key, f, i)
+    wy, sx = v.y(lat), (v.wx(lon) - left) % v.W
+    here = ok & (wy >= -1) & (wy < v.h + 1) & ((sx < v.w + 1) | (sx > v.W - 2))
+    sel = np.flatnonzero(seen | here)
+    if sel.size > TRAILS_MAX:                                 # (the ones on the map now first)
+        sel = np.concatenate([sel[here[sel]], sel[~here[sel]]])[:TRAILS_MAX]
+    if sel.size == 0:
+        return
+    ck = (v.key, left, h["t0"], b, int(t // TRAIL_EVERY), minutes, hash(sel.tobytes()))
+    hit = _trails.get(key)
+    if hit is None or hit[0] != ck:
+        A = np.zeros((v.h, v.w), np.float32)
+        if b > a0:
+            a, o = la[a0:b + 1][:, sel], lo[a0:b + 1][:, sel]
+            good = (a != 32767) & (o != 32767)
+            x, y = v.wx(o / 100.0), v.y(a / 100.0)
+            ages = t - (h["t0"] + np.arange(a0, b + 1) * h["step"])
+            al = np.broadcast_to(_trail_alpha((ages[:-1] + ages[1:]) / 2, T)[:, None], good[1:].shape).ravel()
+            k = (good[:-1] & good[1:]).ravel() & (al > 0)
+            x0 = x[:-1].ravel()[k]
+            x1 = issmap._unwrap(x0, x[1:].ravel()[k], v.W)
+            X0, Y0, X1, Y1, _t0, _t1, keep, steps = issmap.in_zone(v, left, x0, y[:-1].ravel()[k], x1, y[1:].ravel()[k])
+            xs, ys, idx = issmap._samples(X0, Y0, X1, Y1, steps)
+            xi, yi = (np.rint(xs).astype(np.int64) - left) % v.W, np.rint(ys).astype(np.int64)
+            inside = (xi < v.w) & (yi >= 0) & (yi < v.h)
+            np.maximum.at(A, (yi[inside], xi[inside]), al[k][keep][idx][inside].astype(np.float32))
+        hit = _trails[key] = (ck, A)
+    A = hit[1]
+    m = A > 0
+    if m.any():
+        px = img[m].astype(np.float32)
+        img[m] = (px + (np.asarray(rgb, np.float32) - px) * (A[m] * TRAIL_DIM)[:, None] + 0.5).astype(img.dtype)
+    s = sel[ok[sel] & (la[b][sel] != 32767) & (lo[b][sel] != 32767)]
+    if s.size:                                                # (the newest stretch, up to where each one is now)
+        issmap._seg_line(img, v, left, v.wx(lo[b][s] / 100.0), v.y(la[b][s] / 100.0), v.wx(lon[s]), v.y(lat[s]), rgb,
+                         np.float32(TRAIL_DIM))
 
 
 _picks: dict = {}
@@ -291,6 +385,12 @@ def draw(img, v, left, t, mapset, data_dir, iss_pos, iss_xy, paths, label_items,
                 tsel = steady_pick(key, tr, t, lat, lon, pick_ok, n_tracks, centre, float(st.get("near_km") or 0),
                                    tuple(observer) if observer else None)
                 _tracks_onto(img, v, left, key, tr, t, tsel, rgb)
+        try:
+            trail = max(0.0, min(TRAIL_MAX, float(st.get("trail") or 0)))
+        except (TypeError, ValueError):
+            trail = 0.0
+        if trail and L["orbit"] != "geo":
+            _trails_onto(img, v, left, key, f, t, trail, rgb, (lat, lon, ok))
         if st.get("links"):
             near = float(st.get("near_km") or 0)
             if L["mesh"] and f[3].size:

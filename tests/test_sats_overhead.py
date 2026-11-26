@@ -372,3 +372,49 @@ def test_satellite_names_have_a_total_budget_across_layers(tmp_path, monkeypatch
     mapsats.draw(np.zeros((175, 448, 3), np.uint8), v, v.left(), T0, {"sats": {"starlink": {"on": True}}},
                  str(tmp_path), None, (0, 0), [], out, {"name": True}, (200, 200, 200), [])
     assert len(out) == 12
+
+
+def _moving(tmp_path, tracks, step=30.0):
+    """A starlink layer whose satellites follow tracks: [(lat, lon) per step] each, from T0 a step apart."""
+    d = tmp_path / "issmap"
+    d.mkdir(exist_ok=True)
+    la = np.array([[p[s][0] * 100 for p in tracks] for s in range(len(tracks[0]))], "<i2")
+    lo = np.array([[p[s][1] * 100 for p in tracks] for s in range(len(tracks[0]))], "<i2")
+    head = struct.pack("<4sIHIdf", b"SAT2", len(tracks), la.shape[0], 0, float(T0), step)
+    (d / "sats_starlink.bin").write_bytes(head + la.tobytes() + lo.tobytes())
+    (d / "sats_starlink.json").write_text(json.dumps({"names": [f"STARLINK-{i}" for i in range(len(tracks))]}))
+    mapsats._files.clear()
+    mapsats._onmap.clear()
+    mapsats._trails.clear()
+
+
+def test_a_trail_stays_after_its_satellite_leaves_then_fades_away(tmp_path):
+    crossing = [(HOME[0], HOME[1] - 40 + 4 * s) for s in range(80)]     # (east across in ~2 min, off it at ~step 11.6)
+    elsewhere = [(HOME[0] - 30, HOME[1] + s) for s in range(80)]         # (never on the map)
+    _moving(tmp_path, [crossing, elsewhere])
+    v = _view(448, 175, issmap.overhead_of({"overhead": {"radius_km": 200}}))
+    row = int(round(float(v.y(HOME[0]))))
+    ms = {"sats": {"starlink": {"on": True, "mark": "dot", "trail": 10, "colour": "#ffffff"}}}
+
+    def lit(step):
+        img = np.zeros((175, 448, 3), np.uint8)
+        mapsats.draw(img, v, v.left(), T0 + 30 * step + 1, ms, str(tmp_path), None, (0, 0), [], [], {}, (0, 0, 0), [])
+        return img, img[row - 1:row + 2].max(axis=(0, 2))
+
+    img, r = lit(10)                                           # (on the map: its trail runs back to the left edge)
+    x_now = int(round(float(v.wx(HOME[1]) - v.left())))
+    assert (r[5:x_now - 3] >= 120).all()
+    _, r = lit(14)                                             # (gone a minute: its whole trail across still bright)
+    assert (r[5:440] >= 120).all()
+    _, faded = lit(26)                                         # (7 min: fading, the oldest end first)
+    assert 0 < faded[5:440].max() < 120 and faded[440] > faded[5]
+    img, r = lit(32)                                           # (past the trail's length: gone)
+    assert not img.any()
+    assert mapsats._trail_alpha([0, 360, 480, 600], 600).tolist() == [1.0, 1.0, 0.5, 0.0]
+
+
+def test_the_hub_keeps_positions_back_for_the_longest_trail():
+    from hub.jobs import sats
+    cfg = {"modules": {"sats_overhead": {"map": {"sats": {"starlink": {"on": True, "trail": 10}}}},
+                       "iss_map": {"map": {"sats": {"starlink": {"on": True, "trail": 3}, "gps": {"on": True}}}}}}
+    assert sats.trail_back(cfg, "starlink") == 660 and sats.trail_back(cfg, "gps") == 0
