@@ -316,7 +316,7 @@ def test_a_distance_ring_is_drawn_there_while_overhead_stays_the_horizon(tmp_pat
 
 
 def test_names_and_flags_for_any_layer_once_few_enough_are_on_the_map(tmp_path):
-    from display.modules.flags import flag_char
+    from display.modules.flags import flag_char, logo_char
     near = [(HOME[0] + 0.2 * (i % 6) - 0.5, HOME[1] + 0.3 * (i // 6) - 1.0) for i in range(30)]
     cloud = [(HOME[0] + 0.05 * (i % 30) - 0.7, HOME[1] + 0.05 * (i // 30) - 0.7) for i in range(900)]
     lab = {"name": True, "flag": True, "pos": "auto", "edge": "outline"}
@@ -330,7 +330,7 @@ def test_names_and_flags_for_any_layer_once_few_enough_are_on_the_map(tmp_path):
         return out
 
     got = names(near, lab)                                    # (Starlink: thousands in all, 30 on this map)
-    assert len(got) == 30 and all(it["text"].startswith(flag_char("us") + "STARLINK-") for it in got)
+    assert len(got) == 30 and all(it["text"].startswith(flag_char("us") + logo_char("starlink")) for it in got)
     assert len(names(near, {**lab, "max": 20})) == 0           # (more on the map than the limit: none)
     assert len(names(near, lab, mark="dot")) == 30             # (pixels get names too)
     assert names(cloud, {**lab, "max": 150}) == []             # (a dense cloud: too many to name)
@@ -342,3 +342,33 @@ def test_satellite_names_limit_is_checked():
     for bad in (3, 151, 40.5, "many", True):
         with pytest.raises(config.ConfigError):
             config._validate_sats_overhead({"map": {"labels": {"sats": {"max": bad}}}})
+
+
+def test_starlinks_names_use_its_swoosh_unless_turned_off_or_named_by_you(tmp_path):
+    from display.modules.flags import flag_char, logo_char
+    _starlink(tmp_path, [(HOME[0], HOME[1] + 0.5), (HOME[0] + 0.5, HOME[1])])
+    v = _view(448, 175, issmap.overhead_of({"overhead": {"radius_km": 200}}))
+
+    def texts(lab, names=None):
+        out = []
+        ms = {"sats": {"starlink": {"on": True}}, **({"names": names} if names else {})}
+        mapsats.draw(np.zeros((175, 448, 3), np.uint8), v, v.left(), T0, ms, str(tmp_path), None, (0, 0), [], out,
+                     {"name": True, "flag": True, **lab}, (200, 200, 200), [])
+        return sorted(it["text"] for it in out)
+
+    us, sw = flag_char("us"), logo_char("starlink")
+    assert sw and texts({}) == [us + sw + "0", us + sw + "1"]
+    assert texts({"logo": False}) == [us + "STARLINK-0", us + "STARLINK-1"]
+    assert texts({}, {"STARLINK-0": "Mine"}) == [us + "MINE", us + sw + "1"]
+    from display.modules.mappanels import text_w
+    assert text_w(sw + "31234") < text_w("STARLINK-31234") * 0.7
+
+
+def test_satellite_names_have_a_total_budget_across_layers(tmp_path, monkeypatch):
+    monkeypatch.setattr(mapsats, "NAMES_MAX", 12)
+    _starlink(tmp_path, [(HOME[0] + 0.2 * (i % 6) - 0.5, HOME[1] + 0.3 * (i // 6) - 1.0) for i in range(30)])
+    v = _view(448, 175, issmap.overhead_of({"overhead": {"radius_km": 200}}))
+    out = []
+    mapsats.draw(np.zeros((175, 448, 3), np.uint8), v, v.left(), T0, {"sats": {"starlink": {"on": True}}},
+                 str(tmp_path), None, (0, 0), [], out, {"name": True}, (200, 200, 200), [])
+    assert len(out) == 12

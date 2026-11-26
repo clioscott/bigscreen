@@ -71,7 +71,7 @@ const Preview = {
   setup(props) {
     const src = ref("");
     const err = ref("");
-    const drawing = ref(false);                       // (Satellites Overhead: the sharp basemap for this zoom is coming)
+    const drawing = ref("");                       // (Satellites Overhead: the sharp basemap for this zoom is coming)
     let t = null, busy = false, again = false, last = null, gone = false;
     const draw = async () => {
       if (busy) { again = true; return; }
@@ -88,7 +88,7 @@ const Preview = {
         if (gone) { URL.revokeObjectURL(url); return; }
         if (last) URL.revokeObjectURL(last);
         last = src.value = url;
-        drawing.value = r.headers.get("X-Basemap") === "drawing";
+        drawing.value = r.headers.get("X-Basemap") || "";
         err.value = "";
       } catch (e) { err.value = e.message; } finally { busy = false; if (again && !gone) draw(); }
     };
@@ -100,7 +100,8 @@ const Preview = {
   template: `<div class="led" :style="{maxWidth: Math.min(zone[0] * 3 + 22, 1366) + 'px'}">
     <img v-if="src" :src="src" :style="{aspectRatio: zone[0] + ' / ' + zone[1]}" alt="The Space Map as the wall draws it">
     <div v-else class="placeholder">{{ err || 'Drawing the map…' }}</div></div>
-    <div v-if="drawing && src" class="faint" style="font-size:12.5px; margin-top:6px">Drawing the coasts, borders and city lights for this zoom (a few seconds); until then the world's rough lines.</div>
+    <div v-if="drawing === 'drawing' && src" class="faint" style="font-size:12.5px; margin-top:6px">Drawing the coasts, borders and city lights for this zoom (a few seconds); until then the world's rough lines.</div>
+    <div v-if="drawing === 'failed' && src" class="faint" style="font-size:12.5px; margin-top:6px">The hub couldn't draw this zoom's basemap (it tries again in a few minutes; the hub's log says why), so the world's rough lines for now.</div>
     <div v-if="err && src" class="callout" style="font-size:12.5px; margin-top:6px"><Icon name="TriangleAlert" :size="14"/><span>{{ err }}</span></div>`,
 };
 
@@ -377,7 +378,7 @@ const makePage = (O) => ({
                 <span class="faint">Edge</span><Seg :modelValue="lab(kind).edge || 'outline'" @update:modelValue="v => setLab(kind, 'edge', v)" :options="[{value:'outline', label:'Outline'}, {value:'box', label:'Dark box'}, {value:'none', label:'None'}]"/>
                 <Seg :modelValue="lab(kind).pos" @update:modelValue="v => setLab(kind, 'pos', v)" :options="[{value:'auto', label:'Auto'}, {value:'right', label:'Right'}, {value:'left', label:'Left'}, {value:'above', label:'Above'}, {value:'below', label:'Below'}]"/>
                 <ColorPick :modelValue="lab(kind).colour" @update:modelValue="v => setLab(kind, 'colour', v)"/>
-                <template v-if="kind === 'sats'"><span class="faint">While at most</span><Stepper :modelValue="lab('sats').max ?? 40" @update:modelValue="v => setLab('sats', 'max', v)" :min="5" :max="150" :step="5" unit=""/><span class="faint">of a layer are on the map</span></template></div></div>
+                <template v-if="kind === 'sats'"><label class="isx-chk"><input type="checkbox" :checked="lab('sats').logo !== false" @change="setLab('sats', 'logo', $event.target.checked)">Starlink's swoosh instead of STARLINK</label><span class="faint">While at most</span><Stepper :modelValue="lab('sats').max ?? 40" @update:modelValue="v => setLab('sats', 'max', v)" :min="5" :max="150" :step="5" unit=""/><span class="faint">of a layer are on the map</span></template></div></div>
             <div class="faint" style="font-size:12px">The ISS's text can use {exp} (the expedition's number, e.g. ISS: EXP {exp}) and {crew}. Outline: a 1 px black edge round every letter, so labels read on anything. Auto puts each label where it covers least (other labels, icons, panels, the caption, the edges); the ISS's goes first. Minor labels with no clear room are left out. Satellites: every layer can have names (here for all of them, or each layer's own on the Satellites tab, in its colour); they show once you're zoomed in far enough that no more than that many of the layer are on the map.</div>
           </div></div>
         <div class="card"><div class="card-head"><Icon name="PenLine" :size="16"/><h3>Your own names</h3></div>

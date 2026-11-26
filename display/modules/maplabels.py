@@ -29,7 +29,7 @@ LABEL_DEFAULTS = {
     "tiangong": {"name": True, "flag": True, "crew": False, "pos": "auto", "colour": "#e66e5a", **_E},
     "relays": {"name": False, "flag": False, "pos": "auto", "colour": "#8fb0ff", **_E},
     "ground": {"name": False, "flag": False, "pos": "auto", "colour": "#c8c8d2", **_E},
-    "sats": {"name": False, "flag": False, "pos": "auto", "colour": "#b4b4c8", "max": 40, **_E},   # (max: mapsats)
+    "sats": {"name": False, "flag": False, "pos": "auto", "colour": "#b4b4c8", "max": 40, "logo": True, **_E},   # (max, logo: mapsats)
     "launch": {"name": True, "flag": True, "pos": "auto", "colour": "#ff9f6b", **_E},
 }
 LH = 7                       # a label's height (tiny font)

@@ -184,3 +184,12 @@ def test_carto_draws_many_rings_at_once_with_the_same_pixels():
         carto._draw_lonlat_polys(ImageDraw.Draw(b), gv, [r])
     assert np.asarray(a).any() and (np.asarray(a) == np.asarray(b)).all()
     carto._draw_lonlat_polys(ImageDraw.Draw(a), gv, [])
+
+
+def test_a_preview_basemap_that_failed_isnt_said_to_be_drawing(tmp_path, monkeypatch):
+    from display.modules import issmap
+    monkeypatch.setattr(spacemap, "DRAFTS", tmp_path / "drafts")
+    monkeypatch.setattr(spacemap.paths, "DATA_DIR", tmp_path)
+    v = issmap.OverheadView(448, 175, **issmap.overhead_view((49.1, -123.1), 448, 175, {**issmap.OVERHEAD_DEFAULTS, "radius_km": 300})["_overhead"])
+    monkeypatch.setattr(spacemap, "_failed", {issmap.overhead_name(v): __import__("time").time()})
+    assert spacemap.preview(v) == "failed"
