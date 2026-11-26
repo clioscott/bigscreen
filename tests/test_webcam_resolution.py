@@ -305,12 +305,21 @@ def test_a_dash_run_reads_stdin_and_crops_and_scales_on_the_video_engine():
     assert "pipe" in args[args.index("-protocol_whitelist") + 1].split(",")
     assert args[args.index("-hwaccel_output_format") + 1] == "vaapi"
     graph = args[args.index("-filter_complex") + 1]
-    assert f"crop=w={f.hi['w']}:h={f.hi['h']}" in graph
-    assert f"scale_vaapi=w=640:h=360" in graph and f"scale_vaapi=w={f.hi['out_w']}:h={f.hi['out_h']}" in graph
+    # the video engine only crops this region (under GPU_KEEP x the picture), on even pixels; the CPU trims the odd
+    # edge and scales, in full colour
+    assert (f.hi["w"], f.hi["h"]) == (448, 175)
+    assert "scale_vaapi=w=448:h=176:format=nv12,hwdownload,format=nv12,crop=w=448:h=175:x=0:y=0:exact=1," in graph
+    assert "scale_vaapi=w=1280:h=720" in graph
+    assert f"scale={f.hi['out_w']}:{f.hi['out_h']}:{wc.SWS},format=rgb24" in graph
+    assert f"scale=640:360:{wc.SWS}" in graph
     assert graph.count("hwdownload") == 2 and "pipe:7" in args
+    f.hi = wc.plan(3840, 2160, [(448, 175, None)], force=True)             # the whole width: scaled part of the way
+    wide = f._args("https://v/2160.webm?x=1", hi_fd=7, hw=True, piped="dash")
+    wide = wide[wide.index("-filter_complex") + 1]
+    assert f"scale_vaapi=w={wc.GPU_KEEP * 448}:" in wide and f"scale=448:175:{wc.SWS}" in wide
     f.hi = None
     lo_only = f._args("https://v/2160.webm?x=1", hw=True, piped="dash")
-    assert "-filter_complex" not in lo_only and "scale_vaapi=w=640:h=360" in lo_only[lo_only.index("-vf") + 1]
+    assert "-filter_complex" not in lo_only and f"scale=640:360:{wc.SWS}" in lo_only[lo_only.index("-vf") + 1]
 
 
 class _FakeProc:

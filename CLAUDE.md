@@ -235,8 +235,13 @@ once (`hold: false`), so the rotation resumes by itself.
   lookup passes `youtube:formats=incomplete` to list them, which needs a current yt-dlp with yt-dlp-ejs and deno
   (`~/.deno/bin/deno` on the server, found by `deno_path`). A webcam plays 1080p by default (`DEFAULT_QUALITY_H`;
   no `quality` key); `cams.<id>.quality` = `"auto"` (what the crops need, up to 4K), `"max"` or a height opts in.
-  DASH is used only when that asks for more than the HLS has, only with the video engine (`_dash_args`: crop/scale with `scale_vaapi`, NV12 back to memory), fed into
+  DASH is used only when that asks for more than the HLS has, only with the video engine, fed into
   ffmpeg's stdin by `Feed._fetch_segments`.
+- Picture quality (measured against a full-chroma area-averaged reference; keep it that way): the wall's frame is
+  always cut from the stream's own pixels in one ffmpeg step (`plan(force=True)`, never through the 640-wide lo
+  picture: 33 dB); every CPU scale uses `SWS` (`area+full_chroma_int+accurate_rnd`: 57 dB, without full chroma 40);
+  a DASH run decodes and crops on the video engine but `scale_vaapi` never scales below `GPU_KEEP`× the picture
+  (its scaler all the way: 21 dB, soft with smeared colour), the CPU averages the rest (`_dash_args`).
 - API (`hub/app.py`): `/api/webcams/frames` (raw RGB for the Pi, 12-byte header per frame), `source.mjpeg` (crop
   editor), `preview` + `preview/{token}.mjpeg` (exact wall render incl. caption), `probe`, `status`.
 - Display: `display/modules/webcam.py`, panels `webcam` (a side), `webcam_full`, `webcam_wall`; entry field `cam`.
