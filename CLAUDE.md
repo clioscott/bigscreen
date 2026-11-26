@@ -198,7 +198,9 @@ once (`hold: false`), so the rotation resumes by itself.
   (`display/modules/mapsats.py` + `common/satlayers.py`; job `hub/jobs/sats.py` propagates CelesTrak groups with
   sgp4 every 10 min into `data/issmap/sats_<layer>.bin`, 30 s steps the Pi interpolates; laser trellis = likely
   neighbour links, redrawn every 5 s from a cached mask; orbit tracks = `tracks` satellites' whole ground tracks from
-  `sats_<layer>.trk`, written by the job only when a map asks for them; names + the operator's flag for any layer,
+  `sats_<layer>.trk`, written by the job only when a map asks for them; trails = `trail` minutes: every satellite on
+  the map in that time, the way it went (full for 60%, then fading), from positions the job keeps that much further
+  back (`sats.trail_back`), cached every 5 s (`mapsats._trails_onto`); names + the operator's flag for any layer,
   only while at most `labels.sats.max` (5-150, default 40) of it are on the map, i.e. zoomed in, and
   `mapsats.NAMES_MAX` in all; `labels.sats.logo`: Starlink's swoosh glyph (`flags.logo_char`) for STARLINK-), `panels` (`display/modules/mappanels.py`: any number, each
   in one of nine places with its own fields from `FIELDS`, layout, font, colours, crew name style) and `units`.
