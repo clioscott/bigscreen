@@ -199,6 +199,8 @@ def tracks_wanted(cfg, key):
 def trail_back(cfg, key) -> int:
     """How much further back (s) this layer's positions go for its trails: the longest trail either map draws for
     it, plus a minute; 0 without."""
+    if LAYERS[key]["orbit"] == "geo":                       # (GEO satellites stay put: never trailed)
+        return 0
     mods = (cfg or {}).get("modules") or {}
     m = 0
     for name in ("iss_map", "sats_overhead"):

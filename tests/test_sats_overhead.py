@@ -394,7 +394,7 @@ def test_a_trail_stays_after_its_satellite_leaves_then_fades_away(tmp_path):
     _moving(tmp_path, [crossing, elsewhere])
     v = _view(448, 175, issmap.overhead_of({"overhead": {"radius_km": 200}}))
     row = int(round(float(v.y(HOME[0]))))
-    ms = {"sats": {"starlink": {"on": True, "mark": "dot", "trail": 10, "colour": "#ffffff"}}}
+    ms = {"sats": {"starlink": {"on": True, "mark": "dot", "trail": 10, "colour": "#ffffff", "brightness": 1.0}}}
 
     def lit(step):
         img = np.zeros((175, 448, 3), np.uint8)
@@ -418,3 +418,35 @@ def test_the_hub_keeps_positions_back_for_the_longest_trail():
     cfg = {"modules": {"sats_overhead": {"map": {"sats": {"starlink": {"on": True, "trail": 10}}}},
                        "iss_map": {"map": {"sats": {"starlink": {"on": True, "trail": 3}, "gps": {"on": True}}}}}}
     assert sats.trail_back(cfg, "starlink") == 660 and sats.trail_back(cfg, "gps") == 0
+
+
+
+def test_trails_are_cached_per_view_drawn_again_once_a_step_and_as_bright_as_the_layer(tmp_path):
+    crossing = [(HOME[0], HOME[1] - 40 + 4 * s) for s in range(80)]
+    _moving(tmp_path, [crossing])
+    v1 = _view(448, 175, issmap.overhead_of({"overhead": {"radius_km": 200}}))
+    v2 = _view(448, 175, issmap.overhead_of({"overhead": {"radius_km": 400}}))
+
+    def draw(v, t, brightness=1.0):
+        img = np.zeros((175, 448, 3), np.uint8)
+        ms = {"sats": {"starlink": {"on": True, "mark": "dot", "trail": 10, "colour": "#ffffff", "brightness": brightness}}}
+        mapsats.draw(img, v, v.left(), t, ms, str(tmp_path), None, (0, 0), [], [], {}, (0, 0, 0), [])
+        return img
+
+    full = draw(v1, T0 + 30 * 14 + 1)
+    A = mapsats._trails[("starlink", v1.key)][1]
+    draw(v2, T0 + 30 * 14 + 2)                                   # (another map at once: its own cache)
+    draw(v1, T0 + 30 * 14 + 3)
+    assert mapsats._trails[("starlink", v1.key)][1] is A          # (same step, same 5 s: not drawn again)
+    dim = draw(v1, T0 + 30 * 14 + 4, brightness=0.2)
+    row = int(round(float(v1.y(HOME[0]))))
+    assert 0 < dim[row, 5:440].max() < full[row, 5:440].max() * 0.4
+
+
+def test_a_moving_space_map_works_out_where_satellites_were_for_where_it_is_now(tmp_path):
+    _moving(tmp_path, [[(0.0, 60.0)] * 40])
+    v = issmap.View(224, 192)                                   # (half a wall: not the whole world across)
+    f = mapsats.load("starlink", str(tmp_path))
+    a = mapsats._on_map_at(v, int(v.wx(60.0)) - 100, "starlink", f, 3)
+    b = mapsats._on_map_at(v, int(v.wx(60.0)) + 150, "starlink", f, 3)
+    assert a[0] and not b[0]
