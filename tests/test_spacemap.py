@@ -168,3 +168,19 @@ def test_the_sats_job_takes_a_basemap_the_preview_already_drew(tmp_path, monkeyp
     assert spacemap.ensure(v, tmp_path / "live", now=2000.0) == "kept (from the preview)"
     name = issmap.overhead_name(v)
     assert (tmp_path / "live" / f"{name}.bin").read_bytes() == (spacemap.DRAFTS / f"{name}.bin").read_bytes()
+
+
+def test_carto_draws_many_rings_at_once_with_the_same_pixels():
+    from PIL import Image, ImageDraw
+    from hub.weather import carto
+    from hub.weather.geo import View
+    gv = View({"id": "t", "center": [49.0, -123.0], "km_per_px": 2.0}, 200, 120)
+    rng = np.random.default_rng(3)
+    rings = [np.column_stack((-123.0 + rng.uniform(-1.5, 1.5) + rng.uniform(-0.2, 0.2, n),
+                              49.0 + rng.uniform(-0.8, 0.8) + rng.uniform(-0.15, 0.15, n))) for n in rng.integers(3, 30, 300)]
+    a, b = Image.new("L", (400, 240)), Image.new("L", (400, 240))
+    carto._draw_lonlat_polys(ImageDraw.Draw(a), gv, rings)
+    for r in rings:                                         # (one at a time, as it used to)
+        carto._draw_lonlat_polys(ImageDraw.Draw(b), gv, [r])
+    assert np.asarray(a).any() and (np.asarray(a) == np.asarray(b)).all()
+    carto._draw_lonlat_polys(ImageDraw.Draw(a), gv, [])

@@ -382,17 +382,23 @@ def _draw_ocean(draw, view, shp_path, factor=SS):
             parts = list(shp.parts) + [len(pts)]
             rings = [np.column_stack(((pts[a:b, 0] + sh - x0) * k, (y1 - pts[a:b, 1]) * k))
                      for a, b in zip(parts[:-1], parts[1:]) if b - a >= 3]
-            for r in rings:
-                if _ring_is_outer(r):
+            outer = [_ring_is_outer(r) for r in rings]      # (once each: tens of thousands of rings in a wide view)
+            for r, o in zip(rings, outer):
+                if o:
                     draw.polygon(r.ravel().tolist(), fill=255)
-            for r in rings:
-                if not _ring_is_outer(r):
+            for r, o in zip(rings, outer):
+                if not o:
                     draw.polygon(r.ravel().tolist(), fill=0)
 
 
 def _draw_lonlat_polys(draw, view, parts, fill=255, factor=SS):
-    for ring in parts:
-        px, py = view.project_many(ring[:, 0], ring[:, 1])
+    parts = [p for p in parts if len(p)]
+    if not parts:
+        return
+    cat = np.concatenate(parts)                         # (projected together: one call, not one per ring)
+    X, Y = view.project_many(cat[:, 0], cat[:, 1])
+    cuts = np.cumsum([len(p) for p in parts])[:-1]
+    for px, py in zip(np.split(X, cuts), np.split(Y, cuts)):
         if len(px) >= 3 and (px.max() - px.min()) * factor >= 1 and (py.max() - py.min()) * factor >= 1:
             draw.polygon(np.column_stack((px * factor, py * factor)).ravel().tolist(), fill=fill)
 
@@ -530,8 +536,9 @@ def water_masks(view: View, min_feature_px: float = 3.0, fine_max_w: int = CHANN
     # Natural Earth lakes everywhere (cover areas outside the OSM extracts) …
     _draw_lonlat_polys(ld, view, [p for p, _ in _parts_in(_ne_pack("ne_10m_lakes"), view.lonlat)])
     # … plus OSM inland water where we have it (lakes, reservoirs, river areas)
-    for ring, cls in _parts_in(_inland_water_pack(), view.lonlat, pad=0.05):
-        _draw_lonlat_polys(rd if cls == 2 else ld, view, [ring])
+    inland = list(_parts_in(_inland_water_pack(), view.lonlat, pad=0.05))
+    _draw_lonlat_polys(ld, view, [r for r, cls in inland if cls != 2])
+    _draw_lonlat_polys(rd, view, [r for r, cls in inland if cls == 2])
 
     def down(img):
         return np.asarray(img.resize((view.w, view.h), Image.BOX), dtype=np.float32) >= 127.5
@@ -548,9 +555,7 @@ def water_masks(view: View, min_feature_px: float = 3.0, fine_max_w: int = CHANN
         fl = Image.new("L", (view.w * f, view.h * f), 0)
         fld = ImageDraw.Draw(fl)
         _draw_lonlat_polys(fld, view, [p for p, _ in _parts_in(_ne_pack("ne_10m_lakes"), view.lonlat)], factor=f)
-        for ring, cls in _parts_in(_inland_water_pack(), view.lonlat, pad=0.05):
-            if cls != 2:
-                _draw_lonlat_polys(fld, view, [ring], factor=f)
+        _draw_lonlat_polys(fld, view, [r for r, cls in inland if cls != 2], factor=f)
         fine_lakes = (np.asarray(fl) > 127) & ~fine_ocean
         del fl, fine_ocean
         lakes |= _lost_channels(fine_lakes, f, lakes | ocean, CHANNEL_MIN_PX) & ~ocean
