@@ -313,3 +313,32 @@ def test_a_distance_ring_is_drawn_there_while_overhead_stays_the_horizon(tmp_pat
     assert sum(on_ring) >= 6                                     # (the ring is 300 km out)
     sat = img[int(round(float(v.y(HOME[0] + 6)))), int(round(float(v.wx(HOME[1])) - v.left()))]
     assert sat.max() == 255                                      # (in the sky: drawn full bright, not dimmed)
+
+
+def test_names_and_flags_for_any_layer_once_few_enough_are_on_the_map(tmp_path):
+    from display.modules.flags import flag_char
+    near = [(HOME[0] + 0.2 * (i % 6) - 0.5, HOME[1] + 0.3 * (i // 6) - 1.0) for i in range(30)]
+    cloud = [(HOME[0] + 0.05 * (i % 30) - 0.7, HOME[1] + 0.05 * (i // 30) - 0.7) for i in range(900)]
+    lab = {"name": True, "flag": True, "pos": "auto", "edge": "outline"}
+    v = _view(448, 175, issmap.overhead_of({"overhead": {"radius_km": 200}}))
+
+    def names(pts, lab_, mark="auto"):
+        _starlink(tmp_path, pts)
+        out = []
+        mapsats.draw(np.zeros((175, 448, 3), np.uint8), v, v.left(), T0, {"sats": {"starlink": {"on": True, "mark": mark}}},
+                     str(tmp_path), None, (0, 0), [], out, lab_, (200, 200, 200), [])
+        return out
+
+    got = names(near, lab)                                    # (Starlink: thousands in all, 30 on this map)
+    assert len(got) == 30 and all(it["text"].startswith(flag_char("us") + "STARLINK-") for it in got)
+    assert len(names(near, {**lab, "max": 20})) == 0           # (more on the map than the limit: none)
+    assert len(names(near, lab, mark="dot")) == 30             # (pixels get names too)
+    assert names(cloud, {**lab, "max": 150}) == []             # (a dense cloud: too many to name)
+
+
+def test_satellite_names_limit_is_checked():
+    from hub import config
+    config._validate_sats_overhead({"map": {"labels": {"sats": {"name": True, "max": 120}}}})
+    for bad in (3, 151, 40.5, "many", True):
+        with pytest.raises(config.ConfigError):
+            config._validate_sats_overhead({"map": {"labels": {"sats": {"max": bad}}}})

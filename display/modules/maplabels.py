@@ -29,7 +29,7 @@ LABEL_DEFAULTS = {
     "tiangong": {"name": True, "flag": True, "crew": False, "pos": "auto", "colour": "#e66e5a", **_E},
     "relays": {"name": False, "flag": False, "pos": "auto", "colour": "#8fb0ff", **_E},
     "ground": {"name": False, "flag": False, "pos": "auto", "colour": "#c8c8d2", **_E},
-    "sats": {"name": False, "flag": False, "pos": "auto", "colour": "#b4b4c8", **_E},
+    "sats": {"name": False, "flag": False, "pos": "auto", "colour": "#b4b4c8", "max": 40, **_E},   # (max: mapsats)
     "launch": {"name": True, "flag": True, "pos": "auto", "colour": "#ff9f6b", **_E},
 }
 LH = 7                       # a label's height (tiny font)
@@ -62,44 +62,45 @@ def _candidates(X, Y, hw, hh, bw, pos, pad=None):
                                (X - hw - 1 - bw, Y - hh - LH), (X - hw - 1 - bw, Y + hh + 1)]
 
 
-def _overlap(b, boxes):
-    if not boxes:
-        return 0.0
-    a = np.asarray(boxes, float)
-    w = np.clip(np.minimum(a[:, 2], b[2]) - np.maximum(a[:, 0], b[0]), 0, None)
-    h = np.clip(np.minimum(a[:, 3], b[3]) - np.maximum(a[:, 1], b[1]), 0, None)
-    return float((w * h).sum())
-
-
 def place(items, obstacles, w, h):
     """[(item, x, y, text, bw)] for the items that fit: each item {"text", "anchor": (X, Y), "half": (hw, hh), "pos",
     "prio", "optional"}; ``obstacles``: boxes (x0, y0, x1, y1) a label should keep off."""
     from display.modules.mappanels import text_w
-    placed, taken = [], []
-    for it in sorted(items, key=lambda i: i.get("prio", 9)):
+    items = [it for it in sorted(items, key=lambda i: i.get("prio", 9)) if it["text"]]
+    obs = np.asarray(obstacles, float).reshape(-1, 4)
+    taken = np.zeros((len(items), 4))                           # (each candidate against every box at once: the
+    placed, n = [], 0                                           # satellites' names can be a hundred or more)
+    for it in items:
         text = it["text"]
-        if not text:
-            continue
         bw = text_w(text) + 2
         X, Y = it["anchor"]
         hw, hh = it.get("half", (2, 2))
-        best = None
         cands = _candidates(int(X), int(Y), hw, hh, bw, it.get("pos", "auto"), it.get("pad"))
         if it.get("pos", "auto") != "auto":                     # a fixed place, or the other side if it's off the
             fits = [(x, y) for x, y in cands if x - 1 >= 0 and x + bw + 1 <= w and y >= 0 and y + LH <= h]
             x, y = fits[0] if fits else cands[0]                # map; kept on the map either way
             cands = [(max(0, min(w - bw, x)), max(0, min(h - LH, y)))]
-        for k, (x, y) in enumerate(cands):
-            box = (x - 1, y, x + bw + 1, y + LH)
-            out = max(0, -box[0]) + max(0, box[2] - w) + max(0, -box[1]) + max(0, box[3] - h)
-            cost = out * LH * 4 + _overlap(box, taken) * 3 + _overlap(box, obstacles) + k * 0.5
-            if best is None or cost < best[0]:
-                best = (cost, x, y, box)
-        if best is None or (it.get("optional") and best[0] > bw * 2):
+        c = np.asarray(cands, float)
+        boxes = np.column_stack((c[:, 0] - 1, c[:, 1], c[:, 0] + bw + 1, c[:, 1] + LH))
+        out = (np.maximum(0, -boxes[:, 0]) + np.maximum(0, boxes[:, 2] - w) + np.maximum(0, -boxes[:, 1])
+               + np.maximum(0, boxes[:, 3] - h))
+        cost = out * LH * 4 + _overlaps(boxes, taken[:n]) * 3 + _overlaps(boxes, obs) + np.arange(len(c)) * 0.5
+        k = int(np.argmin(cost))                                # (the first of the cheapest, as before)
+        if it.get("optional") and cost[k] > bw * 2:
             continue                                            # (a minor label with no clear room: left out)
-        placed.append((it, best[1], best[2], text, bw))
-        taken.append(best[3])
+        placed.append((it, int(c[k, 0]), int(c[k, 1]), text, bw))
+        taken[n] = boxes[k]
+        n += 1
     return placed
+
+
+def _overlaps(boxes, others):
+    """How much each of ``boxes`` (n, 4) overlaps ``others`` (m, 4), summed: (n,)."""
+    if not len(others):
+        return np.zeros(len(boxes))
+    w = np.clip(np.minimum(others[None, :, 2], boxes[:, None, 2]) - np.maximum(others[None, :, 0], boxes[:, None, 0]), 0, None)
+    h = np.clip(np.minimum(others[None, :, 3], boxes[:, None, 3]) - np.maximum(others[None, :, 1], boxes[:, None, 1]), 0, None)
+    return (w * h).sum(axis=1)
 
 
 def draw(img, placed):
