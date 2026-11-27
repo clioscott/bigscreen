@@ -442,6 +442,19 @@ def choose_format(formats, wants, hw=None, quality=None):
     return pick_format(fs, need, min_h, snaps=[w for w in wants if is_snap(w[2])])
 
 
+def cut(x, y, w, h) -> str:
+    """ffmpeg filters that cut region (x, y, w, h) out of a decoded 4:2:0 frame, ending in a comma. A plain crop at
+    an odd x swaps the two colour signals of a hardware-decoded (NV12: U and V interleaved) frame: blue skin, orange
+    sky. So an odd corner is cut from the even pixel before it, at full colour resolution (4:4:4), and trimmed
+    there: exact, and the same for hardware and software decoding."""
+    if not (x % 2 or y % 2):
+        return f"crop=w={w}:h={h}:x={x}:y={y}:exact=1,"
+    dx, dy = x % 2, y % 2
+    return (f"crop=w={w + dx}:h={h + dy}:x={x - dx}:y={y - dy}:exact=1,"
+            f"scale=iw:ih:flags=bilinear+accurate_rnd,format=yuv444p,"
+            f"crop=w={w}:h={h}:x={dx}:y={dy}:exact=1,")
+
+
 def quality_of(values):
     """The quality asked of a stream by every saved webcam showing it (None: the default, "auto", "max" or a
     height): the most of them ("max", then the tallest, then "auto"), or None (the default, DEFAULT_QUALITY_H)."""
@@ -1235,7 +1248,7 @@ class Feed:
             return args + ["-an", "-sn", "-dn", "-vf", f"fps={self.fps},{lo}",
                            "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"]
         crop = "" if (p["x"], p["y"], p["w"], p["h"]) == (0, 0, self.source["w"], self.source["h"]) else \
-            f"crop=w={p['w']}:h={p['h']}:x={p['x']}:y={p['y']}:exact=1,"
+            cut(p["x"], p["y"], p["w"], p["h"])
         # (always through scale, at the same size too: it is what turns the stream's YUV into RGB, with SWS)
         scale = f"scale={p['out_w']}:{p['out_h']}:{SWS},format=rgb24"
         graph = f"[0:v:0]fps={self.fps},split=2[a][b];[a]{lo}[lo];[b]{crop}{scale}[hi]"
@@ -1265,7 +1278,7 @@ class Feed:
             x0, y0 = x // 2 * 2, y // 2 * 2
             x1, y1 = min(src["w"], -(-(x + w) // 2) * 2), min(src["h"], -(-(y + h) // 2) * 2)
             pre = "" if (x0, y0, x1, y1) == (0, 0, src["w"], src["h"]) else                 f"crop=w={x1 - x0}:h={y1 - y0}:x={x0}:y={y0}:exact=1,scale_vaapi=w={x1 - x0}:h={y1 - y0}:format=nv12,"
-            trim = "" if (x0, y0, x1 - x0, y1 - y0) == (x, y, w, h) else                 f"crop=w={w}:h={h}:x={x - x0}:y={y - y0}:exact=1,"
+            trim = "" if (x0, y0, x1 - x0, y1 - y0) == (x, y, w, h) else                 cut(x - x0, y - y0, w, h)
             return pre + tail.format(trim)
         lo = gpu(0, 0, src["w"], src["h"], WORK_W, max(2, round(WORK_W * src["h"] / src["w"] / 2) * 2), keep=2)
         p = self.hi

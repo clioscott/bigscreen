@@ -616,3 +616,33 @@ def test_hours_are_checked_in_the_config():
     for bad in ({"from": "25:00", "to": "08:00"}, {"from": "16:00"}, "night"):
         with pytest.raises(config.ConfigError):
             config._validate_webcams({"cams": {"a": {**base, "hours": bad}}})
+
+
+def test_a_cut_at_an_odd_corner_never_crops_subsampled_colour_at_an_odd_pixel():
+    # (a plain crop at an odd x swaps U and V of a hardware-decoded NV12 frame: blue skin on the wall)
+    assert wc.cut(46, 178, 1792, 700) == "crop=w=1792:h=700:x=46:y=178:exact=1,"
+    odd = wc.cut(47, 179, 1792, 700)
+    assert odd.startswith("crop=w=1793:h=701:x=46:y=178:exact=1,scale=iw:ih:")
+    assert "format=yuv444p,crop=w=1792:h=700:x=1:y=1:exact=1," in odd
+    assert wc.cut(47, 178, 1792, 700).endswith("crop=w=1792:h=700:x=1:y=0:exact=1,")
+
+
+def test_a_run_cuts_an_odd_region_through_full_colour():
+    f = _feed_shell()
+    f.source = {"w": 1920, "h": 1080, "dash": False}
+    f.hi = {"full_w": 1920, "x": 47, "y": 179, "w": 1792, "h": 700, "out_w": 448, "out_h": 175, "exact": True}
+    args = f._args("https://v/1080.ts", hi_fd=7, hw=True, piped="ts")
+    graph = args[args.index("-filter_complex") + 1]
+    assert f"[b]{wc.cut(47, 179, 1792, 700)}scale=448:175:{wc.SWS},format=rgb24[hi]" in graph
+    assert "x=47" not in graph
+
+
+def test_a_dash_runs_cpu_trim_of_an_odd_corner_goes_through_full_colour():
+    f = _feed_shell()
+    f.source = {"w": 3840, "h": 2160, "dash": True}
+    f.hi = {"full_w": 3840, "x": 1537, "y": 865, "w": 448, "h": 175, "out_w": 448, "out_h": 175, "exact": True}
+    graph = (lambda a: a[a.index("-filter_complex") + 1])(f._args("https://v/2160.webm", hi_fd=7, hw=True, piped="dash"))
+    # the video engine crops on even pixels (1536, 864); the odd pixel is trimmed at 4:4:4, never on NV12
+    assert "crop=w=450:h=176:x=1536:y=864:exact=1,scale_vaapi=w=450:h=176:format=nv12,hwdownload,format=nv12," in graph
+    assert f"format=nv12,{wc.cut(1, 1, 448, 175)}scale=448:175:{wc.SWS}" in graph
+    assert "format=yuv444p,crop=w=448:h=175:x=1:y=1:exact=1," in graph
