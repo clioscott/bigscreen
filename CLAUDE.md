@@ -321,7 +321,10 @@ once (`hold: false`), so the rotation resumes by itself.
   its own settings; "Blind" hides which is which) and full frame (the webcam's own `crops.tall`, full width, one
   set of settings, as the rotation would play it, without the caption). Settings: source resolution, sharpness,
   brightness, contrast, saturation (the webcam's own, with the wall's maths) and lab-only ones the wall can't do
-  yet (linear-light scaling, 60 fps, dithering). "Use for this webcam" writes resolution, sharpness and colour to
+  yet (60 fps, dithering, other scalings). Scaling "As now" is the wall's own path: `webcams.hw_input(gpu=True)` +
+  `gpu_filter` where `clarity.gpu_scaling()` holds, else the swscale chain (keep `scaled()` in step with
+  `Feed._decode` when the wall's scaling changes); "Old" is always swscale, "Exact" a numpy linear-light average
+  used as the reference. "Use for this webcam" writes resolution, sharpness and colour to
   the draft config. Don't replace this with fixed A/B presets or still images: he asked to pick and tweak himself.
 - `hub/clarity.py` does the work in its own low-priority process (`python -m hub.clarity <spec.json>`, started by
   `POST /api/clarity/build`; progress in `cache/clarity_state.json`). A session in `cache/clarity/session` keeps

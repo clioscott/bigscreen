@@ -5,7 +5,7 @@
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from "vue";
 import { store, api, fail, toast } from "../core.js";
 
-const SCALING = [{ value: "current", label: "As now" }, { value: "linear", label: "Linear light" }];
+const SCALING = [{ value: "current", label: "As now" }, { value: "swscale", label: "Old (before GPU scaling)" }, { value: "linear", label: "Exact, in light" }];
 const MODES = [{ value: "split", label: "Side by side (a slice, A and B)", icon: "Columns2" }, { value: "full", label: "Full frame (as the wall plays it)", icon: "RectangleHorizontal" }];
 const blank = () => ({ height: null, fps: 30, scaling: "current", sharpen: 0.1, brightness: 1, contrast: 1, saturation: 1, dither: false });
 const pct = (v) => Math.round(v * 100) + "%";
@@ -186,9 +186,9 @@ export const Clarity = {
       col.sharpen = v.sharpen;
       for (const k of ["brightness", "contrast", "saturation"]) { if (v[k] === 1) delete col[k]; else col[k] = v[k]; }
       c.colour = col;
-      const lab = [v.fps === 60 && "60 frames a second", v.scaling === "linear" && "linear-light scaling", v.dither && "dithering"].filter(Boolean);
+      const lab = [v.fps === 60 && "60 frames a second", v.scaling === "swscale" && "the old scaling (the wall has moved on from it)", v.scaling === "linear" && "exact scaling", v.dither && "dithering"].filter(Boolean);
       toast(`Set on ${camObj.value?.label}: resolution, sharpness and colour. Press Save to keep.`
-        + (lab.length ? ` Not carried over (the wall can't do them yet): ${lab.join(", ")}.` : ""), "ok", 7000);
+        + (lab.length ? ` Not carried over (lab only): ${lab.join(", ")}.` : ""), "ok", 7000);
     };
 
     const sideText = (side) => {
@@ -246,10 +246,11 @@ export const Clarity = {
         </div>
         <ToggleRow v-model="live" label="The wall follows my changes" hint="On: a moment after you change anything below (or move the slice), the loop is rendered again and swaps in. Off: change several things, then press Update."/>
         <div class="row" v-if="!live"><button class="btn" :disabled="running || !started" @click="build(false)"><Icon name="RefreshCw" :size="15"/>Update the wall</button></div>
-        <div v-if="running || st.error" class="stack" style="gap:6px">
+        <div v-if="running || st.error || st.note" class="stack" style="gap:6px">
           <div class="row nowrap" v-if="running"><span class="muted" style="flex:1">{{ st.stage }}</span><span class="faint mono">{{ Math.round(st.pct || 0) }}%</span></div>
           <div class="clarity-bar" v-if="running"><div :style="{ width: (st.pct || 0) + '%' }"></div></div>
           <div v-if="st.error" class="callout" style="font-size:13px"><Icon name="TriangleAlert" :size="16"/><span>{{ st.error }}</span></div>
+          <div v-if="st.note" class="callout" style="font-size:13px"><Icon name="Info" :size="16"/><span>{{ st.note }}</span></div>
         </div>
         <div v-if="!started" class="faint" style="font-size:12px">Recording takes about 10-20 seconds. After that, sharpness and colour changes show in a few seconds; a new resolution or slice takes a little longer the first time.</div>
       </div>
@@ -273,7 +274,7 @@ export const Clarity = {
             <Field label="Contrast"><Slider v-model="v.contrast" :min="0.5" :max="2" :step="0.05" :format="pct"/></Field>
             <Field label="Saturation"><Slider v-model="v.saturation" :min="0" :max="2" :step="0.05" :format="pct"/></Field>
             <div class="section-title" style="margin-top:6px"><Icon name="FlaskConical" :size="13"/>Lab only (the wall can't do these yet)</div>
-            <Field label="Scaling down" hint="Linear light averages as light, so small bright things stay bright.">
+            <Field label="Scaling down" hint="As now: what the wall does (averaged as light on the video engine, so small bright things stay bright). Old: the earlier method, which dims them. Exact: the same idea computed slowly and exactly, as a reference.">
               <Seg v-model="v.scaling" :options="SCALING"/></Field>
             <Field v-if="can60(v)" label="Frames a second" hint="The wall plays webcams at 30.">
               <Seg v-model="v.fps" :options="[{ value: 30, label: '30' }, { value: 60, label: '60' }]"/></Field>
