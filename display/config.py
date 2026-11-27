@@ -9,6 +9,26 @@ import copy
 import json
 import os
 import threading
+import time
+
+try:                                 # on the Pi: ~5x faster than json on the ~700 KB config, which matters because
+    import orjson                    # a parse holds the GIL (the render loop waits for it) wherever it runs
+
+    _dumps = orjson.dumps
+
+    def _loads(raw):
+        try:
+            return orjson.loads(raw)
+        except ValueError:           # (json's NaN / Infinity, which orjson refuses)
+            return json.loads(raw)
+except ImportError:
+    def _loads(raw):
+        return json.loads(raw)
+
+    def _dumps(data):
+        return json.dumps(data).encode("utf-8")
+
+WATCH_SEC = 0.5                      # how often the watcher thread looks at config.json
 
 
 def deep_merge(base, overlay):
@@ -78,6 +98,9 @@ class ConfigSource:
         self.fallback = fallback or os.path.expanduser("~/.bigscreen-display-config.json")
         self._mtime = None
         self._base = None
+        self._loaded = None          # (data, mtime) read by the watcher thread, waiting for poll() to take it
+        self._seen = None            # the mtime the watcher last read
+        self._watcher = None
         self._preview = None
         self._preview_until = 0.0
         self._lock = threading.Lock()
@@ -86,38 +109,74 @@ class ConfigSource:
     def _read(self):
         for p in (self.path, self.fallback):
             if p and os.path.exists(p):
-                with open(p, encoding="utf-8") as f:
-                    return json.load(f), os.stat(p).st_mtime
+                mtime = os.stat(p).st_mtime
+                with open(p, "rb") as f:
+                    return _loads(f.read()), mtime
         raise FileNotFoundError(f"no config at {self.path}")
 
     def poll(self, now):
-        """Reload if the file changed or the preview expired. Returns True if config changed."""
+        """Take in a changed config or an expired preview. Returns True if config changed.
+
+        Called by the render loop every frame, so it only swaps in what the watcher thread already read: the
+        config is ~700 KB of JSON, and reading it here (and writing the fallback copy to the SD card) held a
+        frame up on every save. The first load is done here, since the display can't start without it."""
         changed = False
         with self._lock:
-            try:
-                st = os.stat(self.path).st_mtime if os.path.exists(self.path) else None
-                if self._base is None or (st is not None and st != self._mtime):
+            if self._base is None:
+                try:
                     self._base, self._mtime = self._read()
+                    # (started on the fallback copy: the watcher takes config.json as soon as it's synced)
+                    self._seen = self._mtime if os.path.exists(self.path) else None
                     changed = True
-                    if st is not None:
-                        self._remember()
-            except (OSError, ValueError) as e:
-                print(f"[config] reload failed, keeping previous: {e}")
+                except (OSError, ValueError) as e:
+                    print(f"[config] load failed: {e}")
+            elif self._loaded is not None:
+                (self._base, self._mtime), self._loaded = self._loaded, None
+                changed = True
             if self._preview is not None and self._preview_until and now > self._preview_until:
                 self._preview = None
                 changed = True
                 print("[config] preview expired — reverted")
             if changed:
                 self.generation += 1
+            start = self._watcher is None and self._base is not None
+            if start:
+                self._watcher = threading.Thread(target=self._watch, name="config-watch", daemon=True)
+        if start:
+            self._remember(self._base)
+            self._watcher.start()
         return changed
 
-    def _remember(self):
+    def _watch(self):
+        """Reads config.json when it changes and hands it to poll(); keeps the fallback copy current."""
+        while True:
+            time.sleep(WATCH_SEC)
+            try:
+                st = os.stat(self.path).st_mtime
+            except OSError:
+                continue                      # not synced yet (after a reboot): running on the fallback copy
+            if st == self._seen:
+                continue
+            self._seen = st                   # (a file that fails to parse isn't tried again until it changes)
+            try:
+                with open(self.path, "rb") as f:
+                    data = _loads(f.read())
+            except (OSError, ValueError) as e:
+                print(f"[config] reload failed, keeping previous: {e}")
+                continue
+            with self._lock:
+                self._loaded = (data, st)
+            self._remember(data)
+
+    def _remember(self, data):
+        if not os.path.exists(self.path):
+            return                            # loaded from the fallback itself
         try:
             tmp = self.fallback + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(self._base, f)
+            with open(tmp, "wb") as f:
+                f.write(_dumps(data))
             os.replace(tmp, self.fallback)
-        except OSError:
+        except (OSError, TypeError, ValueError):
             pass
 
     def effective(self):

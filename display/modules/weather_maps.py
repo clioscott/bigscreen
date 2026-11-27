@@ -35,6 +35,16 @@ _DAY_FG = tuple(Color(0, 0, 0) if (_lum(rgb) + 0.05) / 0.05 >= 1.05 / (_lum(rgb)
 _DAY_DIM = tuple(Color(*(max(18, int(v * 0.28)) for v in rgb)) for rgb in _WEEKDAY_COLORS)
 
 
+def _open_pack(path):
+    """A pack's frames. On the Pi the file is in /dev/shm (RAM), so it is mapped, not copied: the packs are ~180 MB,
+    and reading them in kept a second copy of every one in the display's memory. rsync replaces a pack by renaming
+    a new file over it, so a mapped one stays whole until the new one is opened. (Windows can't replace a mapped
+    file, so the emulator there reads it in.)"""
+    if os.name == "nt" or os.path.getsize(path) == 0:
+        return np.fromfile(path, dtype=np.uint8)
+    return np.memmap(path, dtype=np.uint8, mode="r")
+
+
 class MapStore:
     """Watches <data_dir>/anim and loads changed packs in a background thread, so a
     multi-MB read never stalls the render loop."""
@@ -74,10 +84,10 @@ class MapStore:
                 continue
             with open(jp, encoding="utf-8") as f:
                 meta = json.load(f)
-            frames = np.fromfile(bp, dtype=np.uint8)
             n, h, w = meta["n"], meta["h"], meta["w"]
-            if frames.size != n * h * w * 3:
+            if os.path.getsize(bp) != n * h * w * 3:
                 continue                          # .bin and .json from different renders; retry next scan
+            frames = _open_pack(bp)
             self.packs[tid] = (meta, frames.reshape(n, h, w, 3))
             self._mtimes[tid] = mt
 
