@@ -30,7 +30,7 @@ export const Clarity = {
     const started = ref(false);          // a loop is up and being tuned: changes rebuild it
     const snapTick = ref(0);
     const snapOk = ref(false);
-    let timer, snapRetry, debounce, pending = false, gone = false, wasRunning = false;
+    let timer, snapRetry, debounce, pending = false, gone = false, wasRunning = false, restore = null;
 
     const camObj = computed(() => cams.value.find((c) => c.id === cam.value));
     const best = computed(() => formats.value[formats.value.length - 1] || { width: 1920, height: 1080, fps: 30 });
@@ -67,33 +67,50 @@ export const Clarity = {
     const reset = (v) => Object.assign(v, fromSaved());
 
     const loadFormats = async () => {
+      const id = cam.value;
       formats.value = [];
-      if (!cam.value) return;
+      if (!id) return;
       loadingFormats.value = true;
       try {
-        const r = await api(`/api/clarity/formats?cam=${encodeURIComponent(cam.value)}`);
+        const r = await api(`/api/clarity/formats?cam=${encodeURIComponent(id)}`);
+        if (id !== cam.value) return;                        // another webcam was picked meanwhile: not its answer
         formats.value = r.formats;
         tallCrop.value = r.tall_crop;
         saved.value = r.saved;
         reset(a); reset(b);
+        if (restore && restore.cam === id) {                 // the loop that is up (after a reload): carry on tuning it
+          const hs = r.formats.map((f) => f.height), s = restore.spec;
+          if (hs.includes(s.a?.height) && hs.includes(s.b?.height)) {
+            mode.value = s.mode === "full" ? "full" : "split";
+            if (s.mode !== "full" && s.crop) Object.assign(crop, { x: s.crop.x, y: s.crop.y, w: s.crop.w });
+            Object.assign(a, s.a); Object.assign(b, s.b);
+            started.value = true;
+          }
+        }
+        restore = null;
         clamp();
-      } catch (e) { fail(e); }
-      loadingFormats.value = false;
+      } catch (e) { if (id === cam.value) fail(e); }
+      if (id === cam.value) loadingFormats.value = false;
     };
-    watch(cam, () => { started.value = false; snapOk.value = false; snapTick.value++; loadFormats(); });
+    watch(cam, () => {
+      started.value = false; pending = false; clearTimeout(debounce);
+      snapOk.value = false; snapTick.value++; loadFormats();
+    });
 
     const st = computed(() => info.value.state || {});
     const running = computed(() => !!st.value.running);
     const meta = computed(() => st.value.meta || null);
     const loadState = async () => {
       try { info.value = await api("/api/clarity/state"); } catch (e) { return; /* the hub is restarting */ }
-      if (wasRunning && !running.value && pending) { pending = false; build(); }
+      if (!running.value && pending) { pending = false; if (started.value) build(); }
       wasRunning = running.value;
     };
     onMounted(async () => {
       await loadState();
       if (gone) return;
       const last = info.value.loop?.cam;
+      const m = info.value.state?.meta;
+      if (m?.spec && m.cam && m.cam === last) restore = { cam: m.cam, spec: m.spec };
       if (!cam.value && cams.value.length) cam.value = last && cams.value.some((c) => c.id === last) ? last : cams.value[0].id;
       timer = setInterval(loadState, 700);
     });
@@ -131,7 +148,7 @@ export const Clarity = {
     const build = async (newLoop = false) => {
       if (!cam.value || !formats.value.length) return;
       if (running.value) { pending = true; return; }
-      revealed.value = false;
+      if (newLoop) revealed.value = false;                   // (a new loop draws the blind sides again)
       try {
         await api("/api/clarity/build", { json: { cam: cam.value, mode: mode.value, crop: { ...crop }, seconds: seconds.value,
           a: { ...a }, b: { ...b }, blind: blind.value, new_loop: newLoop, play: true } });
@@ -147,8 +164,9 @@ export const Clarity = {
     watch(sig, () => {
       if (!started.value || !live.value) return;
       clearTimeout(debounce);
-      debounce = setTimeout(() => build(false), 600);
+      debounce = setTimeout(() => { if (started.value) build(false); }, 600);
     });
+    watch(blind, () => { revealed.value = false; });
     watch(seconds, () => { if (started.value) build(true); });          // another length is another recording
     const stop = async () => {
       started.value = false; pending = false; clearTimeout(debounce);
@@ -161,8 +179,8 @@ export const Clarity = {
 
     // keep a version as the webcam's own settings (in the draft: the Save bar keeps it)
     const keep = (v) => {
-      const c = store.draft.modules.webcams.cams[cam.value];
-      if (!c) return;
+      const c = store.draft.modules?.webcams?.cams?.[cam.value];
+      if (!c || !v.height) return;
       if (v.height === saved.value.default_height) delete c.quality; else c.quality = v.height;
       const col = { ...(c.colour || {}) };
       col.sharpen = v.sharpen;

@@ -47,8 +47,9 @@ FPS = (30, 60)
 SCALINGS = ("current", "linear")
 MODES = ("split", "full")
 BUILD_TIMEOUT = 300.0         # a build that takes longer than this is stopped (hub/app.py)
-MAX_SLICE_PX = 4_000_000      # a "linear" crop is averaged here frame by frame: more source pixels than this is slow
-KEEP_SCALED = 6               # scaled-frame caches kept per session (each up to ~140 MB)
+MAX_SLICE_PX = 9_000_000      # a "linear" crop is averaged here frame by frame (a whole 4K frame is 8.3 M pixels)
+KEEP_SCALED = 4               # scaled-frame caches kept per session (12-70 MB each as a rule; a 10 s, 60 fps,
+                              # linear full frame is 280 MB)
 STATE = paths.CACHE_DIR / "clarity_state.json"
 WORK = paths.CACHE_DIR / "clarity"
 SESSION = WORK / "session"
@@ -255,10 +256,11 @@ def session_for(spec):
     sess = read_session()
     if spec.get("new_loop") or sess.get("url") != spec["url"] or sess.get("seconds") != int(spec["seconds"]) \
             or not sess.get("seqs"):
+        seqs = pick_segments(spec["numbering"], int(spec["seconds"]))     # (first: if it fails, the old loop stays)
         clear_session()
         SESSION.mkdir(parents=True, exist_ok=True)
         sess = {"url": spec["url"], "cam": spec.get("cam"), "seconds": int(spec["seconds"]),
-                "seqs": pick_segments(spec["numbering"], int(spec["seconds"])), "files": {}, "recorded": time.time()}
+                "seqs": seqs, "files": {}, "recorded": time.time()}
         atomic_write_json(SESSION / "session.json", sess)
     return sess
 
@@ -323,14 +325,14 @@ def scaled(path, container, fmt, v, crop, out_w, out_h, n, progress=None):
             os.utime(cache)
             if arr.shape == (n, out_h, out_w, 3):
                 return arr
-        except (OSError, ValueError):
+        except Exception:                                 # (a cut-short file: EOFError, ValueError…) render it again
             pass
     cw, ch = r - l, b - t
     cutf = wc.cut(l, t, cw, ch)
     linear = v["scaling"] == "linear"
     if linear:
         if cw * ch > MAX_SLICE_PX:
-            raise RuntimeError("that crop is too big for linear-light scaling at this resolution: zoom in or pick a smaller source")
+            raise RuntimeError("that view is too big for linear-light scaling at this resolution: pick a smaller source resolution")
         vf = f"fps={v['fps']},{cutf}scale=iw:ih:flags=bicubic+full_chroma_int+accurate_rnd,format=rgb24"
         fw, fh = cw, ch
     else:
@@ -368,8 +370,13 @@ def scaled(path, container, fmt, v, crop, out_w, out_h, n, progress=None):
         raise RuntimeError(f"ffmpeg decoded nothing from the {fmt['h']}p stream: {err.splitlines()[-1][:200] if err else 'no output'}")
     if got < n:                                           # a segment a few frames short: hold the last one
         out[got:] = out[got - 1]
-    np.save(cache, out)
-    _prune_scaled()
+    try:                                                  # (the cache only saves time: never fail a build over it)
+        tmp = SESSION / f".scaled_{key}.tmp.npy"
+        np.save(tmp, out)
+        os.replace(tmp, cache)
+        _prune_scaled()
+    except OSError:
+        pass
     return out
 
 
@@ -413,12 +420,19 @@ def build(spec):
 
     meta = {"mode": "full" if full else "split", "built_at": time.time(), "cam": spec.get("cam"),
             "label": spec.get("label"), "seconds": seconds, "recorded": sess.get("recorded"),
-            "a": describe(spec["a"]), "blind": False}
+            "a": describe(spec["a"]), "blind": False,
+            # what the page set, so it can carry on tuning this loop after a reload
+            "spec": {"mode": "full" if full else "split", "crop": spec.get("crop"), "a": spec["a"], "b": spec["b"]}}
     if full:
         frames, fps = rendered[0], spec["a"]["fps"]
         meta.update(left="A", right="A")
     else:
-        swap = bool(spec.get("blind")) and random.random() < 0.5
+        swap = False
+        if spec.get("blind"):                             # drawn once per loop: a tweak never reshuffles the sides
+            if "swap" not in sess:
+                sess["swap"] = random.random() < 0.5
+                atomic_write_json(SESSION / "session.json", sess)
+            swap = bool(sess["swap"])
         left, right = (1, 0) if swap else (0, 1)
         frames, fps = compose(rendered[left], rendered[right], spec[sides[left]]["fps"], spec[sides[right]]["fps"], zone_w)
         meta.update(left="AB"[left], right="AB"[right], b=describe(spec["b"]), blind=bool(spec.get("blind")))

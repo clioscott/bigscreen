@@ -2441,7 +2441,9 @@ def favicon(domain: str):
 
 
 # --- Clarity lab (hub/clarity.py, display/modules/clip.py) ----------------------------------------------------------
-_clarity = {"proc": None, "lock": threading.Lock()}
+_clarity = {"proc": None, "lock": threading.Lock(),
+            "busy": False,      # a build is being rendered, synced or put up (the next one waits for all three)
+            "want": True}       # the clip is wanted on the wall (False after "Back to rotation")
 
 
 def _clarity_cam(cid):
@@ -2479,8 +2481,7 @@ def clarity_state():
     """The lab's last build (progress, error, what is on which side), its recorded loop and the zone a clip fills."""
     from hub import clarity
     st = clarity.read_state()
-    p = _clarity["proc"]
-    st["running"] = bool(p is not None and p.poll() is None)
+    st["running"] = bool(_clarity["busy"])
     zone = _webcam_zones()["tall"]
     sess = clarity.read_session()
     return {"state": st, "zone": zone, "half": [clarity.half_width(zone[0]), zone[1]], "seconds": clarity.SECONDS,
@@ -2553,43 +2554,53 @@ def clarity_build(payload: dict = Body(...)):
             "brightness": int(((cfg.get("system") or {}).get("display") or {}).get("brightness", 100)),
             "formats": chosen, "numbering": max(hls, key=lambda f: f["h"])}
     with _clarity["lock"]:
-        p = _clarity["proc"]
-        if p is not None and p.poll() is None:
+        if _clarity["busy"]:                                 # (until the clip is on the Pi, not just rendered)
             raise HTTPException(409, "a clip is already being built")
+        _clarity["busy"], _clarity["want"] = True, True
         clarity.WORK.mkdir(parents=True, exist_ok=True)
         spec_path = clarity.WORK / "spec.json"
         atomic_write_json(spec_path, spec)
-        clarity.write_state(running=True, done=False, error="", stage="Starting", pct=0, started=time.time())
-        env = dict(os.environ, PYTHONPATH=str(paths.REPO_DIR), BIGSCREEN_STATE=str(paths.STATE_DIR))
-        proc = subprocess.Popen([sys.executable, "-m", "hub.clarity", str(spec_path)], cwd=paths.REPO_DIR, env=env,
-                                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+        try:
+            clarity.write_state(running=True, done=False, error="", stage="Starting", pct=0, started=time.time())
+            env = dict(os.environ, PYTHONPATH=str(paths.REPO_DIR), BIGSCREEN_STATE=str(paths.STATE_DIR))
+            proc = subprocess.Popen([sys.executable, "-m", "hub.clarity", str(spec_path)], cwd=paths.REPO_DIR, env=env,
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+        except Exception:
+            _clarity["busy"] = False
+            raise
         _clarity["proc"] = proc
 
     def finish():
-        killer = threading.Timer(clarity.BUILD_TIMEOUT, proc.kill)     # a stuck download or decode never blocks the lab
-        killer.start()
         try:
-            err = proc.stderr.read()[-600:] if proc.stderr else ""
-            code = proc.wait()
+            killer = threading.Timer(clarity.BUILD_TIMEOUT, proc.kill)     # a stuck download or decode never blocks the lab
+            killer.start()
+            try:
+                err = proc.stderr.read()[-600:] if proc.stderr else ""
+                code = proc.wait()
+            finally:
+                killer.cancel()
+            if not _clarity["want"]:                         # "Back to rotation" came meanwhile: nothing goes up
+                clarity.write_state(running=False, stage="", error="")
+                return
+            if code != 0:
+                st = clarity.read_state()
+                if code < 0 or not st.get("error"):
+                    why = f"stopped after {int(clarity.BUILD_TIMEOUT)} s" if code < 0 else \
+                        (err.strip().splitlines() or ["the build stopped"])[-1][:400]
+                    clarity.write_state(running=False, done=False, stage="Failed", error=why)
+                return
+            try:
+                clarity.write_state(stage="Sending the clip to the wall")
+                sync._push_once()                            # (blocking: the play must find the clip there)
+                if not sync.last_result.get("ok"):
+                    raise RuntimeError(f"the sync to the Pi failed: {sync.last_result.get('error') or 'unknown error'}")
+                if _clarity["want"] and payload.get("play", True) and not _clarity_on_wall():
+                    _clarity_play()                          # (already looping: the new frames just take over)
+                clarity.write_state(stage="On the wall" if payload.get("play", True) and _clarity["want"] else "Ready")
+            except Exception as e:
+                clarity.write_state(error=f"built, but not shown: {e}"[:400])
         finally:
-            killer.cancel()
-        if code != 0:
-            st = clarity.read_state()
-            if code < 0 or not st.get("error"):
-                why = f"stopped after {int(clarity.BUILD_TIMEOUT)} s" if code < 0 else \
-                    (err.strip().splitlines() or ["the build stopped"])[-1][:400]
-                clarity.write_state(running=False, done=False, stage="Failed", error=why)
-            return
-        try:
-            clarity.write_state(stage="Sending the clip to the wall")
-            sync._push_once()                                # (blocking: the play must find the clip there)
-            if not sync.last_result.get("ok"):
-                raise RuntimeError(f"the sync to the Pi failed: {sync.last_result.get('error') or 'unknown error'}")
-            if payload.get("play", True) and not _clarity_on_wall():
-                _clarity_play()                              # (already looping: the new frames just take over)
-            clarity.write_state(stage="On the wall" if payload.get("play", True) else "Ready")
-        except Exception as e:
-            clarity.write_state(error=f"built, but not shown: {e}"[:400])
+            _clarity["busy"] = False                         # only now may the next build start (one sync at a time)
     threading.Thread(target=finish, name="clarity", daemon=True).start()
     return {"ok": True, "a": clarity.describe(a), "b": clarity.describe(b)}
 
@@ -2620,7 +2631,11 @@ def clarity_play():
 
 @app.post("/api/clarity/stop")
 def clarity_stop():
-    """Back to the rotation."""
+    """Back to the rotation. A build still running is stopped too, so it can't put the clip back up when it ends."""
+    _clarity["want"] = False
+    p = _clarity["proc"]
+    if p is not None and p.poll() is None:
+        p.kill()
     return _display_call("/rotation", {"action": "stop", "side": "right"})
 
 
@@ -2628,8 +2643,7 @@ def clarity_stop():
 def clarity_clear():
     """Delete the clip and the recorded loop (tens of MB on the hub and in the Pi's memory)."""
     from hub import clarity
-    p = _clarity["proc"]
-    if p is not None and p.poll() is None:
+    if _clarity["busy"]:
         raise HTTPException(409, "a clip is being built")
     try:
         _display_call("/rotation", {"action": "stop", "side": "right"})     # (not left looping a clip that's gone)
