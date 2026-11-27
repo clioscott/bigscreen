@@ -121,7 +121,6 @@ def test_clip_screen_loops_its_frames(tmp_path):
             seen.append(int(c.buf[0, 0, 0]))
     finally:
         webcam.CLOCK["tick"] = None
-        webcam.CLOCK.pop("video_at", None)
         store.clips.clear()
     assert seen == [50, 100, 150, 50, 100, 150, 50]
 
@@ -153,6 +152,6 @@ def test_a_missing_clip_ends_the_screen(tmp_path):
         webcam.CLOCK["tick"] = 500.0
         assert panel.draw(c, (0, 0, 6, 4), {"clip": "none"}, True) is None
         webcam.CLOCK["tick"] = 520.0
-        assert panel.draw(c, (0, 0, 6, 4), {"clip": "none"}, False) == "done"
+        assert panel.draw(c, (0, 0, 6, 4), {"clip": "none"}, False) == "skip"     # ends a held play too
     finally:
         webcam.CLOCK["tick"] = None

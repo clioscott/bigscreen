@@ -22,7 +22,7 @@ export const Clarity = {
     const revealed = ref(false);
     const snapTick = ref(0);
     const snapOk = ref(false);
-    let timer, snapRetry;
+    let timer, snapRetry, gone = false;
 
     const camObj = computed(() => cams.value.find((c) => c.id === cam.value));
     const best = computed(() => formats.value[formats.value.length - 1] || { width: 1920, height: 1080, fps: 30 });
@@ -67,11 +67,12 @@ export const Clarity = {
     };
     onMounted(async () => {
       await loadState();
+      if (gone) return;
       if (!cam.value && cams.value.length) cam.value = info.value.state?.meta?.cam && cams.value.some((c) => c.id === info.value.state.meta.cam)
         ? info.value.state.meta.cam : cams.value[0].id;
       timer = setInterval(loadState, 1000);
     });
-    onBeforeUnmount(() => { clearInterval(timer); clearTimeout(snapRetry); });
+    onBeforeUnmount(() => { gone = true; clearInterval(timer); clearTimeout(snapRetry); });
 
     // dragging the slice on the picture
     const box = ref(null);
@@ -99,6 +100,7 @@ export const Clarity = {
     const rectStyle = computed(() => ({ left: `${crop.x * 100}%`, top: `${crop.y * 100}%`, width: `${crop.w * 100}%`, height: `${cropH.value * 100}%` }));
 
     const preset = (name) => {
+      if (!formats.value.length) return;
       const top = best.value.height, base = formats.value.some((f) => f.height === 1080) ? 1080 : top;
       Object.assign(a, { ...blank(), height: base });
       Object.assign(b, { ...blank(), height: base });

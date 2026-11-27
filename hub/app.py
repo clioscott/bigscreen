@@ -2509,12 +2509,14 @@ def clarity_build(payload: dict = Body(...)):
             raise ValueError("seconds must be 5 or 10")
         crop = payload.get("crop")
         if crop is not None:
+            if not isinstance(crop, dict):
+                raise ValueError("crop must be an object")
             crop = {"x": float(crop.get("x", 0)), "y": float(crop.get("y", 0)), "w": float(crop["w"])}
             if not (0 <= crop["x"] < 1 and 0 <= crop["y"] < 1 and 0.01 <= crop["w"] <= 1):
                 raise ValueError("the slice must be inside the picture")
-        chosen = {v["height"]: clarity.format_for(fmts, v["height"], v["fps"]) for v in (a, b)}
-        for v in (a, b):
-            if v["fps"] == 60 and chosen[v["height"]]["fps"] < 50:
+        chosen = {k: clarity.format_for(fmts, v["height"], v["fps"]) for k, v in (("a", a), ("b", b))}
+        for k, v in (("a", a), ("b", b)):
+            if v["fps"] == 60 and chosen[k]["fps"] < 50:
                 raise ValueError(f"the stream's {v['height']}p is not 60 frames a second")
     except (ValueError, KeyError, TypeError) as e:
         raise HTTPException(400, str(e))
@@ -2537,16 +2539,25 @@ def clarity_build(payload: dict = Body(...)):
         _clarity["proc"] = proc
 
     def finish():
-        err = proc.stderr.read()[-600:] if proc.stderr else ""
-        if proc.wait() != 0:
+        killer = threading.Timer(clarity.BUILD_TIMEOUT, proc.kill)     # a stuck download or decode never blocks the lab
+        killer.start()
+        try:
+            err = proc.stderr.read()[-600:] if proc.stderr else ""
+            code = proc.wait()
+        finally:
+            killer.cancel()
+        if code != 0:
             st = clarity.read_state()
-            if not st.get("error"):
-                clarity.write_state(running=False, done=False, stage="Failed",
-                                    error=(err.strip().splitlines() or ["the build stopped"])[-1][:400])
+            if code < 0 or not st.get("error"):
+                why = f"stopped after {int(clarity.BUILD_TIMEOUT)} s" if code < 0 else \
+                    (err.strip().splitlines() or ["the build stopped"])[-1][:400]
+                clarity.write_state(running=False, done=False, stage="Failed", error=why)
             return
         try:
             clarity.write_state(stage="Sending the clip to the wall")
             sync._push_once()                                # (blocking: the play must find the clip there)
+            if not sync.last_result.get("ok"):
+                raise RuntimeError(f"the sync to the Pi failed: {sync.last_result.get('error') or 'unknown error'}")
             if payload.get("play", True):
                 _clarity_play()
             clarity.write_state(stage="On the wall" if payload.get("play", True) else "Ready")
@@ -2581,6 +2592,13 @@ def clarity_stop():
 def clarity_clear():
     """Delete the clip (it is tens of MB on the hub and in the Pi's memory)."""
     from hub import clarity
+    p = _clarity["proc"]
+    if p is not None and p.poll() is None:
+        raise HTTPException(409, "a clip is being built")
+    try:
+        _display_call("/rotation", {"action": "stop", "side": "right"})     # (not left looping a clip that's gone)
+    except HTTPException:
+        pass
     for ext in ("bin", "json"):
         (clarity.CLIPS / f"{clarity.NAME}.{ext}").unlink(missing_ok=True)
     clarity.write_state(done=False, meta=None, stage="", pct=0)

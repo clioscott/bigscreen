@@ -63,6 +63,7 @@ class ClipStore:
             with open(jp, encoding="utf-8") as f:
                 meta = json.load(f)
             n, h, w = int(meta["n"]), int(meta["h"]), int(meta["w"])
+            meta["fps"] = max(1.0, min(60.0, float(meta.get("fps") or 30)))     # (checked here, not in the render loop)
             if n < 1 or seen[2] != n * h * w * 3:
                 continue                          # the two files are from different builds; look again next time
             self.clips[name] = (meta, _open(bp).reshape(n, h, w, 3))
@@ -93,10 +94,12 @@ class ClipPanel:
             self._t0 = now
         clip = self.store.get(str(entry.get("clip") or ""))
         if clip is None:
-            return "done" if now - self._t0 > 15 else None      # never came: let the rotation carry on
+            # never came, or deleted while up: end the screen (a held play too: "skip" does, "done" doesn't)
+            return "skip" if now - self._t0 > 15 else None
         meta, frames = clip
-        fps = max(1.0, min(60.0, float(meta.get("fps", 30))))
-        webcam.CLOCK["video_at"] = time.time()                   # the loop runs at the video rate while this is up
+        # (not marked as video for the render loop: that would cap it at system.display.video_fps, 30 unless set,
+        # and a 60 fps clip would silently show every other frame. The loop's own rate, 60, shows every one.)
+        fps = meta["fps"]
         fr = frames[int((now - self._t0) * fps + 0.25) % len(frames)]
         fh, fw = min(h, fr.shape[0]), min(w, fr.shape[1])
         c.Blit(fr[:fh, :fw], x + (w - fw) // 2, y + (h - fh) // 2)

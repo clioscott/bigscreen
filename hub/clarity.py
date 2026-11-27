@@ -36,6 +36,7 @@ GAP = 2                       # black columns between the two halves
 SECONDS = (5, 10)
 FPS = (30, 60)
 SCALINGS = ("current", "linear")
+BUILD_TIMEOUT = 300.0         # a build that takes longer than this is stopped (hub/app.py)
 MAX_SLICE_PX = 4_000_000      # a "linear" slice is averaged here frame by frame: more source pixels than this is slow
 STATE = paths.CACHE_DIR / "clarity_state.json"
 WORK = paths.CACHE_DIR / "clarity"
@@ -235,7 +236,8 @@ def render(path, container, fmt, v, crop, out_w, out_h, n, brightness, seed, pro
         args += ["-hwaccel", "vaapi", "-hwaccel_device", wc.HW_DEVICE]
     args += ["-f", container, "-i", path, "-an", "-sn", "-dn", "-vf", vf, "-frames:v", str(n),
              "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"]
-    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    errlog = open(WORK / "ffmpeg.log", "w+b")                # (a file: a pipe nobody reads would block ffmpeg)
+    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=errlog)
     table = levels(brightness)
     out = np.zeros((n, out_h, out_w, 3), np.uint8)
     size, got = fw * fh * 3, 0
@@ -252,9 +254,12 @@ def render(path, container, fmt, v, crop, out_w, out_h, n, brightness, seed, pro
                 progress(got / n)
     finally:
         proc.stdout.close()
-        err = proc.stderr.read().decode("utf-8", "replace").strip()
-        proc.stderr.close()
+        if proc.poll() is None and got < n:
+            proc.kill()
         proc.wait()
+        errlog.seek(0)
+        err = errlog.read()[-2000:].decode("utf-8", "replace").strip()
+        errlog.close()
     if got == 0:
         raise RuntimeError(f"ffmpeg decoded nothing from the {fmt['h']}p stream: {err.splitlines()[-1][:200] if err else 'no output'}")
     if got < n:                                           # a segment a few frames short: hold the last one
@@ -263,13 +268,13 @@ def render(path, container, fmt, v, crop, out_w, out_h, n, brightness, seed, pro
 
 
 def build(spec):
-    """spec: {"formats": {height: format}, "numbering": an HLS format, "a", "b" (cleaned versions), "crop", "seconds", "zone": [w, h],
+    """spec: {"formats": {"a": format, "b": format}, "numbering": an HLS format, "a", "b" (cleaned versions), "crop", "seconds", "zone": [w, h],
     "brightness", "blind", "cam", "label"}. Writes the clip; returns its meta."""
     zone_w, zone_h = spec["zone"]
     hw = half_width(zone_w)
     seconds = int(spec["seconds"])
-    fmts = {int(k): v for k, v in spec["formats"].items()}
     versions = [spec["a"], spec["b"]]
+    vfmt = [spec["formats"]["a"], spec["formats"]["b"]]     # each version's own format (30 and 60 fps ones differ)
     WORK.mkdir(parents=True, exist_ok=True)
     CLIPS.mkdir(parents=True, exist_ok=True)
 
@@ -278,20 +283,21 @@ def build(spec):
     seqs = pick_segments(spec["numbering"], seconds)
     files = {}
     try:
-        for i, (h, f) in enumerate(sorted(fmts.items())):
+        wanted = {f["url"]: f for f in vfmt}
+        for i, (u, f) in enumerate(wanted.items()):
             data, container = segments(f, seqs)
-            p = WORK / f"seg_{h}.{'webm' if container == 'matroska' else 'ts'}"
+            p = WORK / f"seg_{i}.{'webm' if container == 'matroska' else 'ts'}"
             with open(p, "wb") as fh:
                 fh.write(data)
-            files[h] = (str(p), container)
-            write_state(stage=f"Downloaded {h}p ({len(data) / 1e6:.1f} MB)", pct=5 + 15 * (i + 1) / len(fmts))
+            files[u] = (str(p), container)
+            write_state(stage=f"Downloaded {f['h']}p ({len(data) / 1e6:.1f} MB)", pct=5 + 15 * (i + 1) / len(wanted))
 
         rendered = []
         for i, v in enumerate(versions):
-            path, container = files[v["height"]]
+            path, container = files[vfmt[i]["url"]]
             base = 20 + 38 * i
             write_state(stage=f"Rendering version {'AB'[i]}: {describe(v)}", pct=base)
-            rendered.append(render(path, container, fmts[v["height"]], v, spec.get("crop"), hw, zone_h,
+            rendered.append(render(path, container, vfmt[i], v, spec.get("crop"), hw, zone_h,
                                    seconds * v["fps"], spec["brightness"], 1000 * (i + 1),
                                    progress=lambda p, base=base: write_state(pct=base + 38 * p)))
     finally:
@@ -310,9 +316,12 @@ def build(spec):
             "blind": bool(spec.get("blind"))}
     write_state(stage="Writing the clip", pct=97)
     tmp = CLIPS / f".{NAME}.bin.tmp"
-    with open(tmp, "wb") as f:
-        frames.tofile(f)
-    os.replace(tmp, CLIPS / f"{NAME}.bin")
+    try:
+        with open(tmp, "wb") as f:
+            frames.tofile(f)
+        os.replace(tmp, CLIPS / f"{NAME}.bin")
+    finally:
+        tmp.unlink(missing_ok=True)
     atomic_write_json(CLIPS / f"{NAME}.json", meta)
     return meta
 
