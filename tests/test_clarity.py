@@ -140,6 +140,7 @@ def test_build_downloads_once_and_reuses_scaled_frames(tmp_path, monkeypatch):
     monkeypatch.setattr(clarity, "segments", fake_segments)
     monkeypatch.setattr(clarity.subprocess, "Popen", FakeProc)
     monkeypatch.setattr(clarity.wc, "hw_decode", lambda: False)
+    assert clarity.gpu_scaling() is False
     meta = clarity.build(spec)
     assert (meta["mode"], meta["n"], meta["w"], meta["h"], meta["fps"]) == ("split", 150, 448, 175, 30)
     assert calls == {"segments": 1, "ffmpeg": 1}                        # both halves: one download, one decode
@@ -245,3 +246,45 @@ def test_a_missing_clip_ends_the_screen(tmp_path):
         assert panel.draw(c, (0, 0, 6, 4), {"clip": "none"}, False) == "skip"     # ends a held play too
     finally:
         webcam.CLOCK["tick"] = None
+
+
+def test_current_scaling_uses_the_walls_gpu_path_and_falls_back(tmp_path, monkeypatch):
+    import io
+    spec = _session_spec(tmp_path, monkeypatch)
+    (tmp_path / "work" / "session").mkdir(parents=True)
+    fmt, v = spec["formats"]["a"], spec["a"]
+    runs = []
+
+    class FakeProc:
+        gpu_works = True
+
+        def __init__(self, args, stdout=None, stderr=None):
+            runs.append(args)
+            n = int(args[args.index("-frames:v") + 1])
+            gpu = "libplacebo" in args[args.index("-vf") + 1]
+            self.stdout = io.BytesIO(bytes(n * 175 * 223 * 3) if (not gpu or FakeProc.gpu_works) else b"")
+
+        def poll(self): return 0
+        def wait(self): return 0
+        def kill(self): pass
+
+    monkeypatch.setattr(clarity.subprocess, "Popen", FakeProc)
+    monkeypatch.setattr(clarity.wc, "hw_decode", lambda: True)
+    monkeypatch.setattr(clarity.wc, "GPU_SCALE", True, raising=False)
+    assert clarity.gpu_scaling() is True
+
+    clarity.scaled("p", "mpegts", fmt, v, None, 223, 175, 30)
+    vf = runs[-1][runs[-1].index("-vf") + 1]
+    assert len(runs) == 1 and "hwmap=derive_device=vulkan,libplacebo=w=223:h=175:crop_x=" in vf and "vulkan=vk@va" in runs[-1]
+
+    clarity.scaled("p", "mpegts", fmt, dict(v, scaling="swscale"), None, 223, 175, 30)     # the old chain, on request
+    vf = runs[-1][runs[-1].index("-vf") + 1]
+    assert len(runs) == 2 and "libplacebo" not in vf and "scale=223:175" in vf
+
+    clarity.scaled("p", "mpegts", fmt, v, None, 223, 175, 30)                               # cached: no new run
+    assert len(runs) == 2
+
+    FakeProc.gpu_works = False                                                              # the GPU run gives nothing
+    out = clarity.scaled("p", "mpegts", fmt, dict(v, fps=60), None, 223, 175, 60)
+    assert out.shape == (60, 175, 223, 3) and len(runs) == 4
+    assert "libplacebo" in runs[2][runs[2].index("-vf") + 1] and "libplacebo" not in runs[3][runs[3].index("-vf") + 1]

@@ -5,7 +5,7 @@
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from "vue";
 import { store, api, fail, toast } from "../core.js";
 
-const SCALING = [{ value: "current", label: "As now" }, { value: "linear", label: "Linear light" }];
+const SCALING = [{ value: "current", label: "As now" }, { value: "swscale", label: "Old (before GPU scaling)" }, { value: "linear", label: "Exact, in light" }];
 const MODES = [{ value: "split", label: "Side by side (a slice, A and B)", icon: "Columns2" }, { value: "full", label: "Full frame (as the wall plays it)", icon: "RectangleHorizontal" }];
 const blank = () => ({ height: null, fps: 30, scaling: "current", sharpen: 0.1, brightness: 1, contrast: 1, saturation: 1, dither: false });
 const pct = (v) => Math.round(v * 100) + "%";
@@ -186,7 +186,7 @@ export const Clarity = {
       col.sharpen = v.sharpen;
       for (const k of ["brightness", "contrast", "saturation"]) { if (v[k] === 1) delete col[k]; else col[k] = v[k]; }
       c.colour = col;
-      const lab = [v.fps === 60 && "60 frames a second", v.scaling === "linear" && "linear-light scaling", v.dither && "dithering"].filter(Boolean);
+      const lab = [v.fps === 60 && "60 frames a second", v.scaling !== "current" && "that scaling", v.dither && "dithering"].filter(Boolean);
       toast(`Set on ${camObj.value?.label}: resolution, sharpness and colour. Press Save to keep.`
         + (lab.length ? ` Not carried over (the wall can't do them yet): ${lab.join(", ")}.` : ""), "ok", 7000);
     };
@@ -273,7 +273,7 @@ export const Clarity = {
             <Field label="Contrast"><Slider v-model="v.contrast" :min="0.5" :max="2" :step="0.05" :format="pct"/></Field>
             <Field label="Saturation"><Slider v-model="v.saturation" :min="0" :max="2" :step="0.05" :format="pct"/></Field>
             <div class="section-title" style="margin-top:6px"><Icon name="FlaskConical" :size="13"/>Lab only (the wall can't do these yet)</div>
-            <Field label="Scaling down" hint="Linear light averages as light, so small bright things stay bright.">
+            <Field label="Scaling down" hint="As now: what the wall does (averaged as light on the video engine, so small bright things stay bright). Old: the earlier method, which dims them. Exact: the same idea computed slowly and exactly, as a reference.">
               <Seg v-model="v.scaling" :options="SCALING"/></Field>
             <Field v-if="can60(v)" label="Frames a second" hint="The wall plays webcams at 30.">
               <Seg v-model="v.fps" :options="[{ value: 30, label: '30' }, { value: 60, label: '60' }]"/></Field>

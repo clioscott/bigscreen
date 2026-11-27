@@ -10,8 +10,9 @@ resolution the stream has). Two ways to look at it:
 
 A version is {"height", "fps": 30 | 60, "scaling": "current" | "linear", "sharpen": 0-2, "brightness", "contrast",
 "saturation", "dither": bool}:
-- scaling "current" is the wall's own path (hub/webcams.py: ffmpeg cuts the crop and averages it down in one step);
-  "linear" averages in linear light instead (bright points on dark keep their brightness);
+- scaling "current" is the wall's own path (hub/webcams.py: the video engine cuts the crop and averages it down in
+  light, gpu_filter; the swscale chain where that is off); "swscale" is the swscale chain whatever the wall uses
+  (it averages coded values, which dims small lights); "linear" averages in linear light here in numpy, exactly;
 - sharpen and the three colour settings are the webcam's own (``cams.<id>.colour``), with the wall's maths;
 - dither picks each LED's level with a fresh noise pattern every frame, so an area averages to the light wanted
   instead of every pixel being rounded down to the wall's nearest level (levels() below).
@@ -44,7 +45,7 @@ NAME = "clarity"
 GAP = 2                       # black columns between the two halves
 SECONDS = (5, 10)
 FPS = (30, 60)
-SCALINGS = ("current", "linear")
+SCALINGS = ("current", "swscale", "linear")
 MODES = ("split", "full")
 BUILD_TIMEOUT = 300.0         # a build that takes longer than this is stopped (hub/app.py)
 MAX_SLICE_PX = 9_000_000      # a "linear" crop is averaged here frame by frame (a whole 4K frame is 8.3 M pixels)
@@ -176,7 +177,7 @@ def clean_version(v, heights):
         raise ValueError("fps must be 30 or 60")
     scaling = v.get("scaling") or "current"
     if scaling not in SCALINGS:
-        raise ValueError("scaling must be current or linear")
+        raise ValueError("scaling must be current, swscale or linear")
     return {"height": int(h), "fps": fps, "scaling": scaling, "sharpen": _num(v, "sharpen", 0.0, 0.0, 2.0),
             "brightness": _num(v, "brightness", 1.0, 0.4, 2.0), "contrast": _num(v, "contrast", 1.0, 0.5, 2.0),
             "saturation": _num(v, "saturation", 1.0, 0.0, 2.0), "dither": bool(v.get("dither"))}
@@ -191,7 +192,8 @@ def format_for(formats, height, fps):
 
 
 def describe(v):
-    bits = [f"{v['height']}p", f"{v['fps']} fps", "linear light" if v["scaling"] == "linear" else "current scaling"]
+    bits = [f"{v['height']}p", f"{v['fps']} fps",
+            {"linear": "linear light (exact)", "swscale": "old scaling"}.get(v["scaling"], "current scaling")]
     if v.get("sharpen"):
         bits.append(f"sharpen {v['sharpen']:g}")
     for key in ("brightness", "contrast", "saturation"):
@@ -312,42 +314,17 @@ def _prune_scaled():
         p.unlink(missing_ok=True)
 
 
-def scaled(path, container, fmt, v, crop, out_w, out_h, n, progress=None):
-    """Version v's n frames of the crop, scaled to the zone but not yet sharpened, coloured or dithered:
-    (n, out_h, out_w, 3), uint8 for "current" scaling and float16 (0-1) for "linear". Kept in the session, so a
-    change to sharpening, colour or dithering decodes nothing."""
-    l, t, r, b = wc.crop_box(fmt["w"], fmt["h"], out_w, out_h, crop)
-    key = hashlib.sha1(json.dumps([fmt_key(fmt), v["fps"], v["scaling"], [l, t, r, b], out_w, out_h, n]).encode()).hexdigest()[:16]
-    cache = SESSION / f"scaled_{key}.npy"
-    if cache.is_file():
-        try:
-            arr = np.load(cache)
-            os.utime(cache)
-            if arr.shape == (n, out_h, out_w, 3):
-                return arr
-        except Exception:                                 # (a cut-short file: EOFError, ValueError…) render it again
-            pass
-    cw, ch = r - l, b - t
-    cutf = wc.cut(l, t, cw, ch)
-    linear = v["scaling"] == "linear"
-    if linear:
-        if cw * ch > MAX_SLICE_PX:
-            raise RuntimeError("that view is too big for linear-light scaling at this resolution: pick a smaller source resolution")
-        vf = f"fps={v['fps']},{cutf}scale=iw:ih:flags=bicubic+full_chroma_int+accurate_rnd,format=rgb24"
-        fw, fh = cw, ch
-    else:
-        flags = wc.SWS if (cw >= out_w and ch >= out_h) else "flags=bilinear+full_chroma_int+accurate_rnd"
-        vf = f"fps={v['fps']},{cutf}scale={out_w}:{out_h}:{flags},format=rgb24"
-        fw, fh = out_w, out_h
-    args = ["ffmpeg", "-hide_banner", "-nostdin", "-nostats", "-loglevel", "error"]
-    if wc.hw_decode():
-        args += ["-hwaccel", "vaapi", "-hwaccel_device", wc.HW_DEVICE]
-    args += ["-f", container, "-i", path, "-an", "-sn", "-dn", "-vf", vf, "-frames:v", str(n),
-             "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"]
+def gpu_scaling():
+    """Does the wall scale YouTube video on the video engine here (hub/webcams.py gpu_filter)? Then "current" does too."""
+    return bool(getattr(wc, "GPU_SCALE", False)) and hasattr(wc, "gpu_filter") and wc.hw_decode()
+
+
+def _decode(args, fw, fh, n, out, linear, progress):
+    """Run ffmpeg and read up to n raw RGB frames of fw x fh into ``out``: (frames read, the end of its messages)."""
     errlog = open(WORK / "ffmpeg.log", "w+b")                # (a file: a pipe nobody reads would block ffmpeg)
     proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=errlog)
-    out = np.zeros((n, out_h, out_w, 3), np.float16 if linear else np.uint8)
     size, got = fw * fh * 3, 0
+    out_h, out_w = out.shape[1], out.shape[2]
     try:
         while got < n:
             raw = proc.stdout.read(size)
@@ -366,6 +343,56 @@ def scaled(path, container, fmt, v, crop, out_w, out_h, n, progress=None):
         errlog.seek(0)
         err = errlog.read()[-2000:].decode("utf-8", "replace").strip()
         errlog.close()
+    return got, err
+
+
+def scaled(path, container, fmt, v, crop, out_w, out_h, n, progress=None):
+    """Version v's n frames of the crop, scaled to the zone but not yet sharpened, coloured or dithered:
+    (n, out_h, out_w, 3), uint8, or float16 (0-1) for "linear". Kept in the session, so a change to sharpening,
+    colour or dithering decodes nothing.
+
+    "current" is whatever the wall does for a YouTube stream on this hub: cut and averaged in light on the video
+    engine (webcams.gpu_filter) where that is on, else the swscale chain; a GPU run that gives nothing falls back to
+    swscale, as a feed does. "swscale" is always the swscale chain (the wall's before the video engine took over)."""
+    l, t, r, b = wc.crop_box(fmt["w"], fmt["h"], out_w, out_h, crop)
+    cw, ch = r - l, b - t
+    linear = v["scaling"] == "linear"
+    how = "linear" if linear else "gpu" if (v["scaling"] == "current" and gpu_scaling()) else "sws"
+    key = hashlib.sha1(json.dumps([fmt_key(fmt), v["fps"], how, [l, t, r, b], out_w, out_h, n]).encode()).hexdigest()[:16]
+    cache = SESSION / f"scaled_{key}.npy"
+    if cache.is_file():
+        try:
+            arr = np.load(cache)
+            os.utime(cache)
+            if arr.shape == (n, out_h, out_w, 3):
+                return arr
+        except Exception:                                 # (a cut-short file: EOFError, ValueError…) render it again
+            pass
+    if linear and cw * ch > MAX_SLICE_PX:
+        raise RuntimeError("that view is too big for linear-light scaling at this resolution: pick a smaller source resolution")
+    head = ["ffmpeg", "-hide_banner", "-nostdin", "-nostats", "-loglevel", "error"]
+    tail = ["-an", "-sn", "-dn", "-frames:v", str(n), "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"]
+    out = np.zeros((n, out_h, out_w, 3), np.float16 if linear else np.uint8)
+    got, err = 0, ""
+    if how == "gpu":
+        vf = f"fps={v['fps']},hwmap=derive_device=vulkan," + wc.gpu_filter(out_w, out_h, (l, t, cw, ch))
+        got, err = _decode(head + wc.hw_input(gpu=True) + ["-f", container, "-i", path, "-vf", vf] + tail,
+                           out_w, out_h, n, out, False, progress)
+        if got == 0:                                      # the video engine's scaler wouldn't run: the CPU's instead
+            print(f"[clarity] GPU scaling failed, using swscale: {err.splitlines()[-1][:200] if err else 'no output'}", file=sys.stderr)
+            how = "sws"
+    if how != "gpu":
+        cutf = wc.cut(l, t, cw, ch)
+        if linear:
+            vf = f"fps={v['fps']},{cutf}scale=iw:ih:flags=bicubic+full_chroma_int+accurate_rnd,format=rgb24"
+            fw, fh = cw, ch
+        else:
+            flags = wc.SWS if (cw >= out_w and ch >= out_h) else "flags=bilinear+full_chroma_int+accurate_rnd"
+            vf = f"fps={v['fps']},{cutf}scale={out_w}:{out_h}:{flags},format=rgb24"
+            fw, fh = out_w, out_h
+        hw = (wc.hw_input() if hasattr(wc, "hw_input") else ["-hwaccel", "vaapi", "-hwaccel_device", wc.HW_DEVICE]) \
+            if wc.hw_decode() else []
+        got, err = _decode(head + hw + ["-f", container, "-i", path, "-vf", vf] + tail, fw, fh, n, out, linear, progress)
     if got == 0:
         raise RuntimeError(f"ffmpeg decoded nothing from the {fmt['h']}p stream: {err.splitlines()[-1][:200] if err else 'no output'}")
     if got < n:                                           # a segment a few frames short: hold the last one
