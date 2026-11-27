@@ -117,6 +117,15 @@ def _push_once():
                                capture_output=True, text=True, timeout=120)
             ok = ok and q.returncode == 0
             err = (err + " " + q.stderr.strip()[-300:]).strip()
+        clips = paths.DATA_DIR / "clips"
+        if clips.is_dir():
+            # Clarity lab clips (hub/clarity.py): tens of MB each, so --delete keeps /dev/shm from filling up
+            q = subprocess.run(["rsync", "-a", "--delete", "--timeout=60", "--include=*.bin", "--include=*.json",
+                                "--exclude=*", "--rsync-path", f"mkdir -p {remote_dir}/clips && rsync",
+                                "-e", SSH, f"{clips}/", f"{target}:{remote_dir}/clips/"],
+                               capture_output=True, text=True, timeout=300)
+            ok = ok and q.returncode == 0
+            err = (err + " " + q.stderr.strip()[-300:]).strip()
         last_result.update(at=datetime.now().isoformat(timespec="seconds"), ok=ok, error=err)
         _pushed.update(print=fp if ok else None, t=time.time())
     except Exception as e:

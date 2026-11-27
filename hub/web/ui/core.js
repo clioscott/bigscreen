@@ -209,6 +209,7 @@ export const PANEL_TYPES = {
   webcam_grid: { label: "Camera grid", icon: "Grid2x2", passes: true, passWord: "pass through every camera", note: "Tiles filling the frame, one camera after another" },
   webcam_grid_full: { label: "Camera grid (full width)", icon: "Grid2x2", full: true, passes: true, passWord: "pass through every camera" },
   webcam_grid_tall: { label: "Camera grid (above the clock)", icon: "Grid2x2", full: true, passes: true, passWord: "pass through every camera", note: "Covers the ticker; the clock and date stay" },
+  clip_tall: { label: "Clarity lab clip", icon: "FlaskConical", full: true, lab: true, note: "A test clip from the Clarity lab page, above the clock" },
   webcam_grid_wall: { label: "Camera grid (whole wall)", icon: "Grid2x2", full: true, passes: true, passWord: "pass through every camera", note: "Covers the ticker and clock too" },
   bridges: { label: "Bridges now", icon: "Construction", passes: true, passWord: "pass through every bridge", note: "2×2, paging through the bridges" },
   bridges_full: { label: "Bridges now (full width)", icon: "Construction", full: true, passes: true, passWord: "pass through every bridge" },

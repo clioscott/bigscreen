@@ -173,7 +173,7 @@ const SlotEditor = {
   },
   template: `<div class="slot-editor">
     <div class="field"><div class="label">Panel</div>
-      <div class="type-grid"><button v-for="(pt, id) in PANEL_TYPES" :key="id" type="button" class="type-card" :class="{on: e.panel === id}"
+      <div class="type-grid"><button v-for="(pt, id) in PANEL_TYPES" :key="id" v-show="!pt.lab" type="button" class="type-card" :class="{on: e.panel === id}"
         :disabled="id === 'calendar' && side === 'right'" @click="setPanel(id)"><Icon :name="pt.icon" :size="16"/><span style="font-size:12.5px">{{ pt.label }}</span></button></div></div>
     <div class="fields" v-if="t.sub || e.panel.startsWith('webcam_grid')">
       <Field v-if="t.sub === 'track'" label="Map"><select class="input" v-model="e.track">
