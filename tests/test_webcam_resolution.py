@@ -658,14 +658,16 @@ def test_a_youtube_run_on_the_video_engine_scales_there_in_light():
     graph = args[args.index("-filter_complex") + 1]
     # mapped to Vulkan once; each picture cut (an odd corner as it is) and averaged there, never dithered
     assert graph.startswith("[0:v:0]fps=30,hwmap=derive_device=vulkan,split=2[a][b];")
-    assert "[a]" + wc.gpu_filter(0, 0, 1920, 1080, 640, 360) + "[lo]" in graph
-    assert "[b]" + wc.gpu_filter(47, 179, 1792, 700, 448, 175) + "[hi]" in graph
+    lo = wc.gpu_filter(640, "trunc(ih*640/iw/2+0.5)*2")                    # the whole frame, whatever its size
+    assert "crop_" not in lo and "[a]" + lo + "[lo]" in graph
+    assert "[b]" + wc.gpu_filter(448, 175, (47, 179, 1792, 700)) + "[hi]" in graph
+    assert "crop_x=47:crop_y=179:crop_w=1792:crop_h=700" in graph
     assert graph.count("downscaler=nearest:dithering=-1") == 2 and "flags=area" not in graph
     assert "pipe:1" in args and "pipe:7" in args
     f.hi = None                                                            # the lo picture alone
     lo_only = f._args("https://v/1080.ts", hw=True, piped="ts", gpu=True)
     assert "-filter_complex" not in lo_only
-    assert lo_only[lo_only.index("-vf") + 1] == "fps=30,hwmap=derive_device=vulkan," + wc.gpu_filter(0, 0, 1920, 1080, 640, 360)
+    assert lo_only[lo_only.index("-vf") + 1] == "fps=30,hwmap=derive_device=vulkan," + lo
 
 
 def test_scaling_on_the_video_engine_needs_its_decoding_and_is_asked_for():
@@ -688,13 +690,20 @@ def test_a_dash_run_scales_all_the_way_on_the_video_engine():
     graph = args[args.index("-filter_complex") + 1]
     p = f.hi
     assert "scale_vaapi" not in graph and "flags=area" not in graph
-    assert wc.gpu_filter(p["x"], p["y"], p["w"], p["h"], 448, 175) + "[hi]" in graph
-    assert wc.gpu_filter(0, 0, 3840, 2160, 640, 360) + "[lo]" in graph
+    assert wc.gpu_filter(448, 175, (p["x"], p["y"], p["w"], p["h"])) + "[hi]" in graph
+    assert wc.gpu_filter(640, "trunc(ih*640/iw/2+0.5)*2") + "[lo]" in graph
 
 
-def test_ffmpegs_last_lines_tell_a_broken_video_engine_scaler_from_a_stream_that_didnt_arrive():
-    assert wc.gpu_broke(["Instance creation failure: VK_ERROR_INCOMPATIBLE_DRIVER", "Device creation failed: -542398533.",
-                         "Failed to set value 'vulkan=vk@va' for option 'init_hw_device': Generic error",
-                         "Error parsing global options: Generic error in an external library"])
-    assert wc.gpu_broke(["[Parsed_libplacebo_1 @ 0x55] Failed creating shader"])
-    assert not wc.gpu_broke(["pipe:0: Invalid data found when processing input"]) and not wc.gpu_broke([])
+def test_ffmpegs_lines_tell_a_broken_video_engine_scaler_from_a_healthy_run():
+    # (lines as ffmpeg 7.1 printed them on the hub)
+    broken = ["[AVHWDeviceContext @ 0x55f661cce300] Instance creation failure: VK_ERROR_INCOMPATIBLE_DRIVER",
+              "Failed to set value 'vulkan=vk@va' for option 'init_hw_device': Generic error in an external library",
+              "Impossible to convert between the formats supported by the filter 'Parsed_libplacebo_4' and the filter "
+              "'auto_scale_0'"]
+    assert all(wc.gpu_error(line) for line in broken)
+    healthy = ["MESA-INTEL: warning: ../src/intel/vulkan/anv_formats.c:834: FINISHME: support more multi-planar "
+               "formats with DRM modifiers", "Output #0, rawvideo, to 'pipe:1':",
+               "Stream #0:0: Video: rawvideo (RGB[24] / 0x18424752), rgb24(pc, gbr/bt709/bt709, progressive), 640x360",
+               "pipe:0: Invalid data found when processing input", "Error parsing global options: Generic error",
+               "Exiting normally, received signal 15."]
+    assert not any(wc.gpu_error(line) for line in healthy)
