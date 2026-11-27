@@ -373,10 +373,6 @@ class Screen:
         self.panels["webcam_grid"] = self.webcam.grid.draw
         self.full_panels["webcam_grid_full"] = self.webcam.grid.draw
         self.tall_panels["webcam_grid_tall"] = self.webcam.grid.draw
-        from display.modules.us_election import ElectionScreen
-        self.election = keep("election", ("us_election",),
-                             lambda: ElectionScreen(cfg.modules.get("us_election") or {}, loader))
-        self.tall_panels["us_election_tall"] = self.election.draw            # US Election results map
         self.takeover_panels["webcam_grid_wall"] = self.webcam.grid.draw
         if maps is not None:
             from display.modules.weather_maps import MapPanel
@@ -546,13 +542,9 @@ class Screen:
         self.clock.render(c, clock_x, self.h - 14, status_x - clock_x, 14)
         self.date.render_weekday_beside_clock(c, clock_x + clock_text_w + 3, self.h - 3)
         cal = self.calendar
-        # the US election screen's news (calls, polls closing, seat counts) scrolls through the status strip
-        news = tall and chosen[tall].get("panel") == "us_election_tall" and self.election.ticker_active() \
-            and self.election.draw_ticker(c, status_x, self.h - 14, self.w - status_x - date_w, 14)
-        if not news:
-            self.status.render(c, status_x, self.h - 14, self.w - status_x - date_w, 14,
-                               getattr(cal, "alert_active", False), getattr(cal, "alert_toggle", False),
-                               getattr(cal, "alert_message", ""), getattr(cal, "status_overrides", []))
+        self.status.render(c, status_x, self.h - 14, self.w - status_x - date_w, 14,
+                           getattr(cal, "alert_active", False), getattr(cal, "alert_toggle", False),
+                           getattr(cal, "alert_message", ""), getattr(cal, "status_overrides", []))
         self.date.render(c, self.w - date_w, self.h - 14, date_w, 14)
         graphics.DrawLine(c, 0, self.status_top, self.w, self.status_top, self.border)
 
