@@ -21,6 +21,7 @@ stat() and read() complete in microseconds, and there's no risk of kernel-
 level hangs that sshfs/CIFS mounts had.
 """
 
+import hashlib
 import os
 import time
 import threading
@@ -31,22 +32,22 @@ import datetime
 try:
     import orjson as _json_mod
 
-    def _parse_file(file_path):
-        """Read + parse JSON from a local file using orjson (bytes mode)."""
-        with open(file_path, 'rb') as f:
-            return _json_mod.loads(f.read())
-
     _JSON_BACKEND = "orjson"
 
 except ImportError:
     import json as _json_mod
 
-    def _parse_file(file_path):
-        """Read + parse JSON from a local file using stdlib json."""
-        with open(file_path, 'r') as f:
-            return _json_mod.load(f)
-
     _JSON_BACKEND = "json"
+
+
+def _read_file(file_path):
+    with open(file_path, 'rb') as f:
+        return f.read()
+
+
+def _parse_file(file_path):
+    """Read + parse JSON from a local file (orjson and stdlib json both take bytes)."""
+    return _json_mod.loads(_read_file(file_path))
 
 
 # How long data is considered "fresh" by default. The server writes JSON every
@@ -69,6 +70,7 @@ class DataLoader:
 
         self.cache = {}            # module_name -> parsed JSON (read by render thread)
         self.mtimes = {}           # module_name -> file mtime (epoch seconds)
+        self._digests = {}         # module_name -> hash of the bytes the cached object was parsed from
         self._known_modules = set()    # registered module names
 
         # Throttled-log bookkeeping (so missing files don't spam the journal).
@@ -119,6 +121,7 @@ class DataLoader:
         """Drop cached data so the next sweep re-reads the file."""
         self.mtimes.pop(module_name, None)
         self.cache.pop(module_name, None)
+        self._digests.pop(module_name, None)
         # Wake the poller to re-fetch immediately.
         self._poll_wake.set()
 
@@ -206,7 +209,16 @@ class DataLoader:
 
         # ---- Slow path: file changed; do the read + parse ----
         try:
-            data = _parse_file(file_path)
+            raw = _read_file(file_path)
+            digest = hashlib.blake2b(raw, digest_size=16).digest()
+            if digest == self._digests.get(module_name) and module_name in self.cache:
+                # Rewritten with the same content (the hub rewrites calendar.json every minute, changed or
+                # not): keep the parsed object, so nothing is parsed and no module sees "new" data and
+                # reprocesses it. The mtime still moves on: it is what says the feed is alive (is_stale,
+                # the rotation's "fresh" rule).
+                self.mtimes[module_name] = new_mtime
+                return
+            data = _json_mod.loads(raw)
         except Exception as e:
             print(f"[{module_name.upper()}] parse error: {e}. Serving cached data.")
             return
@@ -218,6 +230,7 @@ class DataLoader:
         # always sees a complete cache entry — never a half-updated one.
         self.cache[module_name] = data
         self.mtimes[module_name] = new_mtime
+        self._digests[module_name] = digest
 
         mtime_str = datetime.datetime.fromtimestamp(new_mtime).strftime('%Y-%m-%d %H:%M:%S')
         count = len(data) if isinstance(data, (list, dict)) else 0
