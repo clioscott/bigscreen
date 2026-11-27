@@ -246,6 +246,13 @@ once (`hold: false`), so the rotation resumes by itself.
   picture: 33 dB); every CPU scale uses `SWS` (`area+full_chroma_int+accurate_rnd`: 57 dB, without full chroma 40);
   a DASH run decodes and crops on the video engine but `scale_vaapi` never scales below `GPU_KEEP`× the picture
   (its scaler all the way: 21 dB, soft with smeared colour), the CPU averages the rest (`_dash_args`).
+- Scaling in light: YouTube runs (HLS and DASH) cut and scale both pictures on the video engine with libplacebo over
+  Vulkan (`gpu_filter`, `Feed._gpu_filters`; needs `intel_icd` Vulkan and ffmpeg's `libplacebo`). It averages in
+  light, not coded values (swscale dims small lights and neon: up to 50 levels on real night streams; 43 dB against
+  a float reference averaged in light, `SWS` 27), with plain averaging (`downscaler=nearest` + its anti-aliasing) and
+  no dithering, at under half the CPU of the swscale chain. A run that won't open or breaks there puts that feed
+  back on the CPU chain above (`_gpu_broken`); `BIGSCREEN_NO_GPU_SCALE=1` turns it off; `describe()` reports `gpu`.
+  Other sources, software decoding and Python's `render()` (previews off the lo picture) still average coded values.
 - API (`hub/app.py`): `/api/webcams/frames` (raw RGB for the Pi, 12-byte header per frame), `source.mjpeg` (crop
   editor), `preview` + `preview/{token}.mjpeg` (exact wall render incl. caption), `probe`, `status`.
 - Display: `display/modules/webcam.py`, panels `webcam` (a side), `webcam_full`, `webcam_wall`; entry field `cam`.
