@@ -51,6 +51,8 @@ MIN_SOURCE_H = 720           # YouTube: never a smaller stream than this when it
 SWS = "flags=area+full_chroma_int+accurate_rnd"   # every CPU scale: plain averaging, colour at every output pixel
                              # (without full_chroma_int swscale's RGB has half the colour resolution across: 40 dB
                              # against a reference, 57 dB with it), exact rounding
+GPU_SCALE = os.environ.get("BIGSCREEN_NO_GPU_SCALE") != "1"   # YouTube runs scale on the video engine (gpu_filter)
+GPU_ERRORS = ("vulkan", "vk_error", "libplacebo", "hwmap", "init_hw_device")   # in ffmpeg's last lines: gpu_broke
 GPU_KEEP = 6                 # a 4K run: the video engine scales a region down to no less than this many times the
                              # picture wanted, the CPU averages the rest (its scaler alone: 21 dB, soft and smeared;
                              # this: 48 dB at a third of a core; a region already smaller than that is only cropped)
@@ -455,6 +457,36 @@ def cut(x, y, w, h) -> str:
             f"crop=w={w}:h={h}:x={dx}:y={dy}:exact=1,")
 
 
+def hw_input(gpu=False) -> list:
+    """ffmpeg's options for decoding on the video engine; ``gpu``: the frames stay there for gpu_filter (a Vulkan
+    device on the same card as VAAPI's)."""
+    if not gpu:
+        return ["-hwaccel", "vaapi", "-hwaccel_device", HW_DEVICE]     # frames come back to memory by themselves
+    return ["-init_hw_device", f"vaapi=va:{HW_DEVICE}", "-init_hw_device", "vulkan=vk@va", "-hwaccel", "vaapi",
+            "-hwaccel_device", "va", "-hwaccel_output_format", "vaapi", "-filter_hw_device", "vk"]
+
+
+def gpu_filter(x, y, w, h, out_w, out_h) -> str:
+    """ffmpeg filters that turn region (x, y, w, h) of a frame on the video engine into an out_w x out_h RGB picture
+    in memory: libplacebo cuts it (any corner: no NV12 trouble), turns the stream's YUV into RGB by the stream's own
+    matrix and range, and averages it down *in light*. swscale (SWS) averages the coded values, which aren't
+    proportional to light: a lamp one source pixel wide among three dark ones comes out at 6 % of full brightness
+    where the LED should give 25 %, so night scenes lost their lights and neon (measured on real streams: the wall
+    put out 4-9 % less light, lights up to 50 levels too dark). "nearest" with libplacebo's anti-aliasing is plain
+    averaging (the area filter): 43 dB against a float reference averaged in light, where SWS gets 27. No dithering:
+    the picture is exactly the average, rounded. And it costs less than half the CPU of the swscale chain (32 % of an
+    N100 core against 75 % for a 1080p30 run with both pictures)."""
+    return (f"libplacebo=w={out_w}:h={out_h}:crop_x={x}:crop_y={y}:crop_w={w}:crop_h={h}:downscaler=nearest:"
+            f"dithering=-1:format=rgba,hwdownload,format=rgba,format=rgb24")
+
+
+def gpu_broke(tail) -> bool:
+    """Do ffmpeg's last lines say the video engine's scaler is what stopped it? (No Vulkan driver, a device that
+    won't open, a frame it can't map.) Told apart from a stream that didn't arrive, which says nothing of the sort."""
+    text = " ".join(tail).lower()
+    return any(s in text for s in GPU_ERRORS)
+
+
 def quality_of(values):
     """The quality asked of a stream by every saved webcam showing it (None: the default, "auto", "max" or a
     height): the most of them ("max", then the tallest, then "auto"), or None (the default, DEFAULT_QUALITY_H)."""
@@ -835,6 +867,8 @@ class Feed:
         self._run_hi = False             # the current ffmpeg gives a hi picture (its reader renders the consumers)
         self._hi_broken = False          # a run with a hi picture wouldn't open: this feed sticks to lo
         self._dash_broken = False        # a DASH run wouldn't open: this feed sticks to HLS
+        self.gpu = False                 # scaling on the video engine (gpu_filter)
+        self._gpu_broken = False         # a run scaling there wouldn't open, or broke: this feed scales on the CPU
         self._fed = False                # this run's fetcher got a segment into ffmpeg
         self._seg_error = ""             # … or why it couldn't
         # YouTube: segments fetched here and fed to ffmpeg as they're listed (_feed_segments)
@@ -1053,7 +1087,7 @@ class Feed:
                 "buffered_sec": round(len(self._buf) / max(1, self.fps), 1), "underflows": self.underflows,
                 "still": self.kind in STILLS,
                 "image_age_sec": round(time.time() - self.image_t) if self.image_t else None,
-                "native": self.native, "source": self.source, "hi": self.hi, "hw": self.hw,
+                "native": self.native, "source": self.source, "hi": self.hi, "hw": self.hw, "gpu": self.gpu,
                 "consumers": len(self.consumers),
                 "formats": [{k: f[k] for k in ("w", "h", "fps", "vcodec")} for f in self.formats]}
 
@@ -1202,22 +1236,24 @@ class Feed:
         self._stop.set()
         _forget(self)
 
-    def _args(self, media, hi_fd=None, hw=False, piped=None):
+    def _args(self, media, hi_fd=None, hw=False, piped=None, gpu=False):
         """ffmpeg's command line: lo frames on pipe:1 and, with a hi plan, hi frames on hi_fd. ``piped``: the
         segments come in on stdin (_feed_segments): "ts" (HLS, MPEG-TS) or "dash" (WebM, decoded, cropped and
-        scaled on the video engine)."""
+        scaled on the video engine). ``gpu`` (with hw): both pictures are cut and scaled on the video engine, in
+        light (gpu_filter); the stream's size must be known (self.source)."""
+        gpu = bool(gpu and hw)
         # -nostats: the progress line ends in \r, which readline would keep growing for hours
         args = ["ffmpeg", "-hide_banner", "-nostdin", "-nostats", "-loglevel", "info", "-protocol_whitelist", PROTOCOLS]
         if piped == "dash":
-            return self._dash_args(args, hi_fd)
+            return self._dash_args(args, hi_fd, gpu)
         scheme = urlparse(media).scheme.lower()
         if piped == "ts":
             args = args[:-1] + [PROTOCOLS + ",pipe"]
             self._buffer_sec = BUFFER_SEC
             if hw:
-                args += ["-hwaccel", "vaapi", "-hwaccel_device", HW_DEVICE]
+                args += hw_input(gpu)
             args += ["-f", "mpegts", "-i", "pipe:0"]
-            return self._filters(args, hi_fd)
+            return self._filters(args, hi_fd, gpu)
         if scheme in ("http", "https"):
             args += ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
                      "-user_agent", "BigScreen/2 (home LED wall)"]
@@ -1236,12 +1272,30 @@ class Feed:
             args += ["-rtsp_transport", "tcp"]
             self._buffer_sec = BUFFER_SEC_LIVE
         if hw:
-            args += ["-hwaccel", "vaapi", "-hwaccel_device", HW_DEVICE]     # frames come back to memory by themselves
+            args += hw_input(gpu)
         args += ["-i", media]
-        return self._filters(args, hi_fd)
+        return self._filters(args, hi_fd, gpu)
 
-    def _filters(self, args, hi_fd):
-        """The CPU filters after the input: the lo picture on pipe:1, and the hi one (plan) on hi_fd."""
+    def _gpu_filters(self, args, hi_fd):
+        """The filters of a run that scales on the video engine: each frame is mapped to Vulkan once, and the lo
+        picture (pipe:1) and the hi one (plan, hi_fd) are each cut and scaled from it there (gpu_filter)."""
+        src = self.source
+        head = f"fps={self.fps},hwmap=derive_device=vulkan"
+        lo = gpu_filter(0, 0, src["w"], src["h"], WORK_W, max(2, round(WORK_W * src["h"] / src["w"] / 2) * 2))
+        p = self.hi
+        if p is None or hi_fd is None:
+            return args + ["-an", "-sn", "-dn", "-vf", f"{head},{lo}", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"]
+        hi = gpu_filter(p["x"], p["y"], p["w"], p["h"], p["out_w"], p["out_h"])
+        graph = f"[0:v:0]{head},split=2[a][b];[a]{lo}[lo];[b]{hi}[hi]"
+        return args + ["-filter_complex", graph,
+                       "-map", "[lo]", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1",
+                       "-map", "[hi]", "-f", "rawvideo", "-pix_fmt", "rgb24", f"pipe:{hi_fd}"]
+
+    def _filters(self, args, hi_fd, gpu=False):
+        """The filters after the input: the lo picture on pipe:1, and the hi one (plan) on hi_fd. On the CPU
+        (swscale), or with ``gpu`` on the video engine."""
+        if gpu:
+            return self._gpu_filters(args, hi_fd)
         lo = f"scale={WORK_W}:-2:{SWS},format=rgb24"
         p = self.hi
         if p is None or hi_fd is None:
@@ -1256,12 +1310,15 @@ class Feed:
                        "-map", "[lo]", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1",
                        "-map", "[hi]", "-f", "rawvideo", "-pix_fmt", "rgb24", f"pipe:{hi_fd}"]
 
-    def _dash_args(self, args, hi_fd):
-        """A DASH (4K) run: WebM segments on stdin; the video engine decodes and crops, and scales a big region part
-        of the way (never below GPU_KEEP times the picture wanted); the CPU averages that down to the picture (SWS).
-        The video engine's own scaler all the way came out soft with smeared colour (21 dB against a reference)."""
+    def _dash_args(self, args, hi_fd, gpu=False):
+        """A DASH (4K) run: WebM segments on stdin. With ``gpu`` the video engine decodes, cuts and scales all the
+        way, in light (gpu_filter). Without: it decodes and crops, and scales a big region part of the way with
+        VAAPI's scaler (never below GPU_KEEP times the picture wanted), and the CPU averages that down to the
+        picture (SWS); VAAPI's own scaler all the way came out soft with smeared colour (21 dB against a reference)."""
         self._buffer_sec = BUFFER_SEC                       # 5 s segments, like the HLS
         args = args[:-1] + [PROTOCOLS + ",pipe"]
+        if gpu:
+            return self._gpu_filters(args + hw_input(True) + ["-f", "matroska", "-i", "pipe:0"], hi_fd)
         args += ["-hwaccel", "vaapi", "-hwaccel_device", HW_DEVICE, "-hwaccel_output_format", "vaapi",
                  "-f", "matroska", "-i", "pipe:0"]
         src = self.source
@@ -1369,10 +1426,13 @@ class Feed:
             return False
         self._fed, self._seg_error = False, ""
         piped = "dash" if dash else "ts" if self._seg is not None else None
+        # YouTube (H.264, VP9, AV1: all decoded on the video engine, sizes known): scaled there too
+        gpu = bool(hw and GPU_SCALE and not self._gpu_broken and self.kind == "youtube"
+                   and (self.source or {}).get("w") and (self.source or {}).get("h"))
         hi_r = hi_w = None
         if self.hi is not None:
             hi_r, hi_w = os.pipe()
-        args = self._args(media, hi_w, hw, piped)
+        args = self._args(media, hi_w, hw, piped, gpu)
         try:
             proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0,
                                     stdin=subprocess.PIPE if piped else None,
@@ -1386,7 +1446,7 @@ class Feed:
         finally:
             if hi_w is not None:
                 os.close(hi_w)                           # the child has its own copy
-        self._proc, self.hw = proc, hw
+        self._proc, self.hw, self.gpu = proc, hw, gpu
         self._run_hi = hi_r is not None
         self._run_t = time.time()
         self._new_run = True                       # the pacer restarts its clock (the fps may have changed)
@@ -1408,10 +1468,20 @@ class Feed:
                     msg = (tail[-1] if tail else "ffmpeg could not open the stream")[:300]
                     if self._restart:                      # stopped on purpose (more frames or detail wanted;
                         return False                       # the segment feeder: a break, an expired URL)
+                    if gpu and (gpu_broke(tail) or self._fed or not piped):
+                        # scaling on the video engine didn't open: no Vulkan (ffmpeg stops before it reads a
+                        # segment), or a stream it can't take there. The same run on the CPU next, which tells
+                        # what else is wrong, if anything
+                        self._gpu_broken = True
+                        self._restart = True
+                        self.error = msg
+                        print(f"[webcams] no scaling on the video engine ({msg[:120]}); CPU for {self.url[:80]}",
+                              flush=True)
+                        return False
                     if piped and not self._fed:            # no segment reached ffmpeg: the fetching failed (a
                         self.error = self._seg_error or msg   # network blip), not ffmpeg or the video engine
                         return False
-                    if dash:                               # the DASH run didn't open: HLS (up to 1080p) from now on
+                    if dash:                             # the DASH run didn't open: HLS (up to 1080p) from now on
                         self._dash_broken = True           # (first: its errors name vaapi, but the HLS run will
                         self._restart = True               # tell whether the video engine itself works)
                         print(f"[webcams] DASH run failed ({msg[:120]}); HLS for {self.url[:80]}", flush=True)
@@ -1447,6 +1517,10 @@ class Feed:
                     if not r:
                         if tail and not got:
                             self.error = tail[-1][:300]
+                        if gpu and gpu_broke(tail):
+                            self._gpu_broken = True        # it broke while running: this feed is back on the CPU
+                            print(f"[webcams] scaling on the video engine broke ({tail[-1][:120]}); CPU for "
+                                  f"{self.url[:80]}", flush=True)
                         return got
                     got_n += r
                 k += 1

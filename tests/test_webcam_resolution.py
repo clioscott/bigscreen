@@ -646,3 +646,55 @@ def test_a_dash_runs_cpu_trim_of_an_odd_corner_goes_through_full_colour():
     assert "crop=w=450:h=176:x=1536:y=864:exact=1,scale_vaapi=w=450:h=176:format=nv12,hwdownload,format=nv12," in graph
     assert f"format=nv12,{wc.cut(1, 1, 448, 175)}scale=448:175:{wc.SWS}" in graph
     assert "format=yuv444p,crop=w=448:h=175:x=1:y=1:exact=1," in graph
+
+
+def test_a_youtube_run_on_the_video_engine_scales_there_in_light():
+    f = _feed_shell()
+    f.source = {"w": 1920, "h": 1080, "dash": False}
+    f.hi = {"full_w": 1920, "x": 47, "y": 179, "w": 1792, "h": 700, "out_w": 448, "out_h": 175, "exact": True}
+    args = f._args("https://v/1080.ts", hi_fd=7, hw=True, piped="ts", gpu=True)
+    assert args[args.index("-hwaccel") + 1] == "vaapi" and args[args.index("-hwaccel_output_format") + 1] == "vaapi"
+    assert "vulkan=vk@va" in args and args[args.index("-filter_hw_device") + 1] == "vk"
+    graph = args[args.index("-filter_complex") + 1]
+    # mapped to Vulkan once; each picture cut (an odd corner as it is) and averaged there, never dithered
+    assert graph.startswith("[0:v:0]fps=30,hwmap=derive_device=vulkan,split=2[a][b];")
+    assert "[a]" + wc.gpu_filter(0, 0, 1920, 1080, 640, 360) + "[lo]" in graph
+    assert "[b]" + wc.gpu_filter(47, 179, 1792, 700, 448, 175) + "[hi]" in graph
+    assert graph.count("downscaler=nearest:dithering=-1") == 2 and "flags=area" not in graph
+    assert "pipe:1" in args and "pipe:7" in args
+    f.hi = None                                                            # the lo picture alone
+    lo_only = f._args("https://v/1080.ts", hw=True, piped="ts", gpu=True)
+    assert "-filter_complex" not in lo_only
+    assert lo_only[lo_only.index("-vf") + 1] == "fps=30,hwmap=derive_device=vulkan," + wc.gpu_filter(0, 0, 1920, 1080, 640, 360)
+
+
+def test_scaling_on_the_video_engine_needs_its_decoding_and_is_asked_for():
+    f = _feed_shell()
+    f.source = {"w": 1920, "h": 1080, "dash": False}
+    soft = f._args("https://v/1080.ts", piped="ts", gpu=True)              # software decoding: the CPU chain
+    assert "-hwaccel" not in soft and "libplacebo" not in " ".join(soft) and wc.SWS in soft[soft.index("-vf") + 1]
+    plain = f._args("https://v/1080.ts", hw=True, piped="ts")              # not asked for: as before
+    assert "vulkan=vk@va" not in plain and "libplacebo" not in " ".join(plain)
+    assert wc.hw_input() == ["-hwaccel", "vaapi", "-hwaccel_device", wc.HW_DEVICE]
+
+
+def test_a_dash_run_scales_all_the_way_on_the_video_engine():
+    f = _feed_shell()
+    f.source = {"w": 3840, "h": 2160, "dash": True}
+    f.hi = wc.plan(3840, 2160, [(448, 175, None)], force=True)
+    args = f._args("https://v/2160.webm", hi_fd=7, hw=True, piped="dash", gpu=True)
+    assert args[args.index("-i") + 1] == "pipe:0" and args[args.index("-f") + 1] == "matroska"
+    assert "pipe" in args[args.index("-protocol_whitelist") + 1].split(",")
+    graph = args[args.index("-filter_complex") + 1]
+    p = f.hi
+    assert "scale_vaapi" not in graph and "flags=area" not in graph
+    assert wc.gpu_filter(p["x"], p["y"], p["w"], p["h"], 448, 175) + "[hi]" in graph
+    assert wc.gpu_filter(0, 0, 3840, 2160, 640, 360) + "[lo]" in graph
+
+
+def test_ffmpegs_last_lines_tell_a_broken_video_engine_scaler_from_a_stream_that_didnt_arrive():
+    assert wc.gpu_broke(["Instance creation failure: VK_ERROR_INCOMPATIBLE_DRIVER", "Device creation failed: -542398533.",
+                         "Failed to set value 'vulkan=vk@va' for option 'init_hw_device': Generic error",
+                         "Error parsing global options: Generic error in an external library"])
+    assert wc.gpu_broke(["[Parsed_libplacebo_1 @ 0x55] Failed creating shader"])
+    assert not wc.gpu_broke(["pipe:0: Invalid data found when processing input"]) and not wc.gpu_broke([])
