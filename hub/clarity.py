@@ -392,6 +392,12 @@ def scaled(path, container, fmt, v, crop, out_w, out_h, n, progress=None):
             how = "sws"
             key = key_for(how)
             cache = SESSION / f"scaled_{key}.npy"
+            try:                                          # (already made, by an earlier fallback or for "Old")
+                arr = np.load(cache)
+                if arr.shape == (n, out_h, out_w, 3):
+                    return arr
+            except Exception:
+                pass
     if how != "gpu":
         cutf = wc.cut(l, t, cw, ch)
         if linear:
