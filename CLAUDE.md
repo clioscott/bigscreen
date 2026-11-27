@@ -18,14 +18,17 @@ happens on a separate server; the Pi only renders. Research and history: `RESEAR
   `~/bigscreen` pulls from the server's. This Windows folder is a clone with remote `origin` = GitHub.
 - **Runtime state: `~/bigscreen-state/` on the server** (not in git): `config.json` (the single config),
   `config-backups/`, `status.json`, `data/` (synced to the Pi), `secrets/` (Google token), `cache/`.
-- Pi reads data from `/dev/shm/bigscreen` (tmpfs), rsynced by `hub/sync.py` after every successful job.
+- Pi reads data from `/dev/shm/bigscreen` (tmpfs), rsynced by `hub/sync.py` after every successful job (skipped
+  when no file in `data/` changed since the last good push; at least every `RESYNC_SEC`). The Pi's loader keeps
+  the parsed object when a file is rewritten with the same bytes, so modules only reprocess real changes.
 
 ## Hub (server)
 
 - `hub/main.py` starts the scheduler + FastAPI app (`hub/app.py`, UI in `hub/web/`, plain JS, no build).
 - Jobs in `hub/jobs/` run as **one subprocess per fetch** (`python -m hub.jobs.<name>`) with a timeout;
   never make a job a long-lived loop (v1's finance worker leaked to 8.7 GB that way).
-- Job health → `status.json` → the control panel's Overview (also shows the deployed commit). A job is "stale" after 3 missed intervals.
+- Job health → `status.json` → the control panel's Overview (also shows the deployed commit). A job is "stale" after 3 missed intervals, and
+  "degraded" when its summary has a non-empty `degraded` (it ran, but part of it failed: feeds, symbols, tracks).
 - Service: `bigscreen-hub` (system unit, user scott). `sudo systemctl restart bigscreen-hub` is passwordless.
   The server exists for the wall: the unit gives the hub no memory cap, keeps the hub's own memory out of swap
   (`MemorySwapMax=0`) and gives it 10× the default CPU/IO weight. Don't cap its memory again: a 1 GB `MemoryMax`
@@ -88,9 +91,10 @@ Urgent fix: push straight to `main` as admin (bypasses the ruleset) — the time
   `graphics`/BDF code) and pushes only changed 64×16 tiles to the panels via `FrameCanvas.SetBuffer`,
   a method we patch into rgbmatrix (`deploy/rgbmatrix_setbuffer.py`, built by `deploy/pi-setup.sh`).
 - Modules in `display/modules/` are ported from v1; never reintroduce per-frame data reprocessing.
-- Reads `/dev/shm/bigscreen/config.json` (published by the hub) and hot-reloads it; panel timing keys
+- Reads `/dev/shm/bigscreen/config.json` (published by the hub) and hot-reloads it (a watcher thread in
+  `display/config.py` reads it; the render loop only swaps it in); panel timing keys
   (`gpio_slowdown`, `pwm_*`, `limit_refresh_rate_hz`) make it exit so systemd restarts it.
-- Control server :8765 — `/status`, `/frame.png` (live mirror), `/play` + `/rotation` (play an entry once or
+- Control server :8765 — `/status` (incl. `pi`: temperature, memory, under-voltage count from `display/pihealth.py`), `/frame.png` (live mirror), `/play` + `/rotation` (play an entry once or
   held; next/prev/hold/stop), `/override` (older form of `/play`), `/preview` (temporary config overlay with TTL).
   The hub proxies these under `/api/display/*`.
 - Rotation: `display/rotation.py` (one per side; screens always play to their end, rules checked only when picking
