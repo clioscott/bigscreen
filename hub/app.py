@@ -1796,7 +1796,10 @@ async def _webcam_frames(f, make, fps=None, still=None, direct=False, make_still
             arr = await asyncio.to_thread(still)
             if arr is not None and f.frame is None:              # marked a placeholder: shown while loading only
                 yield await asyncio.to_thread(make_still or make, arr, f)
-        after = getattr(f, "after", None)                   # every frame in order (stills: just the newest)
+        # every frame in order. Stills: just the newest, each time the feed publishes it (every second). A still
+        # feed keeps no history, so asking it for "the frame after" never gave one: the wall got the first frame
+        # and nothing more, and a still webcam went black after 10 s and was marked down.
+        after = None if getattr(f, "kind", None) in webcams.STILLS else getattr(f, "after", None)
         if direct and getattr(f, "kind", None) not in webcams.STILLS and hasattr(f, "decoded_after"):
             # the wall's stream: every frame as soon as it's decoded, starting with the few seconds already decoded;
             # the Pi plays them evenly from its own buffer, so a stalled hub (a busy server) never shows as a skip
