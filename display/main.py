@@ -375,6 +375,10 @@ class Screen:
         self.full_panels["webcam_grid_full"] = self.webcam.grid.draw
         self.tall_panels["webcam_grid_tall"] = self.webcam.grid.draw
         self.takeover_panels["webcam_grid_wall"] = self.webcam.grid.draw
+        # a looping clip of ready-made frames (the control panel's Clarity lab: display/modules/clip.py)
+        from display.modules import clip
+        self.clip = keep("clip", (), lambda: clip.ClipPanel(clip.store_for(getattr(loader, "data_dir", None))))
+        self.tall_panels["clip_tall"] = self.clip.draw
         if maps is not None:
             from display.modules.weather_maps import MapPanel
             self.map_panel = keep("map_panel", (), lambda: MapPanel(cfg, maps))
