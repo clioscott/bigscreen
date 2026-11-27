@@ -380,6 +380,7 @@ select.input { appearance: none; padding-right: 30px; background-image: url("dat
 .clarity-img { display: block; width: 100%; height: auto; pointer-events: none; }
 .clarity-wait { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--text-2); font-size: 13px; }
 .clarity-rect { position: absolute; border: 2px solid var(--accent); box-shadow: 0 0 0 9999px rgba(0, 0, 0, .45); border-radius: 3px; cursor: move; }
+.clarity-pick.fixed, .clarity-pick.fixed .clarity-rect { cursor: default; }
 .clarity-bar { height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
 .clarity-bar > div { height: 100%; background: var(--accent); transition: width .4s; }
 .slot.off { opacity: .45; }

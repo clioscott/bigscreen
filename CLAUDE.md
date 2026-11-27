@@ -308,13 +308,19 @@ once (`hold: false`), so the rotation resumes by itself.
 
 ## Clarity lab
 
-- Control panel page "Clarity lab" (`hub/web/ui/pages/clarity.js`): pick a YouTube webcam, drag a slice, choose two
-  versions (source resolution, 30/60 fps, scaling as now or in linear light, sharpening, dithering); the hub records
-  the same seconds both ways and the wall loops them side by side above the clock (A left, B right; "Blind" hides
-  which is which).
+- Control panel page "Clarity lab" (`hub/web/ui/pages/clarity.js`): Scott tunes a webcam's picture on a loop of
+  its own video, on the wall. He records a few seconds once, then changes settings and the wall follows (the page
+  rebuilds a moment after each change). Two views: side by side (a slice he drags, A left and B right, each with
+  its own settings; "Blind" hides which is which) and full frame (the webcam's own `crops.tall`, full width, one
+  set of settings, as the rotation would play it, without the caption). Settings: source resolution, sharpness,
+  brightness, contrast, saturation (the webcam's own, with the wall's maths) and lab-only ones the wall can't do
+  yet (linear-light scaling, 60 fps, dithering). "Use for this webcam" writes resolution, sharpness and colour to
+  the draft config. Don't replace this with fixed A/B presets or still images: he asked to pick and tweak himself.
 - `hub/clarity.py` does the work in its own low-priority process (`python -m hub.clarity <spec.json>`, started by
-  `POST /api/clarity/build`; progress in `cache/clarity_state.json`): the same HLS/DASH segment numbers at each
-  resolution, each version rendered to half the zone (223x175), written as `data/clips/clarity.bin|.json`.
+  `POST /api/clarity/build`; progress in `cache/clarity_state.json`). A session in `cache/clarity/session` keeps
+  the loop (the same HLS/DASH segment numbers per resolution, downloaded once) and each version's frames scaled to
+  the zone but not yet sharpened, coloured or dithered, so a sharpness or colour change is ~0.5 s and a new
+  resolution or view 2-6 s. The clip is `data/clips/clarity.bin|.json`; a rebuild swaps in under the running play.
   `levels(brightness)` is what the LED library shows for each 8-bit value (CIE curve to 11 bits, top 8 planes,
   rounded down): 147 distinct levels at brightness 85; `dither` steps only between levels the wall can show.
 - `display/modules/clip.py`: panel `clip_tall` (entry field `clip`) blits a synced clip's frames, looping, at up to

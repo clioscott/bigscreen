@@ -58,12 +58,102 @@ def test_sharpen_leaves_flat_areas_and_raises_edges():
 
 def test_versions_are_checked_against_the_stream():
     v = clarity.clean_version({"height": "best", "fps": 60, "scaling": "linear", "sharpen": "0.25", "dither": 1}, {720, 1080})
-    assert v == {"height": 1080, "fps": 60, "scaling": "linear", "sharpen": 0.25, "dither": True}
+    assert v == {"height": 1080, "fps": 60, "scaling": "linear", "sharpen": 0.25, "brightness": 1.0, "contrast": 1.0,
+                 "saturation": 1.0, "dither": True}
     assert clarity.clean_version({}, {720})["scaling"] == "current"
-    for bad in ({"height": 2160}, {"fps": 24}, {"scaling": "cubic"}, {"sharpen": "lots"}):
+    assert clarity.clean_version({"contrast": 9, "saturation": None}, {720})["contrast"] == 2.0      # kept in range
+    for bad in ({"height": 2160}, {"fps": 24}, {"scaling": "cubic"}, {"sharpen": "lots"}, {"brightness": "x"}):
         with pytest.raises(ValueError):
             clarity.clean_version(bad, {720, 1080})
     assert "1080p" in clarity.describe(v) and "dithered" in clarity.describe(v)
+    assert "contrast 120%" in clarity.describe(dict(v, contrast=1.2))
+
+
+def test_colour_matches_the_walls_own_maths():
+    from hub import webcams as wc
+    rng = np.random.default_rng(3)
+    u8 = rng.integers(0, 256, (6, 7, 3), dtype=np.uint8)
+    for b, c, s in ((1.2, 1.0, 1.0), (1.0, 1.3, 1.0), (1.0, 1.0, 0.4), (0.9, 1.15, 1.6)):
+        mine = clarity.finish(u8.astype(np.float32) / 255.0, {"brightness": b, "contrast": c, "saturation": s}, 85, rng)
+        assert np.abs(mine.astype(int) - wc.adjust(u8, b, c, s).astype(int)).max() <= 1
+    a = u8.astype(np.float32) / 255.0
+    assert clarity.adjust(a) is a
+
+
+def test_render_takes_scaled_frames_of_either_kind():
+    frames = np.random.default_rng(5).integers(0, 256, (3, 4, 6, 3), dtype=np.uint8)
+    v = clarity.clean_version({"height": 720, "sharpen": 0}, {720})
+    assert np.array_equal(clarity.render(frames, v, 85, 1), frames)                       # nothing asked: untouched
+    as_float = (frames.astype(np.float32) / 255.0).astype(np.float16)
+    assert np.abs(clarity.render(as_float, v, 85, 1).astype(int) - frames.astype(int)).max() <= 1
+    sharp = clarity.render(frames, dict(v, sharpen=0.5), 85, 1)
+    assert sharp.shape == frames.shape and not np.array_equal(sharp, frames)
+
+
+def _session_spec(tmp_path, monkeypatch, **kw):
+    from hub import webcams as wc
+    monkeypatch.setattr(clarity, "WORK", tmp_path / "work")
+    monkeypatch.setattr(clarity, "SESSION", tmp_path / "work" / "session")
+    monkeypatch.setattr(clarity, "CLIPS", tmp_path / "clips")
+    monkeypatch.setattr(clarity, "STATE", tmp_path / "state.json")
+    segs = [wc.Seg((100 + i, None, 5.0, f"u{i}", False)) for i in range(10)]
+    monkeypatch.setattr(wc, "get_playlist", lambda url: segs)
+    fmt = {"h": 720, "w": 1280, "fps": 30.0, "url": "hls", "dash": False}
+    v = clarity.clean_version({"height": 720, "sharpen": 0}, {720})
+    spec = {"cam": "c", "label": "C", "url": "yt", "mode": "split", "crop": None, "seconds": 5, "a": v, "b": dict(v, sharpen=0.5),
+            "blind": False, "new_loop": False, "zone": [448, 175], "brightness": 85, "formats": {"a": fmt, "b": fmt},
+            "numbering": fmt}
+    spec.update(kw)
+    return spec
+
+
+def test_a_session_keeps_its_loop_until_a_new_one_is_asked_for(tmp_path, monkeypatch):
+    spec = _session_spec(tmp_path, monkeypatch)
+    first = clarity.session_for(spec)
+    assert first["seqs"] == [107] and clarity.session_for(spec)["recorded"] == first["recorded"]
+    assert clarity.session_for(dict(spec, seconds=10))["seqs"] == [106, 107]             # another length
+    again = clarity.session_for(dict(spec, seconds=10, url="other"))                    # another webcam
+    assert again["url"] == "other"
+    fresh = clarity.session_for(dict(spec, seconds=10, url="other", new_loop=True))
+    assert fresh["recorded"] >= again["recorded"] and fresh["files"] == {}
+
+
+def test_build_downloads_once_and_reuses_scaled_frames(tmp_path, monkeypatch):
+    spec = _session_spec(tmp_path, monkeypatch)
+    calls = {"segments": 0, "ffmpeg": 0}
+
+    def fake_segments(fmt, seqs):
+        calls["segments"] += 1
+        return b"video", "mpegts"
+
+    class FakeProc:
+        def __init__(self, args, stdout=None, stderr=None):
+            import io
+            calls["ffmpeg"] += 1
+            n = int(args[args.index("-frames:v") + 1])
+            self.stdout = io.BytesIO(bytes(n * 175 * 223 * 3))
+
+        def poll(self): return 0
+        def wait(self): return 0
+        def kill(self): pass
+
+    monkeypatch.setattr(clarity, "segments", fake_segments)
+    monkeypatch.setattr(clarity.subprocess, "Popen", FakeProc)
+    monkeypatch.setattr(clarity.wc, "hw_decode", lambda: False)
+    meta = clarity.build(spec)
+    assert (meta["mode"], meta["n"], meta["w"], meta["h"], meta["fps"]) == ("split", 150, 448, 175, 30)
+    assert calls == {"segments": 1, "ffmpeg": 1}                        # both halves: one download, one decode
+    assert (tmp_path / "clips" / "clarity.bin").stat().st_size == 150 * 175 * 448 * 3
+
+    clarity.build(dict(spec, b=dict(spec["b"], sharpen=1.0, contrast=1.2)))               # a colour change
+    assert calls == {"segments": 1, "ffmpeg": 1}                        # … decodes nothing
+
+    meta = clarity.build(dict(spec, mode="full"))                       # the whole zone, one version
+    assert (meta["mode"], meta["w"], meta["left"], meta["right"]) == ("full", 448, "A", "A")
+    assert calls["segments"] == 1 and calls["ffmpeg"] == 2              # same loop, new size
+
+    clarity.build(dict(spec, new_loop=True))
+    assert calls["segments"] == 2
 
 
 def test_format_for_prefers_the_frame_rate_asked_for():
