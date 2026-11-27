@@ -186,9 +186,9 @@ export const Clarity = {
       col.sharpen = v.sharpen;
       for (const k of ["brightness", "contrast", "saturation"]) { if (v[k] === 1) delete col[k]; else col[k] = v[k]; }
       c.colour = col;
-      const lab = [v.fps === 60 && "60 frames a second", v.scaling !== "current" && "that scaling", v.dither && "dithering"].filter(Boolean);
+      const lab = [v.fps === 60 && "60 frames a second", v.scaling === "swscale" && "the old scaling (the wall has moved on from it)", v.scaling === "linear" && "exact scaling", v.dither && "dithering"].filter(Boolean);
       toast(`Set on ${camObj.value?.label}: resolution, sharpness and colour. Press Save to keep.`
-        + (lab.length ? ` Not carried over (the wall can't do them yet): ${lab.join(", ")}.` : ""), "ok", 7000);
+        + (lab.length ? ` Not carried over (lab only): ${lab.join(", ")}.` : ""), "ok", 7000);
     };
 
     const sideText = (side) => {
@@ -246,10 +246,11 @@ export const Clarity = {
         </div>
         <ToggleRow v-model="live" label="The wall follows my changes" hint="On: a moment after you change anything below (or move the slice), the loop is rendered again and swaps in. Off: change several things, then press Update."/>
         <div class="row" v-if="!live"><button class="btn" :disabled="running || !started" @click="build(false)"><Icon name="RefreshCw" :size="15"/>Update the wall</button></div>
-        <div v-if="running || st.error" class="stack" style="gap:6px">
+        <div v-if="running || st.error || st.note" class="stack" style="gap:6px">
           <div class="row nowrap" v-if="running"><span class="muted" style="flex:1">{{ st.stage }}</span><span class="faint mono">{{ Math.round(st.pct || 0) }}%</span></div>
           <div class="clarity-bar" v-if="running"><div :style="{ width: (st.pct || 0) + '%' }"></div></div>
           <div v-if="st.error" class="callout" style="font-size:13px"><Icon name="TriangleAlert" :size="16"/><span>{{ st.error }}</span></div>
+          <div v-if="st.note" class="callout" style="font-size:13px"><Icon name="Info" :size="16"/><span>{{ st.note }}</span></div>
         </div>
         <div v-if="!started" class="faint" style="font-size:12px">Recording takes about 10-20 seconds. After that, sharpness and colour changes show in a few seconds; a new resolution or slice takes a little longer the first time.</div>
       </div>

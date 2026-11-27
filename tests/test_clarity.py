@@ -288,3 +288,17 @@ def test_current_scaling_uses_the_walls_gpu_path_and_falls_back(tmp_path, monkey
     out = clarity.scaled("p", "mpegts", fmt, dict(v, fps=60), None, 223, 175, 60)
     assert out.shape == (60, 175, 223, 3) and len(runs) == 4
     assert "libplacebo" in runs[2][runs[2].index("-vf") + 1] and "libplacebo" not in runs[3][runs[3].index("-vf") + 1]
+    assert "old method" in clarity.read_state()["note"]                                    # … and the page says so
+    clarity.scaled("p", "mpegts", fmt, dict(v, fps=60), None, 223, 175, 60)                 # the next build tries the
+    assert len(runs) == 5 and "libplacebo" in runs[4][runs[4].index("-vf") + 1]             # video engine again
+
+    # the options that keep frames on the video engine come before the input, and the region is the crop's box
+    gpu = runs[0]
+    assert gpu.index("-filter_hw_device") < gpu.index("-i")
+    l, t, r, b = clarity.wc.crop_box(fmt["w"], fmt["h"], 223, 175, None)
+    assert f"crop_x={l}:crop_y={t}:crop_w={r - l}:crop_h={b - t}" in gpu[gpu.index("-vf") + 1]
+
+    # a crop with fewer pixels than the zone: the wall enlarges it on the CPU, so "current" does too
+    FakeProc.gpu_works = True
+    clarity.scaled("p", "mpegts", fmt, v, {"x": 0.4, "y": 0.4, "w": 0.1}, 223, 175, 30)
+    assert "libplacebo" not in runs[-1][runs[-1].index("-vf") + 1] and "bilinear" in runs[-1][runs[-1].index("-vf") + 1]

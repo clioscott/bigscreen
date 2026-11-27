@@ -357,8 +357,14 @@ def scaled(path, container, fmt, v, crop, out_w, out_h, n, progress=None):
     l, t, r, b = wc.crop_box(fmt["w"], fmt["h"], out_w, out_h, crop)
     cw, ch = r - l, b - t
     linear = v["scaling"] == "linear"
-    how = "linear" if linear else "gpu" if (v["scaling"] == "current" and gpu_scaling()) else "sws"
-    key = hashlib.sha1(json.dumps([fmt_key(fmt), v["fps"], how, [l, t, r, b], out_w, out_h, n]).encode()).hexdigest()[:16]
+    # (the wall only cuts and scales in one step when the crop has at least the zone's pixels, webcams.plan: "never
+    # scaled up". A smaller crop it enlarges on the CPU, so that is what "current" does for one too.)
+    how = "linear" if linear else \
+        "gpu" if (v["scaling"] == "current" and gpu_scaling() and cw >= out_w and ch >= out_h) else "sws"
+
+    def key_for(how):
+        return hashlib.sha1(json.dumps([fmt_key(fmt), v["fps"], how, [l, t, r, b], out_w, out_h, n]).encode()).hexdigest()[:16]
+    key = key_for(how)
     cache = SESSION / f"scaled_{key}.npy"
     if cache.is_file():
         try:
@@ -379,8 +385,13 @@ def scaled(path, container, fmt, v, crop, out_w, out_h, n, progress=None):
         got, err = _decode(head + wc.hw_input(gpu=True) + ["-f", container, "-i", path, "-vf", vf] + tail,
                            out_w, out_h, n, out, False, progress)
         if got == 0:                                      # the video engine's scaler wouldn't run: the CPU's instead
-            print(f"[clarity] GPU scaling failed, using swscale: {err.splitlines()[-1][:200] if err else 'no output'}", file=sys.stderr)
+            why = err.splitlines()[-1][:200] if err else "no output"
+            # said on the page (or "As now" beside "Old" would look the same and read as "no difference"), and kept
+            # under the swscale key, so the next build tries the video engine again
+            write_state(note=f"The video engine's scaler didn't run ({why}), so \"As now\" is showing the old method.")
             how = "sws"
+            key = key_for(how)
+            cache = SESSION / f"scaled_{key}.npy"
     if how != "gpu":
         cutf = wc.cut(l, t, cw, ch)
         if linear:
@@ -484,7 +495,7 @@ def main(spec_path):
     paths.ensure_dirs()
     with open(spec_path, encoding="utf-8") as f:
         spec = json.load(f)
-    write_state(running=True, done=False, error="", stage="Starting", pct=0, started=time.time())
+    write_state(running=True, done=False, error="", note="", stage="Starting", pct=0, started=time.time())
     try:
         meta = build(spec)
     except Exception as e:
