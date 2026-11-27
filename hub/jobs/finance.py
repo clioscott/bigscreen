@@ -201,6 +201,7 @@ def run(cfg):
         "message": f"{ok_count}/{len(symbols)} symbols updated"
                    + (f"; stale: {', '.join(stale[:6])}{'…' if len(stale) > 6 else ''}" if stale else ""),
         "stale": stale,
+        "degraded": f"{len(stale)} symbol(s) stale" if stale else "",
         "errors": errors,
         "at": datetime.now().isoformat(timespec="seconds"),
         "files": ["finance.json"],

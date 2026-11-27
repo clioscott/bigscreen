@@ -364,6 +364,18 @@ select.input { appearance: none; padding-right: 30px; background-image: url("dat
   box-shadow: 0 18px 40px -16px rgba(0, 0, 0, .8); max-width: calc(100vw - 32px); font-size: 13px; }
 .playing-bar.lower { top: calc(70px + env(safe-area-inset-top, 0px)); }
 @media (max-width: 920px) { .playing-bar { transform: translateX(-50%); top: calc(64px + env(safe-area-inset-top, 0px)); } .playing-bar.lower { top: calc(120px + env(safe-area-inset-top, 0px)); } }
+/* the bar floats over the page: while it's up the page starts below it, so it never covers a title or the first
+   control (one row is ~46 px, a second side's row ~34 more; .lower sits under the preview banner) */
+.shell:has(.playing-bar) .main { padding-top: calc(76px + env(safe-area-inset-top, 0px)); }
+.shell:has(.playing-bar > :nth-child(2)) .main { padding-top: calc(110px + env(safe-area-inset-top, 0px)); }
+.shell:has(.playing-bar.lower) .main { padding-top: calc(132px + env(safe-area-inset-top, 0px)); }
+.shell:has(.playing-bar.lower > :nth-child(2)) .main { padding-top: calc(166px + env(safe-area-inset-top, 0px)); }
+@media (max-width: 920px) {
+  .shell:has(.playing-bar) .main { padding-top: 70px; }
+  .shell:has(.playing-bar > :nth-child(2)) .main { padding-top: 104px; }
+  .shell:has(.playing-bar.lower) .main { padding-top: 126px; }
+  .shell:has(.playing-bar.lower > :nth-child(2)) .main { padding-top: 160px; }
+}
 .slot.off { opacity: .45; }
 .slot.waiting .meta b { color: var(--text-2); }
 .rule-list { display: flex; flex-direction: column; gap: 8px; }

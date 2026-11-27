@@ -21,6 +21,7 @@ from datetime import datetime
 
 import numpy as np
 
+from display import pihealth
 from display.config import ConfigSource
 from display.data_loader import DataLoader
 from display.rotation import Rotation
@@ -746,6 +747,7 @@ class App:
             "pushed_pct": round(100 * sum(pushed) / len(pushed)) if pushed else None,
             "webcams": self.screen.webcam.describe() if hasattr(self.screen, "webcam") else [],
             "uptime_s": int(time.time() - self.started),
+            "pi": pihealth.snapshot(),
             "config_revision": self.cfg.revision,
             "preview": self.source.preview_info(time.time()),
             "brightness": self.brightness,

@@ -128,6 +128,7 @@ def run(cfg):
             "message": (f"rendered {len(rendered)} track(s)" if rendered else "tracks up to date")
                        + (f"; {len(errors)} problem(s)" if errors else ""),
             "rendered": rendered, "errors": errors[:8], "archive": notes,
+            "degraded": f"{len(errors)} problem(s)" if errors else "",
             "files": ["anim/"]}
 
 
