@@ -2466,34 +2466,53 @@ def _clarity_formats(src):
     return fmts, hls
 
 
+def _clarity_tall_crop(cam):
+    """The webcam's own above-the-clock crop (what the wall plays in the rotation's tall size), or None: the
+    largest centred one."""
+    from display.modules import webcam as wall
+    zw, zh = _webcam_zones()["tall"]
+    return wall.crop_for(cam, "tall", zw, zh)
+
+
 @app.get("/api/clarity/state")
 def clarity_state():
-    """The lab's last build (progress, error, what is on which side) and the zone a clip fills."""
+    """The lab's last build (progress, error, what is on which side), its recorded loop and the zone a clip fills."""
     from hub import clarity
     st = clarity.read_state()
     p = _clarity["proc"]
     st["running"] = bool(p is not None and p.poll() is None)
     zone = _webcam_zones()["tall"]
-    return {"state": st, "zone": zone, "half": [clarity.half_width(zone[0]), zone[1]], "seconds": clarity.SECONDS}
+    sess = clarity.read_session()
+    return {"state": st, "zone": zone, "half": [clarity.half_width(zone[0]), zone[1]], "seconds": clarity.SECONDS,
+            "loop": {"cam": sess.get("cam"), "seconds": sess.get("seconds"), "recorded": sess.get("recorded")} if sess else None,
+            "now": time.time()}
 
 
 @app.get("/api/clarity/formats")
 def clarity_formats(cam: str):
-    """The resolutions and frame rates a webcam's stream has (one YouTube lookup, kept by the hub)."""
-    _, src = _clarity_cam(cam)
+    """The resolutions and frame rates a webcam's stream has (one YouTube lookup, kept by the hub), the webcam's
+    saved picture settings, and its own above-the-clock crop as fractions of the picture."""
+    c, src = _clarity_cam(cam)
     fmts, _ = _clarity_formats(src)
     out = {}
     for f in fmts:
         if f["h"] >= 360:
             o = out.setdefault(f["h"], {"height": f["h"], "width": f["w"], "fps": 0})
             o["fps"] = max(o["fps"], round(f["fps"]))
-    return {"formats": [out[h] for h in sorted(out)]}
+    top = max(fmts, key=lambda f: f["h"])
+    zw, zh = _webcam_zones()["tall"]
+    x, y, w, h = webcams.crop_frac(top["w"], top["h"], zw, zh, _clarity_tall_crop(c))
+    return {"formats": [out[k] for k in sorted(out)],
+            "tall_crop": {"x": round(x, 5), "y": round(y, 5), "w": round(w, 5), "h": round(h, 5)},
+            "saved": {"quality": c.get("quality"), "colour": c.get("colour") or {}, "default_sharpen": webcams.DEFAULT_SHARPEN,
+                      "default_height": webcams.DEFAULT_QUALITY_H}}
 
 
 @app.post("/api/clarity/build")
 def clarity_build(payload: dict = Body(...)):
-    """{"cam", "crop": {x, y, w}, "seconds", "a": version, "b": version, "blind"}: build the clip in its own
-    process, then sync it and loop it on the wall (above the clock) until stopped."""
+    """{"cam", "mode": "split" | "full", "crop": {x, y, w} (split), "seconds", "a": version, "b": version (split),
+    "blind", "new_loop", "play"}: render the clip in its own process from the session's recorded loop (a new one
+    when asked, or for another webcam or length), sync it, and loop it on the wall above the clock."""
     import subprocess
     import sys
 
@@ -2502,18 +2521,25 @@ def clarity_build(payload: dict = Body(...)):
     cam, src = _clarity_cam(cid)
     fmts, hls = _clarity_formats(src)
     heights = {f["h"] for f in fmts}
+    mode = payload.get("mode") or "split"
     try:
-        a, b = clarity.clean_version(payload.get("a"), heights), clarity.clean_version(payload.get("b"), heights)
+        if mode not in clarity.MODES:
+            raise ValueError("mode must be split or full")
+        a = clarity.clean_version(payload.get("a"), heights)
+        b = a if mode == "full" else clarity.clean_version(payload.get("b"), heights)
         seconds = int(payload.get("seconds") or clarity.SECONDS[0])
         if seconds not in clarity.SECONDS:
             raise ValueError("seconds must be 5 or 10")
-        crop = payload.get("crop")
-        if crop is not None:
-            if not isinstance(crop, dict):
-                raise ValueError("crop must be an object")
-            crop = {"x": float(crop.get("x", 0)), "y": float(crop.get("y", 0)), "w": float(crop["w"])}
-            if not (0 <= crop["x"] < 1 and 0 <= crop["y"] < 1 and 0.01 <= crop["w"] <= 1):
-                raise ValueError("the slice must be inside the picture")
+        if mode == "full":
+            crop = _clarity_tall_crop(cam)                   # exactly what the rotation's above-the-clock size plays
+        else:
+            crop = payload.get("crop")
+            if crop is not None:
+                if not isinstance(crop, dict):
+                    raise ValueError("crop must be an object")
+                crop = {"x": float(crop.get("x", 0)), "y": float(crop.get("y", 0)), "w": float(crop["w"])}
+                if not (0 <= crop["x"] < 1 and 0 <= crop["y"] < 1 and 0.01 <= crop["w"] <= 1):
+                    raise ValueError("the slice must be inside the picture")
         chosen = {k: clarity.format_for(fmts, v["height"], v["fps"]) for k, v in (("a", a), ("b", b))}
         for k, v in (("a", a), ("b", b)):
             if v["fps"] == 60 and chosen[k]["fps"] < 50:
@@ -2521,8 +2547,9 @@ def clarity_build(payload: dict = Body(...)):
     except (ValueError, KeyError, TypeError) as e:
         raise HTTPException(400, str(e))
     cfg = config.load()
-    spec = {"cam": cid, "label": cam.get("label") or cid, "crop": crop, "seconds": seconds, "a": a, "b": b,
-            "blind": bool(payload.get("blind")), "zone": _webcam_zones()["tall"],
+    spec = {"cam": cid, "label": cam.get("label") or cid, "url": src.get("url", ""), "mode": mode, "crop": crop,
+            "seconds": seconds, "a": a, "b": b, "blind": bool(payload.get("blind")) and mode == "split",
+            "new_loop": bool(payload.get("new_loop")), "zone": _webcam_zones()["tall"],
             "brightness": int(((cfg.get("system") or {}).get("display") or {}).get("brightness", 100)),
             "formats": chosen, "numbering": max(hls, key=lambda f: f["h"])}
     with _clarity["lock"]:
@@ -2532,7 +2559,7 @@ def clarity_build(payload: dict = Body(...)):
         clarity.WORK.mkdir(parents=True, exist_ok=True)
         spec_path = clarity.WORK / "spec.json"
         atomic_write_json(spec_path, spec)
-        clarity.write_state(running=True, done=False, error="", stage="Starting", pct=0, meta=None, started=time.time())
+        clarity.write_state(running=True, done=False, error="", stage="Starting", pct=0, started=time.time())
         env = dict(os.environ, PYTHONPATH=str(paths.REPO_DIR), BIGSCREEN_STATE=str(paths.STATE_DIR))
         proc = subprocess.Popen([sys.executable, "-m", "hub.clarity", str(spec_path)], cwd=paths.REPO_DIR, env=env,
                                 stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
@@ -2558,8 +2585,8 @@ def clarity_build(payload: dict = Body(...)):
             sync._push_once()                                # (blocking: the play must find the clip there)
             if not sync.last_result.get("ok"):
                 raise RuntimeError(f"the sync to the Pi failed: {sync.last_result.get('error') or 'unknown error'}")
-            if payload.get("play", True):
-                _clarity_play()
+            if payload.get("play", True) and not _clarity_on_wall():
+                _clarity_play()                              # (already looping: the new frames just take over)
             clarity.write_state(stage="On the wall" if payload.get("play", True) else "Ready")
         except Exception as e:
             clarity.write_state(error=f"built, but not shown: {e}"[:400])
@@ -2567,15 +2594,24 @@ def clarity_build(payload: dict = Body(...)):
     return {"ok": True, "a": clarity.describe(a), "b": clarity.describe(b)}
 
 
+def _clarity_on_wall():
+    """Is the lab's clip the screen playing now? (Then a new build needs no new play: the loop carries on.)"""
+    try:
+        st = pi.display_status() or {}
+        return ((((st.get("status") or {}).get("panels") or {}).get("right") or {}).get("panel")) == "clip_tall"
+    except Exception:
+        return False
+
+
 def _clarity_play():
     from hub import clarity
     return _display_call("/play", {"side": "right", "entry": {"panel": "clip_tall", "clip": clarity.NAME},
-                                   "hold": True, "ttl_sec": 1800})
+                                   "hold": True, "ttl_sec": 3600})
 
 
 @app.post("/api/clarity/play")
 def clarity_play():
-    """Loop the last clip on the wall again (held for 30 minutes, or until stopped)."""
+    """Loop the last clip on the wall again (held for an hour, or until stopped)."""
     from hub import clarity
     if not (clarity.CLIPS / f"{clarity.NAME}.bin").is_file():
         raise HTTPException(404, "no clip built yet")
@@ -2590,7 +2626,7 @@ def clarity_stop():
 
 @app.post("/api/clarity/clear")
 def clarity_clear():
-    """Delete the clip (it is tens of MB on the hub and in the Pi's memory)."""
+    """Delete the clip and the recorded loop (tens of MB on the hub and in the Pi's memory)."""
     from hub import clarity
     p = _clarity["proc"]
     if p is not None and p.poll() is None:
@@ -2601,6 +2637,7 @@ def clarity_clear():
         pass
     for ext in ("bin", "json"):
         (clarity.CLIPS / f"{clarity.NAME}.{ext}").unlink(missing_ok=True)
+    clarity.clear_session()
     clarity.write_state(done=False, meta=None, stage="", pct=0)
     sync.push_data()
     return {"ok": True}
