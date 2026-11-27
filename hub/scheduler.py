@@ -88,7 +88,9 @@ class Scheduler:
                     "health": ("running" if name in self._running and not last_ok else
                                "never" if not last_ok else
                                "stale" if now - last_ok > STALE_INTERVALS * interval else
-                               "failing" if st.get("last_ok") is False else "ok"),
+                               "failing" if st.get("last_ok") is False else
+                               # it ran, but part of it didn't work (a job's summary says so in "degraded")
+                               "degraded" if (st.get("detail") or {}).get("degraded") else "ok"),
                 })
                 out[name] = st
         return out

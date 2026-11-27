@@ -37,13 +37,14 @@ export const Overview = {
     const jobs = computed(() => Object.entries(store.status?.jobs || {}));
     const disp = computed(() => store.display?.status);
     const now = computed(() => store.status?.now || Date.now() / 1000);
+    const pi = computed(() => (disp.value?.pi?.since ? disp.value.pi : null));
     const showing = (side) => {
       const p = disp.value?.panels?.[side];
       if (!p) return null;
       const t = PANEL_TYPES[p.panel] || { label: p.panel, icon: "Square" };
       return { ...t, name: p.panel };
     };
-    const health = (h) => ({ ok: "ok", running: "warn", never: "warn", stale: "bad", failing: "bad" }[h] || "");
+    const health = (h) => ({ ok: "ok", running: "warn", never: "warn", degraded: "warn", stale: "bad", failing: "bad" }[h] || "");
     const runJob = async (name) => {
       try { await api(`/api/jobs/${name}/run`, { method: "POST" }); toast("Started"); setTimeout(refreshStatus, 1500); } catch (e) { fail(e); }
     };
@@ -58,7 +59,7 @@ export const Overview = {
     onMounted(() => { pollYt(); ytTimer = setInterval(pollYt, 30000); });
     onBeforeUnmount(() => clearInterval(ytTimer));
     const clock = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    return { store, jobs, disp, showing, health, runJob, ago, dur, every, now, JOB_ICONS, go, code, deploy, repo, yt, clock };
+    return { store, jobs, disp, pi, showing, health, runJob, ago, dur, every, now, JOB_ICONS, go, code, deploy, repo, yt, clock };
   },
   template: `<div class="page">
     <div class="page-head"><div class="grow"><h1>Overview</h1><p>What's on the display right now and how every data feed is doing.</p></div></div>
@@ -89,7 +90,7 @@ export const Overview = {
       <div class="grid cols-3">
         <div class="card pad stack" v-for="[name, j] in jobs" :key="name">
           <div class="row nowrap"><Icon :name="JOB_ICONS[name] || 'Activity'" :size="18" style="color: var(--accent)"/><h3 style="flex:1">{{ j.label }}</h3>
-            <span class="pill" :class="health(j.health)"><span class="dot" :class="health(j.health)"></span>{{ j.health }}</span></div>
+            <span class="pill" :class="health(j.health)" :title="j.health === 'degraded' ? 'It ran, but part of it failed: ' + (j.detail?.degraded || '') : ''"><span class="dot" :class="health(j.health)"></span>{{ j.health }}</span></div>
           <div class="muted" style="font-size:13px; min-height: 20px">{{ j.message || '—' }}</div>
           <div class="row between faint" style="font-size:12px">
             <span>Updated {{ ago(j.age) }} · every {{ every(j.interval) }}</span>
@@ -104,6 +105,19 @@ export const Overview = {
       <div class="card pad"><div class="kpi"><b>{{ disp ? disp.fps : '—' }}</b><span>frames per second on the panels</span></div></div>
       <div class="card pad"><div class="kpi"><b>{{ disp ? disp.draw_ms_p95 + ' ms' : '—' }}</b><span>95th-percentile draw time</span></div></div>
       <div class="card pad"><div class="kpi"><b>{{ store.status?.sync?.ok ? 'OK' : 'Check' }}</b><span>data sync to the Pi · {{ store.status?.sync?.at?.slice(11) || '—' }}</span></div></div>
+    </div>
+
+    <div class="section" v-if="pi">
+      <div class="section-title"><Icon name="Cpu" :size="14"/>The Pi</div>
+      <div class="grid cols-3">
+        <div class="card pad"><div class="kpi"><b :style="pi.temp_c >= 75 ? 'color: var(--bad)' : ''">{{ pi.temp_c != null ? pi.temp_c + ' °C' : '—' }}</b><span>processor temperature (it slows down at 80)</span></div></div>
+        <div class="card pad"><div class="kpi"><b :style="pi.mem_available_mb != null && pi.mem_available_mb < 400 ? 'color: var(--bad)' : ''">{{ pi.mem_available_mb != null ? pi.mem_available_mb + ' MB' : '—' }}</b><span>memory free · the display uses {{ pi.rss_mb ?? '—' }} MB</span></div></div>
+        <div class="card pad"><div class="kpi"><b>{{ disp.present_ms_avg != null ? disp.present_ms_avg + ' ms' : '—' }}</b><span>sending a changed frame to the panels (95th: {{ disp.present_ms_p95 ?? '—' }} ms)</span></div></div>
+      </div>
+      <div v-if="pi.undervoltage_now || pi.undervoltage_events" class="callout" style="font-size:13px; margin-top:12px"><Icon name="Zap" :size="16"/>
+        <span><b>{{ pi.undervoltage_now ? "The Pi's 5 V supply is low right now." : "The Pi's 5 V supply has sagged " + pi.undervoltage_events + (pi.undervoltage_events === 1 ? ' time' : ' times') + ' since the display started.' }}</b>
+          <template v-if="!pi.undervoltage_now && pi.undervoltage_last"> Last: {{ ago(now - pi.undervoltage_last) }}.</template>
+          Each time, the Pi slows itself down, which can show as a flicker or a dim moment on the wall. Check its power supply and cable.</span></div>
     </div>
 
     <div class="section" v-if="code.running?.commit">

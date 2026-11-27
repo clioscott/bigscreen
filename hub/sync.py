@@ -5,8 +5,10 @@ job is cheap. Pushes are serialized; if one is already running, a single
 follow-up push is queued instead of piling up.
 """
 
+import os
 import subprocess
 import threading
+import time
 from datetime import datetime
 
 from hub import config, paths
@@ -42,8 +44,35 @@ def _worker():
         push_data()
 
 
+RESYNC_SEC = 60.0            # with nothing changed, push anyway this often (a rebooted Pi's /dev/shm is empty)
+_pushed = {"print": None, "t": 0.0}
+
+
+def fingerprint():
+    """What the data dir holds: (files, bytes, newest change). Cheap (a stat per file) next to an rsync run."""
+    n = size = newest = 0
+    stack = [str(paths.DATA_DIR)]
+    while stack:
+        try:
+            with os.scandir(stack.pop()) as it:
+                for e in it:
+                    if e.is_dir(follow_symlinks=False):
+                        stack.append(e.path)
+                    elif not e.name.startswith("."):          # (not atomic_write_json's temp files)
+                        st = e.stat(follow_symlinks=False)
+                        n, size, newest = n + 1, size + st.st_size, max(newest, st.st_mtime_ns)
+        except OSError:
+            pass
+    return n, size, newest
+
+
 def _push_once():
     try:
+        # Most jobs finish without changing a file (nothing new, or a job that only checks): no rsync then.
+        # Before this every job's success ran up to four rsync-over-ssh sessions to the Pi, ~10 times a minute.
+        fp = fingerprint()
+        if fp == _pushed["print"] and last_result["ok"] and time.time() - _pushed["t"] < RESYNC_SEC:
+            return
         target, remote_dir = pi_target()
         cmd = ["rsync", "-a", "--timeout=20",
                "--include=*.json", "--include=icons/", "--include=icons/*.png",
@@ -89,5 +118,6 @@ def _push_once():
             ok = ok and q.returncode == 0
             err = (err + " " + q.stderr.strip()[-300:]).strip()
         last_result.update(at=datetime.now().isoformat(timespec="seconds"), ok=ok, error=err)
+        _pushed.update(print=fp if ok else None, t=time.time())
     except Exception as e:
         last_result.update(at=datetime.now().isoformat(timespec="seconds"), ok=False, error=str(e))

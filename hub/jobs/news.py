@@ -229,6 +229,7 @@ def run(cfg):
                    + (f"; {len(feeds_failed)} feed(s) failing" if feeds_failed else ""),
         "counts": counts,
         "feeds_failed": feeds_failed,
+        "degraded": f"{len(feeds_failed)} feed(s) failing" if feeds_failed else "",
         "empty_categories": empty,
         "favicons": f"{icons_ok}/{len(domains)}",
         "files": ["headlines.json", "icons/"],
