@@ -306,6 +306,21 @@ once (`hold: false`), so the rotation resumes by itself.
   Langley, SFU), re-crawled daily by the hub (`hub/app.py` `_city_lists`). Burnaby, Coquitlam, the North Shore, New West
   and Delta publish no intersection images (checked 2026-10-28); DriveBC covers their highways.
 
+## Clarity lab
+
+- Control panel page "Clarity lab" (`hub/web/ui/pages/clarity.js`): pick a YouTube webcam, drag a slice, choose two
+  versions (source resolution, 30/60 fps, scaling as now or in linear light, sharpening, dithering); the hub records
+  the same seconds both ways and the wall loops them side by side above the clock (A left, B right; "Blind" hides
+  which is which).
+- `hub/clarity.py` does the work in its own low-priority process (`python -m hub.clarity <spec.json>`, started by
+  `POST /api/clarity/build`; progress in `cache/clarity_state.json`): the same HLS/DASH segment numbers at each
+  resolution, each version rendered to half the zone (223x175), written as `data/clips/clarity.bin|.json`.
+  `levels(brightness)` is what the LED library shows for each 8-bit value (CIE curve to 11 bits, top 8 planes,
+  rounded down): 147 distinct levels at brightness 85; `dither` steps only between levels the wall can show.
+- `display/modules/clip.py`: panel `clip_tall` (entry field `clip`) blits a synced clip's frames, looping, at up to
+  60 fps; nothing is scaled or captioned on the Pi. Clips sync with their own `--delete` rsync pass (`clips/`).
+  The panel type is marked `lab` in `PANEL_TYPES` so the Rotation editor doesn't offer it.
+
 ## BC alert screens
 
 Five full-wall takeovers beside the ECCC weather alert, each with its own job, display module, themes and panel page:

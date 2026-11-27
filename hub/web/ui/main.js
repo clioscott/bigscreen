@@ -20,6 +20,7 @@ import { Webcams } from "./pages/webcams.js";
 import { SpaceMap, SatsOverhead } from "./pages/space_map.js";
 import { Bridges } from "./pages/bridges.js";
 import { Timezones } from "./pages/timezones.js";
+import { Clarity } from "./pages/clarity.js";
 
 const NAV = [
   { id: "overview", label: "Overview", icon: "LayoutDashboard" },
@@ -45,12 +46,13 @@ const NAV = [
   { id: "fonts", label: "Fonts", icon: "Type" },
   { sep: true },
   { id: "display", label: "Display", icon: "MonitorCog" },
+  { id: "clarity", label: "Clarity lab", icon: "FlaskConical" },
   { id: "consoles", label: "Live consoles", icon: "SquareTerminal" },
   { id: "system", label: "System", icon: "Server" },
 ];
 
 const App = {
-  components: { ...common, PlayingBar, Overview, Rotation, Ticker, Headlines, Maps, MapEditor, Areas, AreaEditor, Colours, DisplaySettings, System, Consoles, Alerts, Quake, Fonts, Naad, Roads, Quakes, Tsunami, Wildfire, Webcams, SpaceMap, SatsOverhead, Bridges, Timezones },
+  components: { ...common, PlayingBar, Overview, Rotation, Ticker, Headlines, Maps, MapEditor, Areas, AreaEditor, Colours, DisplaySettings, System, Consoles, Alerts, Quake, Fonts, Naad, Roads, Quakes, Tsunami, Wildfire, Webcams, SpaceMap, SatsOverhead, Bridges, Timezones, Clarity },
   setup() {
     const ready = ref(false);
     const err = ref("");
@@ -69,7 +71,7 @@ const App = {
       if (r === "areas" && store.route.params[0]) return "AreaEditor";
       return { overview: "Overview", rotation: "Rotation", ticker: "Ticker", headlines: "Headlines", maps: "Maps", areas: "Areas",
         colours: "Colours", display: "DisplaySettings", system: "System", consoles: "Consoles", alerts: "Alerts", quake: "Quake", fonts: "Fonts",
-        naad: "Naad", roads: "Roads", quakes: "Quakes", tsunami: "Tsunami", wildfire: "Wildfire", webcams: "Webcams", "iss-map": "SpaceMap", "sats-overhead": "SatsOverhead", bridges: "Bridges", timezones: "Timezones" }[r] || "Overview";
+        naad: "Naad", roads: "Roads", quakes: "Quakes", tsunami: "Tsunami", wildfire: "Wildfire", webcams: "Webcams", "iss-map": "SpaceMap", "sats-overhead": "SatsOverhead", bridges: "Bridges", timezones: "Timezones", clarity: "Clarity" }[r] || "Overview";
     });
     const feedsBad = computed(() => Object.values(store.status?.jobs || {}).filter((j) => ["stale", "failing"].includes(j.health)).length);
     const disp = computed(() => store.display?.status);
