@@ -217,6 +217,8 @@ class DataLoader:
                 # reprocesses it. The mtime still moves on: it is what says the feed is alive (is_stale,
                 # the rotation's "fresh" rule).
                 self.mtimes[module_name] = new_mtime
+                if module_name not in self.cache:          # invalidate() came in between: read it again
+                    self.mtimes.pop(module_name, None)
                 return
             data = _json_mod.loads(raw)
         except Exception as e:

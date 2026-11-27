@@ -28,6 +28,7 @@ except ImportError:
     def _dumps(data):
         return json.dumps(data).encode("utf-8")
 
+RETRY_SEC = 5.0                      # a config.json that couldn't be read is tried again this often
 WATCH_SEC = 0.5                      # how often the watcher thread looks at config.json
 
 
@@ -149,21 +150,23 @@ class ConfigSource:
 
     def _watch(self):
         """Reads config.json when it changes and hands it to poll(); keeps the fallback copy current."""
+        failed = (None, 0.0)
         while True:
             time.sleep(WATCH_SEC)
             try:
                 st = os.stat(self.path).st_mtime
             except OSError:
                 continue                      # not synced yet (after a reboot): running on the fallback copy
-            if st == self._seen:
+            if st == self._seen or (st == failed[0] and time.time() - failed[1] < RETRY_SEC):
                 continue
-            self._seen = st                   # (a file that fails to parse isn't tried again until it changes)
             try:
                 with open(self.path, "rb") as f:
                     data = _loads(f.read())
             except (OSError, ValueError) as e:
+                failed = (st, time.time())    # (the same file is tried again, but not twice a second)
                 print(f"[config] reload failed, keeping previous: {e}")
                 continue
+            self._seen = st
             with self._lock:
                 self._loaded = (data, st)
             self._remember(data)

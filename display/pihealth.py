@@ -11,7 +11,7 @@ import os
 import threading
 import time
 
-SAMPLE_SEC = 2.0
+SAMPLE_SEC = 1.0             # (the kernel's sensor shows its last 2 s reading: sample faster than that)
 _state = {"temp_c": None, "mem_available_mb": None, "rss_mb": None, "undervoltage_now": None,
           "undervoltage_events": 0, "undervoltage_last": None, "since": None}
 _started = False
@@ -42,9 +42,9 @@ def sample(alarm_path=None, now=None):
     for line in (_read("/proc/meminfo") or "").splitlines():
         if line.startswith("MemAvailable:"):
             s["mem_available_mb"] = int(line.split()[1]) // 1024
-    statm = (_read("/proc/self/statm") or "").split()
-    if len(statm) > 1:
-        s["rss_mb"] = int(statm[1]) * os.sysconf("SC_PAGE_SIZE") // (1024 * 1024)
+    for line in (_read("/proc/self/status") or "").splitlines():
+        if line.startswith("RssAnon:"):            # the display's own memory (not the map packs mapped from /dev/shm)
+            s["rss_mb"] = int(line.split()[1]) // 1024
     a = _read(alarm_path) if alarm_path else None
     low = None if a is None else a.strip() == "1"
     if low and not s["undervoltage_now"]:
