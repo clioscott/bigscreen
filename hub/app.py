@@ -1130,15 +1130,30 @@ def display_status():
     return pi.display_status()
 
 
+def upscale_png(data: bytes, scale: int) -> bytes:
+    """The Pi's 1x frame enlarged here, nearest neighbour (crisp LED pixels), PNG again."""
+    if scale <= 1:
+        return data
+    img = Image.open(io.BytesIO(data)).convert("RGB")
+    img = img.resize((img.width * scale, img.height * scale), Image.NEAREST)
+    bio = io.BytesIO()
+    img.save(bio, "PNG", compress_level=1)
+    return bio.getvalue()
+
+
 @app.get("/api/display/frame.png")
 def display_frame(scale: int = 2):
+    """The live mirror. Always fetched from the Pi at 1x and enlarged here: the Pi enlarging and encoding a 3x frame
+    (~2.3 MB, the Overview's mirror every ~0.4 s) dimmed the whole wall for a frame each time, worst under webcam video
+    (camera-measured 2026-11-27: ~28 dips/min at 3x, none at 1x)."""
     try:
-        r = requests.get(pi.display_url(f"/frame.png?scale={max(1, min(6, scale))}"), timeout=4)
+        r = requests.get(pi.display_url("/frame.png?scale=1"), timeout=4)
     except Exception as e:
         raise HTTPException(502, f"display unreachable: {e}")
     if r.status_code != 200 or r.headers.get("content-type") != "image/png":
         raise HTTPException(404, "live mirror needs the v2 display")
-    return Response(r.content, media_type="image/png", headers={"Cache-Control": "no-store"})
+    data = upscale_png(r.content, max(1, min(6, scale)))
+    return Response(data, media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
 def _display_call(path, payload=None):
