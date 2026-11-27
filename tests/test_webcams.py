@@ -892,3 +892,44 @@ def test_fetch_all_feeds_one_at_a_time_and_stops_at_a_bot_check(monkeypatch):
     asked.clear()
     st = run()
     assert asked == [] and not st["results"]["a"]["ok"] and "try again" in st["stopped"]   # paused: YouTube not asked
+
+
+def test_a_still_feed_keeps_sending_its_picture():
+    """A still webcam's stream to the wall: the picture again every time the feed publishes it, not just once."""
+    import asyncio
+    import threading
+
+    from hub import app as hub_app
+
+    class StillFeed:
+        kind, fps, state = "image", 1, "live"
+        frame, seq = np.zeros((4, 4, 3), np.uint8), 1
+
+        def __init__(self):
+            self.waiters = []
+
+        def attach(self): pass
+        def detach(self): pass
+        def add_waiter(self, loop, ev): self.waiters.append((loop, ev))
+        def remove_waiter(self, loop, ev): self.waiters.remove((loop, ev))
+        def after(self, seq): return None            # (a still feed keeps no frames to catch up through)
+
+        def publish(self):
+            self.seq += 1
+            for loop, ev in self.waiters:
+                loop.call_soon_threadsafe(ev.set)
+
+    f = StillFeed()
+
+    async def take(n):
+        got = []
+        gen = hub_app._webcam_frames(f, lambda frame, feed: feed.seq, fps=15, direct=True)
+        async for item in gen:
+            got.append(item)
+            if len(got) == n:
+                break
+            threading.Timer(0.02, f.publish).start()
+        await gen.aclose()
+        return got
+
+    assert asyncio.run(asyncio.wait_for(take(3), 5)) == [1, 2, 3]
