@@ -58,7 +58,9 @@ export const Clarity = {
     const fromSaved = () => {
       const hs = formats.value.map((f) => f.height);
       const q = saved.value.quality;
-      let h = typeof q === "number" ? q : q === "max" ? hs[hs.length - 1] : saved.value.default_height;
+      let h = typeof q === "number" ? q : q === "max" ? hs[hs.length - 1]
+        : typeof q === "string" && q.startsWith("upto") ? (+q.slice(4) || saved.value.default_height)   // set for every webcam
+        : saved.value.default_height;
       if (!hs.includes(h)) h = [...hs].reverse().find((x) => x <= h) ?? hs[hs.length - 1];
       const c = saved.value.colour || {};
       return { height: h, fps: 30, scaling: "current", sharpen: c.sharpen ?? saved.value.default_sharpen,

@@ -427,10 +427,15 @@ def choose_format(formats, wants, hw=None, quality=None):
     each crop OVERSAMPLE pixels per LED, on which every Whole pixels crop is still exact (4K and 1080p both are for
     a crop made on either: 4K is 2 x 2 of 1080p). ``quality`` (the webcam's own choice, quality_of): None (the
     default) is DEFAULT_QUALITY_H whatever the crops need; "auto": what the crops need; a height: at least that tall
-    ("max": the biggest there is)."""
+    ("max": the biggest there is); "upto<height>" (set for every webcam: common/webcam_globals.py): the biggest
+    no taller than that."""
     fs = playable(formats, hw)
     if not fs:
         return None
+    cap = cap_of(quality)
+    if cap:
+        fs = [f for f in fs if f["h"] <= cap] or fs[:1]
+        quality = "max"
     if quality is None:
         fs = [f for f in fs if f["h"] <= DEFAULT_QUALITY_H] or fs[:1]
         quality = DEFAULT_QUALITY_H
@@ -491,16 +496,29 @@ def gpu_error(line) -> bool:
     return any(s in text for s in GPU_ERRORS) and not any(s in text for s in GPU_WARNINGS)
 
 
+def cap_of(quality) -> int:
+    """The height an "upto<height>" quality stops at, or 0 for any other quality."""
+    if isinstance(quality, str) and quality.startswith("upto"):
+        try:
+            return max(0, int(quality[4:]))
+        except ValueError:
+            return 0
+    return 0
+
+
 def quality_of(values):
     """The quality asked of a stream by every saved webcam showing it (None: the default, "auto", "max" or a
     height): the most of them ("max", then the tallest, then "auto"), or None (the default, DEFAULT_QUALITY_H)."""
-    best, auto = None, False
+    best, auto, cap = None, False, 0
     for q in values:
         if q == "max":
             return "max"
+        cap = max(cap, cap_of(q))
         if isinstance(q, int) and not isinstance(q, bool) and (best is None or q > best):
             best = q
         auto = auto or q == "auto"
+    if cap and (best is None or cap >= best):            # (a webcam asking for a taller one than the cap gets it)
+        return f"upto{cap}"
     return best if best is not None else "auto" if auto else None
 
 

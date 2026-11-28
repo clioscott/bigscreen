@@ -299,6 +299,14 @@ once (`hold: false`), so the rotation resumes by itself.
   `display/modules/webcam_caption.py`. Config: `modules.webcams.{cams, playlist, per_turn, grid}`.
 - The rotation has one Webcams entry: a `webcam*` panel without `cam` plays `playlist` (order, `on`, `sec`; edited on
   the Webcams page), `per_turn` webcams a turn. An entry with `cam` still plays that one webcam (older rotations).
+- Settings for every webcam (`common/webcam_globals.py`, the Webcams page's "For every webcam" card):
+  `modules.webcams.global.{colour, sec, caption, flags, quality}`, each with `on`. A group that is on replaces those
+  values on every webcam (picture; seconds in the list; where the caption sits and how it looks, not what it says;
+  whether and where flags show, not which; the stream's best `up_to` 1080/1440/2160) except a webcam listing the
+  group in `cams.<id>.own`. Nothing stored on a webcam changes. The Pi (`WebcamPanel`, `playlist_of`) and the hub
+  (`_saved_quality`, the editor's preview, the Clarity lab) both go through `webcam_globals.cams_of` / `effective`;
+  read webcams that way, not straight from `cams`, wherever those values matter. "Up to" reaches the hub as quality
+  `"upto<height>"` (`webcams.cap_of`).
 - Sizes: `webcam` (side), `_full`, `_tall` (over the ticker, clock strip stays: `Screen.tall_panels`), `_wall`.
 - Camera grid (`webcam_grid*`): stills only, tiles filling the frame (`rows`, `cols` or auto) revealed one per
   `interval_ms`, an intersection's views sharing one tile that loops through them every `view_ms`, sped up so every view shows

@@ -42,6 +42,7 @@ from urllib.parse import urlencode, urlparse
 
 import numpy as np
 
+from common import webcam_globals
 from display.gfx import Color, graphics
 from display.modules.webcam_caption import (DEFAULT_OVERLAY, FONTS, INTRO_SEC, LAYOUTS, STYLES,  # noqa: F401
                                             _outlined, _shade, _tw, caption_lines, draw_caption,
@@ -172,8 +173,9 @@ def playlist_of(s: dict) -> list:
     out = []
     for it in raw:
         if isinstance(it, dict) and it.get("on", True) is not False and it.get("cam") in cams:
-            try:
-                sec = max(5.0, min(3600.0, float(it.get("sec") or WEBCAM_SEC)))
+            try:                                      # (the length set for every webcam, unless it keeps its own)
+                sec = webcam_globals.seconds(s, it["cam"], it.get("sec") or WEBCAM_SEC)
+                sec = max(5.0, min(3600.0, float(sec or WEBCAM_SEC)))
             except (TypeError, ValueError):
                 sec = 60.0
             out.append((it["cam"], sec))
@@ -472,7 +474,7 @@ class WebcamPanel:
             from display.modules import issmap
             issmap.DATA_DIR = data_dir                        # (the ISS map's city lights and aurora)
         self.weather, self._wx_mtime, self._wx_checked = {}, None, 0.0
-        self.cams = s.get("cams") or {}
+        self.cams = webcam_globals.cams_of(s)             # each with the settings made for every webcam laid over it
         self.hub = s.get("hub_url") or DEFAULT_HUB
         self.playlist = playlist_of(s)
         if s.get("per_turn") == "all":
