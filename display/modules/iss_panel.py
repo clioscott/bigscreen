@@ -87,7 +87,8 @@ class IssMapPanel:
             issmap.DATA_DIR = data_dir
         self.fonts, self.started, self.boxes = {}, {}, {}
         self._iss, self._mtime, self._checked = None, None, 0.0
-        self.cams = (mods.get("webcams") or {}).get("cams") or {}
+        from common import webcam_globals                    # (the small video plays with the settings for every webcam)
+        self.cams = webcam_globals.cams_of(mods.get("webcams"))
         self.stream = None                                    # the small live video's (display/modules/webcam.Stream)
 
     def font(self, size):

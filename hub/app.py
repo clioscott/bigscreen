@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 
-from common import logring
+from common import logring, webcam_globals
 from hub import config, paths, pi, sync, traffic, webcams
 from hub.jobs import news as news_job
 from hub.util import atomic_write_json, read_json
@@ -1277,7 +1277,7 @@ def _saved_quality(kind, url):
     hit = _quality_cache.get((kind, url))
     if hit and hit[0] == mtime:
         return hit[1]
-    cams = (((config.load().get("modules") or {}).get("webcams") or {}).get("cams") or {})
+    cams = webcam_globals.cams_of((config.load().get("modules") or {}).get("webcams"))     # (with "up to" applied)
     asks = []
     for cam in cams.values():
         try:
@@ -2023,6 +2023,10 @@ def webcams_preview_set(payload: dict = Body(...)):
     zones = _webcam_zones()
     if not isinstance(cam, dict) or shape not in zones:
         raise HTTPException(400, "needs cam and shape")
+    # the settings made for every webcam (the page's draft of them, else the saved ones) laid over this one
+    g = payload.get("global") if isinstance(payload.get("global"), dict) else \
+        webcam_globals.settings((config.load().get("modules") or {}).get("webcams"))
+    cam = webcam_globals.effective(cam, g)
     try:
         webcams.check_source(cam.get("source"))
     except webcams.SourceError as e:
@@ -2447,7 +2451,7 @@ _clarity = {"proc": None, "lock": threading.Lock(),
 
 
 def _clarity_cam(cid):
-    cam = (((config.load().get("modules") or {}).get("webcams") or {}).get("cams") or {}).get(cid)
+    cam = webcam_globals.cams_of((config.load().get("modules") or {}).get("webcams")).get(cid)
     if not isinstance(cam, dict):
         raise HTTPException(404, "no such webcam")
     src = cam.get("source") or {}

@@ -58,7 +58,9 @@ export const Clarity = {
     const fromSaved = () => {
       const hs = formats.value.map((f) => f.height);
       const q = saved.value.quality;
-      let h = typeof q === "number" ? q : q === "max" ? hs[hs.length - 1] : saved.value.default_height;
+      let h = typeof q === "number" ? q : q === "max" ? hs[hs.length - 1]
+        : typeof q === "string" && q.startsWith("upto") ? (+q.slice(4) || saved.value.default_height)   // set for every webcam
+        : saved.value.default_height;
       if (!hs.includes(h)) h = [...hs].reverse().find((x) => x <= h) ?? hs[hs.length - 1];
       const c = saved.value.colour || {};
       return { height: h, fps: 30, scaling: "current", sharpen: c.sharpen ?? saved.value.default_sharpen,
@@ -181,11 +183,23 @@ export const Clarity = {
     const keep = (v) => {
       const c = store.draft.modules?.webcams?.cams?.[cam.value];
       if (!c || !v.height) return;
-      if (v.height === saved.value.default_height) delete c.quality; else c.quality = v.height;
-      const col = { ...(c.colour || {}) };
-      col.sharpen = v.sharpen;
-      for (const k of ["brightness", "contrast", "saturation"]) { if (v[k] === 1) delete col[k]; else col[k] = v[k]; }
-      c.colour = col;
+      // a group set for every webcam (Webcams page) that this webcam follows: its own values aren't what plays, so
+      // they're left alone and the message says where to change it
+      const g = store.draft.modules.webcams.global || {};
+      const shared = (k) => !!g[k]?.on && !(c.own || []).includes(k);
+      if (!shared("quality")) { if (v.height === saved.value.default_height) delete c.quality; else c.quality = v.height; }
+      if (!shared("colour")) {
+        const col = { ...(c.colour || {}) };
+        col.sharpen = v.sharpen;
+        for (const k of ["brightness", "contrast", "saturation"]) { if (v[k] === 1) delete col[k]; else col[k] = v[k]; }
+        c.colour = col;
+      }
+      const skipped = [shared("quality") && "resolution", shared("colour") && "sharpness and colour"].filter(Boolean);
+      if (skipped.length) {
+        toast(`${skipped.join(" and ")} ${skipped.length > 1 || skipped[0].includes(" and ") ? "are" : "is"} set for every webcam, so ${camObj.value?.label} wasn't changed there. `
+          + `Change it under "For every webcam" on the Webcams page, or switch this webcam to "Its own" on its page.`, "bad", 9000);
+        if (skipped.length === 2) return;
+      }
       const lab = [v.fps === 60 && "60 frames a second", v.scaling === "swscale" && "the old scaling (the wall has moved on from it)", v.scaling === "linear" && "exact scaling", v.dither && "dithering"].filter(Boolean);
       toast(`Set on ${camObj.value?.label}: resolution, sharpness and colour. Press Save to keep.`
         + (lab.length ? ` Not carried over (lab only): ${lab.join(", ")}.` : ""), "ok", 7000);

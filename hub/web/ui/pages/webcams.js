@@ -499,6 +499,15 @@ function seedWebcams() {
   seed(["modules", "webcams", "grid"], { cams: [], interval_ms: 200, hold_sec: 3, labels: true });
   seed(["modules", "webcams", "grid", "label"], { lines: [["street1"], ["street2"]], dir: "tag", at: "bottom" });
   seed(["modules", "webcams", "grid", "near"], { on: false, radius: 1, unit: "km", kinds: "city" });
+  // the settings for every webcam, all off; the caption's start from the first webcam's (or the defaults)
+  const first = Object.values(wc.cams || {})[0]?.overlay || {};
+  const fl = first.flags || {};
+  seed(["modules", "webcams", "global"], {});
+  seed(["modules", "webcams", "global", "colour"], { on: false, sharpen: 0.1, brightness: 1, contrast: 1, saturation: 1 });
+  seed(["modules", "webcams", "global", "sec"], { on: false, value: WEBCAM_SEC });
+  seed(["modules", "webcams", "global", "caption"], { on: false, ...Object.fromEntries(G_CAPTION.map((k) => [k, first[k] ?? DEFAULT_OVERLAY[k]]).filter(([, v]) => v !== undefined)) });
+  seed(["modules", "webcams", "global", "flags"], { on: false, show: true, corner: fl.corner || "br", size: fl.size ?? 18, opacity: fl.opacity ?? 0.5 });
+  seed(["modules", "webcams", "global", "quality"], { on: false, up_to: 1080 });
   return wc;
 }
 
@@ -540,8 +549,131 @@ export const InRotation = {
 };
 
 // --- Your webcams: the Webcams list (order, on/off, seconds), played by the rotation's one Webcams entry --------------
+// --- settings made once for every webcam (common/webcam_globals.py: the wall and the hub lay them over each webcam) ---
+const G_GROUPS = { colour: "Picture", sec: "Time on screen", caption: "Caption", flags: "Flags", quality: "Source resolution" };
+const G_COLOUR = ["sharpen", "brightness", "contrast", "saturation"];
+const G_CAPTION = ["style", "corner", "when", "font", "accent", "text", "bg", "opacity", "time_format", "fade", "show_sec", "every_min", "separator", "uppercase"];
+const G_FLAGS = ["corner", "size", "opacity"];
+const G_FLAG_POSITIONS = [{ value: "tl", label: "Top left" }, { value: "auto", label: "On the caption" },
+  { value: "left", label: "Left of caption" }, { value: "right", label: "Right of caption" }, { value: "tc", label: "Top" },
+  { value: "tr", label: "Top right" }, { value: "bl", label: "Bottom left" }, { value: "bc", label: "Bottom" }, { value: "br", label: "Bottom right" }];
+const G_FLAG_SIZES = [{ value: "auto", label: "Auto" }, { value: 18, label: "18 px" }, { value: 23, label: "23 px" }];
+const G_UP_TO = [{ value: 1080, label: "Up to 1080p" }, { value: 1440, label: "Up to 1440p" }, { value: 2160, label: "Up to 4K" }];
+const globalOf = () => store.draft.modules.webcams?.global || {};
+// does this webcam take the group from the settings for every webcam (they're on, and it doesn't keep its own)?
+const follows = (cam, group) => !!globalOf()[group]?.on && !(cam?.own || []).includes(group);
+const setOwn = (cam, group, own) => {
+  const s = new Set(cam.own || []);
+  if (own) s.add(group); else s.delete(group);
+  if (s.size) cam.own = [...s]; else delete cam.own;
+};
+// the webcam as the wall plays it (webcam_globals.effective)
+const effCam = (cam) => {
+  if (!cam) return cam;
+  const g = globalOf();
+  let out = cam;
+  const copy = () => (out === cam ? (out = { ...cam }) : out);
+  const pick = (grp, keys) => Object.fromEntries(keys.filter((k) => grp[k] !== undefined && grp[k] !== null).map((k) => [k, grp[k]]));
+  if (follows(cam, "colour")) copy().colour = { ...(cam.colour || {}), ...pick(g.colour, G_COLOUR) };
+  const cap = follows(cam, "caption") ? pick(g.caption, G_CAPTION) : null;
+  const fl = follows(cam, "flags") ? { ...pick(g.flags, G_FLAGS), on: g.flags.show !== false } : null;
+  if (cap || fl) {
+    const lay = (ov) => ({ ...(ov || {}), ...(cap || {}), ...(fl ? { flags: { ...((ov || {}).flags || {}), ...fl } } : {}) });
+    copy().overlay = lay(cam.overlay);
+    if (cam.overlays) out.overlays = Object.fromEntries(Object.entries(cam.overlays).map(([k, v]) => [k, v && typeof v === "object" ? lay(v) : v]));
+  }
+  if (follows(cam, "quality") && g.quality.up_to) copy().quality = "upto" + g.quality.up_to;
+  return out;
+};
+
+const GlobalSettings = {
+  setup() {
+    const g = computed(() => store.draft.modules.webcams.global);
+    const open = ref(false);
+    const count = computed(() => Object.keys(G_GROUPS).filter((k) => g.value[k]?.on).length);
+    const own = (group) => Object.values(store.draft.modules.webcams.cams || {}).filter((c) => (c.own || []).includes(group)).length;
+    const ownText = (group) => { const n = own(group); return n ? `${n} webcam${n === 1 ? " keeps its" : "s keep their"} own (set in that webcam's page).` : ""; };
+    const pct = (v) => Math.round(v * 100) + "%";
+    const total = computed(() => Object.keys(store.draft.modules.webcams.cams || {}).length);
+    return { g, open, count, ownText, pct, total, G_GROUPS, POSITIONS, FONTS, LAYOUTS, G_FLAG_POSITIONS, G_FLAG_SIZES, G_UP_TO };
+  },
+  template: `<div class="card">
+    <div class="card-head" style="cursor:pointer" @click="open = !open"><Icon name="Globe" :size="16"/><h3>For every webcam</h3>
+      <span class="faint ellipsis" style="font-size:12px; min-width:0">picture, time on screen, caption and flag position, source resolution</span>
+      <span class="pill" :class="{accent: count}">{{ count ? count + ' of 5 on' : 'off' }}</span>
+      <Icon :name="open ? 'ChevronDown' : 'ChevronRight'" :size="16"/></div>
+    <div class="card-body stack" v-if="open" style="gap:18px">
+      <div class="faint" style="font-size:12.5px">Switch a group on and its settings replace each webcam's own on all {{ total }} webcams, on the wall and in previews. Nothing on a webcam is erased:
+        switch the group off and each one is back on its own. A webcam can keep its own for a group, from its page.</div>
+
+      <div class="stack" style="gap:10px">
+        <ToggleRow v-model="g.colour.on" label="Picture" :hint="'Sharpness, brightness, contrast and saturation. ' + ownText('colour')"/>
+        <div class="grid cols-2" v-if="g.colour.on">
+          <Field label="Sharpness"><Slider v-model="g.colour.sharpen" :min="0" :max="2" :step="0.05" :format="pct"/></Field>
+          <Field label="Brightness"><Slider v-model="g.colour.brightness" :min="0.4" :max="2" :step="0.05" :format="pct"/></Field>
+          <Field label="Contrast"><Slider v-model="g.colour.contrast" :min="0.5" :max="2" :step="0.05" :format="pct"/></Field>
+          <Field label="Saturation"><Slider v-model="g.colour.saturation" :min="0" :max="2" :step="0.05" :format="pct"/></Field>
+        </div>
+      </div>
+
+      <div class="stack" style="gap:10px">
+        <ToggleRow v-model="g.sec.on" label="Time on screen" :hint="'How long each webcam shows in the list. ' + ownText('sec')"/>
+        <div class="row" v-if="g.sec.on"><Stepper v-model="g.sec.value" :min="5" :max="3600" :step="5" unit=" s"/></div>
+      </div>
+
+      <div class="stack" style="gap:10px">
+        <ToggleRow v-model="g.caption.on" label="Caption" :hint="'Where the caption sits and how it looks. What it says stays each webcam\\'s own. ' + ownText('caption')"/>
+        <template v-if="g.caption.on">
+          <div class="row" style="gap:16px; align-items:flex-start">
+            <Field label="Caption"><Seg v-model="g.caption.style" :options="Object.entries(LAYOUTS).map(([k, l]) => ({ value: k, label: l.label, icon: l.icon }))"/></Field>
+            <Field label="Position" v-if="g.caption.style !== 'none'"><div class="wc-corners wc-six">
+              <button v-for="c in POSITIONS" :key="c" type="button" :class="{on: g.caption.corner === c}" @click="g.caption.corner = c" :title="c"></button></div></Field>
+            <Field label="Text size" v-if="g.caption.style !== 'none'"><Seg v-model="g.caption.font" :options="FONTS"/></Field>
+          </div>
+          <div class="row" style="gap:16px; align-items:flex-start" v-if="g.caption.style !== 'none'">
+            <Field label="Accent"><ColorPick v-model="g.caption.accent"/></Field>
+            <Field label="Text"><ColorPick v-model="g.caption.text"/></Field>
+            <Field label="Background"><ColorPick v-model="g.caption.bg"/></Field>
+            <Field label="Background strength"><div style="width:150px"><Slider v-model="g.caption.opacity" :min="0" :max="1" :step="0.05" :format="pct"/></div></Field>
+            <Field label="Clock"><Seg v-model="g.caption.time_format" :options="[{value:'24h', label:'24 h'}, {value:'12h', label:'12 h'}]"/></Field>
+          </div>
+          <div class="row" style="gap:16px; align-items:flex-start" v-if="g.caption.style !== 'none'">
+            <Field label="Shows"><Seg v-model="g.caption.when" :options="[{value:'always', label:'Always'}, {value:'intro', label:'First 10 s'}, {value:'periodic', label:'Every few minutes'}]"/></Field>
+            <template v-if="g.caption.when === 'periodic'">
+              <Field label="For"><Stepper v-model="g.caption.show_sec" :min="3" :max="60" unit=" s"/></Field>
+              <Field label="Every"><Stepper v-model="g.caption.every_min" :min="1" :max="30" unit=" min"/></Field></template>
+            <Field label="Fade" v-if="g.caption.when !== 'always'"><Toggle v-model="g.caption.fade"/></Field>
+            <Field label="ALL CAPS"><Toggle v-model="g.caption.uppercase"/></Field>
+          </div>
+        </template>
+      </div>
+
+      <div class="stack" style="gap:10px">
+        <ToggleRow v-model="g.flags.on" label="Flags" :hint="'Whether flags show and where. Which flags stays each webcam\\'s own. ' + ownText('flags')"/>
+        <div class="row" style="gap:16px; align-items:flex-start" v-if="g.flags.on">
+          <Field label="Show flags"><Toggle v-model="g.flags.show"/></Field>
+          <template v-if="g.flags.show">
+            <Field label="Position"><Seg v-model="g.flags.corner" :options="G_FLAG_POSITIONS"/></Field>
+            <Field label="Size"><Seg v-model="g.flags.size" :options="G_FLAG_SIZES"/></Field>
+            <Field label="Strength"><div style="width:150px"><Slider v-model="g.flags.opacity" :min="0.1" :max="1" :step="0.05" :format="pct"/></div></Field>
+          </template>
+        </div>
+      </div>
+
+      <div class="stack" style="gap:10px">
+        <ToggleRow v-model="g.quality.on" label="Source resolution" :hint="'The best each stream has, up to a limit. ' + ownText('quality')"/>
+        <template v-if="g.quality.on">
+          <Seg v-model="g.quality.up_to" :options="G_UP_TO"/>
+          <div class="faint" style="font-size:12px">A webcam whose stream has less plays its best. Above 1080p each feed uses several times the bandwidth and more of the hub;
+            on the wall the difference only shows on tightly zoomed crops (the Clarity lab shows it).</div>
+        </template>
+      </div>
+    </div>
+  </div>`,
+};
+
 const PlaylistTab = {
-  components: { SnapImg, InRotation },
+  components: { SnapImg, InRotation, GlobalSettings },
   emits: ["add", "find"],
   setup() {
     const wc = store.draft.modules.webcams;
@@ -555,7 +687,7 @@ const PlaylistTab = {
     api("/api/flags").then((r) => { flagNames.value = Object.fromEntries((r.flags || []).map((f) => [f.id, f.name])); }).catch(() => {});
     const flagInputs = computed(() => JSON.stringify(Object.fromEntries(Object.entries(cams.value).map(([id, c]) => [id,
       { place: c.place, tz: c.tz, lat: c.lat, lon: c.lon, country: c.country, region: c.region, space: c.space,
-        overlay: { flags: c.overlay?.flags }, overlays: c.overlays?.full ? { full: { flags: c.overlays.full.flags } } : undefined }]))));
+        overlay: { flags: effCam(c).overlay?.flags }, overlays: c.overlays?.full ? { full: { flags: effCam(c).overlays.full.flags } } : undefined }]))));
     let flagTimer = null, flagAsk = 0;
     watch(flagInputs, (body) => {
       clearTimeout(flagTimer);
@@ -606,11 +738,12 @@ const PlaylistTab = {
       toast(`${order.length} webcams combined into the list, with one Webcams entry in the rotation. Save to keep it.`);
     };
     const on = computed(() => list.value.filter((x) => x.on !== false && cams.value[x.cam]));
-    const total = computed(() => on.value.reduce((n, x) => n + (x.sec || WEBCAM_SEC), 0));
+    const secOf = (x) => (follows(cams.value[x.cam], "sec") ? globalOf().sec.value : x.sec) || WEBCAM_SEC;
+    const total = computed(() => on.value.reduce((n, x) => n + secOf(x), 0));
     const srcHost = (s) => (s?.type === "drivebc" ? `DriveBC camera ${s.id}` : host(s?.url));
     const kindOf = (s) => (STILL.includes(s?.type) ? "Still" : "Live");
     const mins = (s) => (s >= 90 ? `${Math.round(s / 6) / 10} min` : `${s} s`);
-    return { LIST_SHAPES, WEBCAM_SEC, setFullOnly, wc, cams, list, on, total, found, single, combine, feedFor, feedPill, healthFor, downPill, fetchAll, fetching, fetchState, fetchResult, srcHost, kindOf, hasSource, mins, go, flagsOf, flagNames };
+    return { follows, secOf, LIST_SHAPES, WEBCAM_SEC, setFullOnly, wc, cams, list, on, total, found, single, combine, feedFor, feedPill, healthFor, downPill, fetchAll, fetching, fetchState, fetchResult, srcHost, kindOf, hasSource, mins, go, flagsOf, flagNames };
   },
   template: `<div class="stack">
     <div class="card"><div class="card-body stack" style="gap:10px">
@@ -632,6 +765,7 @@ const PlaylistTab = {
         <div class="faint" style="font-size:12.5px; padding-bottom:6px">{{ on.length }} of {{ list.length }} on · the whole list takes {{ mins(total) }}</div>
       </div>
     </div></div>
+    <GlobalSettings/>
     <div class="card">
       <div class="card-head"><Icon name="ListOrdered" :size="16"/><h3 style="white-space:nowrap">The list</h3><span class="faint ellipsis" style="font-size:12px; min-width:0">drag to reorder · switch off to skip</span>
         <span class="spacer"></span>
@@ -655,7 +789,8 @@ const PlaylistTab = {
           <button v-if="cams[it.cam]" class="btn sm icon-only" :class="cams[it.cam].full_only ? 'primary' : 'ghost'"
             :title="cams[it.cam].full_only ? 'Full width only: skipped on one side of the wall (click to allow every size)' : 'Plays at every size (click to make it full width only)'"
             @click="setFullOnly(cams[it.cam], !cams[it.cam].full_only)"><Icon name="Maximize2" :size="14"/></button>
-          <Stepper :modelValue="it.sec || WEBCAM_SEC" @update:modelValue="v => it.sec = v" :min="5" :max="3600" :step="5" unit=" s" title="How long it shows"/>
+          <span v-if="follows(cams[it.cam], 'sec')" class="pill" title="Set for every webcam (above). This webcam can keep its own, from its page.">{{ secOf(it) }} s</span>
+          <Stepper v-else :modelValue="it.sec || WEBCAM_SEC" @update:modelValue="v => it.sec = v" :min="5" :max="3600" :step="5" unit=" s" title="How long it shows"/>
           <Toggle :modelValue="it.on !== false" @update:modelValue="v => it.on = v" title="In the rotation"/>
           <button class="btn sm ghost icon-only" title="Crop, colour and caption" @click="go('webcams/' + it.cam)"><Icon name="Pencil" :size="14"/></button>
         </div>
@@ -1129,7 +1264,7 @@ const WallPreview = {
       const fresh = srcKey !== lastSrc;
       lastSrc = srcKey;
       try {
-        const r = await api("/api/webcams/preview", { json: { token: fresh ? undefined : token.value || undefined, cam: clone(props.cam), shape: props.shape, id: props.camId, show_map: props.showMap } });
+        const r = await api("/api/webcams/preview", { json: { token: fresh ? undefined : token.value || undefined, cam: clone(props.cam), shape: props.shape, id: props.camId, show_map: props.showMap, global: clone(globalOf()) } });
         zone.value = r.zone;
         dropped.value = r.dropped || [];
         if (r.token !== token.value) token.value = r.token;
@@ -1137,7 +1272,7 @@ const WallPreview = {
       } catch (e) { err.value = e.message; }
     };
     const queue = () => { if (!timer) timer = setTimeout(send, 150); };
-    watch(() => [props.cam, props.shape, props.showMap], queue, { deep: true, immediate: true });
+    watch(() => [props.cam, props.shape, props.showMap, globalOf()], queue, { deep: true, immediate: true });
     const img = ref(null);
     onBeforeUnmount(() => { clearTimeout(timer); if (img.value) img.value.src = ""; });
     const src = computed(() => token.value ? `/api/webcams/preview/${token.value}.mjpeg` : "");
@@ -1158,6 +1293,7 @@ const WebcamEditor = {
     seedWebcams();
     const id = computed(() => store.route.params[0]);
     const cam = computed(() => store.draft.modules.webcams.cams?.[id.value]);
+    const globalGroups = computed(() => Object.entries(G_GROUPS).filter(([k]) => globalOf()[k]?.on));   // set for every webcam
     const shape = ref("tall");                             // the crop shown first (and added to the rotation): above the clock
     const { status, feedFor, healthFor } = useStatus();
     const zone = computed(() => status.value.zones[shape.value] || [448, 130]);
@@ -1489,7 +1625,7 @@ const WebcamEditor = {
       const on = !here || a === b ? null : a < b ? here >= a && here < b : here >= a || here < b;
       return where + (here ? " · it's " + here + " there now: " + (on ? "in the list" : "skipped") : "");
     });
-    return { setFullOnly, inRows, setSpace,previewMap, setMap, setMinimap, SPACE_GROUPS, toggleHours, hoursNote, id, cam, shape, WEBCAM_SEC, zone, ov, colour, DEFAULT_SHARPEN, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
+    return { globalGroups, setOwn, follows, globalOf, setFullOnly, inRows, setSpace,previewMap, setMap, setMinimap, SPACE_GROUPS, toggleHours, hoursNote, id, cam, shape, WEBCAM_SEC, zone, ov, colour, DEFAULT_SHARPEN, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
       orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, hasText, customCols, SHIELD_PRESETS, SHIELD_KINDS, SHIELD_PLACES, SHIELD_SIZES, SHIELD_STYLES, shieldSrc, signMissing, presetShown, presetDone,
       CONTAINERS, feedFor, feedPill, healthFor, downPill, local, cityQ, cityHits, citySearching, searchCity, pickCity, clearCity, cityLabel, wxPoint, jpFaces, jpSample, jc, jcSizes, jcSetFace, jcSample, JC_POSITIONS, capSize, ownSize, ownSizes, setOwnSize, SIZE_LABELS, captionToSize,
       flagSet, fl, flagAuto, FLAG_GROUPS, FLAG_POSITIONS, FLAG_SIZES, flagQ, flagGroup, flagIds, flagHits, flagSrc, flagName, setFlagMode, addFlag, removeFlag, moveFlag, setCountry, setRegion, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
@@ -1501,6 +1637,18 @@ const WebcamEditor = {
       <span v-if="downPill(healthFor(id))" class="pill bad" :title="downPill(healthFor(id)).title">{{ downPill(healthFor(id)).text }}</span>
       <span class="pill" :class="feedPill(feedFor(cam)).cls">{{ feedPill(feedFor(cam)).text }}</span>
       <ConfirmButton small label="Delete webcam" @confirm="remove"/></div>
+
+    <div class="card" v-if="globalGroups.length">
+      <div class="card-body row" style="gap:14px; align-items:center">
+        <Icon name="Globe" :size="16" style="color: var(--accent)"/>
+        <span class="muted" style="font-size:13px">Set for every webcam:</span>
+        <span v-for="[k, label] in globalGroups" :key="k" class="row nowrap" style="gap:6px">
+          <b style="font-size:13px">{{ label }}</b>
+          <Seg :modelValue="(cam.own || []).includes(k) ? 'own' : 'global'" @update:modelValue="v => setOwn(cam, k, v === 'own')"
+            :options="[{ value: 'global', label: 'Follows' }, { value: 'own', label: 'Its own' }]"/></span>
+        <span class="faint" style="font-size:12px; flex-basis:100%">While a group follows, this page's controls for it have no effect on the wall; the preview shows what plays. Change the shared values on the Webcams page, under "For every webcam".</span>
+      </div>
+    </div>
 
     <div class="two-col">
       <div class="stack">
@@ -1580,7 +1728,9 @@ const WebcamEditor = {
             </div>
             <div class="wc-rot" v-if="inList">
               <Icon name="ListOrdered" :size="15"/><span>No. {{ listPos }} in the <a href="#/webcams">Webcams list</a></span><span class="spacer"></span>
-              <span class="faint">shows for</span><Stepper :modelValue="inList.sec || WEBCAM_SEC" @update:modelValue="v => inList.sec = v" :min="5" :max="3600" :step="5" unit=" s"/>
+              <span class="faint">shows for</span>
+              <span v-if="follows(cam, 'sec')" class="pill" title="Set for every webcam. Switch Time on screen to Its own (top of this page) to give this webcam its own.">{{ globalOf().sec.value || WEBCAM_SEC }} s</span>
+              <Stepper v-else :modelValue="inList.sec || WEBCAM_SEC" @update:modelValue="v => inList.sec = v" :min="5" :max="3600" :step="5" unit=" s"/>
               <Toggle :modelValue="inList.on !== false" @update:modelValue="v => inList.on = v" title="In the rotation"/></div>
             <div class="wc-rot" v-else><Icon name="ListOrdered" :size="15"/><span>Not in the Webcams list.</span><span class="spacer"></span>
               <button class="btn sm primary" @click="addToList"><Icon name="ListPlus" :size="14"/>Add to the list</button></div>
