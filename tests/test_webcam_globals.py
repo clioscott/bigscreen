@@ -109,3 +109,19 @@ def test_config_accepts_and_checks_the_settings():
             config._validate_webcams({"cams": cams, "global": bad})
     with pytest.raises(config.ConfigError):
         config._validate_webcams({"cams": {"a": {**cams["a"], "own": ["everything"]}}})
+    for bad in ({"caption": {"on": True, "font": ["x"]}}, {"flags": {"on": True, "corner": {"a": 1}}},
+                {"sec": {"on": True, "value": None}}):
+        with pytest.raises(config.ConfigError):
+            config._validate_webcams({"cams": cams, "global": bad})
+    with pytest.raises(config.ConfigError):
+        config._validate_webcams({"cams": {"a": {**cams["a"], "own": [{}]}}})
+    config._validate_webcams({"cams": cams, "global": {"sec": {"on": False, "value": None}}})      # off: not needed
+
+
+def test_the_space_maps_small_video_follows_too():
+    from display.modules import iss_panel
+    cfg = _cfg(colour={"on": True, "sharpen": 0.3})
+    panel = iss_panel.IssMapPanel.__new__(iss_panel.IssMapPanel)
+    import inspect
+    assert "webcam_globals.cams_of" in inspect.getsource(iss_panel.IssMapPanel.__init__)
+    assert wg.cams_of(cfg)["a"]["colour"]["sharpen"] == 0.3 and panel is not None

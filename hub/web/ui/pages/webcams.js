@@ -506,7 +506,7 @@ function seedWebcams() {
   seed(["modules", "webcams", "global", "colour"], { on: false, sharpen: 0.1, brightness: 1, contrast: 1, saturation: 1 });
   seed(["modules", "webcams", "global", "sec"], { on: false, value: WEBCAM_SEC });
   seed(["modules", "webcams", "global", "caption"], { on: false, ...Object.fromEntries(G_CAPTION.map((k) => [k, first[k] ?? DEFAULT_OVERLAY[k]]).filter(([, v]) => v !== undefined)) });
-  seed(["modules", "webcams", "global", "flags"], { on: false, show: true, corner: fl.corner || "br", size: fl.size ?? "auto", opacity: fl.opacity ?? 0.5 });
+  seed(["modules", "webcams", "global", "flags"], { on: false, show: true, corner: fl.corner || "br", size: fl.size ?? 18, opacity: fl.opacity ?? 0.5 });
   seed(["modules", "webcams", "global", "quality"], { on: false, up_to: 1080 });
   return wc;
 }
@@ -1625,7 +1625,7 @@ const WebcamEditor = {
       const on = !here || a === b ? null : a < b ? here >= a && here < b : here >= a || here < b;
       return where + (here ? " · it's " + here + " there now: " + (on ? "in the list" : "skipped") : "");
     });
-    return { globalGroups, setOwn, setFullOnly, inRows, setSpace,previewMap, setMap, setMinimap, SPACE_GROUPS, toggleHours, hoursNote, id, cam, shape, WEBCAM_SEC, zone, ov, colour, DEFAULT_SHARPEN, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
+    return { globalGroups, setOwn, follows, globalOf, setFullOnly, inRows, setSpace,previewMap, setMap, setMinimap, SPACE_GROUPS, toggleHours, hoursNote, id, cam, shape, WEBCAM_SEC, zone, ov, colour, DEFAULT_SHARPEN, probe, testing, test, used, inList, listPos, addToList, capTab, copyCrop, boxMode, SECTION_GROUPS, TEXT_ALIGNS, play, remove, captionToAll, toggleShow, customCrop,
       orderOn, moveSection, setCoord, hasSource, STILL, needsLocation, galleryLoc, useGalleryLoc, hasText, customCols, SHIELD_PRESETS, SHIELD_KINDS, SHIELD_PLACES, SHIELD_SIZES, SHIELD_STYLES, shieldSrc, signMissing, presetShown, presetDone,
       CONTAINERS, feedFor, feedPill, healthFor, downPill, local, cityQ, cityHits, citySearching, searchCity, pickCity, clearCity, cityLabel, wxPoint, jpFaces, jpSample, jc, jcSizes, jcSetFace, jcSample, JC_POSITIONS, capSize, ownSize, ownSizes, setOwnSize, SIZE_LABELS, captionToSize,
       flagSet, fl, flagAuto, FLAG_GROUPS, FLAG_POSITIONS, FLAG_SIZES, flagQ, flagGroup, flagIds, flagHits, flagSrc, flagName, setFlagMode, addFlag, removeFlag, moveFlag, setCountry, setRegion, SHAPES, LAYOUTS, FONTS, SECTIONS, HEADLINES, LINES, SEPS, POSITIONS, TIMEZONES, go };
@@ -1728,7 +1728,9 @@ const WebcamEditor = {
             </div>
             <div class="wc-rot" v-if="inList">
               <Icon name="ListOrdered" :size="15"/><span>No. {{ listPos }} in the <a href="#/webcams">Webcams list</a></span><span class="spacer"></span>
-              <span class="faint">shows for</span><Stepper :modelValue="inList.sec || WEBCAM_SEC" @update:modelValue="v => inList.sec = v" :min="5" :max="3600" :step="5" unit=" s"/>
+              <span class="faint">shows for</span>
+              <span v-if="follows(cam, 'sec')" class="pill" title="Set for every webcam. Switch Time on screen to Its own (top of this page) to give this webcam its own.">{{ globalOf().sec.value || WEBCAM_SEC }} s</span>
+              <Stepper v-else :modelValue="inList.sec || WEBCAM_SEC" @update:modelValue="v => inList.sec = v" :min="5" :max="3600" :step="5" unit=" s"/>
               <Toggle :modelValue="inList.on !== false" @update:modelValue="v => inList.on = v" title="In the rotation"/></div>
             <div class="wc-rot" v-else><Icon name="ListOrdered" :size="15"/><span>Not in the Webcams list.</span><span class="spacer"></span>
               <button class="btn sm primary" @click="addToList"><Icon name="ListPlus" :size="14"/>Add to the list</button></div>

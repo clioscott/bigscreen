@@ -661,8 +661,16 @@ def _validate_webcams(wc):
         for key, lo, hi in (("sharpen", 0, 2), ("brightness", 0.4, 2), ("contrast", 0.5, 2), ("saturation", 0, 2)):
             num("colour", key, lo, hi)
         num("sec", "value", 5, 3600)
+        if (g.get("sec") or {}).get("on") and (g["sec"].get("value") is None):
+            raise ConfigError("for every webcam: the time on screen needs a number of seconds")
         num("caption", "opacity", 0, 1)
         num("flags", "opacity", 0.1, 1)
+        # the Pi lays these over every webcam's caption as they are: plain values only (a list or object where the
+        # caption code expects a name would stop every webcam's caption)
+        for group in ("caption", "flags"):
+            for key, v in (g.get(group) or {}).items():
+                if v is not None and not isinstance(v, (str, int, float, bool)):
+                    raise ConfigError(f"for every webcam: {group} {key} must be a plain value")
         up = (g.get("quality") or {}).get("up_to")
         if up is not None and up not in webcam_globals.UP_TO:
             raise ConfigError("for every webcam: the resolution must be up to 1080, 1440 or 2160")
@@ -673,7 +681,7 @@ def _validate_webcams(wc):
             raise ConfigError(f"webcam {cid}: must be an object")
         name = cam.get("label") or cid
         own = cam.get("own")                               # the groups it keeps its own settings for
-        if own is not None and not (isinstance(own, list) and set(own) <= set(webcam_globals.GROUPS)):
+        if own is not None and not (isinstance(own, list) and all(isinstance(x, str) and x in webcam_globals.GROUPS for x in own)):
             raise ConfigError(f"webcam {name}: own takes " + ", ".join(webcam_globals.GROUPS))
         try:
             check_source(cam.get("source"))
